@@ -69,7 +69,10 @@ export function Segment<T extends string>({
   const buttons = useRef<(HTMLButtonElement | null)[]>([]);
   const selected = options.findIndex((o) => o.value === value);
 
-  function onKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number): void {
+  function onKeyDown(
+    event: KeyboardEvent<HTMLButtonElement>,
+    index: number,
+  ): void {
     const next = nextSegmentIndex(event.key, index, options.length);
     if (next === null) return;
     event.preventDefault();

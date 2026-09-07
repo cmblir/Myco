@@ -253,3 +253,184 @@
   opacity: 0.45;
   cursor: default;
 }
+
+/* ── Page frame ──────────────────────────────────────────────────────────
+ * One header shape for every route: eyebrow + title on the left, the page's
+ * own controls right-aligned on the same row, then an optional toolbar row,
+ * an optional one-line note, then the body.
+ *
+ * The shell reuses .workspace / .workspace-wide from styles.css for gutters,
+ * measure and responsive padding, so a migrated page keeps the same column it
+ * had — only the header changes.
+ */
+.u-page {
+  --rail-w: 248px;
+}
+.u-page--wide {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.u-page__head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+  /* The old .page-head paired 56px of air with a 40px title; a 22px title
+     needs neither. This is the density every route now shares. */
+  padding: 32px 0 0;
+}
+.u-page__heading {
+  min-width: 0;
+}
+.u-page__eyebrow {
+  color: var(--ink-3);
+  font-size: var(--fs-11, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+.u-page__title {
+  font-size: var(--fs-22, 22px);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-weight: 650;
+  color: var(--ink);
+  margin: 0;
+}
+.u-page__tools {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+
+.u-page__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 14px 0 0;
+}
+.u-page__note {
+  color: var(--ink-3);
+  font-size: var(--fs-13, 12.5px);
+  line-height: 1.5;
+  max-width: 68ch;
+  margin: 10px 0 0;
+}
+
+.u-page__body {
+  display: grid;
+  grid-template-columns: var(--page-cols, minmax(0, 1fr));
+  /* Load-bearing: without a sized row the grid's items are content-height, so
+     a short rail collapses beside a tall body instead of standing full height
+     next to it. minmax(0, …) keeps a long child scrolling itself rather than
+     forcing the row taller than the page. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: 20px;
+  align-items: stretch;
+  min-width: 0;
+  padding-top: 16px;
+}
+.u-page--wide .u-page__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 16px;
+}
+.u-page__main {
+  min-width: 0;
+}
+.u-page--wide .u-page__main {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+/* Rails stack under the body below the two-pane breakpoint — the same width
+   at which styles.css folds the graph drawer and the ingest columns. Beats the
+   inline --page-cols because the custom property is what is set inline, not
+   the grid-template-columns declaration. */
+@media (max-width: 820px) {
+  .u-page__body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+  }
+  .u-page__head {
+    padding-top: 20px;
+  }
+}
+
+/* ── Rail ────────────────────────────────────────────────────────────────
+ * Fills its grid row and scrolls its own list, so rail length never decides
+ * page length.
+ */
+.u-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg, 16px);
+  background: var(--bg-elev);
+  overflow: hidden;
+}
+.u-rail__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.u-rail__title {
+  color: var(--ink-3);
+  font-size: var(--fs-11, 11px);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.u-rail__count {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--fs-11, 11px);
+  color: var(--ink-4);
+}
+.u-rail__list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+.u-rail__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-13, 12.5px);
+  text-align: left;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+button.u-rail__row:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.u-rail__row.is-active {
+  background: var(--accent-soft);
+  color: var(--ink);
+  font-weight: 500;
+}

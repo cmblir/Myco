@@ -14,7 +14,14 @@
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { Button, Check, Chip, IconButton, Segment, nextSegmentIndex } from "./index";
+import {
+  Button,
+  Check,
+  Chip,
+  IconButton,
+  Segment,
+  nextSegmentIndex,
+} from "./index";
 
 type View = "list" | "board" | "calendar";
 const VIEWS = [
@@ -35,12 +42,12 @@ describe("Button", () => {
 
   it("gives each variant one class, and the default variant no modifier", () => {
     expect(renderToStaticMarkup(h(Button, {}, "x"))).toContain('class="u-btn"');
-    expect(renderToStaticMarkup(h(Button, { variant: "primary" }, "x"))).toContain(
-      "u-btn u-btn--primary",
-    );
-    expect(renderToStaticMarkup(h(Button, { variant: "quiet" }, "x"))).toContain(
-      "u-btn u-btn--quiet",
-    );
+    expect(
+      renderToStaticMarkup(h(Button, { variant: "primary" }, "x")),
+    ).toContain("u-btn u-btn--primary");
+    expect(
+      renderToStaticMarkup(h(Button, { variant: "quiet" }, "x")),
+    ).toContain("u-btn u-btn--quiet");
   });
 
   it("is keyboard reachable — never taken out of the tab order", () => {
@@ -49,7 +56,9 @@ describe("Button", () => {
   });
 
   it("keeps a caller's className and disabled state", () => {
-    const html = renderToStaticMarkup(h(Button, { disabled: true, className: "mine" }, "x"));
+    const html = renderToStaticMarkup(
+      h(Button, { disabled: true, className: "mine" }, "x"),
+    );
     expect(html).toContain("mine");
     expect(html).toContain("disabled");
   });
@@ -66,7 +75,9 @@ describe("IconButton", () => {
   });
 
   it("is keyboard reachable", () => {
-    const html = renderToStaticMarkup(h(IconButton, { "aria-label": "Close" }, "×"));
+    const html = renderToStaticMarkup(
+      h(IconButton, { "aria-label": "Close" }, "×"),
+    );
     expect(html).not.toContain("tabindex");
   });
 });
@@ -74,7 +85,12 @@ describe("IconButton", () => {
 describe("Segment", () => {
   it("renders one group with a name and one pressed option", () => {
     const html = renderToStaticMarkup(
-      h(Segment<View>, { options: VIEWS, value: "board", onChange: noop, label: "View" }),
+      h(Segment<View>, {
+        options: VIEWS,
+        value: "board",
+        onChange: noop,
+        label: "View",
+      }),
     );
     expect(html).toContain('role="group"');
     expect(html).toContain('aria-label="View"');
@@ -84,7 +100,12 @@ describe("Segment", () => {
 
   it("renders an optional count and omits it otherwise", () => {
     const html = renderToStaticMarkup(
-      h(Segment<View>, { options: VIEWS, value: "list", onChange: noop, label: "View" }),
+      h(Segment<View>, {
+        options: VIEWS,
+        value: "list",
+        onChange: noop,
+        label: "View",
+      }),
     );
     expect(html).toContain("12");
     expect(html.match(/u-segment__count/g)).toHaveLength(1);
@@ -92,7 +113,12 @@ describe("Segment", () => {
 
   it("is one tab stop — roving tabindex, so Tab skips past the group", () => {
     const html = renderToStaticMarkup(
-      h(Segment<View>, { options: VIEWS, value: "calendar", onChange: noop, label: "View" }),
+      h(Segment<View>, {
+        options: VIEWS,
+        value: "calendar",
+        onChange: noop,
+        label: "View",
+      }),
     );
     expect(html.match(/tabindex="0"/g)).toHaveLength(1);
     expect(html.match(/tabindex="-1"/g)).toHaveLength(2);
@@ -156,14 +182,20 @@ describe("nextSegmentIndex", () => {
 
 describe("Chip", () => {
   it("renders a label, and a mono value only when given one", () => {
-    expect(renderToStaticMarkup(h(Chip, { label: "Cited" }))).not.toContain("u-chip__value");
-    const withValue = renderToStaticMarkup(h(Chip, { label: "Cited", value: "38/41" }));
+    expect(renderToStaticMarkup(h(Chip, { label: "Cited" }))).not.toContain(
+      "u-chip__value",
+    );
+    const withValue = renderToStaticMarkup(
+      h(Chip, { label: "Cited", value: "38/41" }),
+    );
     expect(withValue).toContain("38/41");
     expect(withValue).toContain("u-chip__value");
   });
 
   it("carries a dot with every tone, so the tone is never colour-only", () => {
-    expect(renderToStaticMarkup(h(Chip, { label: "x" }))).not.toContain("u-chip__dot");
+    expect(renderToStaticMarkup(h(Chip, { label: "x" }))).not.toContain(
+      "u-chip__dot",
+    );
     for (const tone of ["live", "ok", "warn"] as const) {
       const html = renderToStaticMarkup(h(Chip, { label: "x", tone }));
       expect(html).toContain(`u-chip--${tone}`);
@@ -187,7 +219,9 @@ describe("Check", () => {
   });
 
   it("reflects unchecked and disabled in the wrapper's state classes", () => {
-    const off = renderToStaticMarkup(h(Check, { checked: false, onChange: noop, label: "x" }));
+    const off = renderToStaticMarkup(
+      h(Check, { checked: false, onChange: noop, label: "x" }),
+    );
     expect(off).not.toContain("is-on");
     const off2 = renderToStaticMarkup(
       h(Check, { checked: false, onChange: noop, label: "x", disabled: true }),

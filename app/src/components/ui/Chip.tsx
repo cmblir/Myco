@@ -20,14 +20,22 @@ export function Chip({
   title,
   className,
 }: ChipProps): JSX.Element {
-  const classes = ["u-chip", tone === "neutral" ? "" : `u-chip--${tone}`, className ?? ""]
+  const classes = [
+    "u-chip",
+    tone === "neutral" ? "" : `u-chip--${tone}`,
+    className ?? "",
+  ]
     .filter(Boolean)
     .join(" ");
   return (
     <span className={classes} title={title}>
-      {tone === "neutral" ? null : <span className="u-chip__dot" aria-hidden="true" />}
+      {tone === "neutral" ? null : (
+        <span className="u-chip__dot" aria-hidden="true" />
+      )}
       {label}
-      {value === undefined ? null : <span className="u-chip__value">{value}</span>}
+      {value === undefined ? null : (
+        <span className="u-chip__value">{value}</span>
+      )}
     </span>
   );
 }

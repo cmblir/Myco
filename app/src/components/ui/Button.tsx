@@ -23,7 +23,11 @@ export function Button({
   type = "button",
   ...rest
 }: ButtonProps): JSX.Element {
-  const classes = ["u-btn", variant === "ghost" ? "" : `u-btn--${variant}`, className ?? ""]
+  const classes = [
+    "u-btn",
+    variant === "ghost" ? "" : `u-btn--${variant}`,
+    className ?? "",
+  ]
     .filter(Boolean)
     .join(" ");
   return <button type={type} className={classes} {...rest} />;
