@@ -9,6 +9,7 @@
 // popover shows it live) — same order runDistillGuarded runs them.
 
 import { create } from "zustand";
+import type { RunOutcome } from "./harvestStore";
 
 export type DistillRunStep =
   | "run"
@@ -23,9 +24,19 @@ interface DistillRunState {
   running: boolean;
   /** Current chain phase while running; null when idle. */
   step: DistillRunStep | null;
+  /** How the last chain ended; null when there has never been one. */
+  outcome: RunOutcome;
+  /** false after a chain finishes until the user visits Feedback — drives the
+   * Topbar done/failed pill, same contract as ingestStore.seen. */
+  seen: boolean;
+  markSeen: () => void;
 }
 
-export const useDistillRunStore = create<DistillRunState>(() => ({
+export const useDistillRunStore = create<DistillRunState>((set) => ({
   running: false,
   step: null,
+  outcome: null,
+  // Nothing to report until a chain actually ends, so the pill starts silent.
+  seen: true,
+  markSeen: () => set({ seen: true }),
 }));

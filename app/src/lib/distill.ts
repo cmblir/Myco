@@ -475,7 +475,15 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   lastWeeklyOutcome.delete(vault);
   lastMonthlyOutcome.delete(vault);
   lastResurfaceOutcome.delete(vault);
-  useDistillRunStore.setState({ running: true, step: "run" });
+  // `outcome: null` also retires the previous run's Topbar pill — a new chain
+  // must not leave the old result up.
+  useDistillRunStore.setState({
+    running: true,
+    step: "run",
+    outcome: null,
+    seen: true,
+  });
+  let failed = false;
   try {
     const report = await ipc.distillRun(vault);
     // OS notification: new quarantine items. Fired here — the layer that
@@ -636,14 +644,26 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       );
     }
     return report;
+  } catch (e) {
+    failed = true;
+    throw e;
   } finally {
     inFlight.delete(vault);
     stopRequested.delete(vault);
     // Reflects "any vault still running", not just this one — the guard
     // itself is per-vault (inFlight), but a single boolean is all the
-    // Topbar needs (see distillRunStore.ts).
+    // Topbar needs (see distillRunStore.ts). The outcome rides along on the
+    // same set so the bar gets its done/failed pill from every exit path,
+    // early "stopped" returns included.
     useDistillRunStore.setState(
-      inFlight.size > 0 ? { running: true } : { running: false, step: null },
+      inFlight.size > 0
+        ? { running: true }
+        : {
+            running: false,
+            step: null,
+            outcome: failed ? "error" : "done",
+            seen: false,
+          },
     );
   }
 }
