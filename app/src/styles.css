@@ -1846,19 +1846,54 @@ select {
   position: relative;
   z-index: 1;
 }
+.vp-value {
+  font-size: clamp(30px, 5vw, 42px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.vp-label {
+  font-size: 12.5px;
+  color: var(--ink-4);
+  margin-top: 2px;
+}
+
 /* The owner's vault reads 1,960 / 1,020 / 66: three 42px numbers plus 32px
    gaps wrapped to two lines in a 368px column and made the tile 167px of
-   digits stacked over the living backdrop. One row always, each cell shrinking
-   — the figures are a glance, not the subject. */
-@media (max-width: 1240px) {
+   digits stacked over the living backdrop. The figures are a glance, not the
+   subject, so they shrink instead of wrapping.
+
+   Asked of the CARD, not the window. The viewport was only ever a proxy for
+   how wide this tile ends up, and a bad one now that the tile can be half a
+   column (Overview arrange mode); the numbers below are the card's own CONTENT
+   box, which is what @container measures — its 24px side padding is already
+   subtracted. AFTER .vp-value / .vp-label, not before: the same-specificity
+   base rules were winning on source order, so the @media rule that used to
+   live above them changed the FLOW but never actually shrank a digit
+   (measured: 42px in every window).
+
+   Separation is the other half, and shrinking alone does not buy it. Measured
+   at a half-column card the three cells are 78px each and the tile read
+   "65 1535" — the owner's "2028 133 91" again, one size down. So there are two
+   narrow presentations: three divided columns while a cell can still hold a
+   figure and its label, and below that one figure per row with the label
+   beside it, where a run-together is impossible. The ranges do not overlap,
+   so neither rule has to out-specify the other. */
+@container (min-width: 341px) and (max-width: 540px) {
   .vp-figures {
     display: grid;
     grid-auto-flow: column;
     grid-auto-columns: minmax(0, 1fr);
-    gap: 16px;
+    gap: 0;
+  }
+  .vp-figure + .vp-figure {
+    border-left: 1px solid var(--line);
+    padding-left: 14px;
+    margin-left: 14px;
   }
   .vp-value {
     font-size: 22px;
+    font-variant-numeric: tabular-nums;
   }
   .vp-label {
     overflow: hidden;
@@ -1866,19 +1901,34 @@ select {
     white-space: nowrap;
   }
 }
-.vp-value {
-  font-size: clamp(30px, 5vw, 42px);
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  /* Digits of one width, so three figures side by side keep their own columns
-     instead of drifting into each other as the counts change. */
-  font-variant-numeric: tabular-nums;
-}
-.vp-label {
-  font-size: 12.5px;
-  color: var(--ink-4);
-  margin-top: 2px;
+@container (max-width: 340px) {
+  .vp-figures {
+    display: grid;
+    grid-auto-flow: row;
+    gap: 0;
+  }
+  .vp-figure {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+  .vp-figure + .vp-figure {
+    border-top: 1px solid var(--line);
+    padding-top: 5px;
+    margin-top: 5px;
+  }
+  .vp-value {
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+  }
+  .vp-label {
+    margin-top: 0;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* The living background. One canvas behind the figures; the engine that draws
@@ -1950,8 +2000,12 @@ select {
   max-width: 240px;
 }
 .vp-day {
-  flex: 0 0 auto;
-  width: 26px;
+  /* Shrinkable, not fixed: at 26px apiece the seven slots need 206px, and in a
+     third-width column (129px of card) the card's own `overflow: hidden`
+     silently ATE two days — a chart quietly missing Saturday and Sunday. They
+     stay 26px wherever there is room and share what there is where there
+     isn't; two 6px bars and a 2px gap is the floor, and min-content holds it. */
+  flex: 0 1 26px;
   padding: 0 0 2px;
   border: 0;
   background: transparent;
@@ -2035,6 +2089,13 @@ select {
 }
 .recent-row:hover {
   background: var(--bg-hover);
+}
+.recent-row__name {
+  font-weight: 500;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 @media (prefers-reduced-motion: reduce) {
   .recent-row {
@@ -7590,6 +7651,159 @@ html.notch-window body {
   font-size: 11px;
   color: var(--ink-3);
   margin-top: 4px;
+}
+
+/* ---- Overview arrange mode (components/OverviewArrange.tsx) ----------------
+   The page's own blocks, placed by a layout document. The 12-column grid is
+   the board's grid, one level up: same vocabulary, no second one.
+
+   Nothing here applies until the user arranges something. A zone whose blocks
+   are all full width renders them as plain children (no .ovl-zone, no
+   .ovl-block), because one extra box is a formatting context and the blocks'
+   own collapsing margins are what the fixed stack's rhythm was made of. */
+.ovl-live {
+  /* Announcements only — the visible result is the page itself moving. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* The rail's stack, which is the wrapper the four report panels always had. */
+.ovl-rail-stack,
+.ovl-zone--rail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+.ovl-zone--main {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  column-gap: 20px;
+  row-gap: 20px;
+  /* Blocks differ in height; a short one must not stretch to its neighbour. */
+  align-items: start;
+  /* So the span override below asks about THIS column's width, not the
+     window's: the same span is comfortable at 1280 and unreadable in the
+     owner's 1000px window once the rail has taken its 248px. */
+  container-type: inline-size;
+}
+.ovl-block {
+  min-width: 0;
+  /* A custom property, not `grid-column` inline: an inline declaration would
+     outrank the container query that folds a narrow column back to full width
+     (the --page-cols idiom from styles/ui.css). */
+  grid-column: span var(--ovl-span, 12);
+}
+/* Below ~520px of column there is no second column to be had: the owner's
+   1000px window leaves the main column 368px once the rail has taken its
+   248px, and two blocks in that would be 174px each. So the blocks fold back
+   to full width — and the width control goes away with them rather than
+   sitting there pressed and inert, which is how a control teaches the user it
+   is broken. The stored span is untouched and comes back with the window. */
+@container (max-width: 520px) {
+  .ovl-block {
+    grid-column: 1 / -1;
+  }
+  /* Two classes deep on purpose: styles/ui.css loads after this sheet, so
+     `.u-segment { display: inline-flex }` outranks a bare `.ovl-spans` on
+     source order — and that sheet is meant to win on order, never on
+     !important (see src/styles/ui.css). */
+  .ovl-zone .ovl-spans {
+    display: none;
+  }
+}
+.ovl-zone.is-arranging > .ovl-block {
+  border: 1px dashed var(--line);
+  border-radius: var(--r-md);
+  padding: 8px;
+  background: var(--bg-soft);
+}
+.ovl-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin-bottom: 6px;
+}
+.ovl-grip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg-elev);
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1;
+  cursor: grab;
+  /* The drag is pointer-driven (lib/pointerDrag); without this the webview
+     starts a text selection the moment the press turns into a move. */
+  touch-action: none;
+  user-select: none;
+}
+.ovl-grip:hover {
+  color: var(--ink);
+  border-color: var(--ink-3);
+}
+.ovl-grip:focus-visible {
+  outline: 2px solid var(--ink-3);
+  outline-offset: 1px;
+}
+/* Handle chrome, not a heading: seven of the nine blocks print their own
+   title right below this, and at card-title weight the pair read as the
+   heading twice — on a page whose whole complaint was "hard to read". Small,
+   uppercase and quiet, it identifies the block being moved without competing
+   with what the block says. */
+.ovl-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ovl-spans {
+  flex: none;
+}
+.ovl-block.is-dragging {
+  opacity: 0.45;
+  /* Load-bearing: dropTargetAt hit-tests with elementFromPoint, so the block
+     under the pointer can only be found once the dragged one stops answering
+     for itself. */
+  pointer-events: none;
+}
+.ovl-block.is-over {
+  box-shadow: inset 0 3px 0 0 var(--accent);
+}
+.ovl-end {
+  grid-column: 1 / -1;
+  border: 1.5px dashed var(--line);
+  border-radius: var(--r-md);
+  padding: 14px;
+  text-align: center;
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.ovl-zone--rail .ovl-end {
+  padding: 10px;
+}
+.ovl-vacant {
+  font-size: 12.5px;
+  margin: 0;
+  padding: 8px 2px;
 }
 
 /* ---- Overview board (OverviewBoard) ----------------------------------------

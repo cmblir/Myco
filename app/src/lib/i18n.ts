@@ -1653,6 +1653,23 @@ export interface Strings {
   ov_suspect_title: string;
   ov_suspect_clean: string;
   ov_view_runs: string;
+  // Overview arrange mode (components/OverviewArrange.tsx) — the page's own
+  // blocks moved and resized like the board's widgets.
+  ovl_edit: string;
+  ovl_done: string;
+  ovl_reset: string;
+  ovl_reset_done: string;
+  ovl_hint: string;
+  ovl_span: string;
+  ovl_span_full: string;
+  ovl_move: string; // {block}
+  ovl_moved: string; // {block} {zone} {index} {total}
+  ovl_zone_main: string;
+  ovl_zone_rail: string;
+  ovl_drop_here: string;
+  ovl_vacant: string;
+  ovl_b_pulse: string;
+  ovl_b_harvest: string;
   // Contradiction queue (Q4 item 15) — optional; fall back to English.
   contra_title: string;
   contra_disputed: string;
@@ -3490,6 +3507,22 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_suspect_title: "Suspect pages",
     ov_suspect_clean: "Every checked page looks sound.",
     ov_view_runs: "View runs",
+    ovl_edit: "Arrange blocks",
+    ovl_done: "Done arranging",
+    ovl_reset: "Default layout",
+    ovl_reset_done: "Back to the default layout.",
+    ovl_hint:
+      "Drag a handle, or focus one and use the arrow keys. Pick a width for each block.",
+    ovl_span: "Width",
+    ovl_span_full: "Full",
+    ovl_move: "Move {block} — arrow keys change its position",
+    ovl_moved: "{block}: {zone}, {index} of {total}",
+    ovl_zone_main: "main column",
+    ovl_zone_rail: "side rail",
+    ovl_drop_here: "Drop here",
+    ovl_vacant: "Nothing to show right now.",
+    ovl_b_pulse: "Vault pulse",
+    ovl_b_harvest: "Harvest queue",
     contra_title: "Contradictions",
     contra_disputed: "Page is flagged disputed",
     contra_stale: "Cites {t} (superseded)",
@@ -5304,6 +5337,22 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_suspect_title: "의심 페이지",
     ov_suspect_clean: "점검한 페이지 모두 이상 없습니다.",
     ov_view_runs: "런 보기",
+    ovl_edit: "배치 편집",
+    ovl_done: "배치 완료",
+    ovl_reset: "기본 배치로",
+    ovl_reset_done: "기본 배치로 되돌렸습니다.",
+    ovl_hint:
+      "손잡이를 끌거나, 손잡이에 포커스를 두고 화살표 키로 옮기세요. 블록마다 너비를 고를 수 있습니다.",
+    ovl_span: "너비",
+    ovl_span_full: "전체",
+    ovl_move: "{block} 이동 — 화살표 키로 위치를 바꿉니다",
+    ovl_moved: "{block}: {zone} {index}/{total}",
+    ovl_zone_main: "본문",
+    ovl_zone_rail: "사이드",
+    ovl_drop_here: "여기에 놓기",
+    ovl_vacant: "지금은 표시할 내용이 없습니다.",
+    ovl_b_pulse: "볼트 맥박",
+    ovl_b_harvest: "수확 대기열",
     contra_title: "모순",
     contra_disputed: "분쟁 표시된 페이지입니다",
     contra_stale: "{t}(superseded)를 인용 중입니다",
@@ -7128,6 +7177,22 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_suspect_title: "要確認ページ",
     ov_suspect_clean: "確認したページに問題はありません。",
     ov_view_runs: "実行を見る",
+    ovl_edit: "配置を編集",
+    ovl_done: "配置を完了",
+    ovl_reset: "既定の配置に戻す",
+    ovl_reset_done: "既定の配置に戻しました。",
+    ovl_hint:
+      "ハンドルをドラッグするか、フォーカスして矢印キーで動かします。ブロックごとに幅を選べます。",
+    ovl_span: "幅",
+    ovl_span_full: "全幅",
+    ovl_move: "{block} を移動 — 矢印キーで位置を変えます",
+    ovl_moved: "{block}: {zone} {index}/{total}",
+    ovl_zone_main: "本文",
+    ovl_zone_rail: "サイド",
+    ovl_drop_here: "ここにドロップ",
+    ovl_vacant: "今は表示するものがありません。",
+    ovl_b_pulse: "ボルトの脈",
+    ovl_b_harvest: "収穫キュー",
     contra_title: "矛盾",
     contra_disputed: "disputed と印されたページです",
     contra_stale: "{t}(superseded)を引用しています",

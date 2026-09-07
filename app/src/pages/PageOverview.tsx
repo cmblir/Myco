@@ -9,6 +9,13 @@
 // page-level action sits on the header row, and the "since you were last here"
 // report is the right rail instead of a band pushing the vault's real work
 // below the fold.
+//
+// The ORDER and WIDTH of those blocks are no longer written here: the page
+// renders the nine of them into a map and a layout document decides where each
+// one goes (lib/board.ts, components/OverviewArrange.tsx). The default document
+// is this file's old order, so nothing moves until the user moves it. What is
+// still fixed below the blocks is the distill band and the reflect panel —
+// they are the page's own sections, not blocks anyone asked to rearrange.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
@@ -43,8 +50,14 @@ import VaultPulse from "../components/VaultPulse";
 import { bucketByDay } from "../lib/vaultPulse";
 import RecentNotes from "../components/RecentNotes";
 import VaultHistoryBanner from "../components/VaultHistoryBanner";
-import MorningBand from "../components/MorningBand";
+import { useMorningPanels } from "../components/MorningBand";
 import OverviewBoard from "../components/OverviewBoard";
+import {
+  OverviewZoneBlocks,
+  useOverviewArrange,
+  type OverviewNodes,
+} from "../components/OverviewArrange";
+import { zoneItems } from "../lib/board";
 import { useFocusTarget } from "../lib/useFocusTarget";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
@@ -98,27 +111,16 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
     };
   }, [currentVault]);
 
-  return (
-    <AppPage
-      eyebrow={t.nav_workspace}
-      title={t.nav_overview}
-      tools={
-        // The page's one header action: the run log this report summarises. It
-        // sat under the Morning band's headline, which is now the right rail.
-        currentVault ? (
-          <Button onClick={() => setRoute("history")}>
-            {t.ov_view_runs ?? "View runs"}
-          </Button>
-        ) : null
-      }
-      bar={<VaultHistoryBanner t={t} />}
-      // Mounted unconditionally, exactly as the band was: MorningBand
-      // snapshots the PREVIOUS visit stamp in a useState initializer, and the
-      // stampVisit() effect below fires as soon as this page mounts. Gating
-      // the rail on `currentVault` (which arrives one render later) let the
-      // stamp land first, and every headline then read "quiet".
-      rightRail={<MorningBand t={t} />}
-    >
+  // Mounted unconditionally, exactly as the band was: the panels snapshot the
+  // PREVIOUS visit stamp in a useState initializer, and the stampVisit()
+  // effect above fires as soon as this page mounts. Gating them on
+  // `currentVault` (which arrives one render later) let the stamp land first,
+  // and every headline then read "quiet".
+  const panels = useMorningPanels(t);
+  const arrange = useOverviewArrange(t, currentVault?.path);
+
+  const blocks: OverviewNodes = {
+    pulse: (
       <VaultPulse
         t={t}
         pages={pulse.files}
@@ -126,17 +128,69 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
         buckets={buckets}
         resolvedRatio={pulse.resolvedRatio}
       />
-      <HarvestQueue t={t} />
-      <LinkSuggestions t={t} />
+    ),
+    harvest: <HarvestQueue t={t} />,
+    links: <LinkSuggestions t={t} />,
+    recent: (
       <RecentNotes t={t} entries={mtimes} vaultRoot={currentVault?.path ?? ""} />
+    ),
+    // Keyed on the vault: OverviewBoard mounts at boot before a vault is open
+    // and returns null, which permanently strands useContainerWidth's one-shot
+    // ResizeObserver attach on a null ref (width stuck at its 1280 default —
+    // the off-pane widget bug). Remounting on vault open gives the hook a
+    // first commit where the measured div really exists.
+    board: <OverviewBoard key={currentVault?.path ?? "no-vault"} t={t} />,
+    since: panels.since,
+    suspect: panels.suspect,
+    contradictions: panels.contradictions,
+    reunions: panels.reunions,
+  };
 
-      {/* Demoted below the queue, not deleted yet. Keyed on the vault:
-          OverviewBoard mounts at boot before a vault is open and returns null,
-          which permanently strands useContainerWidth's one-shot ResizeObserver
-          attach on a null ref (width stuck at its 1280 default — the off-pane
-          widget bug). Remounting on vault open gives the hook a first commit
-          where the measured div really exists. */}
-      <OverviewBoard key={currentVault?.path ?? "no-vault"} t={t} />
+  // In arrange mode the rail slot always exists, even emptied — otherwise a
+  // rail the user stripped of all four panels could never be refilled.
+  const railUsed =
+    arrange.arranging ||
+    zoneItems(arrange.layout, "rail").some((i) => blocks[i.id]);
+
+  return (
+    <AppPage
+      eyebrow={t.nav_workspace}
+      title={t.nav_overview}
+      tools={
+        // The page's header actions: the run log this report summarises, and
+        // the one toggle that turns the blocks into something you can move.
+        currentVault ? (
+          <>
+            {arrange.arranging ? (
+              <Button onClick={arrange.reset}>{t.ovl_reset}</Button>
+            ) : null}
+            <Button
+              variant={arrange.arranging ? "primary" : undefined}
+              onClick={() => arrange.setArranging(!arrange.arranging)}
+              aria-pressed={arrange.arranging}
+            >
+              {arrange.arranging ? t.ovl_done : t.ovl_edit}
+            </Button>
+            <Button onClick={() => setRoute("history")}>
+              {t.ov_view_runs ?? "View runs"}
+            </Button>
+          </>
+        ) : null
+      }
+      bar={<VaultHistoryBanner t={t} />}
+      note={arrange.arranging ? t.ovl_hint : undefined}
+      rightRail={
+        railUsed ? (
+          <OverviewZoneBlocks zone="rail" ctl={arrange} nodes={blocks} t={t} />
+        ) : null
+      }
+    >
+      {/* Every move, pointer or keyboard, is spoken here: a drop the user
+          cannot see the result of is a drop they cannot undo. */}
+      <p className="ovl-live" aria-live="polite" role="status">
+        {arrange.announcement}
+      </p>
+      <OverviewZoneBlocks zone="main" ctl={arrange} nodes={blocks} t={t} />
 
       <div className="ov-bands">
         {currentVault ? (

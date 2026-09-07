@@ -47,7 +47,10 @@ export default function RecentNotes({
               <span className="ic">
                 <Icon name="page" size={14} />
               </span>
-              <span style={{ fontWeight: 500 }}>
+              {/* Ellipsized, not wrapped: in a half-width column a long stem
+                  ("analysis-rlhf-vs-dpo") broke the row to two lines and
+                  pushed its date out of alignment with every other row. */}
+              <span className="recent-row__name">
                 {r.rel.split("/").pop()?.replace(/\.md$/i, "")}
               </span>
               <span className="meta">{relativeDay(r.mtime)}</span>

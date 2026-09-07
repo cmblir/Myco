@@ -1,11 +1,16 @@
-// Morning-Report rail (Q4 item 2, mockup M1-a/b/c/d): a since-you-were-here
+// Morning-Report panels (Q4 item 2, mockup M1-a/b/c/d): a since-you-were-here
 // headline, the suspect-pages and contradiction lists, and the daily ritual
-// section (Q4 item 11) below them — top resurface pick + FSRS due line.
+// section (Q4 item 11) — top resurface pick + FSRS due line.
 //
-// It is PageOverview's `rightRail`, not a band above the page: as a full-width
-// band its three cards pushed the vault's actual work (the pulse figures and
-// the harvest queue) off the first screen. Same data, same actions, in the
+// They default to PageOverview's right rail rather than a full-width band: as
+// a band their three cards pushed the vault's actual work (the pulse figures
+// and the harvest queue) off the first screen. Same data, same actions, in the
 // shared Rail/RailRow parts every other route's rail uses.
+//
+// A HOOK returning four nodes, not one component rendering four rails: the
+// Overview's layout document places each panel independently, and four mounted
+// components would mean four copies of the same suspect-pages, run-log and
+// contradiction work. One set of fetches, four placements.
 
 import { useEffect, useMemo, useState } from "react";
 import type { CSSProperties, JSX } from "react";
@@ -48,7 +53,22 @@ const ACTS: CSSProperties = {
 };
 const NAME: CSSProperties = { fontWeight: 500 };
 
-export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
+/** The four panels, each `null` when it has nothing to say. */
+export interface MorningPanels {
+  since: JSX.Element | null;
+  suspect: JSX.Element | null;
+  contradictions: JSX.Element | null;
+  reunions: JSX.Element | null;
+}
+
+const NO_PANELS: MorningPanels = {
+  since: null,
+  suspect: null,
+  contradictions: null,
+  reunions: null,
+};
+
+export function useMorningPanels(t: Strings): MorningPanels {
   const vault = useVaultStore((s) => s.currentVault);
   const adjacency = useVaultStore((s) => s.adjacency);
   const lang = useUIStore((s) => s.lang);
@@ -113,7 +133,7 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
     [vault, adjacency, ignored],
   );
 
-  if (!vault) return null;
+  if (!vault) return NO_PANELS;
 
   // Two-click resolution: rewrite the frontmatter status, record the human
   // decision in vault history (undo rides history — the run manifest cannot
@@ -167,19 +187,15 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
     setRoute("study");
   };
 
-  return (
-    // Several rails share one rail slot, and the aside is a plain grid cell —
-    // the gap between them lives here.
-    <div
-      style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}
-      data-testid="morning-band"
-    >
+  return {
+    since: (
       <Rail title={t.ov_since_eyebrow ?? "Since you were last here"}>
         <RailRow>
           <span style={NAME}>{headline}</span>
         </RailRow>
       </Rail>
-
+    ),
+    suspect: (
       <Rail
         title={t.ov_suspect_title ?? "Suspect pages"}
         count={suspects ? suspects.suspects.length : undefined}
@@ -208,7 +224,8 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
           ))
         )}
       </Rail>
-
+    ),
+    contradictions: (
       <Rail
         title={t.contra_title ?? "Contradictions"}
         count={adjacency ? contradictions.length : undefined}
@@ -282,8 +299,9 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
           </RailRow>
         ) : null}
       </Rail>
-
-      {ritualPick || dueTotal > 0 ? (
+    ),
+    reunions:
+      ritualPick || dueTotal > 0 ? (
         <Rail title={t.ritual_title ?? "Today's reunions"}>
           {ritualPick ? (
             <RailRow onClick={openRitualPick}>
@@ -311,7 +329,6 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
             </RailRow>
           ) : null}
         </Rail>
-      ) : null}
-    </div>
-  );
+      ) : null,
+  };
 }
