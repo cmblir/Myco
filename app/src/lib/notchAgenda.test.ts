@@ -64,13 +64,22 @@ describe("notchAgenda", () => {
         harvestItems: 40,
       }),
     );
+    // Two suggestions are ONE decision, which is also what leaves room for
+    // the queue: three separate link rows used to eat the cap and the harvest
+    // queue never appeared at all.
     expect(agenda.rows.map((r) => r.kind)).toEqual([
       "proposal",
-      "link",
-      "link",
+      "links",
+      "harvest",
     ]);
-    // The queue did not fit, but it is still waiting and still counted.
-    expect(agenda.total).toBe(4);
+    expect(agenda.total).toBe(3);
+  });
+
+  it("keeps a lone suggestion as its own row", () => {
+    // One pair still names itself: collapsing a single suggestion into
+    // "1 suggested link" would hide what it is for no gain.
+    const agenda = notchAgenda(sources({ sem: [edge("a.md", "b.md", 0.9)] }));
+    expect(agenda.rows.map((r) => r.kind)).toEqual(["link"]);
   });
 
   it("counts the harvest queue as one decision, not N", () => {
@@ -117,11 +126,11 @@ describe("notchAgenda", () => {
   it("dismissing one link removes exactly that row", () => {
     const sem = [edge("a.md", "b.md", 0.9), edge("c.md", "d.md", 0.8)];
     const before = notchAgenda(sources({ sem }));
-    expect(before.rows.map((r) => r.id)).toEqual([
-      pairKey("a.md", "b.md"),
-      pairKey("c.md", "d.md"),
-    ]);
-    // Exactly what linkSuggestStore.dismiss writes.
+    // Two pending pairs are the collapsed set, carrying both.
+    expect(before.rows.map((r) => r.id)).toEqual(["links"]);
+    expect(before.rows[0]).toMatchObject({ kind: "links", count: 2 });
+    // Exactly what linkSuggestStore.dismiss writes. One left means the set
+    // stops being a set: the survivor names itself again.
     const after = notchAgenda(
       sources({ sem, dismissed: new Set([pairKey("a.md", "b.md")]) }),
     );

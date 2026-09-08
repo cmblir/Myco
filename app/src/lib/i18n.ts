@@ -1751,6 +1751,8 @@ export interface Strings {
   // notch never invents a second name for the same decision.
   notch_waiting: string; // {n} — the collapsed mark's accessible name
   notch_agenda_harvest_title: string;
+  notch_agenda_links_title: string; // {n}
+  notch_agenda_links_all: string;
   notch_agenda_harvest_sub: string; // {n}
   notch_agenda_harvest: string; // {n} — the row's one button
   notch_agenda_dropped: string; // the 1.5s beat after a no
@@ -3591,6 +3593,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Could not save the drop — try again or use 소스 가져오기",
     notch_waiting: "{n} waiting for you",
     notch_agenda_harvest_title: "Harvest queue",
+    notch_agenda_links_title: "{n} suggested links",
+    notch_agenda_links_all: "Link all",
     notch_agenda_harvest_sub: "{n} sessions worth a page",
     notch_agenda_harvest: "Harvest {n}",
     notch_agenda_dropped: "Dropped",
@@ -5419,6 +5423,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "저장하지 못했습니다 — 다시 시도하거나 소스 가져오기를 사용하세요",
     notch_waiting: "{n}건 기다립니다",
     notch_agenda_harvest_title: "수확 대기",
+    notch_agenda_links_title: "제안된 연결 {n}개",
+    notch_agenda_links_all: "모두 연결",
     notch_agenda_harvest_sub: "위키에 들어갈 만한 세션 {n}개",
     notch_agenda_harvest: "{n}개 수확",
     notch_agenda_dropped: "버렸습니다",
@@ -7260,6 +7266,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "保存できませんでした — もう一度試すか、ソース取り込みを使用してください",
     notch_waiting: "{n}件 待っています",
     notch_agenda_harvest_title: "収穫待ち",
+    notch_agenda_links_title: "提案されたリンク{n}件",
+    notch_agenda_links_all: "すべてリンク",
     notch_agenda_harvest_sub: "ページになる価値のあるセッション{n}件",
     notch_agenda_harvest: "{n}件を収穫",
     notch_agenda_dropped: "破棄しました",

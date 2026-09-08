@@ -23,10 +23,12 @@ import { inflowLines } from "./inflow";
 import { getLastSweepAt } from "./autoImport";
 import { buildDigest } from "./taskNotify";
 import {
+  acceptAll,
   acceptSuggestion,
   pendingLinkCount,
   suggestLinks,
 } from "./linkSuggestions";
+import type { LinkSuggestion } from "./linkSuggestions";
 import { runInboxPass } from "./autoIngest";
 import { stem } from "./graphData";
 import { notchAgenda } from "./notchAgenda";
@@ -217,6 +219,15 @@ export function traySubtitle(s: TraySnapshot, t: Strings): string {
 /** One agenda item → the notch's row, translated and routed. The action
  * strings are the ones `applyTrayAction` below already parses, so the notch
  * never learns a second way to approve a proposal. */
+/** A pair label has to fit a notch. Every ingested source is `source-<tool>-
+ *  <uuid>`, so the prefix carries nothing and the tail is a hash: keep the
+ *  head of the identifying part and elide the middle, so BOTH sides of the
+ *  pair survive instead of the first one eating the line. */
+function shortStem(path: string): string {
+  const raw = stem(path).replace(/^source-/, "");
+  return raw.length <= 16 ? raw : `${raw.slice(0, 13)}…`;
+}
+
 export function agendaRow(item: AgendaItem, t: Strings): NotchAgendaRow {
   if (item.kind === "proposal") {
     const row = mapRowContent(item.proposal, t);
@@ -230,12 +241,23 @@ export function agendaRow(item: AgendaItem, t: Strings): NotchAgendaRow {
       secondaryAction: `proposal-reject:${item.id}`,
     };
   }
+  if (item.kind === "links") {
+    return {
+      id: item.id,
+      label: t.notch_agenda_links_title.replace("{n}", String(item.count)),
+      sub: t.ls_title,
+      primaryLabel: t.notch_agenda_links_all,
+      primaryAction: "links-accept-all",
+      secondaryLabel: t.ls_dismiss,
+      secondaryAction: "links-dismiss-all",
+    };
+  }
   if (item.kind === "link") {
     return {
       id: item.id,
       // Language-neutral, like the notch's other filename rows: the row IS
       // the pair, and "a ↔ b" needs no sentence around it.
-      label: `${stem(item.link.source)} ↔ ${stem(item.link.target)}`,
+      label: `${shortStem(item.link.source)} ↔ ${shortStem(item.link.target)}`,
       sub: t.ls_title,
       primaryLabel: t.ls_accept,
       primaryAction: `links-accept:${item.id}`,
@@ -402,6 +424,25 @@ let dueProbedAt = 0;
  * suggested (already linked, already dismissed, a stale notch push) must be a
  * no-op, not a write. Same three steps as Overview's ✓ — acceptSuggestion,
  * dismiss the pair, rebuild the graph — and no second wikilink writer. */
+/** Every suggestion the panel would currently offer, in its own order. */
+function pendingLinks(): LinkSuggestion[] {
+  const { adjacency } = useVaultStore.getState();
+  const { sem, dismissed } = useLinkSuggestStore.getState();
+  if (!adjacency || !sem) return [];
+  return suggestLinks(adjacency, sem, dismissed, Number.POSITIVE_INFINITY);
+}
+
+/** Accept the whole set through the same writer the Overview's 모두 수락 uses,
+ * so a partial failure leaves the rest pending rather than half-applied. */
+async function acceptAllLinks(): Promise<void> {
+  const pending = pendingLinks();
+  if (pending.length === 0) return;
+  const { accepted } = await acceptAll(pending, ipc);
+  if (accepted.length > 0)
+    useLinkSuggestStore.getState().dismiss(accepted.map((a) => a.key));
+  await useVaultStore.getState().refreshLinkGraph();
+}
+
 async function acceptLinkByKey(key: string): Promise<void> {
   const { adjacency } = useVaultStore.getState();
   const { sem, dismissed } = useLinkSuggestStore.getState();
@@ -497,6 +538,18 @@ export function applyTrayAction(action: string): void {
   const dismissLink = action.match(/^links-dismiss:(.+)$/);
   if (dismissLink) {
     useLinkSuggestStore.getState().dismiss([dismissLink[1]]);
+    return;
+  }
+  // The set as one decision — the same two writers the single-row pair uses,
+  // over every pending suggestion rather than one key.
+  if (action === "links-accept-all") {
+    void acceptAllLinks();
+    return;
+  }
+  if (action === "links-dismiss-all") {
+    const pending = pendingLinks();
+    if (pending.length > 0)
+      useLinkSuggestStore.getState().dismiss(pending.map((p) => p.key));
     return;
   }
   if (action === "harvest-run") {

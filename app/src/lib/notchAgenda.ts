@@ -32,6 +32,11 @@ export const AGENDA_CAP = 3;
 export type AgendaItem =
   | { kind: "proposal"; id: string; proposal: ProposalMeta }
   | { kind: "link"; id: string; link: LinkSuggestion }
+  /** Two or more suggestions collapse into ONE decision. Three rows meant
+   *  three trips to a surface you are hovering, and the notch cannot show
+   *  enough of a hash-named pair to make row-by-row judgement possible
+   *  anyway — the owner's set read `source-codex-01a00124…` three times. */
+  | { kind: "links"; id: "links"; count: number; links: LinkSuggestion[] }
   | { kind: "harvest"; id: "harvest"; count: number };
 
 /** The three stores' state, unpacked so the ordering below is testable
@@ -75,7 +80,11 @@ export function notchAgenda(s: AgendaSources): NotchAgenda {
     s.adjacency && s.sem
       ? suggestLinks(s.adjacency, s.sem, s.dismissed, Number.POSITIVE_INFINITY)
       : [];
-  for (const link of links) items.push({ kind: "link", id: link.key, link });
+  if (links.length === 1) {
+    items.push({ kind: "link", id: links[0].key, link: links[0] });
+  } else if (links.length > 1) {
+    items.push({ kind: "links", id: "links", count: links.length, links });
+  }
   if (s.harvestItems > 0) {
     items.push({ kind: "harvest", id: "harvest", count: s.harvestItems });
   }
