@@ -10,11 +10,16 @@ import type { MycoSettings } from "./ipc";
 import { ipc } from "./ipc";
 import { useSettingsStore } from "../stores/settingsStore";
 
-// The bundled offline chat/generate model's catalog id (Gemma 3 1B). Used for
-// The catalog label for the built-in provider. No chat GGUF ships anymore —
-// builtin-local queries answer extractively from the embedding index (see
-// BUILTIN_EMBED_MODEL), so the "model" here names the retrieval stack.
+// Lightweight quote-only Ask remains available alongside optional synthesis.
 export const BUILTIN_MODEL = "extractive-retrieval";
+// Separately downloaded, checksum-verified local generators.
+export const BUILTIN_CHAT_MODEL = "qwen3.5-4b-q4_k_m";
+export const BUILTIN_FAST_CHAT_MODEL = "qwen3.5-2b-q4_k_m";
+
+/** Recognized local generators, separate from quote-only retrieval and ingest. */
+export function isBuiltinChatModel(model: string): boolean {
+  return model === BUILTIN_CHAT_MODEL || model === BUILTIN_FAST_CHAT_MODEL;
+}
 
 // The same provider's INGEST "model" — what the Settings ingest row shows,
 // mirroring the query row's `extractive-retrieval`. There is no model here
@@ -46,6 +51,31 @@ export interface ProviderDef {
 /** The "let the tool decide" sentinel, shared by the model and effort pickers.
  * Mirrors Rust's `claude::CLI_DEFAULT`. */
 export const CLI_DEFAULT = "(default)";
+
+export type ModelRole = "query" | "ingest";
+export interface ModelPick {
+  provider: string;
+  model: string;
+  effort: string;
+}
+
+/** The app's out-of-box pick per task, offered as "Use the recommended
+ * setting" in Settings > Model. Mirrors Rust `settings.rs`
+ * `default_query_*` / `default_ingest_*`: Sonnet answers, the cheaper Haiku
+ * ingests (high volume). */
+export const RECOMMENDED_MODEL: Record<ModelRole, ModelPick> = {
+  query: { provider: "builtin-local", model: BUILTIN_CHAT_MODEL, effort: CLI_DEFAULT },
+  ingest: { provider: "builtin-local", model: BUILTIN_FAST_CHAT_MODEL, effort: CLI_DEFAULT },
+};
+
+export function isRecommendedModel(role: ModelRole, pick: ModelPick): boolean {
+  const rec = RECOMMENDED_MODEL[role];
+  return (
+    pick.provider === rec.provider &&
+    pick.model === rec.model &&
+    pick.effort === rec.effort
+  );
+}
 
 /** Whether a provider can run Ingest, which writes files into the vault.
  * The three CLIs have real file tools (chat.ts's isCli branch), myco Pro
@@ -175,8 +205,8 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Built-in (offline)",
     kind: "local",
     needsKey: false,
-    desc: "Korean-aware e5 embedder bundled inside the app. Works offline with zero setup: Ask answers extractively from your notes, and Ingest writes a source page that quotes and cites the source verbatim — no model call either way. No local chat model ships, so features that write NEW prose (overviews, digests, maps) still need a connected provider.",
-    catalog: [BUILTIN_MODEL],
+    desc: "Bundled Korean E5 and BM25 retrieve source passages offline. Optional Qwen3.5 4B synthesizes cited answers; 2B offers smaller, reviewable import previews. Source quotations are preserved, and quote-only operation remains available.",
+    catalog: [BUILTIN_MODEL, BUILTIN_CHAT_MODEL, BUILTIN_FAST_CHAT_MODEL],
   },
   {
     id: "ollama",
@@ -226,7 +256,14 @@ export function providerDesc(t: Strings, def: ProviderDef): string {
   return t[PROVIDER_DESC_KEYS[def.id]] ?? def.desc;
 }
 
-/** Connected providers only, so pickers never point at an unavailable one.
+/** Localised display name, preserving the provider's catalog identity. */
+export function providerName(t: Strings | undefined, def: ProviderDef): string {
+  if (def.id === "builtin-local") return t?.s_provider_name_builtin_local ?? def.name;
+  if (def.id === "ollama") return "Ollama";
+  return def.name;
+}
+
+/** Local preparation is always selectable; external choices require a connection.
  * Ollama is included when its daemon is detected live, even before the user
  * explicitly connects it. */
 export function useEnabledProviders(): ProviderDef[] {
@@ -248,8 +285,9 @@ export function useEnabledProviders(): ProviderDef[] {
     };
   }, []);
   return useMemo(() => {
-    if (!settings) return [PROVIDERS[0]];
+    if (!settings) return PROVIDERS.filter((p) => p.id === "builtin-local");
     return PROVIDERS.filter((p) => {
+      if (p.id === "builtin-local") return true;
       if (p.id === "ollama")
         return ollamaLive || settings.providers.ollama === true;
       return settings.providers[p.flag] === true;

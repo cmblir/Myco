@@ -19,21 +19,31 @@
 //! an existing vault keeps working and re-writes itself on the next reindex.
 
 use serde::{Deserialize, Serialize};
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use crate::embeddings::{cosine, dot, normalize};
+use crate::embeddings::{checked_cosine, checked_vector_norm, dot, CompensatedSum, EmbeddingSpace};
+
+#[cfg(test)]
+#[path = "vector_index_numeric_tests.rs"]
+mod numeric_tests;
+
+#[cfg(test)]
+#[path = "vector_scoring_numeric_tests.rs"]
+mod scoring_numeric_tests;
+
+#[cfg(test)]
+#[path = "vector_cache_admission_tests.rs"]
+mod cache_admission_tests;
 
 /// Magic + version. A version bump invalidates the file rather than attempting a
 /// migration: the index is a derived cache and reindexing rebuilds it.
-const MAGIC: &[u8; 4] = b"MXV1";
+const MAGIC: &[u8; 4] = b"MXV2";
 
 /// One embedded chunk. `id` = "<page>#<section>". `hash` is the chunk's content
 /// hash so re-indexing can skip unchanged text.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq)]
 pub struct Record {
     pub id: String,
     pub page: String, // vault-relative path
@@ -43,9 +53,11 @@ pub struct Record {
     pub vector: Vec<f32>,
 }
 
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Serialize, Deserialize, PartialEq)]
 pub struct VectorStore {
     pub model: String, // embedding model id; a change wipes the index (dim/geometry differ)
+    #[serde(default)]
+    pub signature: String,
     pub dim: usize,
     pub records: Vec<Record>,
 }
@@ -107,11 +119,7 @@ pub fn is_cold_for(page: &str, search_archived_sessions: bool) -> bool {
 impl VectorStore {
     /// Index file path for a given vault root, under `<app-data>/embeddings/`.
     pub fn path_for(vault_root: &str) -> Result<PathBuf, String> {
-        let mut h = DefaultHasher::new();
-        vault_root.hash(&mut h);
-        let dir = crate::settings::settings_dir()?.join("embeddings");
-        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir embeddings: {e}"))?;
-        Ok(dir.join(format!("{:016x}.mxv", h.finish())))
+        crate::index_publication::read_path_for(vault_root, "mxv")
     }
 
     /// Where this vault's index lived before the binary format.
@@ -124,6 +132,11 @@ impl VectorStore {
     /// it, so a bad read degrades to "not indexed yet" rather than an error.
     pub fn load(path: &Path) -> Self {
         if let Ok(bytes) = std::fs::read(path) {
+            if path.extension().and_then(|extension| extension.to_str()) == Some("mxp") {
+                return crate::index_publication::decode(&bytes)
+                    .map(|pair| pair.store)
+                    .unwrap_or_default();
+            }
             if let Some(store) = Self::decode(&bytes) {
                 return store;
             }
@@ -135,7 +148,9 @@ impl VectorStore {
         if legacy != *path {
             if let Ok(bytes) = std::fs::read(legacy) {
                 if let Ok(store) = serde_json::from_slice::<Self>(&bytes) {
-                    return store;
+                    if store.validate_geometry().is_ok() {
+                        return store;
+                    }
                 }
             }
         }
@@ -143,6 +158,10 @@ impl VectorStore {
     }
 
     pub fn save(&self, path: &Path) -> Result<(), String> {
+        if path.extension().and_then(|extension| extension.to_str()) == Some("mxp") {
+            return Err("paired indexes must be saved through the index publisher".into());
+        }
+        self.validate_geometry()?;
         let bytes = self.encode();
         // Atomic-ish write: temp + rename, so a crash mid-write cannot leave a
         // half-written index in place.
@@ -179,6 +198,37 @@ impl VectorStore {
         Ok(())
     }
 
+    /// Authoritative readers preserve existing read and decode failures.
+    pub(crate) fn load_checked(path: &Path) -> Result<Self, String> {
+        match read_store_snapshot(path)? {
+            Some((revision, bytes)) => decode_store_snapshot(path, &revision, &bytes),
+            None => Ok(Self::default()),
+        }
+    }
+
+    /// Complete declared embedding identity after validating every stored vector.
+    pub fn embedding_space(&self) -> Result<EmbeddingSpace, String> {
+        self.validate_geometry()?;
+        let space = EmbeddingSpace {
+            model: self.model.clone(),
+            signature: self.signature.clone(),
+            dim: self.dim,
+        };
+        space.validate()?;
+        Ok(space)
+    }
+
+    /// Validate persisted geometry without imposing a normalization convention.
+    pub(crate) fn validate_geometry(&self) -> Result<(), String> {
+        u32::try_from(self.dim)
+            .map_err(|_| "dense index dimension exceeds codec width".to_string())?;
+        for (index, record) in self.records.iter().enumerate() {
+            checked_vector_norm(&record.vector, Some(self.dim))
+                .map_err(|error| format!("invalid dense vector record {index}: {error}"))?;
+        }
+        Ok(())
+    }
+
     /// Serialize to the binary format. Public so `benches/vector_store.rs`
     /// measures the shipped codec rather than a copy of it. Layout:
     ///
@@ -192,11 +242,34 @@ impl VectorStore {
             out.extend_from_slice(&(s.len() as u32).to_le_bytes());
             out.extend_from_slice(s.as_bytes());
         }
-        let mut out = Vec::with_capacity(16 + self.records.len() * (self.dim * 4 + 64));
+        // Reserve from actual payload sizes, not untrusted declared geometry.
+        // The reservation is only a hint; overflow skips it without changing
+        // the unchecked codec API or treating its output as validated state.
+        let capacity = self
+            .model
+            .len()
+            .checked_add(self.signature.len())
+            .and_then(|length| length.checked_add(20))
+            .and_then(|header| {
+                self.records.iter().try_fold(header, |capacity, record| {
+                    let bytes = 24usize
+                        .checked_add(record.id.len())?
+                        .checked_add(record.page.len())?
+                        .checked_add(record.stem.len())?
+                        .checked_add(record.vector.len().checked_mul(4)?)?;
+                    capacity.checked_add(bytes)
+                })
+            });
+        let mut out = Vec::with_capacity(
+            capacity
+                .filter(|capacity| *capacity <= isize::MAX as usize)
+                .unwrap_or(0),
+        );
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&(self.dim as u32).to_le_bytes());
         out.extend_from_slice(&(self.records.len() as u32).to_le_bytes());
         put_str(&mut out, &self.model);
+        put_str(&mut out, &self.signature);
         for r in &self.records {
             put_str(&mut out, &r.id);
             put_str(&mut out, &r.page);
@@ -239,15 +312,24 @@ impl VectorStore {
         }
 
         let mut c = Cursor { b: bytes, p: 0 };
-        if c.take(4)? != MAGIC {
+        let magic = c.take(4)?;
+        if magic != MAGIC && magic != b"MXV1" {
             return None;
         }
         let dim = c.u32()? as usize;
         let n = c.u32()? as usize;
         let model = c.string()?;
-        // Reject an impossible record count before reserving for it, so a
-        // corrupt length field cannot drive a huge allocation.
-        if n.checked_mul(dim.checked_mul(4)?)? > bytes.len() {
+        let signature = if magic == MAGIC {
+            c.string()?
+        } else {
+            String::new()
+        };
+        // Every record needs three string lengths, a section, a hash and its
+        // vector. Include metadata so a zero width cannot bypass this bound.
+        let minimum_record_bytes = 24usize.checked_add(dim.checked_mul(4)?)?;
+        if (n > 0 && dim == 0)
+            || n.checked_mul(minimum_record_bytes)? > bytes.len().checked_sub(c.p)?
+        {
             return None;
         }
         let mut records = Vec::with_capacity(n);
@@ -262,6 +344,7 @@ impl VectorStore {
                 .chunks_exact(4)
                 .map(|w| f32::from_le_bytes([w[0], w[1], w[2], w[3]]))
                 .collect();
+            checked_vector_norm(&vector, Some(dim)).ok()?;
             records.push(Record {
                 id,
                 page,
@@ -271,8 +354,12 @@ impl VectorStore {
                 vector,
             });
         }
+        if c.p != bytes.len() {
+            return None;
+        }
         Some(VectorStore {
             model,
+            signature,
             dim,
             records,
         })
@@ -283,9 +370,52 @@ impl VectorStore {
     pub fn ensure_model(&mut self, model: &str) {
         if self.model != model {
             self.model = model.to_string();
+            self.signature.clear();
             self.dim = 0;
             self.records.clear();
         }
+    }
+
+    /// A model name alone does not identify pooling, weights or chunk semantics.
+    pub fn ensure_signature(&mut self, model: &str, signature: &str) -> bool {
+        if self.model == model && self.signature == signature {
+            return false;
+        }
+        self.model = model.to_string();
+        self.signature = signature.to_string();
+        self.dim = 0;
+        self.records.clear();
+        true
+    }
+
+    /// Replace sparse sections during a checkpoint without changing chunk IDs.
+    /// Invalid incoming geometry returns an error before any record is replaced.
+    pub fn upsert_page_sections(
+        &mut self,
+        page: &str,
+        stem: &str,
+        chunks: Vec<(usize, u64, Vec<f32>)>,
+    ) -> Result<(), String> {
+        let mut dim = self.dim;
+        for (_, _, vector) in &chunks {
+            if dim == 0 {
+                dim = vector.len();
+            }
+            checked_vector_norm(vector, Some(dim))?;
+        }
+        self.records.retain(|r| r.page != page);
+        self.dim = dim;
+        for (section, hash, vector) in chunks {
+            self.records.push(Record {
+                id: format!("{page}#{section}"),
+                page: page.to_string(),
+                stem: stem.to_string(),
+                section,
+                hash,
+                vector,
+            });
+        }
+        Ok(())
     }
 
     /// Content hashes already stored, grouped by page and in section order, so a
@@ -319,21 +449,22 @@ impl VectorStore {
     }
 
     /// Replace all records for one page with a fresh set.
-    pub fn upsert_page(&mut self, page: &str, stem: &str, chunks: Vec<(u64, Vec<f32>)>) {
-        self.records.retain(|r| r.page != page);
-        for (i, (hash, vector)) in chunks.into_iter().enumerate() {
-            if self.dim == 0 {
-                self.dim = vector.len();
-            }
-            self.records.push(Record {
-                id: format!("{page}#{i}"),
-                page: page.to_string(),
-                stem: stem.to_string(),
-                section: i,
-                hash,
-                vector,
-            });
-        }
+    /// An empty batch deletes that page; an invalid batch leaves the store intact.
+    pub fn upsert_page(
+        &mut self,
+        page: &str,
+        stem: &str,
+        chunks: Vec<(u64, Vec<f32>)>,
+    ) -> Result<(), String> {
+        self.upsert_page_sections(
+            page,
+            stem,
+            chunks
+                .into_iter()
+                .enumerate()
+                .map(|(section, (hash, vector))| (section, hash, vector))
+                .collect(),
+        )
     }
 
     /// Drop records for pages no longer present in the vault. Returns how many
@@ -353,64 +484,57 @@ impl VectorStore {
     }
 
     /// Top-`k` chunks by cosine similarity to `query`.
-    pub fn search(&self, query: &[f32], k: usize) -> Vec<Hit> {
+    pub fn search(&self, query: &[f32], k: usize) -> Result<Vec<Hit>, String> {
+        self.validate_geometry()?;
+        checked_vector_norm(query, (self.dim != 0).then_some(self.dim))?;
         let mut scored: Vec<Hit> = self
             .records
             .iter()
-            .map(|r| Hit {
-                page: r.page.clone(),
-                stem: r.stem.clone(),
-                section: r.section,
-                score: cosine(query, &r.vector),
+            .map(|r| {
+                Ok(Hit {
+                    page: r.page.clone(),
+                    stem: r.stem.clone(),
+                    section: r.section,
+                    score: checked_cosine(query, &r.vector)?,
+                })
             })
-            .collect();
-        scored.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+            .collect::<Result<_, String>>()?;
+        scored.sort_by(|a, b| b.score.total_cmp(&a.score));
         scored.truncate(k);
-        scored
+        Ok(scored)
     }
 
     /// One unit vector per page: the mean of its chunk vectors, renormalized.
     /// Sorted by page so everything derived from it is deterministic.
-    pub fn page_centroids(&self) -> Vec<(String, Vec<f32>)> {
+    pub fn page_centroids(&self) -> Result<Vec<(String, Vec<f32>)>, String> {
         use std::collections::HashMap;
-        if self.dim == 0 {
-            return Vec::new();
-        }
-        let mut acc: HashMap<&str, (Vec<f32>, usize)> = HashMap::new();
+        self.validate_geometry()?;
+        let mut acc: HashMap<&str, Vec<CompensatedSum>> = HashMap::new();
         for r in &self.records {
-            // A width that disagrees with the index would corrupt the running
-            // mean. Nothing on today's write paths produces one — the tokenizer
-            // always emits at least a BOS — but the index is a file on disk, and
-            // a stale record must not silently skew a centroid.
-            if r.vector.len() != self.dim {
-                continue;
-            }
             let e = acc
                 .entry(r.page.as_str())
-                .or_insert_with(|| (vec![0.0; self.dim], 0));
+                .or_insert_with(|| vec![CompensatedSum::default(); self.dim]);
             for (i, x) in r.vector.iter().enumerate() {
-                e.0[i] += x;
+                e[i].add(f64::from(*x));
             }
-            e.1 += 1;
         }
         let mut out: Vec<(String, Vec<f32>)> = acc
             .into_iter()
-            .map(|(page, (mut v, n))| {
-                for x in v.iter_mut() {
-                    *x /= n as f32;
+            .map(|(page, sum)| {
+                let sum: Vec<f64> = sum.into_iter().map(CompensatedSum::total).collect();
+                // A positive count changes magnitude, not direction. Normalize
+                // the f64 sum before narrowing, retaining subnormal raw means.
+                let norm = sum.iter().map(|value| value * value).sum::<f64>().sqrt();
+                if !norm.is_finite() || norm == 0.0 {
+                    return Err("page chunks have no finite nonzero aggregate direction".into());
                 }
-                // The mean of unit vectors is not itself a unit vector; renormalize
-                // so a plain dot product is the cosine between two pages.
-                normalize(&mut v);
-                (page.to_string(), v)
+                let vector: Vec<f32> = sum.into_iter().map(|v| (v / norm) as f32).collect();
+                checked_vector_norm(&vector, Some(self.dim))?;
+                Ok((page.to_string(), vector))
             })
-            .collect();
+            .collect::<Result<_, String>>()?;
         out.sort_by(|a, b| a.0.cmp(&b.0));
-        out
+        Ok(out)
     }
 
     /// Top-`k` similar pages for every page, as undirected deduplicated edges —
@@ -443,24 +567,46 @@ impl VectorStore {
         )
     }
 
-    pub fn centroid_edges(&self, k: usize) -> Vec<PageEdge> {
+    pub fn centroid_edges(&self, k: usize) -> Result<Vec<PageEdge>, String> {
         let cents: Vec<(String, Vec<f32>)> = self
-            .page_centroids()
+            .page_centroids()?
             .into_iter()
             .filter(|(page, _)| !Self::is_machine_written(page))
             .collect();
+        let k = k.min(cents.len().saturating_sub(1));
+        if k == 0 {
+            return Ok(Vec::new());
+        }
+        // Compute each symmetric cosine once. Keep only each page's k best
+        // candidates, rather than sorting N-1 hits for every page. Equal
+        // scores retain lexical page order, matching the former stable sort.
+        let mut nearest: Vec<Vec<(usize, f32)>> = (0..cents.len())
+            .map(|_| Vec::with_capacity(k + 1))
+            .collect();
+        let insert = |hits: &mut Vec<(usize, f32)>, other: usize, score: f32| {
+            let at = hits.partition_point(|(index, current)| {
+                *current > score || (*current == score && *index < other)
+            });
+            if at < k {
+                hits.insert(at, (other, score));
+                hits.truncate(k);
+            }
+        };
+        for i in 0..cents.len() {
+            for j in (i + 1)..cents.len() {
+                let score = dot(&cents[i].1, &cents[j].1);
+                if !score.is_finite() {
+                    return Err("page centroid edge score is not finite".into());
+                }
+                insert(&mut nearest[i], j, score);
+                insert(&mut nearest[j], i, score);
+            }
+        }
         let mut seen: HashSet<(&str, &str)> = HashSet::new();
         let mut out = Vec::new();
-        for (i, (page, a)) in cents.iter().enumerate() {
-            let mut hits: Vec<(&str, f32)> = cents
-                .iter()
-                .enumerate()
-                .filter(|(j, _)| *j != i)
-                .map(|(_, (other, b))| (other.as_str(), dot(a, b)))
-                .collect();
-            hits.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
-            hits.truncate(k);
-            for (other, score) in hits {
+        for (i, (page, _)) in cents.iter().enumerate() {
+            for &(other, score) in &nearest[i] {
+                let other = cents[other].0.as_str();
                 // Undirected de-dup: order the pair lexically.
                 let pair = if page.as_str() < other {
                     (page.as_str(), other)
@@ -476,12 +622,13 @@ impl VectorStore {
                 }
             }
         }
-        out
+        Ok(out)
     }
 
     /// Pages most similar to `page`, best-chunk-vs-best-chunk, excluding itself.
     /// Returns one hit per page, ranked.
-    pub fn related(&self, page: &str, k: usize) -> Vec<Hit> {
+    pub fn related(&self, page: &str, k: usize) -> Result<Vec<Hit>, String> {
+        self.validate_geometry()?;
         let self_vecs: Vec<&Vec<f32>> = self
             .records
             .iter()
@@ -489,7 +636,7 @@ impl VectorStore {
             .map(|r| &r.vector)
             .collect();
         if self_vecs.is_empty() {
-            return Vec::new();
+            return Ok(Vec::new());
         }
         use std::collections::HashMap;
         let mut best: HashMap<&str, Hit> = HashMap::new();
@@ -499,8 +646,10 @@ impl VectorStore {
             }
             let score = self_vecs
                 .iter()
-                .map(|sv| cosine(sv, &r.vector))
-                .fold(0.0f32, f32::max);
+                .map(|sv| checked_cosine(sv, &r.vector))
+                .collect::<Result<Vec<_>, _>>()?
+                .into_iter()
+                .fold(f32::NEG_INFINITY, f32::max);
             let e = best.entry(r.page.as_str()).or_insert(Hit {
                 page: r.page.clone(),
                 stem: r.stem.clone(),
@@ -513,13 +662,9 @@ impl VectorStore {
             }
         }
         let mut hits: Vec<Hit> = best.into_values().collect();
-        hits.sort_by(|a, b| {
-            b.score
-                .partial_cmp(&a.score)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        hits.sort_by(|a, b| b.score.total_cmp(&a.score));
         hits.truncate(k);
-        hits
+        Ok(hits)
     }
 }
 
@@ -533,40 +678,101 @@ fn unique_suffix() -> String {
     format!("{}-{n}", std::process::id())
 }
 
-/// Identity of the index file as it is right now: modified time and length.
-/// Cheap (one `stat`) next to the parse it guards.
-fn fingerprint(path: &Path) -> Option<(std::time::SystemTime, u64)> {
-    let meta = std::fs::metadata(path)
-        .or_else(|_| std::fs::metadata(VectorStore::legacy_json_path(path)))
-        .ok()?;
-    Some((meta.modified().ok()?, meta.len()))
+/// Content revision of the selected binary, pair, or legacy JSON file.
+#[derive(PartialEq, Eq)]
+struct FileRevision {
+    source: PathBuf,
+    file: crate::index_publication::IndexFileRevision,
+}
+
+/// Hash and decode use one captured read; only an absent primary selects JSON.
+fn read_store_snapshot(path: &Path) -> Result<Option<(FileRevision, Vec<u8>)>, String> {
+    let (source, snapshot) = match crate::index_publication::read_snapshot(path)? {
+        Some(snapshot) => (path.to_path_buf(), snapshot),
+        None if path.extension().and_then(|extension| extension.to_str()) == Some("mxp") => {
+            return Ok(None);
+        }
+        None => {
+            let source = VectorStore::legacy_json_path(path);
+            let Some(snapshot) = crate::index_publication::read_snapshot(&source)? else {
+                return Ok(None);
+            };
+            if crate::index_publication::read_snapshot(path)?.is_some() {
+                return Err("vector index primary appeared during legacy selection".into());
+            }
+            (source, snapshot)
+        }
+    };
+    Ok(Some((
+        FileRevision {
+            source,
+            file: snapshot.revision,
+        },
+        snapshot.bytes,
+    )))
+}
+
+fn decode_store_snapshot(
+    path: &Path,
+    revision: &FileRevision,
+    bytes: &[u8],
+) -> Result<VectorStore, String> {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("mxp") {
+        return crate::index_publication::decode(bytes)
+            .map(|pair| pair.store)
+            .ok_or_else(|| "published index pair is corrupt".into());
+    }
+    if revision.source != path {
+        let store: VectorStore = serde_json::from_slice(bytes)
+            .map_err(|_| "legacy dense JSON index is corrupt".to_string())?;
+        store.validate_geometry()?;
+        return Ok(store);
+    }
+    VectorStore::decode(bytes).ok_or_else(|| "legacy dense index is corrupt".into())
 }
 
 struct CacheEntry {
     path: PathBuf,
-    fingerprint: (std::time::SystemTime, u64),
+    fingerprint: FileRevision,
     store: Arc<VectorStore>,
     /// Edge lists derived from `store`, keyed by `k`. Tied to this entry's
     /// lifetime, so they cannot outlive the index revision they came from.
-    edges: std::collections::HashMap<usize, Arc<Vec<PageEdge>>>,
+    // Native callers clamp k to 1..=10, bounding this table to ten lists.
+    edges: std::collections::HashMap<usize, Arc<EdgeCell>>,
 }
+
+type EdgeCell = OnceLock<Result<Arc<Vec<PageEdge>>, String>>;
 
 /// Replace the entry unless it already holds this exact revision of `path`.
 /// Returns `None` when there is no index file to key freshness on.
-fn ensure_fresh<'a>(slot: &'a mut Option<CacheEntry>, path: &Path) -> Option<&'a mut CacheEntry> {
-    let fp = fingerprint(path)?;
+fn ensure_fresh<'a>(
+    slot: &'a mut Option<CacheEntry>,
+    path: &Path,
+) -> Result<Option<&'a mut CacheEntry>, String> {
+    let Some((fp, bytes)) = read_store_snapshot(path)? else {
+        *slot = None;
+        return Ok(None);
+    };
     let hit = slot
         .as_ref()
         .is_some_and(|e| e.path == *path && e.fingerprint == fp);
     if !hit {
+        let store = decode_store_snapshot(path, &fp, &bytes)?;
+        if read_store_snapshot(path)?
+            .map(|(revision, _)| revision)
+            .as_ref()
+            != Some(&fp)
+        {
+            return Err("vector index revision changed during checked load".into());
+        }
         *slot = Some(CacheEntry {
             path: path.to_path_buf(),
             fingerprint: fp,
-            store: Arc::new(VectorStore::load(path)),
+            store: Arc::new(store),
             edges: std::collections::HashMap::new(),
         });
     }
-    slot.as_mut()
+    Ok(slot.as_mut())
 }
 
 /// Keeps the parsed index in memory across commands.
@@ -578,97 +784,151 @@ fn ensure_fresh<'a>(slot: &'a mut Option<CacheEntry>, path: &Path) -> Option<&'a
 /// vector_store`). The store is a few tens of MB and one vault is open at a
 /// time, so a single entry is held.
 ///
-/// Freshness is checked against the file's mtime+length rather than trusted, so
+/// Freshness is checked against captured file content rather than trusted, so
 /// an index rewritten by anything other than this cache — a future sidecar, a
 /// restored backup, the user deleting the file — is picked up rather than served
-/// stale. `reindex_embeddings` additionally seeds the entry with the store it
-/// just built, so the rebuild never pays a reload.
+/// stale. A paired index additionally supplies its publication generation.
+/// `reindex_embeddings` checks its owned store against the published bytes
+/// before adoption; identical stores retain their existing derived edge cells.
 /// What a caller needs to answer "top-`k` edges for this index".
 ///
 /// Not just the edges, because computing them is a quadratic pass (114 ms at 300
 /// pages, and it grows with the square of the page count) and must not happen
 /// while the cache's lock is held — every other semantic command wants that
-/// lock. The caller gets either the finished list or the store to compute from,
-/// and hands the result back with `VectorCache::store_edges`.
+/// lock. The caller gets either the finished list or shared work to run on a
+/// blocking thread. Concurrent requests initialize the same cell once.
 pub enum EdgeLookup {
     /// Already computed for this index revision.
     Ready(Arc<Vec<PageEdge>>),
-    /// Not computed yet — run `centroid_edges(k)` on this, off-thread.
-    Compute(Arc<VectorStore>),
+    /// Not computed yet — run this shared work off-thread.
+    Compute(EdgeWork),
     /// No index on disk.
     Empty,
 }
 
-#[derive(Default)]
+/// One immutable index revision's shared edge pass. Its private lock never
+/// blocks `VectorCache::get`, so unrelated searches can continue during it.
+pub struct EdgeWork {
+    store: Arc<VectorStore>,
+    k: usize,
+    edges: Arc<EdgeCell>,
+}
+
+impl EdgeWork {
+    /// Return the shared list and whether this caller performed its pass.
+    /// A panicking initializer leaves the cell empty, allowing a later retry.
+    pub fn compute(self) -> Result<(Arc<Vec<PageEdge>>, bool), String> {
+        let mut computed = false;
+        let edges = self.edges.get_or_init(|| {
+            computed = true;
+            self.store.centroid_edges(self.k).map(Arc::new)
+        });
+        edges.clone().map(|edges| (edges, computed))
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct VectorCache {
-    inner: Mutex<Option<CacheEntry>>,
+    inner: Arc<Mutex<Option<CacheEntry>>>,
 }
 
 impl VectorCache {
+    /// Load the current index off-thread, including cache-lock and cold-parse waits.
+    pub async fn get_async(&self, path: PathBuf) -> Result<Arc<VectorStore>, String> {
+        let cache = self.clone();
+        tauri::async_runtime::spawn_blocking(move || cache.get(&path))
+            .await
+            .map_err(|e| format!("vector cache load task failed: {e}"))?
+    }
+
+    /// Look up shared edge work off-thread; the caller still owns its computation.
+    pub async fn lookup_edges_async(&self, path: PathBuf, k: usize) -> Result<EdgeLookup, String> {
+        let cache = self.clone();
+        tauri::async_runtime::spawn_blocking(move || cache.lookup_edges(&path, k))
+            .await
+            .map_err(|e| format!("vector edge lookup task failed: {e}"))?
+    }
+
     /// The index for `path`, parsed at most once per on-disk revision.
-    pub fn get(&self, path: &Path) -> Arc<VectorStore> {
+    pub fn get(&self, path: &Path) -> Result<Arc<VectorStore>, String> {
         // Held across the load: the parse is the expensive thing being cached,
         // and serializing concurrent first-callers is better than having each
         // of them parse the same file. No await happens under this guard.
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        match ensure_fresh(&mut guard, path) {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| "vector cache lock poisoned".to_string())?;
+        Ok(match ensure_fresh(&mut guard, path)? {
             Some(entry) => Arc::clone(&entry.store),
             // No file on disk: return an empty store *uncached*, since there is
             // nothing to key freshness on. Caching it would pin "empty" past the
             // first reindex.
             None => Arc::new(VectorStore::default()),
-        }
+        })
     }
 
-    /// Cached edges for `(path, k)`, or the store to compute them from.
+    /// Cached edges for `(path, k)`, or one shared pass to compute them.
     ///
     /// The graph asks on mount and on every toggle of the semantic overlay, and
     /// the link-suggestions panel asks for the same `k` — so the answer is
     /// cached per index revision and they share one computation.
-    pub fn lookup_edges(&self, path: &Path, k: usize) -> EdgeLookup {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(entry) = ensure_fresh(&mut guard, path) else {
-            return EdgeLookup::Empty;
+    pub fn lookup_edges(&self, path: &Path, k: usize) -> Result<EdgeLookup, String> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| "vector cache lock poisoned".to_string())?;
+        let Some(entry) = ensure_fresh(&mut guard, path)? else {
+            return Ok(EdgeLookup::Empty);
         };
-        match entry.edges.get(&k) {
-            Some(cached) => EdgeLookup::Ready(Arc::clone(cached)),
-            None => EdgeLookup::Compute(Arc::clone(&entry.store)),
-        }
+        let edges = entry.edges.entry(k).or_default();
+        Ok(match edges.get() {
+            Some(cached) => EdgeLookup::Ready(cached.clone()?),
+            None => EdgeLookup::Compute(EdgeWork {
+                store: Arc::clone(&entry.store),
+                k,
+                edges: Arc::clone(edges),
+            }),
+        })
     }
 
-    /// Adopt edges computed from `store`.
-    ///
-    /// Only if the cache still holds that exact store: the index can be
-    /// reindexed while the pass is running, and edges describing the old one
-    /// must not be filed against the new. Pointer identity says it precisely —
-    /// `ensure_fresh` replaces the whole entry when the file moves.
-    pub fn store_edges(
-        &self,
-        path: &Path,
-        k: usize,
-        store: &Arc<VectorStore>,
-        edges: Arc<Vec<PageEdge>>,
-    ) {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(entry) = ensure_fresh(&mut guard, path) else {
-            return;
-        };
-        if Arc::ptr_eq(&entry.store, store) {
-            entry.edges.insert(k, edges);
+    /// Adopt a valid store only when it matches the current checked publication.
+    /// Failed validation, reads, and observed rewrites preserve the old entry.
+    pub fn put(&self, path: &Path, store: VectorStore) -> Result<(), String> {
+        store.validate_geometry()?;
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| "vector cache lock poisoned".to_string())?;
+        let (fp, bytes) = read_store_snapshot(path)?
+            .ok_or_else(|| "published vector index is missing".to_string())?;
+        let persisted = decode_store_snapshot(path, &fp, &bytes)?;
+        if read_store_snapshot(path)?
+            .map(|(revision, _)| revision)
+            .as_ref()
+            != Some(&fp)
+        {
+            return Err("vector index revision changed during checked adoption".into());
         }
-    }
-
-    /// Adopt a store this process just wrote, so the writer's own work is reused
-    /// instead of being re-read from the file it came from.
-    pub fn put(&self, path: &Path, store: VectorStore) {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = fingerprint(path).map(|fp| CacheEntry {
+        if persisted != store {
+            return Err("supplied vector store does not match the published file".into());
+        }
+        // No-op reindex still publishes an owned store. Compare complete
+        // records/model identity once here (O(records * dim)), retaining both
+        // finished and in-flight edge cells when nothing actually changed.
+        if let Some(entry) = guard.as_mut() {
+            if entry.path == path && entry.store.as_ref() == &store {
+                entry.fingerprint = fp;
+                return Ok(());
+            }
+        }
+        *guard = Some(CacheEntry {
             path: path.to_path_buf(),
             fingerprint: fp,
             store: Arc::new(store),
             // The new store invalidates anything derived from the old one.
             edges: std::collections::HashMap::new(),
         });
+        Ok(())
     }
 }
 
@@ -791,8 +1051,217 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
 }
 
 #[cfg(test)]
+mod signature_tests {
+    use super::VectorStore;
+    #[test]
+    fn changing_signature_rebuilds_same_named_model_and_codec_keeps_identity() {
+        let mut store = VectorStore::default();
+        store.ensure_signature("builtin-local:e5-small-ko", "weights-a/mean/v1");
+        store
+            .upsert_page("wiki/a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        assert!(!store.ensure_signature("builtin-local:e5-small-ko", "weights-a/mean/v1"));
+        let decoded = VectorStore::decode(&store.encode()).unwrap();
+        assert_eq!(decoded.signature, store.signature);
+        assert!(store.ensure_signature("builtin-local:e5-small-ko", "weights-b/mean/v1"));
+        assert!(store.records.is_empty());
+    }
+    #[test]
+    fn partial_sections_survive_restart_and_preserve_tail_identity() {
+        let mut store = VectorStore::default();
+        store
+            .upsert_page_sections(
+                "sessions/log.md",
+                "log",
+                vec![(0, 11, vec![1.0, 0.0]), (299, 22, vec![0.0, 1.0])],
+            )
+            .unwrap();
+        let reloaded = VectorStore::decode(&store.encode()).unwrap();
+        assert!(reloaded
+            .records
+            .iter()
+            .any(|record| record.page == "sessions/log.md"
+                && record.section == 299
+                && record.hash == 22));
+        assert_eq!(reloaded.page_vectors("sessions/log.md").len(), 2);
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn async_vector_cache_calls_do_not_stall_heartbeat() {
+        for edges in [false, true] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("idx.mxv");
+            let mut store = VectorStore::default();
+            store.ensure_model("synthetic-model");
+            store
+                .upsert_page("wiki/a.md", "a", vec![(1, vec![1.0, 0.0])])
+                .unwrap();
+            store.save(&path).unwrap();
+            let cache = Arc::new(VectorCache::default());
+            let (held_tx, held_rx) = std::sync::mpsc::channel();
+            let (release_tx, release_rx) = std::sync::mpsc::channel();
+            let worker_cache = Arc::clone(&cache);
+            let holder = std::thread::spawn(move || {
+                let _guard = worker_cache.inner.lock().unwrap();
+                held_tx.send(()).unwrap();
+                // A broken inline loader eventually returns, so red never hangs.
+                release_rx
+                    .recv_timeout(std::time::Duration::from_secs(1))
+                    .is_ok()
+            });
+            held_rx
+                .recv_timeout(std::time::Duration::from_secs(5))
+                .unwrap();
+            let load = async {
+                if edges {
+                    assert!(matches!(
+                        cache.lookup_edges_async(path, 4).await.unwrap(),
+                        EdgeLookup::Compute(_)
+                    ));
+                } else {
+                    assert_eq!(cache.get_async(path).await.unwrap().records.len(), 1);
+                }
+            };
+            let heartbeat = async {
+                tokio::task::yield_now().await;
+                release_tx.send(()).unwrap();
+            };
+            tokio::pin!(load, heartbeat);
+            let heartbeat_first = tokio::select! {
+                biased;
+                _ = &mut load => false,
+                _ = &mut heartbeat => true,
+            };
+            if heartbeat_first {
+                load.await;
+            }
+            let released_by_heartbeat = holder.join().unwrap();
+            assert!(
+                heartbeat_first,
+                "cache call blocked the current-thread heartbeat (edges={edges})"
+            );
+            assert!(released_by_heartbeat, "cache lock outlived the heartbeat");
+        }
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn async_vector_cache_cold_callers_share_parse_and_notice_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("idx.mxv");
+        let mut store = VectorStore {
+            model: "synthetic-model".into(),
+            dim: 384,
+            ..Default::default()
+        };
+        store.records = (0..10_000)
+            .map(|i| {
+                let page = format!("wiki/p{i:05}.md");
+                let mut vector = vec![0.0; 384];
+                vector[i % 384] = 1.0;
+                Record {
+                    id: format!("{page}#0"),
+                    page,
+                    stem: format!("p{i:05}"),
+                    section: 0,
+                    hash: i as u64,
+                    vector,
+                }
+            })
+            .collect();
+        store.save(&path).unwrap();
+        drop(store);
+        let cache = VectorCache::default();
+        let bytes = std::fs::metadata(&path).unwrap().len();
+        let started = std::time::Instant::now();
+        let (first, second) =
+            tokio::join!(cache.get_async(path.clone()), cache.get_async(path.clone()));
+        let (first, second) = (first.unwrap(), second.unwrap());
+        eprintln!(
+            "synthetic_vector_cache_cold_callers records=10000 dim=384 bytes={bytes} elapsed_ms={:.3}",
+            started.elapsed().as_secs_f64() * 1000.0
+        );
+        assert_eq!(first.records.len(), 10_000);
+        assert_eq!(first.dim, 384);
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "cold callers parsed separate stores"
+        );
+        assert!(Arc::ptr_eq(&first, &cache.get(&path).unwrap()));
+
+        let mut next = VectorStore::default();
+        next.ensure_model("replacement-model");
+        next.upsert_page("wiki/new.md", "new", vec![(9, vec![0.0, 1.0])])
+            .unwrap();
+        next.save(&path).unwrap();
+        let replaced = cache.get_async(path.clone()).await.unwrap();
+        assert!(!Arc::ptr_eq(&first, &replaced));
+        assert_eq!(replaced.model, "replacement-model");
+        assert_eq!(replaced.records.len(), 1);
+        std::fs::remove_file(&path).unwrap();
+        assert!(cache.get_async(path).await.unwrap().records.is_empty());
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn async_edge_lookups_share_work_and_keep_revision_identity() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("idx.mxv");
+        let mut store = VectorStore::default();
+        store.ensure_model("synthetic-model");
+        store
+            .upsert_page("wiki/a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        store
+            .upsert_page("wiki/b.md", "b", vec![(2, vec![1.0, 0.0])])
+            .unwrap();
+        store.save(&path).unwrap();
+        let cache = VectorCache::default();
+        let (first, second) = tokio::join!(
+            cache.lookup_edges_async(path.clone(), 4),
+            cache.lookup_edges_async(path.clone(), 4)
+        );
+        let (EdgeLookup::Compute(first), EdgeLookup::Compute(second)) =
+            (first.unwrap(), second.unwrap())
+        else {
+            panic!("cold edge lookups must return shared work");
+        };
+        assert!(Arc::ptr_eq(&first.store, &second.store));
+        assert!(Arc::ptr_eq(&first.edges, &second.edges));
+        let (first, second) = tokio::join!(
+            tauri::async_runtime::spawn_blocking(move || first.compute().unwrap()),
+            tauri::async_runtime::spawn_blocking(move || second.compute().unwrap())
+        );
+        let ((first, built_first), (second, built_second)) = (first.unwrap(), second.unwrap());
+        assert_ne!(
+            built_first, built_second,
+            "one revision computed edges twice"
+        );
+        assert!(Arc::ptr_eq(&first, &second));
+        assert_eq!(first.len(), 1);
+        let EdgeLookup::Ready(warm) = cache.lookup_edges_async(path.clone(), 4).await.unwrap()
+        else {
+            panic!("computed edge result was not cached");
+        };
+        assert!(Arc::ptr_eq(&first, &warm));
+
+        store
+            .upsert_page("wiki/c.md", "c", vec![(3, vec![1.0, 0.0])])
+            .unwrap();
+        store.save(&path).unwrap();
+        let EdgeLookup::Compute(next) = cache.lookup_edges_async(path, 4).await.unwrap() else {
+            panic!("a rewritten revision reused old edge work");
+        };
+        let (next, built) = tauri::async_runtime::spawn_blocking(move || next.compute().unwrap())
+            .await
+            .unwrap();
+        assert!(built);
+        assert!(!Arc::ptr_eq(&first, &next));
+        assert_eq!(next.len(), 3);
+    }
 
     #[test]
     fn semantic_map_separates_clusters_and_is_deterministic() {
@@ -868,9 +1337,11 @@ mod tests {
     #[test]
     fn upsert_replaces_page() {
         let mut s = VectorStore::default();
-        s.upsert_page("p.md", "p", vec![(1, vec![1.0, 0.0]), (2, vec![0.0, 1.0])]);
+        s.upsert_page("p.md", "p", vec![(1, vec![1.0, 0.0]), (2, vec![0.0, 1.0])])
+            .unwrap();
         assert_eq!(s.records.len(), 2);
-        s.upsert_page("p.md", "p", vec![(3, vec![1.0, 1.0])]);
+        s.upsert_page("p.md", "p", vec![(3, vec![1.0, 1.0])])
+            .unwrap();
         assert_eq!(s.records.len(), 1);
         assert_eq!(s.dim, 2);
     }
@@ -878,9 +1349,11 @@ mod tests {
     #[test]
     fn search_ranks_by_cosine() {
         let mut s = VectorStore::default();
-        s.upsert_page("near.md", "near", vec![(1, vec![1.0, 0.0, 0.0])]);
-        s.upsert_page("far.md", "far", vec![(2, vec![0.0, 1.0, 0.0])]);
-        let hits = s.search(&[0.9, 0.1, 0.0], 2);
+        s.upsert_page("near.md", "near", vec![(1, vec![1.0, 0.0, 0.0])])
+            .unwrap();
+        s.upsert_page("far.md", "far", vec![(2, vec![0.0, 1.0, 0.0])])
+            .unwrap();
+        let hits = s.search(&[0.9, 0.1, 0.0], 2).unwrap();
         assert_eq!(hits[0].page, "near.md");
         assert!(hits[0].score > hits[1].score);
     }
@@ -888,10 +1361,13 @@ mod tests {
     #[test]
     fn related_excludes_self_and_ranks() {
         let mut s = VectorStore::default();
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
-        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]); // close to a
-        s.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])]); // far from a
-        let rel = s.related("a.md", 5);
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])])
+            .unwrap(); // close to a
+        s.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])])
+            .unwrap(); // far from a
+        let rel = s.related("a.md", 5).unwrap();
         assert_eq!(rel.len(), 2);
         assert_eq!(rel[0].page, "b.md");
         assert!(rel.iter().all(|h| h.page != "a.md"));
@@ -900,11 +1376,14 @@ mod tests {
     #[test]
     fn centroid_edges_link_similar_pages_undirected() {
         let mut s = VectorStore::default();
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
-        s.upsert_page("b.md", "b", vec![(2, vec![0.96, 0.28])]); // close to a
-        s.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])]); // far from a
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        s.upsert_page("b.md", "b", vec![(2, vec![0.96, 0.28])])
+            .unwrap(); // close to a
+        s.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])])
+            .unwrap(); // far from a
 
-        let edges = s.centroid_edges(1);
+        let edges = s.centroid_edges(1).unwrap();
         // Each page's single best match, deduplicated: a-b (mutual) and b-c
         // (c's best is b, since b leans toward c more than a does).
         assert!(
@@ -937,11 +1416,12 @@ mod tests {
                 &format!("p{i}.md"),
                 &format!("p{i}"),
                 vec![(i as u64, vec![f.cos(), f.sin()])],
-            );
+            )
+            .unwrap();
         }
-        let first = s.centroid_edges(3);
+        let first = s.centroid_edges(3).unwrap();
         for _ in 0..5 {
-            let again = s.centroid_edges(3);
+            let again = s.centroid_edges(3).unwrap();
             assert_eq!(first.len(), again.len());
             for (x, y) in first.iter().zip(again.iter()) {
                 assert_eq!((&x.a, &x.b), (&y.a, &y.b));
@@ -949,39 +1429,127 @@ mod tests {
         }
     }
 
+    // Original full-sort algorithm, retained only as a ranking oracle/bench.
+    fn centroid_edges_reference(store: &VectorStore, k: usize) -> Vec<PageEdge> {
+        let cents: Vec<_> = store
+            .page_centroids()
+            .unwrap()
+            .into_iter()
+            .filter(|(page, _)| !VectorStore::is_machine_written(page))
+            .collect();
+        let mut seen = HashSet::new();
+        let mut edges = Vec::new();
+        for (i, (page, a)) in cents.iter().enumerate() {
+            let mut hits: Vec<_> = cents
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, (other, b))| (other.as_str(), dot(a, b)))
+                .collect();
+            hits.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
+            hits.truncate(k);
+            for (other, score) in hits {
+                let pair = if page.as_str() < other {
+                    (page.as_str(), other)
+                } else {
+                    (other, page.as_str())
+                };
+                if seen.insert(pair) {
+                    edges.push(PageEdge {
+                        a: pair.0.into(),
+                        b: pair.1.into(),
+                        score,
+                    });
+                }
+            }
+        }
+        edges
+    }
+
     #[test]
-    fn page_centroid_averages_chunks_and_ignores_bad_widths() {
+    fn centroid_edges_match_full_sort_including_equal_scores() {
+        let mut store = VectorStore::default();
+        for i in 0..32 {
+            let vector = if i % 3 == 0 {
+                vec![1.0, 0.0, 0.0]
+            } else {
+                vec![(i as f32).sin(), (i as f32).cos(), 0.3]
+            };
+            store
+                .upsert_page(&format!("wiki/p{i:03}.md"), "note", vec![(i, vector)])
+                .unwrap();
+        }
+        for k in [0, 1, 4, 10, 100] {
+            let expected = centroid_edges_reference(&store, k);
+            let actual = store.centroid_edges(k).unwrap();
+            assert_eq!(actual.len(), expected.len(), "k={k}");
+            for (a, b) in actual.iter().zip(expected.iter()) {
+                assert_eq!((&a.a, &a.b), (&b.a, &b.b), "k={k}");
+                assert_eq!(a.score, b.score);
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "synthetic CPU benchmark; run explicitly with --ignored --nocapture"]
+    fn centroid_edges_synthetic_benchmark() {
+        let mut store = VectorStore::default();
+        for i in 0..1_000 {
+            let vector = (0..384)
+                .map(|d| ((i * 397 + d * 31) as f32).sin())
+                .collect();
+            store
+                .upsert_page(
+                    &format!("wiki/p{i:04}.md"),
+                    "note",
+                    vec![(i as u64, vector)],
+                )
+                .unwrap();
+        }
+        let start = std::time::Instant::now();
+        let expected = centroid_edges_reference(&store, 4);
+        let baseline = start.elapsed();
+        let start = std::time::Instant::now();
+        let actual = store.centroid_edges(4).unwrap();
+        let optimized = start.elapsed();
+        assert_eq!(actual.len(), expected.len());
+        for (a, b) in actual.iter().zip(expected.iter()) {
+            assert_eq!((&a.a, &a.b, a.score), (&b.a, &b.b, b.score));
+        }
+        eprintln!("synthetic_centroid_edges pages=1000 dim=384 k=4 edges={} baseline_ms={:.2} optimized_ms={:.2}", actual.len(), baseline.as_secs_f64() * 1000.0, optimized.as_secs_f64() * 1000.0);
+    }
+
+    #[test]
+    fn page_centroid_averages_chunks_and_rejects_bad_widths() {
         let mut s = VectorStore::default();
         // Two chunks either side of the x axis average back onto it.
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 1.0]), (2, vec![1.0, -1.0])]);
-        // A record whose width disagrees with the index (a stale or
-        // hand-edited file) must not corrupt the mean or panic.
-        s.records.push(rec("a.md", 2, Vec::new()));
-        let cents = s.page_centroids();
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 1.0]), (2, vec![1.0, -1.0])])
+            .unwrap();
+        let cents = s.page_centroids().unwrap();
         assert_eq!(cents.len(), 1);
         let (page, v) = &cents[0];
         assert_eq!(page, "a.md");
         assert!((v[0] - 1.0).abs() < 1e-6, "centroid was {v:?}");
         assert!(v[1].abs() < 1e-6);
+        // A stale malformed record makes the aggregate unavailable; it must
+        // not silently change the set of chunks being averaged.
+        s.records.push(rec("a.md", 2, Vec::new()));
+        assert!(s.page_centroids().is_err());
     }
 
     #[test]
     fn centroid_edges_empty_for_empty_store() {
-        assert!(VectorStore::default().centroid_edges(4).is_empty());
+        assert!(VectorStore::default().centroid_edges(4).unwrap().is_empty());
     }
 
-    /// What a command does with the split lookup/store API: compute on a miss,
-    /// reuse on a hit. Mirrors semantic_edges so the test exercises the real
+    /// What a command does with shared work: compute on a miss, reuse on a
+    /// hit. Mirrors semantic_edges so the test exercises the real
     /// shape rather than a convenience wrapper.
     fn edges_via_cache(cache: &VectorCache, path: &Path, k: usize) -> Arc<Vec<PageEdge>> {
-        match cache.lookup_edges(path, k) {
+        match cache.lookup_edges(path, k).unwrap() {
             EdgeLookup::Ready(e) => e,
             EdgeLookup::Empty => Arc::new(Vec::new()),
-            EdgeLookup::Compute(store) => {
-                let built = Arc::new(store.centroid_edges(k));
-                cache.store_edges(path, k, &store, Arc::clone(&built));
-                built
-            }
+            EdgeLookup::Compute(work) => work.compute().unwrap().0,
         }
     }
 
@@ -991,8 +1559,10 @@ mod tests {
         let path = dir.join("idx.mxv");
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
-        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])])
+            .unwrap();
         s.save(&path).unwrap();
 
         let cache = VectorCache::default();
@@ -1006,11 +1576,201 @@ mod tests {
         // A rewritten index invalidates everything derived from the old one.
         let mut next = VectorStore::default();
         next.ensure_model("m");
-        next.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
-        next.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
-        next.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])]);
+        next.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        next.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])])
+            .unwrap();
+        next.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])])
+            .unwrap();
         next.save(&path).unwrap();
         assert!(edges_via_cache(&cache, &path, 4).len() > first.len());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cache_edges_overlapping_requests_build_once() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let dir = scratch("cache-edges-overlap");
+        let path = dir.join("idx.mxv");
+        let mut store = VectorStore::default();
+        store.ensure_model("synthetic-model");
+        for i in 0..64 {
+            store
+                .upsert_page(
+                    &format!("wiki/p{i:03}.md"),
+                    "note",
+                    vec![(i, vec![1.0, i as f32])],
+                )
+                .unwrap();
+        }
+        store.save(&path).unwrap();
+        let cache = Arc::new(VectorCache::default());
+        let start = Arc::new(std::sync::Barrier::new(2));
+        let builds = Arc::new(AtomicUsize::new(0));
+        let workers: Vec<_> = (0..2)
+            .map(|_| {
+                let (cache, start, builds, path) = (
+                    Arc::clone(&cache),
+                    Arc::clone(&start),
+                    Arc::clone(&builds),
+                    path.clone(),
+                );
+                std::thread::spawn(move || {
+                    let found = cache.lookup_edges(&path, 4).unwrap();
+                    // Both callers observe the cold revision before either starts
+                    // its pass, as Graph and suggestions can do on app startup.
+                    start.wait();
+                    match found {
+                        EdgeLookup::Ready(edges) => edges,
+                        EdgeLookup::Empty => panic!("synthetic index should exist"),
+                        EdgeLookup::Compute(work) => {
+                            let (edges, computed) = work.compute().unwrap();
+                            if computed {
+                                builds.fetch_add(1, Ordering::SeqCst);
+                            }
+                            edges
+                        }
+                    }
+                })
+            })
+            .collect();
+        let mut results = workers.into_iter().map(|worker| worker.join().unwrap());
+        let first = results.next().unwrap();
+        let second = results.next().unwrap();
+        assert_eq!(
+            builds.load(Ordering::SeqCst),
+            1,
+            "one unchanged revision must have one quadratic pass"
+        );
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "overlapping requests should share the same derived result"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cache_edges_identical_publication_keeps_derived_result() {
+        let dir = scratch("cache-edges-identical-put");
+        let path = dir.join("idx.mxv");
+        let mut store = VectorStore::default();
+        store.ensure_model("synthetic-model");
+        store
+            .upsert_page("wiki/a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        store
+            .upsert_page("wiki/b.md", "b", vec![(2, vec![0.0, 1.0])])
+            .unwrap();
+        store.save(&path).unwrap();
+        let cache = VectorCache::default();
+        let first = edges_via_cache(&cache, &path, 4);
+        // A no-op reindex publishes an owned copy even when every model,
+        // signature and vector record is byte-for-byte unchanged.
+        cache.put(&path, VectorStore::load(&path)).unwrap();
+        let second = edges_via_cache(&cache, &path, 4);
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "identical publication forced a quadratic recompute"
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn cache_edges_vector_and_model_identity_changes_invalidate() {
+        let dir = scratch("cache-edges-mutation");
+        let path = dir.join("idx.mxv");
+        let mut store = VectorStore::default();
+        store.ensure_signature("synthetic-model", "weights-v1");
+        store
+            .upsert_page("wiki/a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        store
+            .upsert_page("wiki/b.md", "b", vec![(2, vec![0.0, 1.0])])
+            .unwrap();
+        store.save(&path).unwrap();
+        let cache = VectorCache::default();
+        let first = edges_via_cache(&cache, &path, 4);
+
+        // Same paths and content hashes, but changed actual vector geometry.
+        store
+            .upsert_page("wiki/b.md", "b", vec![(2, vec![1.0, 0.0])])
+            .unwrap();
+        store.save(&path).unwrap();
+        cache.put(&path, VectorStore::load(&path)).unwrap();
+        let changed = edges_via_cache(&cache, &path, 4);
+        assert!(!Arc::ptr_eq(&first, &changed));
+        assert_eq!(first[0].score, 0.0);
+        assert_eq!(changed[0].score, 1.0);
+
+        // Identical replacement vectors under a different model signature
+        // still belong to a new revision and may not reuse old work.
+        store.ensure_signature("synthetic-model", "weights-v2");
+        store
+            .upsert_page("wiki/a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        store
+            .upsert_page("wiki/b.md", "b", vec![(2, vec![1.0, 0.0])])
+            .unwrap();
+        store.save(&path).unwrap();
+        cache.put(&path, VectorStore::load(&path)).unwrap();
+        let reloaded = edges_via_cache(&cache, &path, 4);
+        assert!(!Arc::ptr_eq(&changed, &reloaded));
+        assert_eq!(changed[0].score, reloaded[0].score);
+
+        store.prune(&HashSet::from(["wiki/a.md".to_string()]));
+        store.save(&path).unwrap();
+        cache.put(&path, store).unwrap();
+        assert!(edges_via_cache(&cache, &path, 4).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    #[ignore = "synthetic cache benchmark; run explicitly with --ignored --nocapture"]
+    fn cache_edges_repeated_request_benchmark() {
+        let dir = scratch("cache-edges-repeat-bench");
+        let path = dir.join("idx.mxv");
+        let mut store = VectorStore::default();
+        store.ensure_model("synthetic-model");
+        for i in 0..1_000 {
+            let vector = (0..384)
+                .map(|d| ((i * 397 + d * 31) as f32).sin())
+                .collect();
+            store
+                .upsert_page(
+                    &format!("wiki/p{i:04}.md"),
+                    "note",
+                    vec![(i as u64, vector)],
+                )
+                .unwrap();
+        }
+        store.save(&path).unwrap();
+        let encoded = store.encode();
+        let cache = VectorCache::default();
+        cache.put(&path, store).unwrap();
+        let start = std::time::Instant::now();
+        let first = edges_via_cache(&cache, &path, 4);
+        let cold = start.elapsed();
+        let start = std::time::Instant::now();
+        for _ in 0..10 {
+            assert!(Arc::ptr_eq(&first, &edges_via_cache(&cache, &path, 4)));
+        }
+        let warm = start.elapsed();
+        let start = std::time::Instant::now();
+        let mut derived_allocations = 1;
+        for _ in 0..3 {
+            cache
+                .put(&path, VectorStore::decode(&encoded).unwrap())
+                .unwrap();
+            let next = edges_via_cache(&cache, &path, 4);
+            if !Arc::ptr_eq(&first, &next) {
+                derived_allocations += 1;
+            }
+            assert_eq!(next.len(), first.len());
+            for (a, b) in next.iter().zip(first.iter()) {
+                assert_eq!((&a.a, &a.b, a.score), (&b.a, &b.b, b.score));
+            }
+        }
+        eprintln!("synthetic_edge_cache pages=1000 dim=384 k=4 cold_ms={:.2} warm_10_ms={:.3} identical_put_3_ms={:.2} derived_allocations={derived_allocations}", cold.as_secs_f64() * 1000.0, warm.as_secs_f64() * 1000.0, start.elapsed().as_secs_f64() * 1000.0);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1023,16 +1783,17 @@ mod tests {
         let path = dir.join("idx.mxv");
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
-        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])])
+            .unwrap();
         s.save(&path).unwrap();
 
         let cache = VectorCache::default();
         // A command starts a pass against the store as it is now...
-        let EdgeLookup::Compute(old_store) = cache.lookup_edges(&path, 4) else {
+        let EdgeLookup::Compute(old_work) = cache.lookup_edges(&path, 4).unwrap() else {
             panic!("expected a cache miss");
         };
-        let stale = Arc::new(old_store.centroid_edges(4));
 
         // ...and a reindex lands before it finishes.
         let mut next = VectorStore::default();
@@ -1042,13 +1803,18 @@ mod tests {
                 &format!("n{i}.md"),
                 "n",
                 vec![(i as u64, vec![1.0, i as f32])],
-            );
+            )
+            .unwrap();
         }
         next.save(&path).unwrap();
         // Fault the new revision in, so the cache is holding a different store.
-        let _ = cache.get(&path);
+        let _ = cache.get(&path).unwrap();
 
-        cache.store_edges(&path, 4, &old_store, stale);
+        // The old work can finish, but its OnceLock belongs to the superseded
+        // entry and must never initialize the new revision's edge cell.
+        let (stale, computed) = old_work.compute().unwrap();
+        assert!(computed);
+        assert_eq!(stale.len(), 1);
         // The stale list must not be served for the new index.
         let fresh = edges_via_cache(&cache, &path, 4);
         assert!(
@@ -1066,8 +1832,10 @@ mod tests {
         // Reindex compares this against freshly computed chunk hashes to decide
         // whether a page changed, so both grouping and order have to hold.
         let mut s = VectorStore::default();
-        s.upsert_page("a.md", "a", vec![(11, vec![1.0]), (22, vec![0.0])]);
-        s.upsert_page("b.md", "b", vec![(33, vec![1.0])]);
+        // Metadata fixtures still need admissible, nonzero vectors.
+        s.upsert_page("a.md", "a", vec![(11, vec![1.0]), (22, vec![0.5])])
+            .unwrap();
+        s.upsert_page("b.md", "b", vec![(33, vec![1.0])]).unwrap();
         let by_page = s.hashes_by_page();
         assert_eq!(by_page.len(), 2);
         assert_eq!(by_page["a.md"], vec![11, 22]);
@@ -1081,12 +1849,13 @@ mod tests {
         // The reuse map behind the chunk-level re-embed skip: only this page's
         // records, keyed by content hash.
         let mut s = VectorStore::default();
-        s.upsert_page("a.md", "a", vec![(11, vec![1.0]), (22, vec![0.0])]);
-        s.upsert_page("b.md", "b", vec![(33, vec![0.5])]);
+        s.upsert_page("a.md", "a", vec![(11, vec![1.0]), (22, vec![0.5])])
+            .unwrap();
+        s.upsert_page("b.md", "b", vec![(33, vec![0.5])]).unwrap();
         let v = s.page_vectors("a.md");
         assert_eq!(v.len(), 2);
         assert_eq!(v[&11], vec![1.0]);
-        assert_eq!(v[&22], vec![0.0]);
+        assert_eq!(v[&22], vec![0.5]);
         assert!(!v.contains_key(&33));
         assert!(s.page_vectors("never-indexed.md").is_empty());
     }
@@ -1095,8 +1864,10 @@ mod tests {
     fn prune_reports_how_many_records_it_dropped() {
         // reindex uses the count to decide whether a final save is warranted.
         let mut s = VectorStore::default();
-        s.upsert_page("keep.md", "keep", vec![(1, vec![1.0])]);
-        s.upsert_page("gone.md", "gone", vec![(2, vec![1.0]), (3, vec![1.0])]);
+        s.upsert_page("keep.md", "keep", vec![(1, vec![1.0])])
+            .unwrap();
+        s.upsert_page("gone.md", "gone", vec![(2, vec![1.0]), (3, vec![1.0])])
+            .unwrap();
         let keep: HashSet<String> = ["keep.md".to_string()].into_iter().collect();
         assert_eq!(s.prune(&keep), 2);
         // Nothing left to drop the second time.
@@ -1106,8 +1877,10 @@ mod tests {
     #[test]
     fn prune_drops_missing_pages() {
         let mut s = VectorStore::default();
-        s.upsert_page("keep.md", "keep", vec![(1, vec![1.0])]);
-        s.upsert_page("gone.md", "gone", vec![(2, vec![1.0])]);
+        s.upsert_page("keep.md", "keep", vec![(1, vec![1.0])])
+            .unwrap();
+        s.upsert_page("gone.md", "gone", vec![(2, vec![1.0])])
+            .unwrap();
         let keep: HashSet<String> = ["keep.md".to_string()].into_iter().collect();
         s.prune(&keep);
         assert_eq!(s.indexed_pages(), 1);
@@ -1140,7 +1913,8 @@ mod tests {
             let mut s = VectorStore::default();
             s.ensure_model("m");
             for i in 0..n {
-                s.upsert_page(&format!("p{i}.md"), "p", vec![(tag, vec![0.5; 1152])]);
+                s.upsert_page(&format!("p{i}.md"), "p", vec![(tag, vec![0.5; 1152])])
+                    .unwrap();
             }
             s
         };
@@ -1204,7 +1978,8 @@ mod tests {
     fn roundtrip_save_load() {
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("p.md", "p", vec![(7, vec![0.1, 0.2, 0.3])]);
+        s.upsert_page("p.md", "p", vec![(7, vec![0.1, 0.2, 0.3])])
+            .unwrap();
         let dir = scratch("roundtrip");
         let path = dir.join("idx.mxv");
         s.save(&path).unwrap();
@@ -1225,7 +2000,8 @@ mod tests {
     fn save_writes_binary_not_json() {
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("p.md", "p", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("p.md", "p", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
         let dir = scratch("format");
         let path = dir.join("idx.mxv");
         s.save(&path).unwrap();
@@ -1243,7 +2019,8 @@ mod tests {
         let legacy = dir.join("idx.json");
         let mut old = VectorStore::default();
         old.ensure_model("m");
-        old.upsert_page("p.md", "p", vec![(9, vec![0.5, 0.5])]);
+        old.upsert_page("p.md", "p", vec![(9, vec![0.5, 0.5])])
+            .unwrap();
         std::fs::write(&legacy, serde_json::to_vec(&old).unwrap()).unwrap();
 
         let loaded = VectorStore::load(&path);
@@ -1269,7 +2046,8 @@ mod tests {
 
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("p.md", "p", vec![(1, vec![1.0, 0.0, 0.0])]);
+        s.upsert_page("p.md", "p", vec![(1, vec![1.0, 0.0, 0.0])])
+            .unwrap();
         let good = s.encode();
         assert!(VectorStore::decode(&good).is_some());
         // Every truncation of a valid file is rejected, never partially read.
@@ -1302,12 +2080,13 @@ mod tests {
         let path = dir.join("idx.mxv");
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
         s.save(&path).unwrap();
 
         let cache = VectorCache::default();
-        let first = cache.get(&path);
-        let second = cache.get(&path);
+        let first = cache.get(&path).unwrap();
+        let second = cache.get(&path).unwrap();
         assert_eq!(first.records.len(), 1);
         // Same allocation — the second call did not re-parse the file.
         assert!(Arc::ptr_eq(&first, &second));
@@ -1315,13 +2094,15 @@ mod tests {
         // A rewrite behind the cache's back is picked up, not served stale.
         let mut next = VectorStore::default();
         next.ensure_model("m");
-        next.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
-        next.upsert_page("b.md", "b", vec![(2, vec![0.0, 1.0])]);
+        next.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        next.upsert_page("b.md", "b", vec![(2, vec![0.0, 1.0])])
+            .unwrap();
         // mtime has second-or-better granularity but is not guaranteed to tick
         // between two writes this close together; the length differs, which the
         // fingerprint also covers.
         next.save(&path).unwrap();
-        assert_eq!(cache.get(&path).records.len(), 2);
+        assert_eq!(cache.get(&path).unwrap().records.len(), 2);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1332,13 +2113,14 @@ mod tests {
         let dir = scratch("cache-empty");
         let path = dir.join("idx.mxv");
         let cache = VectorCache::default();
-        assert!(cache.get(&path).records.is_empty());
+        assert!(cache.get(&path).unwrap().records.is_empty());
 
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
         s.save(&path).unwrap();
-        assert_eq!(cache.get(&path).records.len(), 1);
+        assert_eq!(cache.get(&path).unwrap().records.len(), 1);
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -1348,15 +2130,16 @@ mod tests {
         let path = dir.join("idx.mxv");
         let mut s = VectorStore::default();
         s.ensure_model("m");
-        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
         s.save(&path).unwrap();
 
         let cache = VectorCache::default();
-        cache.put(&path, s);
-        let got = cache.get(&path);
+        cache.put(&path, s).unwrap();
+        let got = cache.get(&path).unwrap();
         assert_eq!(got.records.len(), 1);
         // The adopted entry is fresh, so get() served it rather than re-reading.
-        assert!(Arc::ptr_eq(&got, &cache.get(&path)));
+        assert!(Arc::ptr_eq(&got, &cache.get(&path).unwrap()));
         std::fs::remove_dir_all(&dir).ok();
     }
 }
@@ -1397,7 +2180,7 @@ mod suggestion_scope_tests {
             "ingest-reports/2026-08-01.md",
             "daily/2026-08-10.md",
         ]);
-        let edges = s.centroid_edges(4);
+        let edges = s.centroid_edges(4).unwrap();
         assert!(!edges.is_empty(), "the two wiki pages should still pair up");
         for e in &edges {
             for p in [&e.a, &e.b] {
@@ -1412,7 +2195,7 @@ mod suggestion_scope_tests {
     #[test]
     fn a_vault_of_only_machine_pages_suggests_nothing_rather_than_noise() {
         let s = store_with(&["sessions/a.md", "sessions/b.md", "raw/c.md"]);
-        assert!(s.centroid_edges(4).is_empty());
+        assert!(s.centroid_edges(4).unwrap().is_empty());
     }
 
     #[test]

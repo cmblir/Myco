@@ -4,6 +4,120 @@
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+#[cfg(test)]
+#[path = "vault_scan_tests.rs"]
+pub(crate) mod scan_tests;
+
+#[cfg(test)]
+#[path = "vault_mutation_tests.rs"]
+mod mutation_tests;
+
+#[path = "vault_compiler_pin.rs"]
+mod compiler_pin;
+pub(crate) use compiler_pin::{
+    capture_compiler_initial_file_pin_locked, compiler_prior_from_receipt,
+    open_compiler_pin_directory, read_compiler_prior_file_pin_locked,
+    reopen_compiler_prior_file_pin, write_compiler_file_anchored_locked, CompilerPinDirectory,
+    CompilerPriorFilePin,
+};
+
+#[path = "vault_compiler_retirement.rs"]
+mod compiler_retirement;
+pub(crate) use compiler_retirement::{
+    capture_compiler_retired_file_locked, read_compiler_retired_file_pin_locked,
+    unlink_compiler_retired_file_pin_locked, CompilerRetiredFilePin,
+};
+
+// Cooperating app writers share this lock; external editors and other
+// processes/devices do not. It is not a filesystem-wide transaction.
+static FILE_WRITE_LOCK: Mutex<()> = Mutex::new(());
+
+/// Hold the cooperating writer transaction for checks and filesystem mutation.
+/// Do not call a locking writer or acquire earlier origin/registry locks while held.
+pub(crate) fn lock_file_mutation() -> Result<std::sync::MutexGuard<'static, ()>, String> {
+    FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned".to_string())
+}
+
+/// Normalize a caller root, then recheck it after waiting for the writer lock.
+/// The callback must use unlocked leaves and must not reacquire earlier locks.
+pub(crate) fn with_root_mutation<T>(
+    root: &Path,
+    operation: impl FnOnce(&Path, &std::sync::MutexGuard<'_, ()>) -> Result<T, String>,
+) -> Result<T, String> {
+    with_root_mutation_impl(
+        root,
+        operation,
+        #[cfg(test)]
+        || {},
+    )
+}
+
+pub(crate) fn with_root_mutation_impl<T>(
+    root: &Path,
+    operation: impl FnOnce(&Path, &std::sync::MutexGuard<'_, ()>) -> Result<T, String>,
+    #[cfg(test)] before_lock: impl FnOnce(),
+) -> Result<T, String> {
+    let inspect = || {
+        let metadata = std::fs::symlink_metadata(root)
+            .map_err(|error| format!("inspect mutation vault: {error}"))?;
+        if metadata.file_type().is_symlink() || !metadata.is_dir() {
+            return Err("mutation vault is not a real directory".to_string());
+        }
+        root.canonicalize()
+            .map_err(|error| format!("canonicalize mutation vault: {error}"))
+    };
+    let captured = inspect()?;
+    #[cfg(unix)]
+    let held_root =
+        std::fs::File::open(&captured).map_err(|error| format!("open mutation vault: {error}"))?;
+    #[cfg(test)]
+    before_lock();
+    let guard = lock_file_mutation()?;
+    if inspect()? != captured {
+        return Err("mutation vault changed while waiting for writer".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        let held = held_root
+            .metadata()
+            .map_err(|error| format!("inspect held mutation vault: {error}"))?;
+        let current = std::fs::metadata(&captured)
+            .map_err(|error| format!("reinspect mutation vault: {error}"))?;
+        if held.dev() != current.dev() || held.ino() != current.ino() {
+            return Err("mutation vault identity changed while waiting for writer".into());
+        }
+    }
+    operation(&captured, &guard)
+}
+
+/// Rebase a lexical caller-root alias onto the rechecked canonical root.
+pub(crate) fn confine_mutation_path(
+    root: &Path,
+    requested_root: &Path,
+    path: &str,
+) -> Result<PathBuf, String> {
+    let requested = Path::new(path);
+    let rebased = requested
+        .strip_prefix(requested_root)
+        .map(|relative| root.join(relative))
+        .unwrap_or_else(|_| requested.to_path_buf());
+    confine_delete_path(root, &rebased.to_string_lossy())
+}
+
+#[cfg(test)]
+pub(crate) fn try_lock_file_mutation() -> Result<Option<std::sync::MutexGuard<'static, ()>>, String>
+{
+    match FILE_WRITE_LOCK.try_lock() {
+        Ok(guard) => Ok(Some(guard)),
+        Err(std::sync::TryLockError::WouldBlock) => Ok(None),
+        Err(std::sync::TryLockError::Poisoned(_)) => Err("file write lock poisoned".into()),
+    }
+}
 
 // --- Vault-root confinement -------------------------------------------------
 // The frontend can ask to read/write/delete/rename arbitrary paths over IPC.
@@ -41,38 +155,105 @@ pub fn confine_path(root: &Path, path: &str) -> Result<PathBuf, String> {
     Ok(parent_resolved.join(name))
 }
 
+/// Destructive operations reject links rather than deleting their resolved
+/// targets. Missing final entries remain valid for idempotent batch cleanup.
+pub(crate) fn confine_delete_path(root: &Path, path: &str) -> Result<PathBuf, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("canonicalize vault: {e}"))?;
+    let requested = Path::new(path);
+    let relative = requested
+        .strip_prefix(root)
+        .or_else(|_| requested.strip_prefix(&canonical_root))
+        .map_err(|_| "path is outside the open vault".to_string())?;
+    let mut target = canonical_root;
+    for component in relative.components() {
+        match component {
+            std::path::Component::Normal(name) => target.push(name),
+            std::path::Component::CurDir => continue,
+            _ => return Err("path is outside the open vault".into()),
+        }
+        match std::fs::symlink_metadata(&target) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err("refused: deletion path contains a symbolic link".into());
+            }
+            Ok(_) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("inspect deletion target: {e}")),
+        }
+    }
+    Ok(target)
+}
+
 /// Confine a parent directory (for create_file / create_folder) to `root`.
 pub fn confine_parent(root: &Path, parent: &str) -> Result<PathBuf, String> {
-    let p = Path::new(parent);
-    // An existing parent is canonicalized — that resolves symlinks, so it is the
-    // strongest containment check available.
-    if let Ok(resolved) = p.canonicalize() {
-        if !resolved.starts_with(root) {
-            return Err("parent is outside the open vault".into());
-        }
-        return Ok(resolved);
-    }
-    // A parent that does not exist YET is legitimate: creating the first page of
-    // a vault whose `wiki/` was never made is exactly this case, and the old
-    // unconditional canonicalize turned it into a raw
-    // "canonicalize failed for <path>: No such file or directory" surfacing to
-    // the user (reported when clicking an unresolved [[wikilink]]). Resolve it
-    // lexically against the canonical root instead; `..` is refused outright
-    // rather than normalized, since without an on-disk path there is no
-    // symlink-safe way to prove where it would land.
-    let joined = if p.is_absolute() {
-        p.to_path_buf()
+    let requested = Path::new(parent);
+    let joined = if requested.is_absolute() {
+        requested.to_path_buf()
     } else {
-        root.join(p)
+        root.join(requested)
     };
     if joined
         .components()
-        .any(|c| matches!(c, std::path::Component::ParentDir))
-        || !joined.starts_with(root)
+        .any(|component| matches!(component, std::path::Component::ParentDir))
     {
         return Err("parent is outside the open vault".into());
     }
-    Ok(joined)
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("canonicalize creation vault: {error}"))?;
+    let relative = match joined
+        .strip_prefix(root)
+        .or_else(|_| joined.strip_prefix(&canonical_root))
+    {
+        Ok(relative) => relative.to_path_buf(),
+        Err(_) => {
+            // macOS /var and /private/var may spell the same root. Rebase only
+            // the root alias, then inspect every descendant without following links.
+            let mut relative = None;
+            for ancestor in joined.ancestors() {
+                match ancestor.canonicalize() {
+                    Ok(resolved) if resolved == canonical_root => {
+                        relative = Some(joined.strip_prefix(ancestor).unwrap().to_path_buf());
+                        break;
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(error) => return Err(format!("inspect creation root alias: {error}")),
+                }
+            }
+            relative.ok_or_else(|| "parent is outside the open vault".to_string())?
+        }
+    };
+    let mut confined = canonical_root.clone();
+    for component in relative.components() {
+        match component {
+            std::path::Component::Normal(name) => confined.push(name),
+            std::path::Component::CurDir => continue,
+            _ => return Err("parent is outside the open vault".into()),
+        }
+        match std::fs::symlink_metadata(&confined) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err("refused: creation parent contains a symbolic link".into());
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(format!("parent is not a directory: {}", confined.display()));
+            }
+            Ok(_) => {
+                // Normalize existing directory spelling before raw protection,
+                // including case aliases on case-insensitive filesystems.
+                confined = confined
+                    .canonicalize()
+                    .map_err(|error| format!("canonicalize creation parent: {error}"))?;
+                if !confined.starts_with(&canonical_root) {
+                    return Err("parent is outside the open vault".into());
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("inspect creation parent: {error}")),
+        }
+    }
+    Ok(confined)
 }
 
 // --- Backlink rewriting on rename -------------------------------------------
@@ -86,10 +267,42 @@ pub struct SearchHit {
     pub snippet: String,
 }
 
+/// Top-level entries myco writes and keeps. The same list as MANAGED in
+/// src/lib/vaultAreas.ts — change the two together.
+const MANAGED_TOP: &[&str] = &[
+    "raw",
+    "sessions",
+    "cards",
+    "ingest-reports",
+    "work",
+    "_inbox",
+    "templates",
+    "audio",
+    "CLAUDE.md",
+];
+
+fn is_managed(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root)
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .is_some_and(|top| MANAGED_TOP.iter().any(|m| top.as_os_str() == *m))
+}
+
 /// Case-insensitive full-text search across the vault's .md files. Returns up to
 /// `limit` hits — the first matching line per file — skipping files larger than
-/// 2 MB. Files are visited in sorted order for stable results.
+/// 2 MB. The person's notes are visited before the folders myco keeps, each in
+/// path order: in path order cards/ and sessions/ came before wiki/, so their
+/// hits filled `limit` and the person's notes never showed (UX backlog S15).
 pub fn search_vault(root: &Path, query: &str, limit: usize) -> Vec<SearchHit> {
+    let mut files = Vec::new();
+    collect_md_files(root, &mut files);
+    files.sort();
+    files.sort_by_key(|p| is_managed(root, p)); // stable: path order within
+    first_hits(files, query, limit)
+}
+
+/// The first matching line of each of `files`, in their order, up to `limit`.
+fn first_hits(files: Vec<PathBuf>, query: &str, limit: usize) -> Vec<SearchHit> {
     // NFC both the needle and each line: an NFD-form file (pasted text,
     // synced from a mac path) is invisible to an NFC query without it. The
     // quick-check fast path keeps the per-line cost at a scan for the
@@ -98,10 +311,6 @@ pub fn search_vault(root: &Path, query: &str, limit: usize) -> Vec<SearchHit> {
     if needle.is_empty() || limit == 0 {
         return Vec::new();
     }
-    let mut files = Vec::new();
-    collect_md_files(root, &mut files);
-    files.sort();
-
     let mut hits = Vec::new();
     for path in files {
         if hits.len() >= limit {
@@ -132,6 +341,23 @@ pub fn search_vault(root: &Path, query: &str, limit: usize) -> Vec<SearchHit> {
         }
     }
     hits
+}
+
+/// `search_vault` over one top-level folder of the vault (`wiki`), so
+/// `limit` counts that folder's hits only, in path order — managed is a
+/// top-level notion, so a `wiki/cards/` is still the person's. A folder the
+/// vault's own walk would enter, or nothing: no link, no hidden name, no path.
+pub fn search_folder(root: &Path, folder: &str, query: &str, limit: usize) -> Vec<SearchHit> {
+    let Some((dir, _)) = vault_entries(root)
+        .into_iter()
+        .find(|(e, kind)| kind.is_dir() && e.file_name() == folder)
+    else {
+        return Vec::new();
+    };
+    let mut files = Vec::new();
+    collect_md_files(&dir.path(), &mut files);
+    files.sort();
+    first_hits(files, query, limit)
 }
 
 fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
@@ -187,6 +413,45 @@ pub(crate) fn vault_entries(dir: &Path) -> Vec<(std::fs::DirEntry, std::fs::File
         .collect()
 }
 
+/// Read a complete directory listing with the same hidden/symlink policy.
+/// Callers must not publish a partial tree or infer deletion after an error.
+/// `NotFound` is preserved so an explicitly optional tree can be distinguished
+/// from an unreadable one; the opened vault root itself is never optional.
+pub(crate) fn vault_entries_checked(
+    dir: &Path,
+) -> std::io::Result<Vec<(std::fs::DirEntry, std::fs::FileType)>> {
+    let context = |operation: &str, path: &Path, error: std::io::Error| {
+        std::io::Error::new(
+            error.kind(),
+            format!("{operation} {}: {error}", path.display()),
+        )
+    };
+    let metadata = std::fs::symlink_metadata(dir)
+        .map_err(|error| context("inspect scan directory", dir, error))?;
+    if !metadata.is_dir() || metadata.file_type().is_symlink() {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("scan directory is not a real directory: {}", dir.display()),
+        ));
+    }
+    let entries =
+        std::fs::read_dir(dir).map_err(|error| context("read scan directory", dir, error))?;
+    let mut result = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| context("read scan entry", dir, error))?;
+        if is_hidden(&entry.file_name()) {
+            continue;
+        }
+        let kind = entry
+            .file_type()
+            .map_err(|error| context("inspect scan entry", &entry.path(), error))?;
+        if kind.is_dir() || kind.is_file() {
+            result.push((entry, kind));
+        }
+    }
+    Ok(result)
+}
+
 /// True if `path` lies inside the vault's immutable `raw/` tree.
 ///
 /// `raw/` holds the source documents every wiki page cites. They are read-only
@@ -196,11 +461,41 @@ pub(crate) fn vault_entries(dir: &Path) -> Vec<(std::fs::DirEntry, std::fs::File
 /// its write tools on it too, and a second copy is how the rule gets missed in
 /// a third place.
 pub(crate) fn is_raw_path(root: &Path, path: &Path) -> bool {
-    path.strip_prefix(root)
+    let Some(component) = path
+        .strip_prefix(root)
         .ok()
         .and_then(|rel| rel.components().next())
-        .map(|c| c.as_os_str() == "raw")
-        .unwrap_or(false)
+    else {
+        return false;
+    };
+    if component.as_os_str() == "raw" {
+        return true;
+    }
+    if !component
+        .as_os_str()
+        .to_str()
+        .is_some_and(|name| name.eq_ignore_ascii_case("raw"))
+    {
+        return false;
+    }
+    // An existing RAW directory may be the actual raw namespace on a
+    // case-insensitive volume. Distinct directories on a case-sensitive volume
+    // remain distinct; uncertain case-alias inspection fails closed.
+    match (
+        root.join("raw").canonicalize(),
+        root.join(component.as_os_str()).canonicalize(),
+    ) {
+        (Ok(raw), Ok(candidate)) => raw == candidate,
+        (Err(error), _) | (_, Err(error)) if error.kind() == std::io::ErrorKind::NotFound => false,
+        _ => true,
+    }
+}
+
+/// Structural source mutations must also protect the root containing raw/.
+/// Both paths are canonical and confined. A root destination remains valid
+/// when moving an ordinary note into the top level of the vault.
+pub(crate) fn is_raw_mutation_source(root: &Path, path: &Path) -> bool {
+    path == root || is_raw_path(root, path)
 }
 
 /// Rewrite every inbound `[[wikilink]]` that targets `old_stem` to `new_stem`
@@ -726,6 +1021,16 @@ fn pod_to_json_depth(pod: gray_matter::Pod, depth: usize) -> serde_json::Value {
 }
 
 pub fn create_file(parent: &str, name: &str, content: &str) -> Result<String, String> {
+    let guard = lock_file_mutation()?;
+    create_file_locked(&guard, parent, name, content)
+}
+
+fn create_file_locked(
+    guard: &std::sync::MutexGuard<'_, ()>,
+    parent: &str,
+    name: &str,
+    content: &str,
+) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);
     // Same as create_folder: the parent is vault-confined by the caller and may
@@ -739,11 +1044,55 @@ pub fn create_file(parent: &str, name: &str, content: &str) -> Result<String, St
         return Err(format!("parent is not a directory: {parent}"));
     }
     let target = parent_path.join(name);
-    if target.exists() {
-        return Err(format!("already exists: {}", target.display()));
-    }
-    std::fs::write(&target, content).map_err(|e| format!("create failed: {e}"))?;
+    require_absent_creation_target(&target)?;
+    write_file_if_unchanged_recorded_locked(guard, &target.to_string_lossy(), content, None)?;
     Ok(target.to_string_lossy().into_owned())
+}
+
+pub(crate) fn create_file_checked_at(
+    root: &Path,
+    parent: &str,
+    name: &str,
+    content: &str,
+) -> Result<String, String> {
+    create_file_checked_at_impl(
+        root,
+        parent,
+        name,
+        content,
+        #[cfg(test)]
+        || {},
+    )
+}
+
+fn create_file_checked_at_impl(
+    root: &Path,
+    parent: &str,
+    name: &str,
+    content: &str,
+    #[cfg(test)] before_lock: impl FnOnce(),
+) -> Result<String, String> {
+    validate_name(name)?;
+    with_root_mutation_impl(
+        root,
+        |canonical_root, guard| {
+            let parent = confine_parent(canonical_root, parent)?;
+            if is_raw_path(canonical_root, &parent.join(name)) {
+                return Err("refused: raw/ is immutable".into());
+            }
+            create_file_locked(guard, &parent.to_string_lossy(), name, content)
+        },
+        #[cfg(test)]
+        before_lock,
+    )
+}
+
+fn require_absent_creation_target(target: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(target) {
+        Ok(_) => Err(format!("already exists: {}", target.display())),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(format!("inspect creation target: {error}")),
+    }
 }
 
 // Directories with their own file format — a new file here must NOT get the
@@ -832,6 +1181,15 @@ pub fn scaffold_obsidian_vault(vault: &Path) -> Result<String, String> {
 }
 
 pub fn create_folder(parent: &str, name: &str) -> Result<String, String> {
+    let guard = lock_file_mutation()?;
+    create_folder_locked(&guard, parent, name)
+}
+
+fn create_folder_locked(
+    _guard: &std::sync::MutexGuard<'_, ()>,
+    parent: &str,
+    name: &str,
+) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);
     // The parent is already confined to the vault by `confine_parent`, which now
@@ -846,17 +1204,59 @@ pub fn create_folder(parent: &str, name: &str) -> Result<String, String> {
         return Err(format!("parent is not a directory: {parent}"));
     }
     let target = parent_path.join(name);
-    if target.exists() {
-        return Err(format!("already exists: {}", target.display()));
-    }
+    require_absent_creation_target(&target)?;
     std::fs::create_dir(&target).map_err(|e| format!("mkdir failed: {e}"))?;
     Ok(target.to_string_lossy().into_owned())
+}
+
+pub(crate) fn create_folder_checked_at(
+    root: &Path,
+    parent: &str,
+    name: &str,
+) -> Result<String, String> {
+    create_folder_checked_at_impl(
+        root,
+        parent,
+        name,
+        #[cfg(test)]
+        || {},
+    )
+}
+
+fn create_folder_checked_at_impl(
+    root: &Path,
+    parent: &str,
+    name: &str,
+    #[cfg(test)] before_lock: impl FnOnce(),
+) -> Result<String, String> {
+    validate_name(name)?;
+    with_root_mutation_impl(
+        root,
+        |canonical_root, guard| {
+            let parent = confine_parent(canonical_root, parent)?;
+            let is_raw_scaffold = parent == canonical_root && name == "raw";
+            if is_raw_path(canonical_root, &parent.join(name)) && !is_raw_scaffold {
+                return Err("refused: raw/ is immutable".into());
+            }
+            create_folder_locked(guard, &parent.to_string_lossy(), name)
+        },
+        #[cfg(test)]
+        before_lock,
+    )
 }
 
 /// Move a file or directory to the OS trash (recoverable) instead of
 /// unlinking it. Deliberately NO fallback to a hard delete: if the trash
 /// operation fails we surface the error rather than silently destroying data.
 pub fn delete_path(path: &str) -> Result<(), String> {
+    let guard = lock_file_mutation()?;
+    delete_path_locked(&guard, path)
+}
+
+pub(crate) fn delete_path_locked(
+    _guard: &std::sync::MutexGuard<'_, ()>,
+    path: &str,
+) -> Result<(), String> {
     let target = Path::new(path);
     if !target.exists() {
         return Err(format!("not found: {path}"));
@@ -864,7 +1264,96 @@ pub fn delete_path(path: &str) -> Result<(), String> {
     trash::delete(target).map_err(|e| format!("move to trash failed: {e}"))
 }
 
+/// `delete_path` for many files at once: one trash request for the whole
+/// list (one Finder call on macOS). Same rule: no fallback to a hard delete.
+pub fn trash_all(paths: &[PathBuf]) -> Result<(), String> {
+    let guard = lock_file_mutation()?;
+    trash_all_locked(&guard, paths)
+}
+
+pub(crate) fn trash_all_locked(
+    _guard: &std::sync::MutexGuard<'_, ()>,
+    paths: &[PathBuf],
+) -> Result<(), String> {
+    if paths.is_empty() {
+        return Ok(());
+    }
+    trash::delete_all(paths).map_err(|e| format!("move to trash failed: {e}"))
+}
+
+/// Validate a pre-confined permanent-deletion batch before its first unlink.
+/// A symbolic link inside a directory invalidates the whole batch.
+pub(crate) fn validate_remove_all(paths: &[PathBuf]) -> Result<(), String> {
+    fn validate(target: &Path) -> Result<(), String> {
+        let metadata = std::fs::symlink_metadata(target)
+            .map_err(|e| format!("inspect deletion target {}: {e}", target.display()))?;
+        if metadata.file_type().is_symlink() {
+            return Err("refused: deletion target contains a symbolic link".into());
+        }
+        if metadata.is_dir() {
+            for entry in
+                std::fs::read_dir(target).map_err(|e| format!("inspect deletion directory: {e}"))?
+            {
+                validate(
+                    &entry
+                        .map_err(|e| format!("inspect deletion entry: {e}"))?
+                        .path(),
+                )?;
+            }
+        } else if !metadata.is_file() {
+            return Err("refused: deletion target is not a regular file or directory".into());
+        }
+        Ok(())
+    }
+    for target in paths {
+        validate(target)?;
+    }
+    Ok(())
+}
+
+/// Permanently remove pre-confined entries after validating the complete batch.
+pub(crate) fn remove_all(paths: &[PathBuf]) -> Result<(), String> {
+    let guard = lock_file_mutation()?;
+    remove_all_locked(&guard, paths)
+}
+
+pub(crate) fn remove_all_locked(
+    _guard: &std::sync::MutexGuard<'_, ()>,
+    paths: &[PathBuf],
+) -> Result<(), String> {
+    validate_remove_all(paths)?;
+    for target in paths {
+        let result = if target.is_dir() {
+            std::fs::remove_dir_all(target)
+        } else {
+            std::fs::remove_file(target)
+        };
+        result.map_err(|e| format!("permanent deletion failed for {}: {e}", target.display()))?;
+    }
+    Ok(())
+}
+
 pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
+    let _guard = lock_file_mutation()?;
+    rename_path_unlocked(from, to_name)
+}
+
+/// Recheck confinement and immutable-source protection inside the writer guard.
+pub(crate) fn rename_path_checked_at(
+    root: &Path,
+    from: &str,
+    to_name: &str,
+) -> Result<String, String> {
+    with_root_mutation(root, |canonical_root, _guard| {
+        let source = confine_mutation_path(canonical_root, root, from)?;
+        if is_raw_mutation_source(canonical_root, &source) {
+            return Err("refused: raw/ is immutable — a source cannot be renamed".into());
+        }
+        rename_path_unlocked(&source.to_string_lossy(), to_name)
+    })
+}
+
+fn rename_path_unlocked(from: &str, to_name: &str) -> Result<String, String> {
     validate_name(to_name)?;
     let src = Path::new(from);
     if !src.exists() {
@@ -872,7 +1361,7 @@ pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
     }
     let parent = src.parent().ok_or_else(|| "no parent dir".to_string())?;
     let target = parent.join(to_name);
-    if target.exists() {
+    if path_entry_exists(&target)? {
         return Err(format!("destination exists: {}", target.display()));
     }
     std::fs::rename(src, &target).map_err(|e| format!("rename failed: {e}"))?;
@@ -884,6 +1373,29 @@ pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
 /// paths are canonical (confined by the caller), so starts_with is a real
 /// ancestry test.
 pub fn move_path(from: &str, to_dir: &str) -> Result<String, String> {
+    let _guard = lock_file_mutation()?;
+    move_path_unlocked(from, to_dir)
+}
+
+/// Recheck both move paths while excluding cooperating saves and mutations.
+pub(crate) fn move_path_checked_at(
+    root: &Path,
+    from: &str,
+    to_dir: &str,
+) -> Result<String, String> {
+    with_root_mutation(root, |canonical_root, _guard| {
+        let source = confine_mutation_path(canonical_root, root, from)?;
+        let destination = confine_mutation_path(canonical_root, root, to_dir)?;
+        if is_raw_mutation_source(canonical_root, &source)
+            || is_raw_path(canonical_root, &destination)
+        {
+            return Err("refused: raw/ is immutable — sources cannot be moved in or out".into());
+        }
+        move_path_unlocked(&source.to_string_lossy(), &destination.to_string_lossy())
+    })
+}
+
+fn move_path_unlocked(from: &str, to_dir: &str) -> Result<String, String> {
     let src = Path::new(from);
     if !src.exists() {
         return Err(format!("not found: {from}"));
@@ -899,7 +1411,7 @@ pub fn move_path(from: &str, to_dir: &str) -> Result<String, String> {
         .file_name()
         .ok_or_else(|| format!("no file name in {from}"))?;
     let target = dest.join(name);
-    if target.exists() {
+    if path_entry_exists(&target)? {
         return Err(format!("destination exists: {}", target.display()));
     }
     std::fs::rename(src, &target).map_err(|e| format!("move failed: {e}"))?;
@@ -911,20 +1423,120 @@ pub fn move_path(from: &str, to_dir: &str) -> Result<String, String> {
 ///
 /// raw/ is immutable, so ingesting a second source under a title that already
 /// has a raw file must not overwrite the first — it gets its own original. Same
-/// suffix scheme as the archive path.
+/// suffix scheme as the archive path. A stem an archived copy
+/// (`raw/archive/**`) holds is taken too: citations and `wiki/source-<stem>.md`
+/// name a source by its stem alone, so a second body under it would make
+/// both mean two files.
 pub fn available_raw_path(root: &Path, stem: &str) -> String {
     let raw = root.join("raw");
-    if !raw.join(format!("{stem}.md")).exists() {
+    let mut archived = Vec::new();
+    collect_md_files(&raw.join("archive"), &mut archived);
+    let taken = |s: &str| {
+        raw.join(format!("{s}.md")).exists()
+            || archived
+                .iter()
+                .any(|p| p.file_stem().is_some_and(|f| f == s))
+    };
+    if !taken(stem) {
         return format!("raw/{stem}.md");
     }
     let mut n = 2;
     loop {
-        let name = format!("{stem}-{n}.md");
-        if !raw.join(&name).exists() {
-            return format!("raw/{name}");
+        let name = format!("{stem}-{n}");
+        if !taken(&name) {
+            return format!("raw/{name}.md");
         }
         n += 1;
     }
+}
+
+/// The vault-relative raw/ file whose bytes equal `content`: a top-level
+/// `raw/*.md`, or any `.md` under `raw/archive/` (where distill's archive pass
+/// moves them). None when there is none.
+///
+/// raw/ is immutable, so every copy an ingest writes is permanent. A source
+/// whose model call failed was retried with a fresh `-2`, `-3`, … copy each
+/// time (one session left 19). Ingest asks this first and reuses the hit.
+/// Byte equality is the match, after a length check: no hash to collide, and
+/// a file of any other size is never read.
+pub fn find_raw_copy(root: &Path, content: &str) -> Option<String> {
+    let want = content.as_bytes();
+    let hit = raw_copies(root).into_iter().find(|p| {
+        std::fs::metadata(p).is_ok_and(|m| m.len() == want.len() as u64)
+            && std::fs::read(p).is_ok_and(|b| b == want)
+    })?;
+    let rel = hit.strip_prefix(root).ok()?;
+    Some(rel.to_string_lossy().replace('\\', "/"))
+}
+
+/// Whether another raw/ copy (top level or `raw/archive/**`) has the file
+/// stem of `rel`. Citations (`[^src-<stem>]`) and the summary page
+/// (`wiki/source-<stem>.md`) name a source by stem alone, so ingesting `rel`
+/// would write over the other body's summary. Vaults from before
+/// available_raw_path checked raw/archive/ can hold such pairs; raw/ being
+/// immutable, they stay.
+pub fn raw_stem_shared(root: &Path, rel: &str) -> bool {
+    let me = root.join(rel);
+    let Some(stem) = me.file_stem() else {
+        return false;
+    };
+    raw_copies(root)
+        .iter()
+        .any(|p| *p != me && p.file_stem() == Some(stem))
+}
+
+/// `<!-- myco:source-sha256 <hex> -->` for the file at `path`: names an image
+/// or recording by its bytes. Its description or transcript is model output,
+/// sampled anew on every call, so a retried `_inbox/` picture made a new raw
+/// payload each time and find_raw_copy never matched it: one more permanent
+/// copy per failed pass. Ingest files the first text under this marker and
+/// reads it back from that raw copy on a retry (find_marked_raw_copy).
+pub fn source_marker(path: &Path) -> std::io::Result<String> {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut std::fs::File::open(path)?, &mut hasher)?;
+    Ok(format!(
+        "<!-- myco:source-sha256 {:x} -->",
+        hasher.finalize()
+    ))
+}
+
+/// The whole raw copy (top level or `raw/archive/**`) whose header carries
+/// `marker`. Ingest writes `# <title>\n\n<marker>`, and the title is a file
+/// name, so the marker sits in the first few hundred bytes; only those are
+/// read from the files that do not match.
+pub fn find_marked_raw_copy(root: &Path, marker: &str) -> Option<String> {
+    use std::io::Read;
+    const HEAD: u64 = 1024;
+    raw_copies(root).into_iter().find_map(|p| {
+        let mut head = Vec::new();
+        std::fs::File::open(&p)
+            .ok()?
+            .take(HEAD)
+            .read_to_end(&mut head)
+            .ok()?;
+        String::from_utf8_lossy(&head)
+            .contains(marker)
+            .then(|| std::fs::read_to_string(&p).ok())?
+    })
+}
+
+/// Where ingest's raw copies live: the top-level `raw/*.md` files and every
+/// `.md` under `raw/archive/` (distill's archive pass moves them there).
+fn raw_copies(root: &Path) -> Vec<PathBuf> {
+    let raw = root.join("raw");
+    let mut files: Vec<PathBuf> = vault_entries(&raw)
+        .into_iter()
+        .filter(|(_, kind)| kind.is_file())
+        .map(|(e, _)| e.path())
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .is_some_and(|e| e.eq_ignore_ascii_case("md"))
+        })
+        .collect();
+    collect_md_files(&raw.join("archive"), &mut files);
+    files
 }
 
 /// Move a consumed inbox source into `<its dir>/.archived/`, never delete it.
@@ -935,6 +1547,86 @@ pub fn available_raw_path(root: &Path, stem: &str) -> String {
 /// whose only other copy the ingest was still writing. Collisions get a
 /// `-2`, `-3`, … suffix, same as the daemon.
 pub fn archive_inbox_source(from: &str) -> Result<String, String> {
+    let _guard = lock_file_mutation()?;
+    archive_inbox_source_unlocked(from)
+}
+
+/// Archive only a confined inbox source, optionally bound to its captured bytes.
+/// The SHA check and move share the cooperating writer guard; no raw copy is made.
+pub(crate) fn archive_inbox_source_checked_at(
+    root: &Path,
+    from: &str,
+    expected_sha256: Option<&str>,
+) -> Result<String, String> {
+    archive_inbox_source_checked_impl(
+        root,
+        from,
+        expected_sha256,
+        || Ok(()),
+        #[cfg(test)]
+        || {},
+    )
+}
+
+/// Recheck native processing/publication proof while the same writer guard
+/// protects the final source check and archive. The validator must not acquire
+/// the writer lock again or wait for inference/transport.
+pub(crate) fn archive_inbox_source_checked_with_at(
+    root: &Path,
+    from: &str,
+    expected_sha256: &str,
+    validate: impl FnOnce() -> Result<(), String>,
+) -> Result<String, String> {
+    archive_inbox_source_checked_impl(
+        root,
+        from,
+        Some(expected_sha256),
+        validate,
+        #[cfg(test)]
+        || {},
+    )
+}
+
+fn archive_inbox_source_checked_impl(
+    root: &Path,
+    from: &str,
+    expected_sha256: Option<&str>,
+    validate: impl FnOnce() -> Result<(), String>,
+    #[cfg(test)] before_move: impl FnOnce(),
+) -> Result<String, String> {
+    with_root_mutation(root, |canonical_root, _guard| {
+        let source = confine_mutation_path(canonical_root, root, from)?;
+        if is_raw_path(canonical_root, &source) {
+            return Err("refused: raw/ is immutable — a source cannot be archived".into());
+        }
+        let inbox = canonical_root.join("_inbox");
+        if !source.starts_with(&inbox) {
+            return Err("refused: only _inbox sources can be archived".into());
+        }
+        let parent = source.parent().ok_or("no parent dir")?;
+        let archive =
+            confine_delete_path(canonical_root, &parent.join(".archived").to_string_lossy())?;
+        if !archive.starts_with(&inbox) {
+            return Err("refused: archive destination must stay within _inbox".into());
+        }
+        if let Some(expected) = expected_sha256 {
+            use sha2::{Digest, Sha256};
+            let bytes =
+                std::fs::read(&source).map_err(|error| format!("reread inbox source: {error}"))?;
+            if format!("{:x}", Sha256::digest(bytes)) != expected {
+                return Err(
+                    "inbox source changed while archiving; source was left in place".into(),
+                );
+            }
+        }
+        #[cfg(test)]
+        before_move();
+        validate()?;
+        archive_inbox_source_unlocked(&source.to_string_lossy())
+    })
+}
+
+fn archive_inbox_source_unlocked(from: &str) -> Result<String, String> {
     let src = Path::new(from);
     if !src.is_file() {
         return Err(format!("not a file: {from}"));
@@ -951,7 +1643,7 @@ pub fn archive_inbox_source(from: &str) -> Result<String, String> {
     let ext = src.extension().map(|s| s.to_string_lossy().into_owned());
     let mut dest = archive.join(&name);
     let mut n = 2;
-    while dest.exists() {
+    while path_entry_exists(&dest)? {
         let candidate = match (&stem, &ext) {
             (Some(s), Some(e)) => format!("{s}-{n}.{e}"),
             (Some(s), None) => format!("{s}-{n}"),
@@ -962,6 +1654,14 @@ pub fn archive_inbox_source(from: &str) -> Result<String, String> {
     }
     std::fs::rename(src, &dest).map_err(|e| format!("archive failed: {e}"))?;
     Ok(dest.to_string_lossy().into_owned())
+}
+
+fn path_entry_exists(path: &Path) -> Result<bool, String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(format!("inspect destination {}: {error}", path.display())),
+    }
 }
 
 fn validate_name(name: &str) -> Result<(), String> {
@@ -1036,6 +1736,160 @@ pub fn copy_asset(root: &Path, name: &str, src: &str) -> Result<String, String> 
 }
 
 pub fn write_file(path: &str, content: &str) -> Result<(), String> {
+    let _guard = FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned".to_string())?;
+    atomic_write_file(path, content, true)
+}
+
+/// Replace only the exact bytes read by the caller, or create only if absent.
+/// `Some` is a lowercase SHA256 of UTF-8 source bytes; `None` requires absence,
+/// not an empty file. The caller must enforce vault confinement/raw immutability.
+/// Only cooperating `write_file` calls in this process share this precondition.
+pub fn write_file_if_unchanged(
+    path: &str,
+    content: &str,
+    expected_sha256: Option<&str>,
+) -> Result<(), String> {
+    write_file_if_unchanged_recorded(path, content, expected_sha256).map(|_| ())
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RecordedFileIdentity {
+    device: u64,
+    inode: u64,
+    changed_seconds: i64,
+    changed_nanoseconds: i64,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct RecordedWriteReceipt {
+    pub path: PathBuf,
+    pub revision: String,
+    pub file_identity: Option<RecordedFileIdentity>,
+    pub native_created: bool,
+    // Keeping the persisted handle open prevents inode reuse from restoring
+    // ownership after a path replacement. This capability is never serialized.
+    #[cfg(unix)]
+    file_handle: std::sync::Arc<std::fs::File>,
+    #[cfg(unix)]
+    retained_anchor: Option<std::sync::Arc<compiler_pin::CompilerAnchorLease>>,
+}
+
+fn recorded_identity(metadata: &std::fs::Metadata) -> Option<RecordedFileIdentity> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Some(RecordedFileIdentity {
+            device: metadata.dev(),
+            inode: metadata.ino(),
+            changed_seconds: metadata.ctime(),
+            changed_nanoseconds: metadata.ctime_nsec(),
+        })
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = metadata;
+        None
+    }
+}
+
+/// Return facts from the actual persisted handle while holding the writer lock.
+/// Absence-CAS success alone establishes `native_created`; caller booleans do not.
+pub(crate) fn write_file_if_unchanged_recorded(
+    path: &str,
+    content: &str,
+    expected_sha256: Option<&str>,
+) -> Result<RecordedWriteReceipt, String> {
+    let guard = lock_file_mutation()?;
+    write_file_if_unchanged_recorded_locked(&guard, path, content, expected_sha256)
+}
+
+pub(crate) fn write_file_if_unchanged_recorded_locked(
+    guard: &std::sync::MutexGuard<'_, ()>,
+    path: &str,
+    content: &str,
+    expected_sha256: Option<&str>,
+) -> Result<RecordedWriteReceipt, String> {
+    write_file_if_unchanged_recorded_locked_impl(
+        guard,
+        path,
+        content,
+        expected_sha256,
+        #[cfg(test)]
+        |_| Ok(()),
+    )
+}
+
+pub(crate) fn write_file_if_unchanged_recorded_locked_impl(
+    _guard: &std::sync::MutexGuard<'_, ()>,
+    path: &str,
+    content: &str,
+    expected_sha256: Option<&str>,
+    #[cfg(test)] after_persist: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<RecordedWriteReceipt, String> {
+    use sha2::{Digest, Sha256};
+    if expected_sha256.is_some_and(|hash| {
+        hash.len() != 64
+            || !hash
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }) {
+        return Err("invalid expected SHA256".into());
+    }
+    let current = match std::fs::read(path) {
+        Ok(bytes) => Some(format!("{:x}", Sha256::digest(bytes))),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("read before write failed: {error}")),
+    };
+    if current.as_deref() != expected_sha256 {
+        return Err("write conflict: file changed since it was read".into());
+    }
+    let mut file = atomic_persist_file(path, content, expected_sha256.is_some())?;
+    #[cfg(test)]
+    after_persist(Path::new(path))
+        .map_err(|error| format!("write persisted but receipt checkpoint failed: {error}"))?;
+    use std::io::{Read, Seek, SeekFrom};
+    file.seek(SeekFrom::Start(0))
+        .map_err(|e| format!("write persisted but receipt seek failed: {e}"))?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("write persisted but receipt read failed: {e}"))?;
+    let revision = format!("{:x}", Sha256::digest(&bytes));
+    if revision != format!("{:x}", Sha256::digest(content.as_bytes())) {
+        return Err("write persisted but receipt bytes differ from submitted content".into());
+    }
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("write persisted but receipt metadata failed: {e}"))?;
+    let identity = recorded_identity(&metadata);
+    let named = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("write persisted but receipt target inspection failed: {e}"))?;
+    if named.file_type().is_symlink() || recorded_identity(&named) != identity {
+        return Err("write persisted but target identity changed before receipt".into());
+    }
+    Ok(RecordedWriteReceipt {
+        path: PathBuf::from(path),
+        revision,
+        file_identity: identity,
+        native_created: expected_sha256.is_none(),
+        #[cfg(unix)]
+        file_handle: std::sync::Arc::new(file),
+        #[cfg(unix)]
+        retained_anchor: None,
+    })
+}
+
+fn atomic_write_file(path: &str, content: &str, should_replace: bool) -> Result<(), String> {
+    atomic_persist_file(path, content, should_replace).map(|_| ())
+}
+
+fn atomic_persist_file(
+    path: &str,
+    content: &str,
+    should_replace: bool,
+) -> Result<std::fs::File, String> {
     let target = Path::new(path);
     let parent = target
         .parent()
@@ -1055,8 +1909,18 @@ pub fn write_file(path: &str, content: &str) -> Result<(), String> {
     tmp.as_file_mut()
         .sync_all()
         .map_err(|e| format!("tempfile sync failed: {e}"))?;
-    tmp.persist(target)
-        .map_err(|e| format!("rename failed: {}", e.error))?;
+    let persisted = if should_replace {
+        tmp.persist(target)
+            .map_err(|e| format!("rename failed: {}", e.error))?
+    } else {
+        tmp.persist_noclobber(target).map_err(|e| {
+            if e.error.kind() == std::io::ErrorKind::AlreadyExists {
+                "write conflict: file was created before save".to_string()
+            } else {
+                format!("create persist failed: {}", e.error)
+            }
+        })?
+    };
     // Syncing the file's data is not enough: the rename itself lives in the
     // parent directory, so on a crash the rename can be lost even though the
     // temp file's bytes were flushed. fsync the parent directory to make the
@@ -1067,7 +1931,156 @@ pub fn write_file(path: &str, content: &str) -> Result<(), String> {
         use std::fs::File;
         let _ = File::open(parent).and_then(|d| d.sync_all());
     }
+    Ok(persisted)
+}
+
+/// The caller must already hold the common file writer guard. This preserves
+/// the same identity/hash checks without lock re-entry inside checked archive.
+pub(crate) fn verify_recorded_file_unlocked(receipt: &RecordedWriteReceipt) -> Result<(), String> {
+    #[cfg(unix)]
+    if receipt.retained_anchor.is_some() {
+        return compiler_pin::verify_anchored_receipt(receipt);
+    }
+    use sha2::{Digest, Sha256};
+    let expected_identity = receipt
+        .file_identity
+        .as_ref()
+        .ok_or("native file identity is unsupported on this platform")?;
+    let named = std::fs::symlink_metadata(&receipt.path)
+        .map_err(|e| format!("inspect publication target: {e}"))?;
+    if !named.file_type().is_file() || recorded_identity(&named).as_ref() != Some(expected_identity)
+    {
+        return Err("publication target identity changed".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if named.nlink() != 1 {
+            return Err("publication target has unowned hard links".into());
+        }
+    }
+    use std::io::Read;
+    let mut file =
+        std::fs::File::open(&receipt.path).map_err(|e| format!("open publication target: {e}"))?;
+    let before = file
+        .metadata()
+        .map_err(|e| format!("inspect opened publication: {e}"))?;
+    if recorded_identity(&before).as_ref() != Some(expected_identity) {
+        return Err("opened publication identity changed".into());
+    }
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)
+        .map_err(|e| format!("read publication target: {e}"))?;
+    let after = file
+        .metadata()
+        .map_err(|e| format!("inspect publication after read: {e}"))?;
+    let current = std::fs::symlink_metadata(&receipt.path)
+        .map_err(|e| format!("reinspect publication target: {e}"))?;
+    if format!("{:x}", Sha256::digest(&bytes)) != receipt.revision
+        || recorded_identity(&after).as_ref() != Some(expected_identity)
+        || !current.file_type().is_file()
+        || recorded_identity(&current).as_ref() != Some(expected_identity)
+    {
+        return Err("publication bytes or identity changed".into());
+    }
     Ok(())
+}
+
+/// Verify one native receipt. The caller must separately enforce confinement.
+pub(crate) fn verify_recorded_file(receipt: &RecordedWriteReceipt) -> Result<(), String> {
+    let _guard = FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned")?;
+    verify_recorded_file_unlocked(receipt)
+}
+
+/// Read the file still named by a retained native handle, allowing in-place
+/// human edits. Callers must check confinement and their exact owned section;
+/// this does not establish byte preservation, deletion or restart authority.
+#[cfg(test)]
+pub(crate) fn read_same_native_file(
+    receipt: &RecordedWriteReceipt,
+) -> Result<(String, String), String> {
+    let _guard = FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned")?;
+    #[cfg(unix)]
+    if receipt.retained_anchor.is_some() {
+        return compiler_pin::read_anchored_receipt(receipt);
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = receipt;
+        Err("retained native file identity is unsupported on this platform".into())
+    }
+    #[cfg(unix)]
+    {
+        use sha2::{Digest, Sha256};
+        use std::io::Read;
+        use std::os::unix::fs::MetadataExt;
+        let named = std::fs::symlink_metadata(&receipt.path)
+            .map_err(|error| format!("inspect retained publication target: {error}"))?;
+        let held = receipt
+            .file_handle
+            .metadata()
+            .map_err(|error| format!("inspect retained publication handle: {error}"))?;
+        let same_file = |metadata: &std::fs::Metadata| {
+            metadata.is_file()
+                && metadata.dev() == held.dev()
+                && metadata.ino() == held.ino()
+                && metadata.nlink() == 1
+        };
+        if named.file_type().is_symlink() || !same_file(&named) {
+            return Err("retained publication path identity changed".into());
+        }
+        let mut file = std::fs::File::open(&receipt.path)
+            .map_err(|error| format!("open retained publication: {error}"))?;
+        let before = file
+            .metadata()
+            .map_err(|error| format!("inspect opened retained publication: {error}"))?;
+        if !same_file(&before) || before.len() > 4 * 1024 * 1024 {
+            return Err("retained publication identity or size changed".into());
+        }
+        let mut bytes = Vec::new();
+        (&mut file)
+            .take(4 * 1024 * 1024 + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("read retained publication: {error}"))?;
+        let after = file
+            .metadata()
+            .map_err(|error| format!("inspect retained publication after read: {error}"))?;
+        let current = std::fs::symlink_metadata(&receipt.path)
+            .map_err(|error| format!("reinspect retained publication: {error}"))?;
+        if bytes.len() > 4 * 1024 * 1024
+            || recorded_identity(&before) != recorded_identity(&after)
+            || recorded_identity(&after) != recorded_identity(&current)
+            || !same_file(&after)
+            || !same_file(&current)
+            || current.file_type().is_symlink()
+        {
+            return Err("retained publication changed while being read".into());
+        }
+        let revision = format!("{:x}", Sha256::digest(&bytes));
+        let text = String::from_utf8(bytes).map_err(|_| "retained publication is not UTF-8")?;
+        Ok((text, revision))
+    }
+}
+
+/// Delete only an unchanged file created by the recorded absence-CAS operation.
+/// This lock covers cooperating writers, not arbitrary external filesystem races.
+pub(crate) fn remove_recorded_file(receipt: &RecordedWriteReceipt) -> Result<(), String> {
+    #[cfg(unix)]
+    if receipt.retained_anchor.is_some() {
+        return Err("retained compiler anchor does not grant deletion authority".into());
+    }
+    if !receipt.native_created {
+        return Err("native write receipt does not grant creation undo".into());
+    }
+    let _guard = FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned")?;
+    verify_recorded_file_unlocked(receipt)?;
+    std::fs::remove_file(&receipt.path).map_err(|e| format!("remove recorded publication: {e}"))
 }
 
 pub fn list_files(root: &str) -> Result<Vec<FileNode>, String> {
@@ -1106,7 +2119,8 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
         return Err(format!("not a directory: {root}"));
     }
     let mut entries: Vec<(String, i64, u64)> = Vec::new();
-    collect_revision_entries(&root_path, &root_path, false, &mut entries);
+    collect_revision_entries(&root_path, &root_path, false, &mut entries)
+        .map_err(|error| format!("revision scan failed: {error}"))?;
     // Sort so the hash depends on the vault's content, not on the order the
     // filesystem happened to hand back directory entries.
     entries.sort();
@@ -1119,10 +2133,8 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
     Ok(std::hash::Hasher::finish(&h))
 }
 
-/// Stat-only walk backing `vault_revision`. Best-effort throughout: an
-/// unreadable directory contributes nothing rather than failing the check, for
-/// the same reason the link-graph walk skips one — a fingerprint that errors is
-/// a fingerprint the caller has to fall back from, which defeats the point.
+/// Stat-only walk backing `vault_revision`. Incomplete scans return an error
+/// instead of publishing a fingerprint that implies notes disappeared.
 ///
 /// Two consumers poll this: the link graph, which reads non-staging `.md`
 /// content, and the sidebar tree, which shows every folder (empty ones too) and
@@ -1135,29 +2147,30 @@ fn collect_revision_entries(
     dir: &Path,
     staging: bool,
     out: &mut Vec<(String, i64, u64)>,
-) {
-    for (entry, kind) in vault_entries(dir) {
+) -> std::io::Result<()> {
+    for (entry, kind) in vault_entries_checked(dir)? {
         let path = entry.path();
         let key = path.to_string_lossy().into_owned();
         if kind.is_dir() {
             out.push((key, 0, 0));
             let staging = staging || crate::index::is_staging_dir(root, &path);
-            collect_revision_entries(root, &path, staging, out);
+            collect_revision_entries(root, &path, staging, out)?;
         } else if is_markdown(&path) {
             if staging {
                 out.push((key, 0, 0));
                 continue;
             }
-            let Ok(meta) = entry.metadata() else { continue };
+            let meta = entry.metadata()?;
             let mtime = meta
-                .modified()
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)
                 .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
             out.push((key, mtime, meta.len()));
         }
     }
+    Ok(())
 }
 
 /// Flat (path, mtime_unix_seconds) list for every .md file under root.
@@ -1175,16 +2188,16 @@ pub fn file_mtimes(root: &str) -> Result<Vec<(String, i64)>, String> {
 }
 
 fn collect_mtimes(dir: &Path, out: &mut Vec<(String, i64)>) -> std::io::Result<()> {
-    for (entry, kind) in vault_entries(dir) {
+    for (entry, kind) in vault_entries_checked(dir)? {
         let path = entry.path();
         if kind.is_dir() {
             collect_mtimes(&path, out)?;
         } else if is_markdown(&path) {
             let mtime = entry
-                .metadata()
-                .and_then(|m| m.modified())
+                .metadata()?
+                .modified()?
+                .duration_since(std::time::UNIX_EPOCH)
                 .ok()
-                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
             out.push((path.to_string_lossy().into_owned(), mtime));
@@ -1194,7 +2207,7 @@ fn collect_mtimes(dir: &Path, out: &mut Vec<(String, i64)>) -> std::io::Result<(
 }
 
 fn walk_dir(dir: &Path) -> std::io::Result<Vec<FileNode>> {
-    let mut entries = vault_entries(dir);
+    let mut entries = vault_entries_checked(dir)?;
     entries.sort_by_key(|(e, _)| e.file_name());
 
     let mut nodes = Vec::with_capacity(entries.len());
@@ -1350,8 +2363,52 @@ fn is_markdown(path: &Path) -> bool {
     path.extension().and_then(|s| s.to_str()) == Some("md")
 }
 
+/// `SF_DATALESS` (chflags(2)): the file's bytes live in the cloud, not on
+/// disk. macOS Sonoma+ iCloud Drive with "Optimise Mac Storage" leaves evicted
+/// notes under their own `.md` name with this flag set, and reading one starts
+/// a download (or fails offline).
+const SF_DATALESS: u32 = 0x4000_0000;
+
+pub(crate) fn is_dataless_flags(flags: u32) -> bool {
+    flags & SF_DATALESS != 0
+}
+
+/// Whether a stat says the file is not downloaded. Stat only — never opens the
+/// file, so it cannot trigger the download itself. Other platforms have no
+/// such flag and always answer false.
+pub(crate) fn is_dataless(meta: &std::fs::Metadata) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        use std::os::macos::fs::MetadataExt;
+        is_dataless_flags(meta.st_flags())
+    }
+    #[cfg(target_os = "ios")]
+    {
+        use std::os::ios::fs::MetadataExt;
+        is_dataless_flags(meta.st_flags())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    {
+        let _ = meta;
+        false
+    }
+}
+
+#[cfg(test)]
+#[path = "vault_publication_identity_tests.rs"]
+mod publication_identity_tests;
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dataless_flag_means_not_downloaded() {
+        // SF_DATALESS alone, and among other flags (UF_HIDDEN 0x8000).
+        assert!(super::is_dataless_flags(0x4000_0000));
+        assert!(super::is_dataless_flags(0x4000_8000));
+        assert!(!super::is_dataless_flags(0));
+        assert!(!super::is_dataless_flags(0x8000));
+    }
+
     use super::*;
     use std::env;
     use std::fs;
@@ -1373,6 +2430,67 @@ mod tests {
         let hits = search_vault(dir.path(), "한글 검색", 5);
         assert_eq!(hits.len(), 1);
         assert_eq!(hits[0].line, 1);
+    }
+
+    // UX backlog S15: `limit` fills with the person's notes before the folders
+    // myco keeps — path order put cards/ and sessions/ first, and an owner
+    // vault's 1,428 session logs left no room for wiki/ in ⌘K.
+    #[test]
+    fn search_fills_its_limit_with_my_notes_before_managed_folders() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for (folder, n) in [("cards", 6), ("sessions/2026-09", 15)] {
+            fs::create_dir_all(root.join(folder)).unwrap();
+            for i in 0..n {
+                fs::write(root.join(format!("{folder}/s{i:02}.md")), "attention\n").unwrap();
+            }
+        }
+        for (rel, body) in [
+            ("CLAUDE.md", "attention\n"),
+            ("wiki/my-attention-note.md", "my attention notes\n"),
+            ("daily/2026-10-02.md", "attention today\n"),
+            ("zettel/idea.md", "attention, again\n"),
+        ] {
+            fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
+            fs::write(root.join(rel), body).unwrap();
+        }
+
+        let hits = search_vault(root, "atten", 20);
+        let rels: Vec<String> = hits
+            .iter()
+            .map(|h| {
+                let p = Path::new(&h.path).strip_prefix(root).unwrap();
+                p.to_string_lossy().into_owned()
+            })
+            .collect();
+        assert_eq!(rels.len(), 20);
+        // Mine first, then managed, each in path order.
+        assert_eq!(
+            rels[..5],
+            [
+                "daily/2026-10-02.md",
+                "wiki/my-attention-note.md",
+                "zettel/idea.md",
+                "CLAUDE.md",
+                "cards/s00.md",
+            ]
+        );
+    }
+
+    // A folder search keeps plain path order: a wiki/ subfolder named like a
+    // managed top-level folder is still the person's.
+    #[test]
+    fn search_folder_keeps_path_order_inside_the_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("wiki/cards")).unwrap();
+        fs::write(root.join("wiki/cards/a.md"), "attention\n").unwrap();
+        fs::write(root.join("wiki/zz.md"), "attention\n").unwrap();
+        let names: Vec<String> = search_folder(root, "wiki", "atten", 1)
+            .into_iter()
+            .map(|h| h.name)
+            .collect();
+        assert_eq!(names, ["a.md"]);
     }
 
     #[test]
@@ -1436,6 +2554,20 @@ mod tests {
     }
 
     #[test]
+    fn raw_mutation_sources_include_the_vault_root_but_not_other_notes() {
+        let root = Path::new("/v");
+        assert!(is_raw_mutation_source(root, root));
+        assert!(is_raw_mutation_source(root, Path::new("/v/raw")));
+        assert!(is_raw_mutation_source(
+            root,
+            Path::new("/v/raw/conversations/a.md")
+        ));
+        assert!(!is_raw_mutation_source(root, Path::new("/v/wiki/a.md")));
+        assert!(!is_raw_mutation_source(root, Path::new("/v/_inbox/a.md")));
+        assert!(!is_raw_mutation_source(root, Path::new("/v/rawish/a.md")));
+    }
+
+    #[test]
     fn available_raw_path_suffixes_only_on_collision() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -1452,6 +2584,122 @@ mod tests {
 
         // A different stem is unaffected.
         assert_eq!(available_raw_path(root, "scaling"), "raw/scaling.md");
+    }
+
+    #[test]
+    fn available_raw_path_skips_a_stem_an_archived_copy_holds() {
+        // distill moves raw/t.md to raw/archive/<month>/t.md. A later source
+        // under the same title must not get raw/t.md back: [^src-t] and
+        // wiki/source-t.md would then mean two different bodies.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("raw/archive/2026-08")).unwrap();
+        fs::create_dir_all(root.join("raw/archive/2026-09")).unwrap();
+        fs::write(root.join("raw/archive/2026-09/t.md"), "x").unwrap();
+        assert_eq!(available_raw_path(root, "t"), "raw/t-2.md");
+
+        fs::write(root.join("raw/archive/2026-08/t-2.md"), "x").unwrap();
+        assert_eq!(available_raw_path(root, "t"), "raw/t-3.md");
+
+        // Only an archived markdown copy holds a name.
+        fs::write(root.join("raw/archive/2026-09/u.pdf"), "x").unwrap();
+        assert_eq!(available_raw_path(root, "u"), "raw/u.md");
+    }
+
+    #[test]
+    fn find_raw_copy_matches_the_exact_body_at_top_level_or_in_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert_eq!(find_raw_copy(root, "# t\n\nbody\n"), None, "no raw/ yet");
+
+        fs::create_dir_all(root.join("raw/archive/2026-09")).unwrap();
+        fs::create_dir_all(root.join("raw/conversations")).unwrap();
+        fs::write(root.join("raw/top.md"), "# t\n\nbody\n").unwrap();
+        fs::write(root.join("raw/archive/2026-09/old.md"), "# o\n\nolder\n").unwrap();
+        // Outside the two places a raw copy lives, and not markdown.
+        fs::write(root.join("raw/conversations/c.md"), "# c\n\nelsewhere\n").unwrap();
+        fs::write(root.join("raw/archive/2026-09/doc.pdf"), "# p\n\npdf\n").unwrap();
+
+        assert_eq!(
+            find_raw_copy(root, "# t\n\nbody\n").as_deref(),
+            Some("raw/top.md")
+        );
+        assert_eq!(
+            find_raw_copy(root, "# o\n\nolder\n").as_deref(),
+            Some("raw/archive/2026-09/old.md")
+        );
+        // Same length, one byte different; a prefix; a trailing newline less.
+        assert_eq!(find_raw_copy(root, "# t\n\nbodY\n"), None);
+        assert_eq!(find_raw_copy(root, "# t\n\nbody"), None);
+        assert_eq!(find_raw_copy(root, "# c\n\nelsewhere\n"), None);
+        assert_eq!(find_raw_copy(root, "# p\n\npdf\n"), None);
+    }
+
+    #[test]
+    fn raw_stem_shared_sees_another_raw_copy_under_the_same_name() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("raw/archive/2026-08")).unwrap();
+        fs::create_dir_all(root.join("raw/archive/2026-09")).unwrap();
+        fs::create_dir_all(root.join("raw/conversations")).unwrap();
+        fs::write(root.join("raw/archive/2026-09/t.md"), "alpha").unwrap();
+        fs::write(root.join("raw/archive/2026-09/u.md"), "solo").unwrap();
+        fs::write(root.join("raw/archive/2026-08/w.md"), "w one").unwrap();
+        fs::write(root.join("raw/archive/2026-09/w.md"), "w two").unwrap();
+        fs::write(root.join("raw/t.md"), "beta").unwrap();
+        // Not where raw copies live, or not markdown: no clash.
+        fs::write(root.join("raw/conversations/u.md"), "c").unwrap();
+        fs::write(root.join("raw/u.pdf"), "p").unwrap();
+
+        assert!(raw_stem_shared(root, "raw/archive/2026-09/t.md"));
+        assert!(raw_stem_shared(root, "raw/t.md"));
+        assert!(raw_stem_shared(root, "raw/archive/2026-08/w.md"));
+        assert!(!raw_stem_shared(root, "raw/archive/2026-09/u.md"));
+    }
+
+    #[test]
+    fn a_marked_raw_copy_is_found_by_its_original_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("_inbox")).unwrap();
+        fs::write(root.join("_inbox/shot.png"), b"abc").unwrap();
+        fs::write(root.join("_inbox/copy.png"), b"abc").unwrap();
+        fs::write(root.join("_inbox/other.png"), b"abd").unwrap();
+        let marker = source_marker(&root.join("_inbox/shot.png")).unwrap();
+        // The SHA-256 of the bytes (the FIPS 180-2 "abc" vector), pinned: the
+        // marker is written into immutable raw/ and must keep matching. The
+        // same picture under another name has the same marker.
+        assert_eq!(
+            marker,
+            "<!-- myco:source-sha256 \
+             ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad -->"
+        );
+        assert_eq!(
+            source_marker(&root.join("_inbox/copy.png")).unwrap(),
+            marker
+        );
+        assert_ne!(
+            source_marker(&root.join("_inbox/other.png")).unwrap(),
+            marker
+        );
+        assert!(source_marker(&root.join("_inbox/gone.png")).is_err());
+
+        assert_eq!(find_marked_raw_copy(root, &marker), None, "no raw/ yet");
+        fs::create_dir_all(root.join("raw/archive/2026-09")).unwrap();
+        fs::create_dir_all(root.join("raw/conversations")).unwrap();
+        let copy = format!("# shot\n\n{marker}\n\nA chart of sales.\n");
+        fs::write(root.join("raw/archive/2026-09/shot.md"), &copy).unwrap();
+        fs::write(root.join("raw/plain.md"), "# plain\n\nno marker\n").unwrap();
+        fs::write(root.join("raw/conversations/c.md"), &copy).unwrap();
+        assert_eq!(
+            find_marked_raw_copy(root, &marker).as_deref(),
+            Some(copy.as_str())
+        );
+        // A marker deep in a body is not a raw copy's header.
+        let deep = format!("# d\n\n{}{marker}\n", "x".repeat(8 * 1024));
+        fs::write(root.join("raw/deep.md"), deep).unwrap();
+        fs::remove_file(root.join("raw/archive/2026-09/shot.md")).unwrap();
+        assert_eq!(find_marked_raw_copy(root, &marker), None);
     }
 
     #[test]
@@ -1678,28 +2926,22 @@ mod tests {
         fs::remove_dir_all(&dir).ok();
     }
 
+    #[cfg(unix)]
     #[test]
-    fn vault_revision_survives_an_unreadable_subdir() {
-        // A fingerprint that errors is one the caller must fall back from,
-        // which defeats its purpose.
+    fn vault_revision_rejects_an_unreadable_subdir_and_recovers() {
+        // A partial fingerprint would make intact notes look removed.
         let dir = temp_vault("revision-locked");
         fs::create_dir_all(dir.join("wiki")).unwrap();
         fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
         let locked = dir.join("locked");
         fs::create_dir_all(&locked).unwrap();
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
-        }
+        let revision = vault_revision(dir.to_str().unwrap()).unwrap();
+        let denied = scan_tests::DeniedDirectory::new(&locked);
         let got = vault_revision(dir.to_str().unwrap());
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).ok();
-        }
-        assert!(got.is_ok(), "an unlistable subdir must not fail the check");
-        fs::remove_dir_all(&dir).ok();
+        drop(denied);
+        assert!(got.is_err(), "an incomplete scan must fail the check");
+        assert_eq!(vault_revision(dir.to_str().unwrap()).unwrap(), revision);
+        fs::remove_dir_all(&dir).unwrap();
     }
 
     /// The confinement promise is that nothing outside the open vault is read or
@@ -1914,6 +3156,51 @@ mod tests {
         assert_eq!(search_vault(&root, "transformer", 1).len(), 1);
     }
 
+    /// A plugin's search sees wiki/ pages only: the limit has to count those,
+    /// not the daily/ and raw/ files that sort before wiki/ and match too.
+    #[test]
+    fn search_folder_counts_only_that_folders_hits() {
+        let dir = temp_vault("search-folder");
+        let root = dir.canonicalize().unwrap();
+        for sub in ["daily", "raw", "wiki/deep"] {
+            fs::create_dir_all(dir.join(sub)).unwrap();
+        }
+        for i in 1..=5 {
+            fs::write(dir.join(format!("daily/2026-09-0{i}.md")), "attention").unwrap();
+        }
+        fs::write(dir.join("raw/paper.md"), "attention").unwrap();
+        fs::write(dir.join("wiki/a.md"), "attention").unwrap();
+        fs::write(dir.join("wiki/deep/b.md"), "attention").unwrap();
+
+        let hits = search_folder(&root, "wiki", "attention", 2);
+        let paths: Vec<_> = hits.iter().map(|h| h.path.clone()).collect();
+        assert_eq!(
+            paths,
+            [
+                root.join("wiki/a.md").to_string_lossy(),
+                root.join("wiki/deep/b.md").to_string_lossy(),
+            ]
+        );
+        // Only a folder of the vault itself: nothing for a missing one, a
+        // path, a hidden name or the parent.
+        for f in ["notes", "wiki/deep", "..", ".", ""] {
+            assert!(search_folder(&root, f, "attention", 5).is_empty(), "{f}");
+        }
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn search_folder_does_not_follow_a_linked_folder() {
+        let dir = temp_vault("search-folder-link");
+        let root = dir.canonicalize().unwrap();
+        fs::create_dir_all(dir.join("raw")).unwrap();
+        fs::write(dir.join("raw/paper.md"), "attention").unwrap();
+        std::os::unix::fs::symlink(dir.join("raw"), dir.join("wiki")).unwrap();
+        assert!(search_folder(&root, "wiki", "attention", 5).is_empty());
+        fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn confine_parent_rejects_outside_root() {
         let dir = temp_vault("confine-parent");
@@ -2039,6 +3326,127 @@ mod tests {
         assert_eq!(fs::read_to_string(&p).unwrap(), "fresh");
     }
 
+    fn write_test_sha256(content: &str) -> String {
+        use sha2::{Digest, Sha256};
+        format!("{:x}", Sha256::digest(content.as_bytes()))
+    }
+
+    #[test]
+    fn conditional_write_matches_exact_utf8_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.md");
+        let original = "---\ntitle: Synthetic\n---\n# 기록\n사용자 편집\n";
+        write_file(path.to_str().unwrap(), original).unwrap();
+        let appended = format!("{original}\nQuoted evidence\n");
+        write_file_if_unchanged(
+            path.to_str().unwrap(),
+            &appended,
+            Some(&write_test_sha256(original)),
+        )
+        .unwrap();
+        assert_eq!(fs::read_to_string(path).unwrap(), appended);
+    }
+
+    #[test]
+    fn conditional_write_refuses_a_newer_normal_writer_edit() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.md");
+        write_file(path.to_str().unwrap(), "old text").unwrap();
+        let expected = write_test_sha256("old text");
+        write_file(path.to_str().unwrap(), "new user text").unwrap();
+        let error =
+            write_file_if_unchanged(path.to_str().unwrap(), "stale append", Some(&expected))
+                .unwrap_err();
+        assert!(error.starts_with("write conflict:"), "{error}");
+        assert_eq!(fs::read_to_string(path).unwrap(), "new user text");
+    }
+
+    #[test]
+    fn conditional_write_distinguishes_absence_from_an_empty_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.md");
+        let path = path.to_str().unwrap();
+        let empty_hash = write_test_sha256("");
+        assert!(write_file_if_unchanged(path, "stale", Some(&empty_hash))
+            .unwrap_err()
+            .starts_with("write conflict:"));
+        assert!(!Path::new(path).exists());
+        write_file_if_unchanged(path, "", None).unwrap();
+        assert!(write_file_if_unchanged(path, "collision", None)
+            .unwrap_err()
+            .starts_with("write conflict:"));
+        write_file_if_unchanged(path, "appended", Some(&empty_hash)).unwrap();
+        assert_eq!(fs::read_to_string(path).unwrap(), "appended");
+    }
+
+    #[test]
+    fn absent_commit_does_not_clobber_an_external_creator() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("source.md");
+        assert!(!path.exists());
+        // Model an uncooperating creator after the absence check but before
+        // the staged file is persisted. No process lock can protect this gap.
+        fs::write(&path, "external original").unwrap();
+        let error = atomic_write_file(path.to_str().unwrap(), "stale source", false).unwrap_err();
+        assert!(error.starts_with("write conflict:"), "{error}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "external original");
+        assert_eq!(fs::read_dir(dir.path()).unwrap().count(), 1);
+    }
+
+    #[test]
+    fn conditional_write_rejects_invalid_hashes_and_read_errors() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.md");
+        write_file(path.to_str().unwrap(), "keep").unwrap();
+        for hash in ["", "1234", &"g".repeat(64), &"A".repeat(64)] {
+            assert_eq!(
+                write_file_if_unchanged(path.to_str().unwrap(), "lost", Some(hash)).unwrap_err(),
+                "invalid expected SHA256"
+            );
+        }
+        assert_eq!(fs::read_to_string(path).unwrap(), "keep");
+        let error =
+            write_file_if_unchanged(dir.path().to_str().unwrap(), "lost", None).unwrap_err();
+        assert!(error.starts_with("read before write failed:"), "{error}");
+        assert!(dir.path().is_dir());
+    }
+
+    #[test]
+    fn conditional_writers_with_one_revision_have_one_winner() {
+        use std::sync::{Arc, Barrier};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("derived.md");
+        write_file(path.to_str().unwrap(), "original").unwrap();
+        let barrier = Arc::new(Barrier::new(8));
+        let writers: Vec<_> = (0..8)
+            .map(|number| {
+                let barrier = barrier.clone();
+                let path = path.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    match write_file_if_unchanged(
+                        path.to_str().unwrap(),
+                        &format!("writer {number}"),
+                        Some(&write_test_sha256("original")),
+                    ) {
+                        Ok(()) => true,
+                        Err(error) => {
+                            assert!(error.starts_with("write conflict:"), "{error}");
+                            false
+                        }
+                    }
+                })
+            })
+            .collect();
+        let winners = writers
+            .into_iter()
+            .map(|writer| writer.join().unwrap())
+            .filter(|won| *won)
+            .count();
+        assert_eq!(winners, 1);
+        assert!(fs::read_to_string(path).unwrap().starts_with("writer "));
+    }
+
     #[test]
     fn write_asset_creates_dir_and_suffixes_collisions() {
         let dir = tempfile::tempdir().unwrap();
@@ -2132,6 +3540,43 @@ mod tests {
     }
 
     #[test]
+    fn concurrent_file_creators_preserve_the_only_winners_content() {
+        use std::sync::{Arc, Barrier};
+        let dir = tempfile::tempdir().unwrap();
+        let barrier = Arc::new(Barrier::new(8));
+        let writers: Vec<_> = (0..8)
+            .map(|number| {
+                let parent = dir.path().to_path_buf();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let content = format!("source {number}");
+                    barrier.wait();
+                    match create_file(parent.to_str().unwrap(), "source.md", &content) {
+                        Ok(_) => Some(content),
+                        Err(error) => {
+                            assert!(
+                                error.starts_with("already exists:")
+                                    || error.starts_with("write conflict:"),
+                                "{error}"
+                            );
+                            None
+                        }
+                    }
+                })
+            })
+            .collect();
+        let winners: Vec<_> = writers
+            .into_iter()
+            .filter_map(|writer| writer.join().unwrap())
+            .collect();
+        assert_eq!(winners.len(), 1);
+        assert_eq!(
+            fs::read_to_string(dir.path().join("source.md")).unwrap(),
+            winners[0]
+        );
+    }
+
+    #[test]
     fn should_seed_frontmatter_covers_knowledge_pages_only() {
         let root = Path::new("/v");
         // Knowledge pages: wiki/, subfolders, the vault root, a user folder.
@@ -2197,6 +3642,51 @@ mod tests {
         assert!(!sub.exists());
         // A path that no longer exists must error, not silently succeed.
         assert!(delete_path(f.to_str().unwrap()).is_err());
+    }
+
+    #[test]
+    fn permanent_delete_removes_files_and_directories_and_prevalidates_the_batch() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("synthetic.md");
+        fs::write(&file, "synthetic note").unwrap();
+        let missing = dir.path().join("missing.md");
+        assert!(remove_all(&[file.clone(), missing]).is_err());
+        assert!(
+            file.exists(),
+            "a later invalid target must preserve earlier files"
+        );
+        let folder = dir.path().join("notes");
+        fs::create_dir_all(folder.join("nested")).unwrap();
+        fs::write(folder.join("nested/note.md"), "synthetic note").unwrap();
+        remove_all(&[file.clone(), folder.clone()]).unwrap();
+        assert!(!file.exists());
+        assert!(!folder.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permanent_delete_refuses_symlinks_and_preserves_the_whole_batch() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let retained = outside.path().join("retained.md");
+        fs::write(&retained, "synthetic retained note").unwrap();
+        let good = root.join("good.md");
+        fs::write(&good, "synthetic note").unwrap();
+        let folder = root.join("folder");
+        fs::create_dir(&folder).unwrap();
+        std::os::unix::fs::symlink(&retained, folder.join("linked.md")).unwrap();
+        assert!(remove_all(&[good.clone(), folder.clone()]).is_err());
+        assert!(good.exists());
+        assert!(retained.exists());
+        assert!(confine_delete_path(&root, &folder.join("linked.md").to_string_lossy()).is_err());
+        std::os::unix::fs::symlink(outside.path(), root.join("linked-dir")).unwrap();
+        assert!(confine_delete_path(
+            &root,
+            &root.join("linked-dir/retained.md").to_string_lossy()
+        )
+        .is_err());
+        assert!(confine_delete_path(&root, &root.join("../outside.md").to_string_lossy()).is_err());
     }
 
     #[test]

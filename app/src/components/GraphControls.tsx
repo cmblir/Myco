@@ -5,8 +5,10 @@
 // so the ~30 fine controls never overwhelm the first glance. Each slider/toggle
 // mutates the live settings object; the parent re-runs the layout and restyles.
 
-import type { JSX } from "react";
-import { useState } from "react";
+import type { JSX, KeyboardEvent as ReactKeyboardEvent } from "react";
+import { useId, useState } from "react";
+import { isComposingKey } from "../lib/ime";
+import Slider from "./GraphSlider";
 import {
   LAYOUT_PRESETS,
   MYCELIUM_BG_PRESETS,
@@ -14,6 +16,7 @@ import {
   loadSavedLooks,
   matchMyceliumBg,
   matchPreset,
+  matchVibe,
   saveLook,
   VIBE_PRESETS,
   type GraphSettings,
@@ -23,12 +26,17 @@ import {
   type VibeKey,
 } from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
+import { GRAPH_LOOK_COPY } from "../lib/graphLookCopy";
+import { skinAmbience } from "../lib/graphSkins";
+import { useUIStore } from "../stores/uiStore";
+import "../styles/graph-look-controls.css";
 
 interface Props {
   t: Strings;
   open: boolean;
   onToggle: () => void;
   settings: GraphSettings;
+  lightBackground?: boolean;
   onChange: (next: Partial<GraphSettings>) => void;
   onReset: () => void;
   tags: string[];
@@ -41,11 +49,59 @@ interface Props {
   onFlyMode: (on: boolean) => void;
 }
 
-// The eight one-tap looks, each with a one-line "what you get" so a first-time
+/**
+ * A key pressed inside the drawer. Esc closes it, unless it ends an IME
+ * composition, which belongs to the input method. Local controls must not
+ * trigger the graph's flight/focus shortcuts, so every unmodified key stays
+ * inside (the page's own Esc skips inputs, so it could never close the drawer
+ * from its sliders and fields). Modifier shortcuts still reach the app.
+ */
+export function drawerKey(
+  event: Pick<
+    ReactKeyboardEvent,
+    "key" | "metaKey" | "ctrlKey" | "altKey" | "stopPropagation" | "nativeEvent"
+  >,
+  close: () => void,
+): void {
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  event.stopPropagation();
+  if (event.key === "Escape" && !isComposingKey(event)) close();
+}
+
+/** Controls supported by the active renderer and background. */
+export function graphControlSupport(settings: GraphSettings, lightBackground = false) {
+  const mycelium = settings.skin === "mycelium";
+  // Terrain and City draw lit solids of their own; Woven is drawn by the
+  // shared scene, so it takes every control the galaxy looks do.
+  const composition = ["terrain", "city"].includes(settings.layout);
+  const isLight = lightBackground || settings.skin === "white";
+  const flat = ["atlas", "synapse", "strata"].includes(settings.layout);
+  const forces = !mycelium && ["galaxy", "synapse3d"].includes(settings.layout);
+  const sigma = settings.skin === "sigma";
+  return {
+    mycelium,
+    composition,
+    // Woven's strands are its bundles; the bundle arcs would double them.
+    bundles: settings.layout !== "ribbon",
+    forces,
+    sky: !mycelium && !composition && skinAmbience(settings.skin, !isLight).starfield,
+    glow: !mycelium && !composition && !sigma && !isLight,
+    pixels: !mycelium && !composition && !sigma,
+    flow: !mycelium && !composition && !sigma && !settings.arrows,
+    // The events draw only their own FX (no note moves), so every 3D look takes them.
+    cosmic: !mycelium && !composition && !flat && !sigma && !isLight,
+    planets: !mycelium && !composition && !flat && !sigma && settings.skin !== "web" && !isLight,
+    fly: !mycelium && !composition && !flat,
+    ambient: !mycelium || settings.myceliumDim === "3d",
+  };
+}
+
+// The one-tap looks, each with a one-line "what you get" so a first-time
 // user can choose by outcome, not by decoding skin+layout jargon.
-function vibeMeta(t: Strings): { key: VibeKey; label: string; desc: string }[] {
+function vibeMeta(t: Strings, copy: typeof GRAPH_LOOK_COPY.en): { key: VibeKey; label: string; desc: string }[] {
   return [
-    { key: "living", label: t.gr_vibe_living ?? "Living galaxy", desc: t.gr_vibe_living_desc ?? "The default — a glowing, breathing star map" },
+    { key: "default", label: t.gr_vibe_living, desc: t.gr_vibe_living_desc },
+    { key: "living", label: copy.galaxy, desc: copy.galaxyHint },
     { key: "sigma", label: t.gr_vibe_sigma ?? "Sigma board", desc: t.gr_vibe_sigma_desc ?? "Vivid Gephi hairball on a clean charcoal board" },
     { key: "cosmicweb", label: t.gr_vibe_cosmicweb ?? "Cosmic web", desc: t.gr_vibe_cosmicweb_desc ?? "Dark-matter filaments; the links are the picture" },
     { key: "neural", label: t.gr_vibe_neural ?? "Neural", desc: t.gr_vibe_neural_desc ?? "A firing nervous system in the void" },
@@ -55,6 +111,7 @@ function vibeMeta(t: Strings): { key: VibeKey; label: string; desc: string }[] {
     { key: "nebula", label: t.gr_vibe_nebula ?? "Meaning nebula", desc: t.gr_vibe_nebula_desc ?? "Notes clustered by meaning (embeddings)" },
     { key: "walrus", label: t.gr_vibe_walrus ?? "Walrus tree", desc: t.gr_vibe_walrus_desc ?? "A hyperbolic spanning tree in a sphere (CAIDA Walrus)" },
     { key: "mycelium", label: t.gr_vibe_mycelium ?? "Mycelium", desc: t.gr_vibe_mycelium_desc ?? "A grown fungal mat, with the notes hung on it" },
+    { key: "ribbon", label: copy.ribbon, desc: copy.ribbonHint },
   ];
 }
 
@@ -63,6 +120,7 @@ export default function GraphControls({
   open,
   onToggle,
   settings,
+  lightBackground,
   onChange,
   onReset,
   tags,
@@ -73,7 +131,9 @@ export default function GraphControls({
   onTraceMode,
   flyMode,
   onFlyMode,
-}: Props): JSX.Element {
+}: Props): JSX.Element | null {
+  const lang = useUIStore((state) => state.lang);
+  const copy = GRAPH_LOOK_COPY[lang];
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     // The look picker leads; Filters is common enough to sit open. The detail
     // groups start collapsed so the panel opens calm, not as a wall of controls.
@@ -102,26 +162,9 @@ export default function GraphControls({
     setLookName("");
   };
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        className="graph-drawer-toggle graph-drawer-toggle--closed"
-        onClick={onToggle}
-        title={t.gr_settings ?? "Graph settings"}
-        aria-label={t.gr_settings ?? "Graph settings"}
-      >
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-          <path
-            d="M4 6h16M4 12h10M4 18h16"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-          />
-        </svg>
-      </button>
-    );
-  }
+  // Closed, the drawer leaves nothing in the canvas: the More menu's item
+  // opens it (a second toggle here was a duplicate Tab stop).
+  if (!open) return null;
 
   const activeVibe = (key: VibeKey): boolean =>
     settings.skin === VIBE_PRESETS[key].skin &&
@@ -132,10 +175,18 @@ export default function GraphControls({
   // than leave them visibly deadened (see MyceliumView/myceliumScene.ts for
   // what's actually wired: node size, link thickness, text fade, ambient
   // motion, and mat/branch density via the Forces sliders below).
-  const isMycelium = settings.skin === "mycelium";
+  const support = graphControlSupport(settings, lightBackground);
+  const isMycelium = support.mycelium;
+  const looks = vibeMeta(t, copy);
+  const currentLook = looks.find(({ key }) => activeVibe(key));
+  const isAdjusted = !!currentLook && matchVibe(settings) !== currentLook.key;
 
   return (
-    <aside className="graph-drawer" aria-label={t.gr_settings ?? "Graph settings"}>
+    <aside
+      className="graph-drawer"
+      aria-label={t.gr_settings ?? "Graph settings"}
+      onKeyDown={(event) => drawerKey(event, onToggle)}
+    >
       <header className="graph-drawer__head">
         <span className="graph-drawer__title">
           {t.gr_settings ?? "Graph settings"}
@@ -167,7 +218,7 @@ export default function GraphControls({
         onToggle={() => toggle("looks")}
       >
         <div className="graph-vibes" role="group" aria-label={t.gr_vibes ?? "One-tap looks"}>
-          {vibeMeta(t).map(({ key, label, desc }) => {
+          {looks.map(({ key, label, desc }) => {
             const active = activeVibe(key);
             return (
               <button
@@ -183,6 +234,17 @@ export default function GraphControls({
             );
           })}
         </div>
+
+        {currentLook && isAdjusted ? (
+          <div className="graph-field" data-look-adjusted={currentLook.key}>
+            <span className="graph-field__label" role="status">
+              {currentLook.label} · {copy.adjusted}
+            </span>
+            <button type="button" className="graph-recommend graph-look-restore" onClick={() => onChange(VIBE_PRESETS[currentLook.key])}>
+              {copy.restore}
+            </button>
+          </div>
+        ) : null}
 
         {/* Saved looks: the user's own tuned configurations, one tap to recall. */}
         <div className="graph-field">
@@ -251,6 +313,30 @@ export default function GraphControls({
           value={settings.multiverse}
           onChange={(v) => onChange({ multiverse: v })}
         />
+
+        {/* The rails beside the stage — the same folds as their chevrons and [ ]. */}
+        <div className="graph-field">
+          <span className="graph-field__label">{t.gr_panels}</span>
+          <div className="graph-chips">
+            {([
+              ["gaps", t.gr_gaps_title, settings.gapsRailOpen],
+              ["legend", t.gr_legend, settings.legendRailOpen],
+            ] as const).map(([rail, label, isOpen]) => (
+              <button
+                key={rail}
+                type="button"
+                className={`graph-chip${isOpen ? " graph-chip--active" : ""}`}
+                aria-pressed={isOpen}
+                data-panel={rail}
+                onClick={() =>
+                  onChange(rail === "gaps" ? { gapsRailOpen: !isOpen } : { legendRailOpen: !isOpen })
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
       </Section>
 
       {/* ── Filters ── */}
@@ -374,6 +460,7 @@ export default function GraphControls({
             ["radial", t.gr_layout_radial ?? "Radial orbit"],
             ["walrus", t.gr_layout_walrus ?? "Walrus tree"],
             ["mycelium", t.gr_layout_mycelium ?? "Mycelium mat"],
+            ["ribbon", copy.ribbon],
           ]}
         />
         <ChipRow
@@ -386,7 +473,7 @@ export default function GraphControls({
             ["strata", t.gr_layout_strata ?? "Chronicle"],
           ]}
         />
-        {!isMycelium ? (
+        {support.forces ? (
           <Toggle
             label={t.gr_galaxies ?? "Folder galaxies"}
             hint={
@@ -452,7 +539,10 @@ export default function GraphControls({
         open={openSections.appearance}
         onToggle={() => toggle("appearance")}
       >
-        <ChipRow
+        <p className="graph-toggle__hint">
+          {support.composition ? copy.compositionHint : isMycelium ? copy.myceliumHint : support.glow ? copy.spaceHint : copy.paperHint}
+        </p>
+        {!support.composition ? <ChipRow
           label={t.gr_skin ?? "Color mode"}
           value={settings.skin}
           onPick={(v) => onChange({ skin: v })}
@@ -465,10 +555,10 @@ export default function GraphControls({
             ["sigma", t.gr_skin_sigma ?? "Sigma"],
             ["mycelium", t.gr_skin_mycelium ?? "Mycelium"],
           ]}
-        />
-        {!isMycelium ? (
+        /> : null}
+        {!isMycelium && !support.composition ? (
           <>
-            <ChipRow
+            {support.sky ? <ChipRow
               label={t.gr_sky ?? "Sky"}
               value={settings.skyStyle}
               onPick={(v) => onChange({ skyStyle: v })}
@@ -478,7 +568,7 @@ export default function GraphControls({
                 ["grid", t.gr_sky_grid ?? "Grid"],
                 ["void", t.gr_sky_void ?? "Void"],
               ]}
-            />
+            /> : null}
             <ChipRow
               label={t.gr_node_color ?? "Node colour"}
               value={settings.nodeColor}
@@ -521,6 +611,7 @@ export default function GraphControls({
         ) : null}
         <Slider
           label={t.gr_node_size ?? "Node size"}
+          hint={copy.nodeSizeHint}
           value={settings.nodeSize}
           min={0.5}
           max={3}
@@ -529,31 +620,36 @@ export default function GraphControls({
         />
         <Slider
           label={t.gr_link_thickness ?? "Link thickness"}
+          hint={copy.linkThicknessHint}
           value={settings.linkThickness}
           min={0.3}
           max={3}
           step={0.05}
           onChange={(v) => onChange({ linkThickness: v })}
         />
-        {!isMycelium ? (
+        {support.glow ? (
+          <>
           <Slider
             label={t.gr_glow ?? "Glow"}
+            hint={copy.glowHint}
             value={settings.brightness}
             min={0.4}
             max={1.6}
             step={0.05}
             onChange={(v) => onChange({ brightness: v })}
           />
+          </>
         ) : null}
         <Slider
-          label={t.gr_text_fade ?? "Text fade threshold"}
+          label={copy.noteLabels}
+          hint={copy.noteLabelsHint}
           value={settings.textFadeThreshold}
           min={0.1}
           max={3}
           step={0.05}
           onChange={(v) => onChange({ textFadeThreshold: v })}
         />
-        {!isMycelium ? (
+        {!isMycelium && !support.composition ? (
           <>
             <Toggle
               label={t.gr_arrows ?? "Arrows"}
@@ -577,7 +673,7 @@ export default function GraphControls({
               value={settings.semanticEdges}
               onChange={(v) => onChange({ semanticEdges: v })}
             />
-            <Toggle
+            {support.bundles ? <Toggle
               label={t.gr_edge_bundles ?? "Bundled strands"}
               hint={
                 t.gr_edge_bundles_hint ??
@@ -585,28 +681,28 @@ export default function GraphControls({
               }
               value={settings.edgeBundles}
               onChange={(v) => onChange({ edgeBundles: v })}
-            />
+            /> : <p className="graph-toggle__hint">{copy.wovenBundlesHint}</p>}
           </>
         ) : null}
       </Section>
 
       {/* ── Motion & effects ── */}
-      <Section
+      {support.ambient || !isMycelium ? <Section
         title={t.gr_motion_fx ?? "Motion & effects"}
         open={openSections.motion}
         onToggle={() => toggle("motion")}
       >
-        <Toggle
+        {support.ambient ? <Toggle
           label={t.gr_motion ?? "Ambient motion"}
           hint={
-            isMycelium
+            isMycelium || support.composition
               ? (t.gr_motion_hint_myc ?? "Slow 3D auto-orbit (3D view only)")
               : (t.gr_motion_hint ?? "Auto-rotate, pulses, breathing")
           }
           value={settings.ambientMotion}
           onChange={(v) => onChange({ ambientMotion: v })}
-        />
-        {!isMycelium ? (
+        /> : null}
+        {!isMycelium && !support.composition ? (
           <>
             <Toggle
               label={t.gr_recency ?? "Recency glow"}
@@ -622,25 +718,27 @@ export default function GraphControls({
               value={settings.cinematic}
               onChange={(v) => onChange({ cinematic: v })}
             />
-            <Toggle
+            {support.flow ? <Toggle
               label={t.gr_flow ?? "Edge flow"}
               hint={t.gr_flow_hint ?? "Light pulses ride links source → target"}
               value={settings.edgeFlow}
               onChange={(v) => onChange({ edgeFlow: v })}
-            />
+            /> : settings.arrows && settings.skin !== "sigma" ? (
+              <p className="graph-toggle__hint">{copy.arrowFlowHint}</p>
+            ) : null}
             <Toggle
               label={t.gr_minimap ?? "Minimap"}
               hint={t.gr_minimap_hint ?? "Corner chart of the whole galaxy; click to fly"}
               value={settings.minimap}
               onChange={(v) => onChange({ minimap: v })}
             />
-            <Toggle
+            {support.cosmic ? <Toggle
               label={t.gr_cosmic ?? "Cosmic events"}
               hint={t.gr_cosmic_hint ?? "Black holes & wormholes (dark theme)"}
               value={settings.cosmicEvents}
               onChange={(v) => onChange({ cosmicEvents: v })}
-            />
-            {settings.cosmicEvents ? (
+            /> : null}
+            {support.cosmic && settings.cosmicEvents ? (
               <Slider
                 label={t.gr_cosmic_freq ?? "Event frequency"}
                 value={settings.cosmicFrequency}
@@ -662,31 +760,31 @@ export default function GraphControls({
               value={settings.neuralFiring}
               onChange={(v) => onChange({ neuralFiring: v })}
             />
-            <Toggle
+            {support.planets ? <Toggle
               label={t.gr_planets ?? "Near-field planets"}
               hint={t.gr_planets_hint ?? "Close-up nodes become procedural planets (dark 3D)"}
               value={settings.nearFieldPlanets}
               onChange={(v) => onChange({ nearFieldPlanets: v })}
-            />
-            <Toggle
+            /> : null}
+            {support.pixels ? <Toggle
               label={t.gr_pixel_nodes ?? "Pixel nodes"}
-              hint={t.gr_pixel_nodes_hint ?? "16x16 pixel-art sprites instead of glowing dots"}
+              hint={copy.pixelHint}
               value={settings.pixelNodes}
               onChange={(v) => onChange({ pixelNodes: v })}
-            />
-            <Toggle
+            /> : null}
+            {support.fly ? <Toggle
               label={t.gr_mascot_cameo ?? "MYCO cameo"}
               hint={t.gr_mascot_cameo_hint ?? "MYCO drifts in now and then with a feature tip"}
               value={settings.mascotCameo}
               onChange={(v) => onChange({ mascotCameo: v })}
-            />
+            /> : null}
             <Toggle
               label={t.gr_trace ?? "Trace path"}
               hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
               value={traceMode}
               onChange={onTraceMode}
             />
-            <Toggle
+            {support.fly ? <Toggle
               label={t.gr_spaceship ?? "Spaceship"}
               hint={
                 t.gr_spaceship_hint ??
@@ -694,18 +792,18 @@ export default function GraphControls({
               }
               value={flyMode}
               onChange={onFlyMode}
-            />
+            /> : null}
           </>
         ) : null}
-      </Section>
+      </Section> : null}
 
       {/* ── Forces (expert layout tuning) ── */}
       <Section
-        title={t.gr_forces ?? "Forces"}
+        title={support.forces || isMycelium ? (t.gr_forces ?? "Forces") : copy.layoutTuning}
         open={openSections.forces}
         onToggle={() => toggle("forces")}
       >
-        {!isMycelium ? (
+        {support.forces ? (
           <ChipRow
             label={t.gr_preset ?? "Layout"}
             value={matchPreset(settings) ?? ""}
@@ -717,7 +815,19 @@ export default function GraphControls({
             ]}
           />
         ) : null}
-        <Section
+        {!support.forces && !isMycelium ? (
+          <>
+            <p className="graph-toggle__hint">{copy.layoutSizeHint}</p>
+            <Slider
+              label={copy.layoutSize}
+              value={settings.linkDistance}
+              min={30}
+              max={500}
+              step={5}
+              onChange={(v) => onChange({ linkDistance: v })}
+            />
+          </>
+        ) : <Section
           title={t.gr_advanced ?? "Advanced"}
           open={openSections.advanced}
           onToggle={() => toggle("advanced")}
@@ -733,7 +843,7 @@ export default function GraphControls({
                 "Mycelium is grown, not simulated: these two sliders reshape the mat."}
             </p>
           ) : null}
-          {!isMycelium ? (
+          {support.forces ? (
             <>
               <Slider
                 label={t.gr_center_force ?? "Center force"}
@@ -785,7 +895,7 @@ export default function GraphControls({
             step={0.01}
             onChange={(v) => onChange({ clusterForce: v })}
           />
-        </Section>
+        </Section>}
       </Section>
 
       {/* ── Timelapse: an always-visible footer action ── */}
@@ -916,6 +1026,7 @@ function Toggle({
   value: boolean;
   onChange: (v: boolean) => void;
 }): JSX.Element {
+  const id = useId();
   return (
     // The whole row is the control: a real <button role="switch"> is focusable
     // and Space/Enter-operable for free (the old <span onClick> was neither),
@@ -926,11 +1037,13 @@ function Toggle({
       className="graph-toggle"
       role="switch"
       aria-checked={value}
+      aria-labelledby={`${id}-label`}
+      aria-describedby={hint ? `${id}-hint` : undefined}
       onClick={() => onChange(!value)}
     >
       <span className="graph-toggle__text">
-        <span>{label}</span>
-        {hint ? <span className="graph-toggle__hint">{hint}</span> : null}
+        <span id={`${id}-label`}>{label}</span>
+        {hint ? <span id={`${id}-hint`} className="graph-toggle__hint">{hint}</span> : null}
       </span>
       <span
         className={`graph-toggle__switch${value ? " graph-toggle__switch--on" : ""}`}
@@ -940,43 +1053,4 @@ function Toggle({
       </span>
     </button>
   );
-}
-
-function Slider({
-  label,
-  value,
-  min,
-  max,
-  step,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  min: number;
-  max: number;
-  step: number;
-  onChange: (v: number) => void;
-}): JSX.Element {
-  return (
-    <label className="graph-slider">
-      <span className="graph-slider__row">
-        <span className="graph-slider__label">{label}</span>
-        <span className="graph-slider__value">{format(value, step)}</span>
-      </span>
-      <input
-        type="range"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="graph-slider__input"
-      />
-    </label>
-  );
-}
-
-function format(v: number, step: number): string {
-  const decimals = step < 1 ? Math.min(2, Math.ceil(-Math.log10(step))) : 0;
-  return v.toFixed(decimals);
 }

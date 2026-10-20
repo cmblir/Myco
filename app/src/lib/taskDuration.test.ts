@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatDuration, parseDuration } from "./taskDuration";
+import { formatDuration, normalizeDuration, parseDuration } from "./taskDuration";
 
 describe("parseDuration", () => {
   it("reads the four units into minutes", () => {
@@ -30,5 +30,20 @@ describe("formatDuration", () => {
     for (const s of ["30m", "2h", "1.5h", "2d", "1w"]) {
       expect(formatDuration(parseDuration(s) as number)).toBe(s);
     }
+  });
+});
+
+describe("normalizeDuration", () => {
+  it("turns a Korean duration into the stored token", () => {
+    expect(normalizeDuration("2일")).toBe("2d");
+    expect(normalizeDuration("1주")).toBe("1w");
+    expect(normalizeDuration("3시간")).toBe("3h");
+    expect(normalizeDuration("1.5 시간")).toBe("1.5h");
+    expect(normalizeDuration(" 30분 ")).toBe("30m");
+  });
+  it("leaves a token, and anything it cannot read, as typed", () => {
+    expect(normalizeDuration(" 2d ")).toBe("2d");
+    expect(normalizeDuration("두 시간")).toBe("두 시간");
+    expect(normalizeDuration("")).toBe("");
   });
 });

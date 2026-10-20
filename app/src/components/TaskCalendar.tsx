@@ -209,6 +209,7 @@ export default function TaskCalendar({
                       "task-cal-bar" +
                       (task.done ? " is-done" : "") +
                       (drag.live?.id === s.key ? " is-dragging" : "") +
+                      (drag.held === s.key ? " is-held" : "") +
                       (s.continuesLeft ? " is-cont-l" : "") +
                       (s.continuesRight ? " is-cont-r" : "")
                     }
@@ -259,7 +260,8 @@ export default function TaskCalendar({
                 key={keyOf(task)}
                 className={
                   "task-cal-item" +
-                  (drag.live?.id === keyOf(task) ? " is-dragging" : "")
+                  (drag.live?.id === keyOf(task) ? " is-dragging" : "") +
+                  (drag.held === keyOf(task) ? " is-held" : "")
                 }
                 {...dragProps(task)}
               >

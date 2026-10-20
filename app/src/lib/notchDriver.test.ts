@@ -4,15 +4,25 @@
 // this repo's vitest is node-only — which is exactly why the reducer exists
 // as a function.
 
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   ACCEPTED_DWELL_MS,
+  NOTCH_AGENDA_EXTRA_W,
+  NOTCH_FOLD_MS,
   NOTCH_IDLE,
+  NOTCH_MASCOT_EXTRA_W,
+  NOTCH_OPEN_WIDTH,
+  NOTCH_PEEK_PX,
   REJECTED_DWELL_MS,
   batchLabel,
+  collapsedFitDelay,
   dragLabel,
   dwellMsFor,
+  panelWhileAway,
   extLabel,
+  notchCollapsedFrame,
+  notchOpenWidth,
   reduceNotch,
   runningPercent,
   voiceHotkeyAction,
@@ -39,6 +49,21 @@ function walk(
     from,
   );
 }
+
+describe("notch visibility", () => {
+  it("resets every expanded interaction before hiding or reusing the panel", () => {
+    const events: NotchEvent[] = [
+      { type: "hoverEnter" }, { type: "captureOpen" }, { type: "recStart" },
+      { type: "statusPush", running: "Synthetic task 40%" },
+      { type: "dragEnter", paths: ["/tmp/synthetic.pdf"] },
+    ];
+    for (const event of events) {
+      const expanded = reduceNotch(NOTCH_IDLE, event, T0);
+      expect(expanded.panel.kind).not.toBe("idle");
+      expect(reduceNotch(expanded, { type: "surfaceReset" }, T0 + 1)).toBe(NOTCH_IDLE);
+    }
+  });
+});
 
 describe("hover peek", () => {
   it("hover unfolds idle into peek and folds back on leave", () => {
@@ -134,6 +159,16 @@ describe("reduceNotch — the happy S1→S6 walk", () => {
     expect(s.runningSince).toBe(T0);
   });
 
+  it("names the work it narrates, for the clip myco roams with", () => {
+    const s = walk(NOTCH_IDLE, [
+      { type: "statusPush", running: "Reflect running…", job: "reflect", at: T0 },
+    ]);
+    expect(s.panel).toMatchObject({ kind: "running", job: "reflect" });
+    // The run the notch started itself (a drop) has no row kind.
+    const own = walk(NOTCH_IDLE, [{ type: "statusPush", running: "Ingesting a.pdf", at: T0 }]);
+    expect(own.panel).not.toHaveProperty("job");
+  });
+
   it("repeated pushes keep the original start time", () => {
     const s = walk(NOTCH_IDLE, [
       { type: "statusPush", running: "reindex 10/302", at: T0 },
@@ -154,6 +189,22 @@ describe("reduceNotch — the happy S1→S6 walk", () => {
     ]);
     expect(s.panel).toEqual({ kind: "done", summary: "reindex 218/302" });
     expect(s.runningSince).toBeNull();
+  });
+
+  it("a run whose job reports a failure ends on the failure, not on done", () => {
+    // harvestStore.endRun(false): the row goes, and the push names the job.
+    const s = walk(NOTCH_IDLE, [
+      { type: "statusPush", running: "수확 중 11/20", job: "ingest", at: T0 },
+      { type: "statusPush", running: null, failed: ["ingest"], at: T0 + 60_000 },
+    ]);
+    expect(s.panel).toEqual({ kind: "failed", summary: "수확 중 11/20" });
+    expect(dwellMsFor(s.panel)).toBe(REJECTED_DWELL_MS);
+    // Another job's old failure says nothing about this one.
+    const other = walk(NOTCH_IDLE, [
+      { type: "statusPush", running: "Reflect running…", job: "reflect", at: T0 },
+      { type: "statusPush", running: null, failed: ["ingest"], at: T0 + 60_000 },
+    ]);
+    expect(other.panel.kind).toBe("done");
   });
 
   it("idleTimeout folds S6 back to S1", () => {
@@ -270,14 +321,16 @@ describe("reduceNotch — S7 text capture", () => {
       kind: "captured",
       rel: `daily/${today(new Date(T0))}.md`,
     });
+    // The written line rides along: it is what the receipt's Open lands on.
     const saved = reduceNotch(
       submitted,
-      { type: "captureSaved", rel: "daily/2026-08-25.md" },
+      { type: "captureSaved", rel: "daily/2026-08-25.md", line: "- 09:05 call" },
       T0,
     );
     expect(saved.panel).toEqual({
       kind: "captured",
       rel: "daily/2026-08-25.md",
+      line: "- 09:05 call",
     });
   });
 
@@ -504,6 +557,32 @@ describe("dwellMsFor", () => {
     expect(dwellMsFor({ kind: "rejected", ext: "" })).toBe(REJECTED_DWELL_MS);
   });
 
+  it("holds while myco is out roaming, so the state's clip plays once it dives back", () => {
+    expect(dwellMsFor({ kind: "done", summary: "" }, true)).toBeNull();
+    expect(dwellMsFor({ kind: "failed", summary: "" }, true)).toBeNull();
+    expect(dwellMsFor({ kind: "done", summary: "" }, false)).toBe(DONE_DWELL_MS);
+  });
+
+  it("only a job's end waits for myco: toasts fold on time during an everyday walk", () => {
+    expect(dwellMsFor({ kind: "captured", rel: "" }, true)).toBe(DONE_DWELL_MS);
+    expect(dwellMsFor({ kind: "rejected", ext: "" }, true)).toBe(REJECTED_DWELL_MS);
+    expect(dwellMsFor({ kind: "cancelled" }, true)).toBe(CANCELLED_DWELL_MS);
+  });
+
+  it("keeps a job's end folded until myco is back, so it lands in the wing and the card opens after", () => {
+    const en = STRINGS.en;
+    for (const end of [
+      { kind: "done", summary: "" },
+      { kind: "failed", summary: "" },
+    ] as const) {
+      expect(describeNotch(panelWhileAway(end, true), en).open).toBe(false);
+      expect(panelWhileAway(end, false)).toBe(end);
+    }
+    // Everything else shows as it is: the user's own hover or capture.
+    const peek = { kind: "peek" } as const;
+    expect(panelWhileAway(peek, true)).toBe(peek);
+  });
+
   it("live-owner states never self-collapse", () => {
     expect(dwellMsFor({ kind: "idle" })).toBeNull();
     expect(dwellMsFor({ kind: "dragging", name: "a", meta: "" })).toBeNull();
@@ -618,5 +697,61 @@ describe("the ⌥M double-fire gate", () => {
     expect(gate(1_005)).toBe(false);
     // A deliberate second press is not a double fire.
     expect(gate(1_500)).toBe(true);
+  });
+});
+
+describe("notchOpenWidth", () => {
+  it("is the fixed open window without the mascot or an agenda", () => {
+    expect(notchOpenWidth(0, 204, false)).toBe(NOTCH_OPEN_WIDTH);
+  });
+
+  it("widens for the agenda card, from the real cutout", () => {
+    // The mock's 14" shape: 204 + 80 + 24 of hover slop.
+    expect(notchOpenWidth(3, 204, false)).toBe(204 + NOTCH_AGENDA_EXTRA_W + 24);
+    expect(notchOpenWidth(1, null, false)).toBe(172 + NOTCH_AGENDA_EXTRA_W + 24);
+  });
+
+  it("adds the mascot's column to every open card", () => {
+    // Must match --notch-mascot-w in styles.css, or the card is clipped.
+    expect(NOTCH_MASCOT_EXTRA_W).toBe(62);
+    expect(notchOpenWidth(0, 204, true)).toBe(NOTCH_OPEN_WIDTH + NOTCH_MASCOT_EXTRA_W);
+    expect(notchOpenWidth(2, 204, true)).toBe(
+      204 + NOTCH_AGENDA_EXTRA_W + 24 + NOTCH_MASCOT_EXTRA_W,
+    );
+  });
+});
+
+describe("collapsedFitDelay", () => {
+  it("re-fits at once when nothing is folding or showing", () => {
+    // A count arriving while collapsed widens the wing in the same render; a
+    // window that waited for a fold that is not happening cut myco off at
+    // its left edge for 420 ms (review of stage notch-wing).
+    expect(collapsedFitDelay(0, T0)).toBe(0);
+    expect(collapsedFitDelay(T0 - 1, T0)).toBe(0);
+    expect(collapsedFitDelay(T0, T0)).toBe(0);
+  });
+
+  it("waits out a fold or a re-show that is still settling", () => {
+    // The card folds before its window shrinks; a re-fit inside that span
+    // must not shrink the window under the folding card.
+    expect(NOTCH_FOLD_MS).toBe(420);
+    expect(collapsedFitDelay(T0 + NOTCH_FOLD_MS, T0)).toBe(NOTCH_FOLD_MS);
+    expect(collapsedFitDelay(T0 + NOTCH_FOLD_MS, T0 + 300)).toBe(120);
+  });
+});
+
+describe("notchCollapsedFrame", () => {
+  it("keeps a transparent drop strip without covering the menu beside the cutout", () => {
+    expect(notchCollapsedFrame(204, 37)).toEqual({
+      width: 204,
+      height: 37 + NOTCH_PEEK_PX,
+    });
+    expect(notchCollapsedFrame(172, 32)).toEqual({ width: 172, height: 46 });
+  });
+
+  it("matches the native window's initial and re-shown drop strip", () => {
+    const rs = readFileSync(new URL("../../src-tauri/src/notch.rs", import.meta.url), "utf8");
+    const m = /const NOTCH_PEEK_PX: f64 = ([\d.]+);/.exec(rs);
+    expect(Number(m?.[1])).toBe(NOTCH_PEEK_PX);
   });
 });

@@ -117,7 +117,9 @@ fn main() {
                 continue;
             }
         };
-        let dense = store.search(&qv, pool);
+        let dense = store
+            .search(&qv, pool)
+            .expect("valid dense search geometry");
         let lexical = bm25.search(q, pool);
         // Dense cosine before fusion overwrites score with a rank value — the
         // top cosine is the only number here that says "anything relevant at

@@ -4,6 +4,26 @@
 
 use std::path::{Path, PathBuf};
 
+type EmbedVectors<'a> = dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String> + 'a;
+
+#[path = "distill_archive.rs"]
+mod archive;
+pub(crate) use archive::ArchiveContext;
+pub use archive::{ArchivePublication, ArchiveReceipt};
+
+#[path = "distill_admission.rs"]
+mod admission;
+
+#[path = "distill_knowledge.rs"]
+mod knowledge;
+
+#[path = "distill_ttl.rs"]
+mod ttl;
+
+#[cfg(test)]
+#[path = "distill_archive_safety_tests.rs"]
+mod archive_safety_tests;
+
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Intensity {
@@ -137,6 +157,16 @@ pub fn config_load(root: &Path) -> DistillConfig {
     serde_json::from_str(&raw).unwrap_or_default()
 }
 
+/// Read decision policy without treating an existing failure as defaults.
+pub fn config_load_checked(root: &Path) -> Result<DistillConfig, String> {
+    let path = crate::vault::confine_delete_path(root, &config_path(root).to_string_lossy())?;
+    match crate::index_publication::read_checked(&path)? {
+        Some(raw) => serde_json::from_slice(&raw)
+            .map_err(|_| "distill decision configuration is corrupt".into()),
+        None => Ok(DistillConfig::default()),
+    }
+}
+
 /// Atomic write: stage to a temp file in the same dir, then rename over target.
 pub fn config_save(root: &Path, c: &DistillConfig) -> Result<(), String> {
     let d = dir(root);
@@ -157,36 +187,125 @@ pub fn config_save(root: &Path, c: &DistillConfig) -> Result<(), String> {
 // `app/docs/specs/2026-08-13-ontology-distill-design.md` ("Admission gate").
 // ---------------------------------------------------------------------------
 
+use crate::embeddings::{EmbeddedBatch, EmbeddingSpace};
 use crate::ontology::{admit, Ontology, Tier, Verdict, FIELD_CLUSTER_ID};
 use std::collections::HashMap;
 
-/// One item's last-scored fingerprint, so an unchanged file is never
-/// re-embedded on a later scan.
+/// Rule-only admission does not depend on an embedding representation.
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NonsemanticOrigin {
+    Machine,
+    Junk,
+}
+
+/// One item's last-scored source and decision identity. Reuse requires both
+/// the exact current bytes and the current admission context.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct ScoredEntry {
     pub hash: u64,
     pub tier: String,
     pub at: i64,
-    /// On-disk stamp (mtime unix seconds, byte length) of the content `hash`
-    /// was taken from, so `scan` can skip reading a file whose stamp has not
-    /// moved — the same mtime+len short-circuit as `index.rs`'s parse cache
-    /// and `vault::vault_revision`. `serde(default)`: a ledger written before
-    /// the stamp existed loads as `(0, 0)`, misses once, and is then stamped.
+    /// On-disk metadata used for ordering and display. It does not authorize
+    /// reuse: every candidate is read and compared with `source_sha256`.
+    /// Legacy entries default to zero and remain history until checked again.
     #[serde(default)]
     pub mtime: i64,
     #[serde(default)]
     pub len: u64,
+    /// `GATE_RULES` when this entry was scored; 0 for one written before the
+    /// field existed. A session scored under older rules is checked again.
+    #[serde(default)]
+    pub rules: u32,
+    /// A session's first-turn census key (`machine_session::repeat_key`), so
+    /// a later scan counts a repeated agent prompt without re-reading it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub turn: Option<u64>,
+    /// The exact representation used for semantic admission. A legacy score
+    /// without this stamp is retained as history, but cannot authorize a skip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<EmbeddingSpace>,
+    /// Machine/junk decisions are reusable under their explicit rule version,
+    /// independently of a semantic representation change.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub nonsemantic: Option<NonsemanticOrigin>,
+    /// Exact source bytes admitted by this score; legacy history is not stamped.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_sha256: Option<String>,
+    /// Semantic policy and knowledge inputs that produced this decision.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_signature: Option<String>,
 }
 
-/// Persisted scan state, `<vault>/.myco/distill-state.json`. `model` gates the
-/// whole ledger the same way `Ontology.model` gates the cache scored against:
-/// an embedding-model change makes every past score meaningless (different
-/// vector geometry), so a mismatch invalidates the ledger wholesale rather
-/// than being compared entry-by-entry.
+/// Bumped when a gate rule change makes past `sessions/` scores wrong. 1:
+/// the machine-session check (`machine_session`), which no session scored
+/// before it has been through. 2: Codex approval reviews are agent-made.
+const GATE_RULES: u32 = 2;
+
+fn is_session(rel: &str) -> bool {
+    rel.starts_with(&format!("{}/", crate::commands::DEST_SESSIONS))
+}
+
+/// A current rule-only verdict, or a semantic verdict in the pinned space.
+fn is_scored(state: &DistillState, rel: &str) -> bool {
+    state.scored.get(rel).is_some_and(|entry| {
+        if !entry
+            .source_sha256
+            .as_deref()
+            .is_some_and(admission::valid_digest)
+        {
+            return false;
+        }
+        if entry.nonsemantic.is_some() {
+            return entry.embedding.is_none()
+                && entry.decision_signature.is_none()
+                && entry.rules == GATE_RULES;
+        }
+        entry.embedding.as_ref().is_some_and(|space| {
+            Some(space) == state.embedding.as_ref()
+                && entry
+                    .decision_signature
+                    .as_deref()
+                    .is_some_and(admission::valid_digest)
+                && entry.decision_signature == state.decision_signature
+                && (!is_session(rel) || entry.rules == GATE_RULES)
+        })
+    })
+}
+
+fn has_current_semantic_score(state: &DistillState, rel: &str) -> bool {
+    state.scored.get(rel).is_some_and(|entry| {
+        entry.nonsemantic.is_none()
+            && entry
+                .source_sha256
+                .as_deref()
+                .is_some_and(admission::valid_digest)
+            && entry
+                .decision_signature
+                .as_deref()
+                .is_some_and(admission::valid_digest)
+            && entry.decision_signature == state.decision_signature
+            && entry
+                .embedding
+                .as_ref()
+                .is_some_and(|space| Some(space) == state.embedding.as_ref())
+    })
+}
+
+/// Persisted scan state, `<vault>/.myco/distill-state.json`. Representation
+/// changes invalidate semantic reuse entry by entry, while lifecycle history
+/// and rule-only verdicts remain intact.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct DistillState {
     #[serde(default)]
     pub model: String,
+    /// Current comparison context only. Updating this does not stamp any
+    /// unprocessed score as having been produced in the new representation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<EmbeddingSpace>,
+    /// Comparison context only; changing it never blesses old per-item scores.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_signature: Option<String>,
     #[serde(default)]
     pub scored: HashMap<String, ScoredEntry>,
     /// Reject-tier items' TTL ledger — `rel path -> expiry unix seconds`,
@@ -201,36 +320,190 @@ pub struct DistillState {
     pub last_run: Option<i64>,
     /// Rolling window (capped at 10, oldest first) of the post-run backlog
     /// count each `run` appended — the trend line the badge shows instead of
-    /// a raw count. Resets with the rest of the ledger on a model change,
-    /// same as `scored`/`rejected_ttl`: nothing here is model-independent
-    /// history worth special-casing.
+    /// a raw count. Retained across representation/model changes.
     #[serde(default)]
     pub last_backlogs: Vec<usize>,
+    /// Census keys of the long first turns seen in
+    /// `machine_session::REPEAT_MIN_SESSIONS`+ sessions — the agent prompts.
+    /// Kept after those sessions move to quarantine, so the next copy of the
+    /// same prompt is still recognised.
+    #[serde(default)]
+    pub agent_turns: Vec<u64>,
+}
+
+/// Paths the owner restored out of quarantine, never quarantined again (spec
+/// 2026-10-02 decision 6): `<vault>/.myco/distill-kept.json`. Its own file,
+/// not a `DistillState` field: `scan` holds that ledger in memory for a whole
+/// run and saves it at the end, which would overwrite a restore clicked
+/// meanwhile. Only `record_kept` writes it. Existing unreadable/corrupt marks
+/// must fail closed rather than removing the owner's protection.
+fn kept_load(root: &Path) -> Result<Vec<String>, String> {
+    let path = dir(root).join("distill-kept.json");
+    let path = crate::vault::confine_delete_path(root, &path.to_string_lossy())?;
+    let Some(raw) = crate::index_publication::read_checked(&path)? else {
+        return Ok(Vec::new());
+    };
+    serde_json::from_slice(&raw).map_err(|_| "distill owner-kept ledger is corrupt".into())
+}
+
+/// Add `rels` to the owner-kept marks, dropping marks whose file is gone.
+/// The lock makes two restores' read-modify-writes queue instead of racing.
+fn record_kept(root: &Path, rels: &[String]) -> Result<(), String> {
+    static KEPT_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    if rels.is_empty() {
+        return Ok(());
+    }
+    let _held = KEPT_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    let mut kept = kept_load(root)?;
+    let mut retained = Vec::with_capacity(kept.len());
+    for rel in kept {
+        match std::fs::symlink_metadata(root.join(&rel)) {
+            Ok(_) => retained.push(rel),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("inspect distill owner-kept content path".into()),
+        }
+    }
+    kept = retained;
+    for r in rels {
+        if !kept.contains(r) {
+            kept.push(r.clone());
+        }
+    }
+    std::fs::create_dir_all(dir(root))
+        .map_err(|e| format!("create {} dir: {e}", crate::vault_dir::DIR_NAME))?;
+    let raw = serde_json::to_string_pretty(&kept).map_err(|e| format!("serialize: {e}"))?;
+    crate::settings::atomic_write(&dir(root).join("distill-kept.json"), raw.as_bytes())
 }
 
 pub fn state_path(root: &Path) -> PathBuf {
     dir(root).join("distill-state.json")
 }
 
-/// Load the ledger, or a fresh one (stamped with `model`) if there is none yet
-/// or it was scored against a different embedding model.
-pub fn state_load(root: &Path, model: &str) -> DistillState {
-    let fresh = || DistillState {
-        model: model.to_string(),
-        ..Default::default()
+/// Strict admission-state read. Missing state is fresh; existing unreadable or
+/// malformed state is an error and must not be replaced by a successful scan.
+fn state_load_checked(root: &Path, model: &str) -> Result<DistillState, String> {
+    let path = crate::vault::confine_delete_path(root, &state_path(root).to_string_lossy())?;
+    let mut state: DistillState = match crate::index_publication::read_checked(&path)? {
+        Some(raw) => serde_json::from_slice(&raw)
+            .map_err(|_| "distill admission state is corrupt".to_string())?,
+        None => DistillState::default(),
     };
-    let Ok(raw) = std::fs::read_to_string(state_path(root)) else {
-        return fresh();
-    };
-    let state: DistillState = serde_json::from_str(&raw).unwrap_or_else(|_| fresh());
+    validate_state(&state)?;
     if state.model != model {
-        return fresh();
+        state.embedding = None;
     }
-    state
+    state.model = model.to_string();
+    Ok(state)
+}
+
+fn validate_state(state: &DistillState) -> Result<(), String> {
+    if state
+        .decision_signature
+        .as_deref()
+        .is_some_and(|signature| !admission::valid_digest(signature))
+    {
+        return Err("distill decision context is malformed".into());
+    }
+    if let Some(space) = &state.embedding {
+        space.validate()?;
+        if state.model != space.model {
+            return Err("distill admission state context model mismatch".into());
+        }
+    }
+    for entry in state.scored.values() {
+        if entry
+            .source_sha256
+            .as_deref()
+            .is_some_and(|signature| !admission::valid_digest(signature))
+            || entry
+                .decision_signature
+                .as_deref()
+                .is_some_and(|signature| !admission::valid_digest(signature))
+        {
+            return Err("distill score provenance is malformed".into());
+        }
+        if let Some(space) = &entry.embedding {
+            space.validate()?;
+            if entry.nonsemantic.is_some() {
+                return Err("distill admission score has conflicting origins".into());
+            }
+        }
+        if let Some(origin) = entry.nonsemantic {
+            if entry.decision_signature.is_some() {
+                return Err("distill rule-only score has semantic policy provenance".into());
+            }
+            let valid_tier = match origin {
+                NonsemanticOrigin::Machine => {
+                    matches!(entry.tier.as_str(), "quarantine" | "reject")
+                }
+                NonsemanticOrigin::Junk => entry.tier == "reject",
+            };
+            if !valid_tier {
+                return Err("distill nonsemantic score has an invalid tier".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Compatibility metadata read; callers still need an actual store-derived
+/// context before treating any entry as current semantic authority.
+pub fn state_load(root: &Path, model: &str) -> DistillState {
+    state_load_checked(root, model).unwrap_or_else(|error| {
+        eprintln!("myco: distill metadata state unavailable: {error}");
+        DistillState {
+            model: model.to_string(),
+            ..Default::default()
+        }
+    })
+}
+
+fn state_for_space(
+    root: &Path,
+    space: Option<&EmbeddingSpace>,
+    model: &str,
+) -> Result<DistillState, String> {
+    let mut state = state_load_checked(root, model)?;
+    if let Some(space) = space {
+        space.validate()?;
+    }
+    state.embedding = space.cloned();
+    state.decision_signature = None;
+    Ok(state)
+}
+
+fn state_for_inputs(
+    root: &Path,
+    space: Option<&EmbeddingSpace>,
+    model: &str,
+    inputs: Option<&admission::DecisionInputs>,
+) -> Result<DistillState, String> {
+    let mut state = state_for_space(root, space, model)?;
+    state.decision_signature = inputs.map(|inputs| inputs.signature.clone());
+    Ok(state)
+}
+
+fn is_scored_current(root: &Path, state: &DistillState, rel: &str) -> Result<bool, String> {
+    if !is_scored(state, rel) {
+        return Ok(false);
+    }
+    let sha256 = state.scored[rel]
+        .source_sha256
+        .as_deref()
+        .ok_or("distill current score has no source revision")?;
+    admission::source_matches(root, rel, sha256)
+}
+
+fn metadata_is_scored(root: &Path, state: &DistillState, rel: &str) -> bool {
+    is_scored_current(root, state, rel).unwrap_or_else(|error| {
+        eprintln!("myco: distill source authority unavailable: {error}");
+        false
+    })
 }
 
 /// Atomic write: stage to a temp file in the same dir, then rename over target.
 pub fn state_save(root: &Path, s: &DistillState) -> Result<(), String> {
+    validate_state(s)?;
     let d = dir(root);
     std::fs::create_dir_all(&d)
         .map_err(|e| format!("create {} dir: {e}", crate::vault_dir::DIR_NAME))?;
@@ -334,73 +607,14 @@ fn truncate_chars(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
-/// `line` with a leading ATX heading marker stripped, if it actually has
-/// one: 1-6 `#` characters followed by a space or nothing else on the line —
-/// the CommonMark ATX heading rule. Anything else starting with `#` (a
-/// hashtag, "#1 issue", 7+ `#`s) is not a heading and comes back unchanged;
-/// stripping any leading `#` run unconditionally turned "#hashtag trending"
-/// into "hashtag trending".
-fn strip_atx_heading(line: &str) -> &str {
-    let hashes = line.bytes().take_while(|&b| b == b'#').count();
-    let is_heading =
-        (1..=6).contains(&hashes) && matches!(line.as_bytes().get(hashes), None | Some(b' '));
-    if is_heading {
-        line[hashes..].trim_start()
-    } else {
-        line
-    }
-}
-
-/// First non-empty line of `content`'s BODY (frontmatter stripped, via the
-/// same `gray_matter` parse `proposal_frontmatter` uses — not hand-rolled),
-/// with a leading ATX heading marker (`strip_atx_heading`) trimmed off,
-/// capped at 120 chars. A real `_inbox/` import always opens with a YAML
-/// frontmatter block (`importers::Conversation::to_inbox_doc`) followed by
-/// `# <title>` — without stripping both, a summary-tier digest line read
-/// "- --- — `path` (low confidence)" instead of the title. `None` only when
-/// the body has no non-empty line at all (unreadable/empty file).
-fn first_summary_line(content: &str) -> Option<String> {
-    let body = gray_matter::Matter::<gray_matter::engine::YAML>::new()
-        .parse::<gray_matter::Pod>(content)
-        .map(|p| p.content)
-        .unwrap_or_else(|_| content.to_string());
-    let line = body.lines().find(|l| !l.trim().is_empty())?.trim();
-    let line = strip_atx_heading(line);
-    Some(truncate_chars(line, 120))
-}
-
 /// `<root>/profile.md`'s `## Interests` bullets, via a plain string scan —
 /// profile.md is markdown with no YAML frontmatter (see `app/src/lib/
 /// profile.ts::parseProfile`, the TS mirror of this same section format), so
 /// a `gray_matter` parse does not apply here. Missing file or missing/empty
 /// section -> empty (the caller's zero-cost, no-lift path).
+#[cfg(test)]
 fn read_profile_interests(root: &Path) -> Vec<String> {
-    let Ok(content) = std::fs::read_to_string(root.join("profile.md")) else {
-        return Vec::new();
-    };
-    let mut interests = Vec::new();
-    let mut in_interests = false;
-    for line in content.lines() {
-        let trimmed = line.trim();
-        if trimmed.starts_with('#') {
-            in_interests = trimmed.eq_ignore_ascii_case("## interests");
-            continue;
-        }
-        if !in_interests {
-            continue;
-        }
-        let Some(item) = trimmed
-            .strip_prefix("- ")
-            .or_else(|| trimmed.strip_prefix("* "))
-        else {
-            continue;
-        };
-        let item = item.trim();
-        if !item.is_empty() {
-            interests.push(item.to_string());
-        }
-    }
-    interests
+    admission::read_interests(root).unwrap()
 }
 
 fn tier_str(t: Tier) -> &'static str {
@@ -465,12 +679,12 @@ fn walk_inflow(root: &Path, start: &str, exclude_top: &[&str], out: &mut Vec<Can
     walk(&root.join(start), root, exclude_top, true, out);
 }
 
-/// Every inflow candidate across the three trees the gate watches, oldest
+/// Every inflow candidate across the two trees the gate watches, oldest
 /// mtime first (ties broken by path for a deterministic order). Never walks
-/// `.myco/` (not one of these trees at all), `_inbox/quarantine/`,
-/// `raw/archive/`, or `sessions/archive/` (Phase B's digested-session
-/// archive — an archived session must never be re-scored, same reason
-/// `raw/archive/` is excluded).
+/// `.myco/` (not one of these trees at all), `_inbox/quarantine/`, or
+/// `sessions/archive/` (Phase B's digested-session archive — an archived
+/// session must never be re-scored). Never `raw/`: no run touches it (owner
+/// decision 2026-10-03, B1), so it is not inflow.
 fn collect_candidates(root: &Path) -> Vec<Candidate> {
     let mut out = Vec::new();
     walk_inflow(
@@ -479,7 +693,6 @@ fn collect_candidates(root: &Path) -> Vec<Candidate> {
         &[QUARANTINE_DIR],
         &mut out,
     );
-    walk_inflow(root, "raw", &[RAW_ARCHIVE_DIR], &mut out);
     walk_inflow(
         root,
         crate::commands::DEST_SESSIONS,
@@ -530,6 +743,16 @@ struct QuarantineSidecar<'a> {
     reason: &'a str,
     expires: i64,
     vector: &'a [f32],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    embedding: Option<&'a EmbeddingSpace>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    source_sha256: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    decision_signature: Option<&'a str>,
+    /// Where the item was before the move: restore puts it back there, and
+    /// the TTL sweep and trash purge treat a `sessions/` origin as the
+    /// owner's to delete (spec 2026-10-02 decisions 5, 6).
+    from: &'a str,
 }
 
 /// A candidate that passed the maturation gate and the ledger's
@@ -541,7 +764,12 @@ struct Taken {
     len: u64,
     content: String,
     hash: u64,
+    source_sha256: String,
     junk: Option<String>,
+    /// Set for a machine-made session: quarantined, never embedded.
+    machine: Option<crate::machine_session::MachineKind>,
+    /// A session's first-turn census key.
+    turn: Option<u64>,
 }
 
 /// "Gate OFF until the vault has ≥50 wiki pages (or first map); profile.md
@@ -551,17 +779,19 @@ const GATE_MIN_WIKI_PAGES: usize = 50;
 
 /// Score new inflow against the ontology: walk `_inbox/`, `raw/`, `sessions/`
 /// oldest-mtime-first, skip anything not yet mature (`cfg.maturation_hours`)
-/// or already scored at its current content hash, reject junk transcripts
-/// without spending an embedding, batch-embed the rest and run them through
-/// `ontology::admit`, then act on the verdict: quarantine moves the file into
-/// `_inbox/quarantine/` with a verdict sidecar — recorded into `manifest`
+/// or already scored at its current content hash, quarantine machine-made
+/// sessions (`machine_session`; outside `budget`, never embedded), reject
+/// junk transcripts without spending an embedding, batch-embed the rest and
+/// run them through `ontology::admit` (whose quarantine band never moves a
+/// session or a raw/ file), then act on the verdict: quarantine moves the
+/// file into `_inbox/quarantine/` with a verdict sidecar — recorded into `manifest`
 /// (the file move as a `moves` entry, the sidecar as a `created` entry,
 /// `save_manifest`d after each, same incremental discipline as every other
 /// pass in `run`) so undo can reverse it — reject adds a `rejected_ttl`
 /// ledger entry (the file stays put — see that field's own doc comment:
 /// nothing sweeps it yet), full/summary are only recorded (Phase B consumes
 /// them). Every scored item — whatever its tier — is recorded in the ledger
-/// so an unchanged file is never re-scored.
+/// so unchanged bytes with the same decision inputs can reuse their verdict.
 ///
 /// Below `GATE_MIN_WIKI_PAGES` wiki pages (`o.wiki_pages` — kept equal to
 /// the real on-disk count by `run`'s staleness check, since `scan` is only
@@ -572,14 +802,42 @@ const GATE_MIN_WIKI_PAGES: usize = 50;
 // Module-private, not `pub`: `run` (same module) is the only caller left
 // now that the standalone `distill_scan` Tauri command is gone (Dead code
 // cleanup) — `RunManifest` in its signature is itself module-private.
+#[allow(clippy::too_many_arguments)]
+#[cfg(test)]
 fn scan(
     root: &Path,
     o: &Ontology,
     cfg: &DistillConfig,
     budget: usize,
-    embed: &dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>,
+    embed: &EmbedVectors<'_>,
     profile_vecs: &[Vec<f32>],
     manifest: &mut RunManifest,
+) -> Result<ScanOutcome, String> {
+    let inputs = admission::capture(root, o, cfg)?;
+    scan_with_inputs(
+        root,
+        o,
+        cfg,
+        budget,
+        embed,
+        profile_vecs,
+        manifest,
+        &inputs,
+        false,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scan_with_inputs(
+    root: &Path,
+    o: &Ontology,
+    cfg: &DistillConfig,
+    budget: usize,
+    embed: &EmbedVectors<'_>,
+    profile_vecs: &[Vec<f32>],
+    manifest: &mut RunManifest,
+    inputs: &admission::DecisionInputs,
+    verify_published: bool,
 ) -> Result<ScanOutcome, String> {
     if o.wiki_pages < GATE_MIN_WIKI_PAGES {
         eprintln!(
@@ -592,62 +850,176 @@ fn scan(
         });
     }
 
-    let mut state = state_load(root, &o.model);
+    let space = o.embedding.as_ref();
+    if let Some(space) = space {
+        space.validate()?;
+        if space.model != o.model {
+            return Err("distill ontology representation model mismatch".into());
+        }
+    }
+    let mut state = state_for_inputs(root, space, &o.model, Some(inputs))?;
     let now = now_secs();
     let maturation_secs = cfg.maturation_hours as i64 * 3600;
 
     let mut outcome = ScanOutcome::default();
     let mut taken: Vec<Taken> = Vec::new();
+    // Checked current source snapshots share the budget once the census has
+    // set repeated agent prompts aside. No second read chooses different bytes.
+    let mut pending: Vec<Taken> = Vec::new();
+    // Scored sessions whose first turn still counts toward the census; one
+    // becomes a quarantine item if its prompt proves repeated.
+    let mut bystanders: Vec<Taken> = Vec::new();
+    let item = |c: &Candidate, turn: Option<u64>| Taken {
+        rel: c.rel.clone(),
+        path: c.path.clone(),
+        mtime: c.mtime,
+        len: c.len,
+        content: String::new(),
+        hash: 0,
+        source_sha256: String::new(),
+        junk: None,
+        machine: None,
+        turn,
+    };
     for c in collect_candidates(root) {
         if now - c.mtime < maturation_secs {
             outcome.skipped_immature += 1;
             continue;
         }
-        // Stamp unchanged since it was last scored → these are the bytes
-        // already hashed; skip the read. Without this a warm scan read every
-        // inflow file (26 MB at 1.7k files) just to rediscover the same hash.
-        if state
-            .scored
-            .get(&c.rel)
-            .is_some_and(|e| e.mtime == c.mtime && e.len == c.len)
-        {
-            continue;
-        }
-        // Unreadable (binary, or gone since the walk) — never scored, and
-        // retried on the next run rather than failing the whole scan.
-        let Ok(content) = std::fs::read_to_string(&c.path) else {
+        // A file stamp is an ordering hint, not authority over current bytes.
+        let Some(source) = admission::read_source(root, &c.rel)? else {
             continue;
         };
-        let hash = crate::embeddings::content_hash(&content);
-        if let Some(e) = state.scored.get_mut(&c.rel).filter(|e| e.hash == hash) {
-            // Same content under a new stamp (touched, or a ledger from before
-            // stamps existed): record it so the next scan skips the read.
-            e.mtime = c.mtime;
-            e.len = c.len;
+        if let Some(e) = state.scored.get(&c.rel).filter(|e| {
+            is_scored(&state, &c.rel) && e.source_sha256.as_ref() == Some(&source.sha256)
+        }) {
+            if e.turn.is_some() {
+                let mut t = item(&c, e.turn);
+                t.hash = e.hash;
+                t.source_sha256 = source.sha256.clone();
+                bystanders.push(t);
+            }
+            if e.mtime != c.mtime || e.len != c.len {
+                let entry = state.scored.get_mut(&c.rel).unwrap();
+                entry.mtime = c.mtime;
+                entry.len = c.len;
+            }
             continue;
         }
-        if taken.len() >= budget {
-            break; // candidates are already oldest-first; the rest wait
+        let content =
+            String::from_utf8(source.bytes).map_err(|_| "distill admission source is not UTF-8")?;
+        let hash = crate::embeddings::content_hash(&content);
+        // Non-session snapshots wait for the budgeted admission pass.
+        if !is_session(&c.rel) {
+            let mut t = item(&c, None);
+            t.hash = hash;
+            t.source_sha256 = source.sha256;
+            t.content = content;
+            pending.push(t);
+            continue;
         }
-        let junk = junk_reason(&content);
-        taken.push(Taken {
-            rel: c.rel,
-            path: c.path,
-            mtime: c.mtime,
-            len: c.len,
-            content,
-            hash,
-            junk,
-        });
+        // A session is read now whatever the budget: the machine check
+        // costs no embedding, so one run sets every machine session aside.
+        // Existing read/path/UTF-8 failures are explicit; they cannot stand in
+        // for an unchanged scored source or an absent candidate.
+        let first = crate::machine_session::first_human_turn(&content);
+        let machine = first.as_deref().and_then(crate::machine_session::kind_of);
+        let turn = first
+            .as_deref()
+            .and_then(crate::machine_session::repeat_key);
+        // The session's current machine check already ran. An unchanged
+        // semantic fingerprint in the pinned space can retain its score while
+        // adopting the newly checked machine-rule version.
+        let reusable = is_scored(&state, &c.rel) || has_current_semantic_score(&state, &c.rel);
+        if let Some(e) = state
+            .scored
+            .get_mut(&c.rel)
+            .filter(|e| reusable && e.source_sha256.as_ref() == Some(&source.sha256))
+        {
+            // A checked source/decision receipt survives a metadata touch or
+            // older machine rules. Recheck those rules without another embedding.
+            e.mtime = c.mtime;
+            e.len = c.len;
+            if machine.is_none() {
+                e.rules = GATE_RULES;
+                e.turn = turn;
+                if turn.is_some() {
+                    let mut t = item(&c, turn);
+                    t.hash = hash;
+                    t.source_sha256 = source.sha256.clone();
+                    bystanders.push(t);
+                }
+                continue;
+            }
+        }
+        let mut t = item(&c, turn);
+        t.hash = hash;
+        t.source_sha256 = source.sha256;
+        t.content = content;
+        match machine {
+            Some(_) => {
+                t.machine = machine;
+                taken.push(t);
+            }
+            None => pending.push(t),
+        }
     }
 
-    // Batch-embed everything that isn't junk — the only cost this run pays.
+    // The agent rule: a long first turn in `REPEAT_MIN_SESSIONS` sessions.
+    let mut census: HashMap<u64, usize> = HashMap::new();
+    for key in pending.iter().chain(&bystanders).filter_map(|t| t.turn) {
+        *census.entry(key).or_default() += 1;
+    }
+    for (key, n) in census {
+        if n >= crate::machine_session::REPEAT_MIN_SESSIONS && !state.agent_turns.contains(&key) {
+            state.agent_turns.push(key);
+        }
+    }
+    let is_agent = |t: &Taken| t.turn.is_some_and(|k| state.agent_turns.contains(&k));
+    let (agents, pending): (Vec<Taken>, Vec<Taken>) = pending.into_iter().partition(is_agent);
+    let late = bystanders.into_iter().filter(is_agent);
+    for mut t in agents.into_iter().chain(late) {
+        t.machine = Some(crate::machine_session::MachineKind::Agent);
+        taken.push(t);
+    }
+
+    // The budget pass: what is left, oldest first, up to `budget` scored.
+    let mut budgeted = 0usize;
+    for mut t in pending {
+        if budgeted >= budget {
+            break; // candidates are already oldest-first; the rest wait
+        }
+        let reusable = is_scored(&state, &t.rel);
+        if let Some(e) = state
+            .scored
+            .get_mut(&t.rel)
+            .filter(|e| reusable && e.source_sha256.as_ref() == Some(&t.source_sha256))
+        {
+            // Metadata hints can be updated after exact source/decision reuse.
+            e.mtime = t.mtime;
+            e.len = t.len;
+            continue;
+        }
+        t.junk = junk_reason(&t.content);
+        budgeted += 1;
+        taken.push(t);
+    }
+
+    // Batch-embed everything that isn't junk or machine-made — the only cost
+    // this run pays.
     let to_embed: Vec<usize> = taken
         .iter()
         .enumerate()
-        .filter(|(_, t)| t.junk.is_none())
+        .filter(|(_, t)| t.junk.is_none() && t.machine.is_none())
         .map(|(i, _)| i)
         .collect();
+    let mut semantic_dim = if to_embed.is_empty() {
+        None
+    } else {
+        let space = space.ok_or("distill semantic admission requires a stamped representation")?;
+        o.validate_geometry(Some(space.dim))?;
+        Some(space.dim)
+    };
     let mut vectors: HashMap<usize, Vec<f32>> = HashMap::new();
     for chunk in to_embed.chunks(EMBED_BATCH) {
         let texts: Vec<String> = chunk
@@ -655,17 +1027,80 @@ fn scan(
             .map(|&i| truncate_chars(&taken[i].content, EMBED_CHARS))
             .collect();
         let vecs = embed(texts)?;
+        crate::embeddings::validate_embedding_batch(&vecs, chunk.len(), semantic_dim)?;
+        if semantic_dim.is_none() {
+            semantic_dim = vecs.first().map(Vec::len);
+        }
         for (&i, v) in chunk.iter().zip(vecs) {
             vectors.insert(i, v);
         }
     }
 
+    // Optional identity vectors are checked again against the actual item
+    // width when an empty ontology could not establish it before embedding.
+    let profile_vecs = if to_embed.is_empty() {
+        profile_vecs
+    } else {
+        match crate::embeddings::validate_embedding_batch(
+            profile_vecs,
+            profile_vecs.len(),
+            semantic_dim,
+        ) {
+            Ok(()) => profile_vecs,
+            Err(error) => {
+                crate::perf::log("distill_profile_embed_failed", &[]);
+                eprintln!("distill profile embed failed (continuing without lift): {error}");
+                &[]
+            }
+        }
+    };
+    // Numeric failures must be discovered before any machine or semantic
+    // item moves, and before the ledger or manifest records a verdict.
+    let mut semantic_verdicts = HashMap::new();
+    for &index in &to_embed {
+        let vector = vectors
+            .get(&index)
+            .ok_or("distill item embedding is missing after batch validation")?;
+        let verdict = admit(
+            o,
+            vector,
+            &taken[index].content,
+            &cfg.gate_preset,
+            profile_vecs,
+        )?;
+        semantic_verdicts.insert(index, verdict);
+    }
+
     let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
     let ttl_secs = cfg.quarantine_ttl_days as i64 * 86_400;
+    // Read now, after the embedding wait, so a restore clicked during it counts.
+    let kept = kept_load(root)?;
+
+    // All prepared verdicts must still describe the observed inputs before
+    // the first source move, sidecar write or score publication.
+    if admission::capture(root, o, cfg)?.signature != inputs.signature {
+        return Err("distill admission inputs changed before publication".into());
+    }
+    if verify_published {
+        verify_current_inputs(root, cfg, inputs)?;
+    }
+    for item in &taken {
+        if !admission::source_matches(root, &item.rel, &item.source_sha256)? {
+            return Err("distill source changed before admission publication".into());
+        }
+    }
 
     for (i, item) in taken.into_iter().enumerate() {
-        let verdict = match &item.junk {
-            Some(reason) => Verdict {
+        let verdict = match (&item.machine, &item.junk) {
+            (Some(kind), _) => Verdict {
+                tier: Tier::Quarantine,
+                s_knn: 0.0,
+                nearest_cluster: String::new(),
+                nearest_pages: Vec::new(),
+                entity_hits: Vec::new(),
+                reason: format!("machine:{}", kind.slug()),
+            },
+            (None, Some(reason)) => Verdict {
                 tier: Tier::Reject,
                 s_knn: 0.0,
                 nearest_cluster: String::new(),
@@ -673,14 +1108,32 @@ fn scan(
                 entity_hits: Vec::new(),
                 reason: reason.clone(),
             },
-            None => {
-                let vector = vectors.get(&i).cloned().unwrap_or_default();
-                admit(o, &vector, &item.content, &cfg.gate_preset, profile_vecs)
-            }
+            (None, None) => semantic_verdicts
+                .remove(&i)
+                .ok_or("distill semantic verdict is missing after admission validation")?,
+        };
+        // Only provenance quarantines a session (similarity could not tell
+        // the owner's work from machine logs), and nothing under raw/ is ever
+        // moved, whatever put it in the quarantine tier, nor is anything the
+        // owner restored out of quarantine: all stay put as rejects.
+        let tier = match verdict.tier {
+            Tier::Quarantine if item.rel.starts_with("raw/") => Tier::Reject,
+            Tier::Quarantine if is_session(&item.rel) && item.machine.is_none() => Tier::Reject,
+            Tier::Quarantine if kept.contains(&item.rel) => Tier::Reject,
+            t => t,
         };
 
-        match verdict.tier {
+        match tier {
             Tier::Quarantine => {
+                // Machine sessions were intentionally not embedded; a
+                // semantic quarantine must retain its validated item vector.
+                let vector: &[f32] = if item.machine.is_some() {
+                    &[]
+                } else {
+                    vectors
+                        .get(&i)
+                        .ok_or("distill quarantine embedding is missing after validation")?
+                };
                 std::fs::create_dir_all(&quarantine_dir)
                     .map_err(|e| format!("create quarantine dir: {e}"))?;
                 let file_name = item
@@ -697,14 +1150,21 @@ fn scan(
                     to: rel_string(root, &target),
                 });
                 save_manifest(root, manifest)?;
-                let vector = vectors.get(&i).cloned().unwrap_or_default();
                 let payload = QuarantineSidecar {
                     tier: &verdict.tier,
                     s_knn: verdict.s_knn,
                     nearest_cluster: &verdict.nearest_cluster,
                     reason: &verdict.reason,
                     expires: now + ttl_secs,
-                    vector: &vector,
+                    vector,
+                    embedding: if item.machine.is_some() { None } else { space },
+                    source_sha256: Some(&item.source_sha256),
+                    decision_signature: if item.machine.is_some() {
+                        None
+                    } else {
+                        Some(&inputs.signature)
+                    },
+                    from: &item.rel,
                 };
                 let raw = serde_json::to_string_pretty(&payload)
                     .map_err(|e| format!("serialize verdict: {e}"))?;
@@ -714,7 +1174,15 @@ fn scan(
                 outcome.quarantined += 1;
             }
             Tier::Reject => {
-                state.rejected_ttl.insert(item.rel.clone(), now + ttl_secs);
+                // Re-admission in a new representation must not restart an
+                // unchanged rejected item's original retention window.
+                let same_source = state.scored.get(&item.rel).is_some_and(|entry| {
+                    entry.source_sha256.as_ref() == Some(&item.source_sha256)
+                        || (entry.source_sha256.is_none() && entry.hash == item.hash)
+                });
+                if !same_source || !state.rejected_ttl.contains_key(&item.rel) {
+                    state.rejected_ttl.insert(item.rel.clone(), now + ttl_secs);
+                }
                 outcome.rejected += 1;
             }
             Tier::Summary => outcome.summaries += 1,
@@ -725,10 +1193,30 @@ fn scan(
             item.rel,
             ScoredEntry {
                 hash: item.hash,
-                tier: tier_str(verdict.tier).to_string(),
+                tier: tier_str(tier).to_string(),
                 at: now,
                 mtime: item.mtime,
                 len: item.len,
+                rules: GATE_RULES,
+                turn: item.turn,
+                embedding: if item.machine.is_none() && item.junk.is_none() {
+                    space.cloned()
+                } else {
+                    None
+                },
+                nonsemantic: if item.machine.is_some() {
+                    Some(NonsemanticOrigin::Machine)
+                } else if item.junk.is_some() {
+                    Some(NonsemanticOrigin::Junk)
+                } else {
+                    None
+                },
+                source_sha256: Some(item.source_sha256),
+                decision_signature: if item.machine.is_none() && item.junk.is_none() {
+                    Some(inputs.signature.clone())
+                } else {
+                    None
+                },
             },
         );
         outcome.scored += 1;
@@ -772,8 +1260,8 @@ const TRASH_RETENTION_DAYS: i64 = 30;
 pub struct RunReport {
     pub id: String,
     pub scan: ScanOutcome,
-    pub archived: usize,
     pub trashed: usize,
+    pub deleted: usize,
     pub proposals: usize,
     pub backlog_after: usize,
 }
@@ -796,7 +1284,7 @@ pub struct DistillStatus {
     /// `None` if no run has ever happened — for the settings tab's
     /// "undo this run" button.
     pub last_run_id: Option<String>,
-    /// Wiki page count `gate_active` was computed from (Defect D) — the same
+    /// Eligible wiki count `gate_active` was computed from — the same
     /// count `scan`'s own cold-start gate compares against
     /// `GATE_MIN_WIKI_PAGES`, so the UI can show "N/50" instead of a bare
     /// on/off flag, without having to trigger a run to find out.
@@ -817,11 +1305,9 @@ pub(crate) struct MoveEntry {
     pub(crate) to: String,
 }
 
-/// Everything one `run` moved, trashed, or created — replayed in reverse by
-/// `undo`. `started_at` is this run's own unix-seconds clock reading (the
-/// same instant `id` is derived from), kept as a plain field rather than
-/// re-parsed out of `id` so undo's "was this touched since the run" check
-/// stays a straight integer comparison.
+/// Files one run moved, removed, or created. Revision maps identify recorded
+/// bytes; native publication receipts establish creation authority. Entries without revisions remain
+/// available for manual recovery. `started_at` orders run history only.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 struct RunManifest {
     id: String,
@@ -831,31 +1317,60 @@ struct RunManifest {
     moves: Vec<MoveEntry>,
     #[serde(default)]
     trashed: Vec<MoveEntry>,
+    /// Files removed without a recoverable destination; undo must never claim
+    /// to restore these. Missing on older manifests.
+    #[serde(default)]
+    deleted: Vec<String>,
     #[serde(default)]
     created: Vec<String>,
+    #[serde(default)]
+    created_revisions: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    move_revisions: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    archive: Option<archive::ArchiveJournal>,
 }
 
 fn manifest_path(root: &Path, id: &str) -> PathBuf {
     dir(root).join("distill-runs").join(format!("{id}.json"))
 }
 
-/// Atomically (over)write `.myco/distill-runs/<id>.json` — same tmp+rename
-/// pattern as `config_save`/`state_save`. Called after EVERY successful
-/// archive move, trash move, and proposal write in `run`, not once at the
-/// end: a mid-run I/O failure (the next op's `create_dir_all`/`rename`)
-/// aborts `run` via `?`, and without an incremental save every op that
-/// already succeeded would be recorded nowhere — invisible to `undo`, and
-/// invisible to the 30-day trash purge, which would then permanently delete
-/// trashed files with zero record they ever existed. The file on disk always
-/// covers exactly what has actually happened so far, never less.
+/// Atomically save an ordinary run manifest through the native CAS writer.
+/// Archive jobs use a persisted pre-move intent in `archive`; ordinary callers
+/// that do not capture byte revisions remain ineligible for automatic undo.
 fn save_manifest(root: &Path, m: &RunManifest) -> Result<(), String> {
     let target = manifest_path(root, &m.id);
+    let target = crate::vault::confine_delete_path(root, &target.to_string_lossy())?;
     let runs_dir = target.parent().ok_or("manifest path has no parent")?;
     std::fs::create_dir_all(runs_dir).map_err(|e| format!("create distill-runs dir: {e}"))?;
     let raw = serde_json::to_string_pretty(m).map_err(|e| format!("serialize manifest: {e}"))?;
-    let tmp = runs_dir.join(format!(".{}.json.tmp", m.id));
-    std::fs::write(&tmp, raw).map_err(|e| format!("write tmp manifest: {e}"))?;
-    std::fs::rename(&tmp, &target).map_err(|e| format!("rename manifest: {e}"))?;
+    let previous = match std::fs::read(&target) {
+        Ok(bytes) => Some(archive::sha(&bytes)),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("read manifest before save: {error}")),
+    };
+    crate::vault::write_file_if_unchanged(&target.to_string_lossy(), &raw, previous.as_deref())?;
+    Ok(())
+}
+
+fn permanently_delete_recorded(
+    root: &Path,
+    paths: &[PathBuf],
+    manifest: &mut RunManifest,
+) -> Result<(), String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("canonicalize vault: {e}"))?;
+    let targets: Vec<PathBuf> = paths
+        .iter()
+        .map(|p| crate::vault::confine_delete_path(root, &p.to_string_lossy()))
+        .collect::<Result<_, _>>()?;
+    crate::vault::validate_remove_all(&targets)?;
+    for target in targets {
+        crate::vault::remove_all(std::slice::from_ref(&target))?;
+        manifest.deleted.push(rel_string(&canonical_root, &target));
+        save_manifest(root, manifest)?;
+    }
     Ok(())
 }
 
@@ -910,55 +1425,26 @@ fn valid_lookup_id(id: &str) -> bool {
         && segs.next().is_none()
 }
 
-/// The one write path into `.myco/distill-runs/<id>.json` for TS-side steps
-/// that run outside Rust — session-digest's daily-file create, full-tier
-/// ingest's `_inbox/` archive + `raw/` create, draftMap's map-file create.
-/// Without this, those writes were invisible to `undo`: Rust's own
-/// archive/trash/proposal passes already call `save_manifest` after every
-/// step, but nothing let the TS chain add to the SAME manifest afterward, so
-/// "undo this run" never reversed the LLM steps that actually ran.
-///
-/// Creates-or-extends: a manifest already on disk under `id` (an earlier
-/// Rust-side pass, or an earlier TS append this same run) is read back and
-/// appended to; otherwise a fresh one is started with `started_at` set to
-/// now (this call's own instant is the closest available stand-in for "when
-/// the run this write belongs to began" — good enough for undo's "modified
-/// since the run" check, since nothing in the manifest predates it).
-///
-/// Every `from`/`to`/`created` path is confined via `myco_pro::safe_join`
-/// before anything is written — the same guard every other payload path in
-/// this file goes through (`confine_payload_file`). `undo` later joins
-/// manifest paths straight onto `root` and moves/deletes through them, so an
-/// unconfined string here (this command's whole purpose is accepting
-/// externally-supplied paths) would be a path-traversal write into an
-/// arbitrary undo entry, not merely a bad bookkeeping row.
+/// Test compatibility adapter that derives proofs from fixture bytes.
+/// Public IPC requires the writing workflow's explicit publication revisions.
+#[cfg(test)]
 pub(crate) fn append_distill_manifest(
     root: &Path,
     id: &str,
     moves: Vec<MoveEntry>,
     created: Vec<String>,
 ) -> Result<(), String> {
-    if !valid_manifest_id(id) {
-        return Err(format!("bad manifest id `{id}`"));
-    }
-    for m in &moves {
-        crate::myco_pro::safe_join(root, &m.from)?;
-        crate::myco_pro::safe_join(root, &m.to)?;
-    }
-    for c in &created {
-        crate::myco_pro::safe_join(root, c)?;
-    }
-    let mut manifest = std::fs::read_to_string(manifest_path(root, id))
-        .ok()
-        .and_then(|raw| serde_json::from_str::<RunManifest>(&raw).ok())
-        .unwrap_or_else(|| RunManifest {
-            id: id.to_string(),
-            started_at: now_secs(),
-            ..Default::default()
-        });
-    manifest.moves.extend(moves);
-    manifest.created.extend(created);
-    save_manifest(root, &manifest)
+    archive::append_legacy(root, id, moves, created)
+}
+
+/// Record exact publication bytes supplied by the writing workflow.
+pub(crate) fn append_distill_manifest_checked(
+    root: &Path,
+    id: &str,
+    moves: Vec<MoveEntry>,
+    publications: Vec<ArchivePublication>,
+) -> Result<(), String> {
+    archive::append_checked(root, id, moves, publications)
 }
 
 /// UTC (proleptic Gregorian) `(year, month, day, hour, minute, second)` from a
@@ -990,12 +1476,6 @@ pub(crate) fn civil_datetime(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
 fn run_id(secs: i64) -> String {
     let (y, m, d, hh, mm, ss) = civil_datetime(secs);
     format!("{y:04}{m:02}{d:02}T{hh:02}{mm:02}{ss:02}")
-}
-
-/// `YYYY-MM` bucket an archived file belongs in, from its own mtime.
-fn month_bucket(secs: i64) -> String {
-    let (y, m, ..) = civil_datetime(secs);
-    format!("{y:04}-{m:02}")
 }
 
 /// `base`, or the same id suffixed `-2`, `-3`… if a manifest under that exact
@@ -1128,42 +1608,6 @@ fn write_proposal(
     );
     std::fs::write(&path, content).map_err(|e| format!("write proposal: {e}"))?;
     Ok(rel_string(root, &path))
-}
-
-/// Section header a summary-tier digest line lands under in `daily/<day>.md`
-/// — appended at most once per file (`append_daily_summary_line` checks for
-/// it before adding it again).
-const DAILY_SUMMARY_HEADER: &str = "## Distill summary (auto)";
-
-/// Ensure `daily/<day>.md` exists (seeded with `# <day>\n` if it doesn't) and
-/// carries `DAILY_SUMMARY_HEADER`, then append `line`. Returns whether THIS
-/// call is what created the file from nothing — the one signal `run`'s
-/// summary-tier step needs to decide whether the file belongs in its undo
-/// manifest: appending to a file that already existed before this run must
-/// never let `undo` delete the whole thing, only a file this run itself
-/// originated may be deleted wholesale on undo.
-fn append_daily_summary_line(root: &Path, day: &str, line: &str) -> Result<bool, String> {
-    let dir = root.join("daily");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create daily dir: {e}"))?;
-    let path = dir.join(format!("{day}.md"));
-    let created = !path.exists();
-    let mut content = if created {
-        format!("# {day}\n")
-    } else {
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?
-    };
-    if !content.contains(DAILY_SUMMARY_HEADER) {
-        if !content.ends_with('\n') {
-            content.push('\n');
-        }
-        content.push('\n');
-        content.push_str(DAILY_SUMMARY_HEADER);
-        content.push_str("\n\n");
-    }
-    content.push_str(line);
-    content.push('\n');
-    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
-    Ok(created)
 }
 
 /// Parse ANY markdown file's YAML frontmatter into its raw `Pod` map — `None`
@@ -1325,8 +1769,20 @@ pub struct QuarantineEntry {
     /// threshold `s_knn` was compared against, which the sidecar has no
     /// field of its own for.
     pub reason: String,
-    /// Unix seconds the TTL sweep becomes eligible to trash this; 0 if unknown.
+    /// Unix seconds after which the TTL pass trashes this, or asks first
+    /// (`asks_on_expiry`); 0 if unknown.
     pub expires: i64,
+    /// Whether that pass makes a delete proposal rather than trashing:
+    /// `expiry_asks`, read off the sidecar and the vault's intensity.
+    pub asks_on_expiry: bool,
+}
+
+/// The TTL pass's choice for an expired quarantine item. Spec 2026-10-02
+/// decision 5: a session is deleted only by a click, whatever the intensity,
+/// and so is an item whose sidecar recorded no origin (`from`), which may be
+/// one. Conservative asks about everything.
+fn expiry_asks(conservative: bool, from: Option<&str>) -> bool {
+    conservative || !from.is_some_and(|f| !is_session(f))
 }
 
 /// First `PREVIEW_CHARS` characters of `content`'s body (frontmatter stripped
@@ -1352,6 +1808,7 @@ fn body_preview(content: &str) -> String {
 /// alongside so the UI never needs a second read per item.
 pub fn quarantine_entries(root: &Path) -> Vec<(QuarantineEntry, String)> {
     let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
+    let conservative = matches!(config_load(root).intensity, Intensity::Conservative);
     let mut out: Vec<(QuarantineEntry, String)> = crate::vault::vault_entries(&quarantine_dir)
         .into_iter()
         .filter(|(_, kind)| kind.is_file())
@@ -1382,6 +1839,10 @@ pub fn quarantine_entries(root: &Path) -> Vec<(QuarantineEntry, String)> {
                         .unwrap_or("")
                         .to_string(),
                     expires: sidecar.get("expires").and_then(|v| v.as_i64()).unwrap_or(0),
+                    asks_on_expiry: expiry_asks(
+                        conservative,
+                        sidecar.get("from").and_then(|v| v.as_str()),
+                    ),
                 },
                 body_preview(&content),
             ))
@@ -1407,41 +1868,271 @@ fn sidecar_path(content_path: &Path) -> PathBuf {
     ))
 }
 
+/// The origin a quarantined item's sidecar recorded (`from`); `None` for a
+/// sidecar written before the field existed, or a missing/unreadable one.
+fn sidecar_from(sidecar: &Path) -> Option<String> {
+    let raw = std::fs::read_to_string(sidecar).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    v.get("from")?.as_str().map(String::from)
+}
+
+/// Whether a `.myco/trash/` dir holds a file whose sidecar says it came from
+/// `sessions/`, or names no origin at all (a sidecar from before `from`
+/// existed, or none) — the purge leaves such a dir alone.
+fn may_hold_session(trash_dir: &Path) -> bool {
+    crate::vault::vault_entries(trash_dir)
+        .into_iter()
+        .any(|(e, kind)| {
+            let p = e.path();
+            kind.is_file()
+                && p.extension().and_then(|x| x.to_str()) == Some("md")
+                && sidecar_from(&sidecar_path(&p)).map_or(true, |f| is_session(&f))
+        })
+}
+
+/// Immediate purge requires an exact run-manifest inventory. A legacy or
+/// proposal trash folder without that record is left in place.
+fn recorded_trash_files(root: &Path, trash_dir: &Path) -> Result<Option<Vec<PathBuf>>, String> {
+    let Some(id) = trash_dir.file_name().and_then(|s| s.to_str()) else {
+        return Ok(None);
+    };
+    let manifest_file = manifest_path(root, id);
+    let manifest_file = crate::vault::confine_delete_path(root, &manifest_file.to_string_lossy())?;
+    if !manifest_file.exists() {
+        return Ok(None);
+    }
+    let raw =
+        std::fs::read_to_string(&manifest_file).map_err(|e| format!("read trash manifest: {e}"))?;
+    let recorded: RunManifest =
+        serde_json::from_str(&raw).map_err(|e| format!("parse trash manifest: {e}"))?;
+    if recorded.id != id {
+        return Ok(None);
+    }
+    let prefix = format!(".myco/trash/{id}/");
+    let expected: std::collections::BTreeSet<String> = recorded
+        .trashed
+        .iter()
+        .filter_map(|entry| {
+            if !is_quarantine_payload_path(&entry.from) {
+                return None;
+            }
+            entry
+                .to
+                .strip_prefix(&prefix)
+                .filter(|name| !name.is_empty() && !name.contains('/'))
+                .map(String::from)
+        })
+        .collect();
+    let mut actual = std::collections::BTreeSet::new();
+    let mut paths = Vec::new();
+    for entry in std::fs::read_dir(trash_dir).map_err(|e| format!("read app trash: {e}"))? {
+        let entry = entry.map_err(|e| format!("read app trash entry: {e}"))?;
+        let kind = entry
+            .file_type()
+            .map_err(|e| format!("inspect app trash entry: {e}"))?;
+        if !kind.is_file() {
+            return Ok(None);
+        }
+        actual.insert(entry.file_name().to_string_lossy().into_owned());
+        paths.push(entry.path());
+    }
+    Ok((!actual.is_empty() && actual == expected).then_some(paths))
+}
+
+fn purge_trash(
+    root: &Path,
+    now: i64,
+    permanent: bool,
+    manifest: &mut RunManifest,
+) -> Result<usize, String> {
+    let trash_root = dir(root).join("trash");
+    let trash_root = crate::vault::confine_delete_path(root, &trash_root.to_string_lossy())?;
+    if !trash_root.exists() {
+        return Ok(0);
+    }
+    let mut deleted = 0;
+    for entry in std::fs::read_dir(&trash_root).map_err(|e| format!("read app trash: {e}"))? {
+        let entry = entry.map_err(|e| format!("read app trash entry: {e}"))?;
+        let kind = entry
+            .file_type()
+            .map_err(|e| format!("inspect app trash entry: {e}"))?;
+        if kind.is_symlink() {
+            return Err("refused: app trash contains a symbolic link".into());
+        }
+        if !kind.is_dir() || may_hold_session(&entry.path()) {
+            continue;
+        }
+        let aged = mtime_secs(&entry.path())
+            .is_some_and(|mtime| now - mtime > TRASH_RETENTION_DAYS * 86_400);
+        if permanent {
+            let Some(paths) = recorded_trash_files(root, &entry.path())? else {
+                continue;
+            };
+            deleted += paths
+                .iter()
+                .filter(|p| p.extension().and_then(|s| s.to_str()) == Some("md"))
+                .count();
+            permanently_delete_recorded(root, &paths, manifest)?;
+            std::fs::remove_dir(entry.path())
+                .map_err(|e| format!("remove empty app trash directory: {e}"))?;
+        } else if aged {
+            // Preserve the original retention policy, but surface failures and
+            // reject a symlink anywhere in the directory before removal.
+            crate::vault::remove_all(&[entry.path()])?;
+        }
+    }
+    Ok(deleted)
+}
+
+#[cfg(test)]
+thread_local! {
+    static KEEP_BEFORE_LOCK_HOOK: std::cell::RefCell<Option<Box<dyn Fn()>>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+pub(crate) fn set_keep_before_lock_hook(hook: impl Fn() + 'static) {
+    KEEP_BEFORE_LOCK_HOOK.with(|slot| *slot.borrow_mut() = Some(Box::new(hook)));
+}
+
 /// "Keep N more days": push each item's sidecar `expires` out by `days` from
 /// whichever is later, now or its current expiry, so extending a not-yet-
 /// expired item adds to its remaining time instead of shortening it. Only the
-/// `expires` key is rewritten — the vector and verdict fields are left exactly
-/// as scanned. Returns how many sidecars were actually rewritten (a missing or
-/// unparseable sidecar is skipped, not an error: the item stays listed and the
-/// TTL sweep already ignores it for the same reason).
+/// `expires` key is rewritten; other parsed fields are preserved. The payload
+/// must still exist under the cooperating writer lock. Missing sidecars and
+/// malformed/non-object JSON are skipped; read errors (including invalid UTF-8)
+/// and lost payloads are errors.
+/// A batch error names earlier extensions; it does not roll them back.
 pub fn extend_quarantine(root: &Path, files: &[String], days: u32) -> Result<usize, String> {
-    let now = now_secs();
-    let mut extended = 0usize;
-    for f in files {
-        let content_path =
-            confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
-        let path = sidecar_path(&content_path);
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(mut sidecar) = serde_json::from_str::<serde_json::Value>(&raw) else {
-            continue;
-        };
-        let Some(map) = sidecar.as_object_mut() else {
-            continue;
-        };
-        let current = map.get("expires").and_then(|v| v.as_i64()).unwrap_or(0);
-        let base = current.max(now);
-        map.insert(
-            "expires".into(),
-            serde_json::json!(base + days as i64 * 86_400),
-        );
-        let out = serde_json::to_string_pretty(&sidecar)
-            .map_err(|e| format!("serialize verdict: {e}"))?;
-        std::fs::write(&path, out).map_err(|e| format!("write verdict sidecar: {e}"))?;
-        extended += 1;
+    extend_quarantine_impl(
+        root,
+        files,
+        days,
+        #[cfg(test)]
+        || {
+            KEEP_BEFORE_LOCK_HOOK.with(|slot| {
+                if let Some(hook) = slot.borrow().as_ref() {
+                    hook();
+                }
+            });
+        },
+        #[cfg(test)]
+        |_| Ok(()),
+    )
+}
+
+fn extend_quarantine_impl(
+    root: &Path,
+    files: &[String],
+    days: u32,
+    #[cfg(test)] before_lock: impl FnOnce(),
+    #[cfg(test)] mut after_read: impl FnMut(&Path) -> Result<(), String>,
+) -> Result<usize, String> {
+    crate::vault::with_root_mutation_impl(
+        root,
+        |canonical_root, guard| {
+            let now = now_secs();
+            let mut extended = Vec::new();
+            for file in files {
+                let changed = extend_quarantine_item(
+                    canonical_root,
+                    guard,
+                    file,
+                    now,
+                    days,
+                    #[cfg(test)]
+                    &mut after_read,
+                )
+                .map_err(|error| {
+                    format!(
+                        "Keep failed for {file}; extended [{}]: {error}",
+                        extended.join(", ")
+                    )
+                })?;
+                if changed {
+                    extended.push(file.as_str());
+                }
+            }
+            Ok(extended.len())
+        },
+        #[cfg(test)]
+        before_lock,
+    )
+}
+
+fn keep_regular_file(root: &Path, path: &Path) -> Result<Option<PathBuf>, String> {
+    let path = crate::vault::confine_delete_path(root, &path.to_string_lossy())?;
+    let metadata = match std::fs::symlink_metadata(&path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("inspect Keep file {}: {error}", path.display())),
+    };
+    if !metadata.is_file() {
+        return Err(format!(
+            "Keep target is not a regular file: {}",
+            path.display()
+        ));
     }
-    Ok(extended)
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        if metadata.nlink() != 1 {
+            return Err(format!(
+                "Keep target has additional hard links: {}",
+                path.display()
+            ));
+        }
+    }
+    Ok(Some(path))
+}
+
+fn extend_quarantine_item(
+    root: &Path,
+    guard: &std::sync::MutexGuard<'_, ()>,
+    file: &str,
+    now: i64,
+    days: u32,
+    #[cfg(test)] after_read: &mut impl FnMut(&Path) -> Result<(), String>,
+) -> Result<bool, String> {
+    let content =
+        confine_payload_file(root, file, is_quarantine_payload_path, "_inbox/quarantine/")?;
+    let content =
+        keep_regular_file(root, &content)?.ok_or("Keep payload is missing or already moved")?;
+    let path = sidecar_path(&content);
+    let Some(path) = keep_regular_file(root, &path)? else {
+        return Ok(false);
+    };
+    let raw =
+        std::fs::read_to_string(&path).map_err(|error| format!("read Keep verdict: {error}"))?;
+    let Ok(mut sidecar) = serde_json::from_str::<serde_json::Value>(&raw) else {
+        return Ok(false);
+    };
+    let Some(map) = sidecar.as_object_mut() else {
+        return Ok(false);
+    };
+    let current = map
+        .get("expires")
+        .and_then(|value| value.as_i64())
+        .unwrap_or(0);
+    let expires = current
+        .max(now)
+        .checked_add(i64::from(days) * 86_400)
+        .ok_or("Keep expiry would overflow")?;
+    map.insert("expires".into(), expires.into());
+    let out = serde_json::to_string_pretty(&sidecar)
+        .map_err(|error| format!("serialize Keep verdict: {error}"))?;
+    #[cfg(test)]
+    after_read(&path)?;
+    keep_regular_file(root, &content)?.ok_or("Keep payload is missing or already moved")?;
+    keep_regular_file(root, &path)?.ok_or("Keep verdict changed while it was read")?;
+    crate::vault::write_file_if_unchanged_recorded_locked(
+        guard,
+        &path.to_string_lossy(),
+        &out,
+        Some(&admission::sha256(raw.as_bytes())),
+    )?;
+    Ok(true)
 }
 
 /// Cheap backlog estimate: inflow candidates the ledger has not yet scored,
@@ -1451,42 +2142,19 @@ pub fn extend_quarantine(root: &Path, files: &[String], days: u32) -> Result<usi
 fn backlog_count(root: &Path, state: &DistillState) -> usize {
     let unscored = collect_candidates(root)
         .iter()
-        .filter(|c| !state.scored.contains_key(&c.rel))
+        .filter(|c| !metadata_is_scored(root, state, &c.rel))
         .count();
     unscored + quarantine_item_count(root)
 }
 
-/// Move the file currently at `entry.to` back to `entry.from`, unless it was
-/// modified since the run (the user touched it) or `entry.from` is now
-/// occupied by something else — either way this entry is skipped with a
-/// warning rather than silently overwriting user data. Returns whether the
-/// move happened.
-fn move_back(root: &Path, entry: &MoveEntry, run_id: &str, run_time: i64) -> bool {
-    let to_path = root.join(&entry.to);
-    let from_path = root.join(&entry.from);
-    let Some(mtime) = mtime_secs(&to_path) else {
-        return false; // nothing there to restore
-    };
-    if mtime > run_time {
-        eprintln!(
-            "distill undo {run_id}: skipping {} (modified since the run)",
-            entry.to
-        );
-        return false;
-    }
-    if from_path.exists() {
-        eprintln!(
-            "distill undo {run_id}: skipping {} (original path is occupied)",
-            entry.from
-        );
-        return false;
-    }
-    if let Some(parent) = from_path.parent() {
-        if std::fs::create_dir_all(parent).is_err() {
-            return false;
+fn backlog_count_checked(root: &Path, state: &DistillState) -> Result<usize, String> {
+    let mut unscored = 0;
+    for candidate in collect_candidates(root) {
+        if !is_scored_current(root, state, &candidate.rel)? {
+            unscored += 1;
         }
     }
-    std::fs::rename(&to_path, &from_path).is_ok()
+    Ok(unscored + quarantine_item_count(root))
 }
 
 /// Paths `run` can touch — the only ones ever staged, so a distill commit
@@ -1551,7 +2219,6 @@ fn render_report(
     cfg: &DistillConfig,
     ontology_rebuilt: bool,
     scan: &ScanOutcome,
-    archived: usize,
     trashed: usize,
     proposals: usize,
     manifest: &RunManifest,
@@ -1575,13 +2242,24 @@ fn render_report(
     s += &format!("- full: {}\n", scan.full);
     s += &format!("- skipped (immature): {}\n\n", scan.skipped_immature);
 
-    s += &format!("## Archive ({archived} moved)\n\n");
+    s += "## Moved\n\n";
     if manifest.moves.is_empty() {
         s += "(none)\n";
     } else {
         for m in &manifest.moves {
             s += &format!("- `{}` -> `{}`\n", m.from, m.to);
         }
+    }
+    s += "\n";
+
+    s += "## Permanently deleted\n\n";
+    if manifest.deleted.is_empty() {
+        s += "(none)\n";
+    } else {
+        for path in &manifest.deleted {
+            s += &format!("- `{path}`\n");
+        }
+        s += "\nThese files cannot be restored by Undo.\n";
     }
     s += "\n";
 
@@ -1607,8 +2285,9 @@ fn render_report(
 
     s += &format!("Backlog after this run: {backlog_after}\n\n");
     s += &format!(
-        "## Undo\n\nRun `undo_distill_run` with id `{id}` to reverse every move, trash, and \
-         proposal this run made.\n"
+        "## Undo\n\nRun `undo_distill_run` with id `{id}` for operations with native undo authority. \
+         Unsigned move and trash history requires manual recovery from the recorded destinations. \
+         Permanently deleted files cannot be restored.\n"
     );
     s
 }
@@ -1636,52 +2315,161 @@ struct SidecarInfo {
     vector: Vec<f32>,
     nearest_cluster: String,
     s_knn: f32,
+    embedding: EmbeddingSpace,
+    decision_signature: String,
+    source_sha256: String,
+    sidecar_sha256: String,
+    first_line: String,
 }
 
 /// Read `_inbox/quarantine/<stem>.verdict.json` for a quarantined item given
-/// its content file's rel path (e.g. `_inbox/quarantine/a.md`) — `None` if the
-/// sidecar is missing, unparseable, or carries no vector.
-fn read_sidecar(root: &Path, content_rel: &str) -> Option<SidecarInfo> {
+/// its content file's rel path. Legacy unstamped and rule-only sidecars stay
+/// reviewable, but provide no semantic vector. Stamped malformed input is an
+/// explicit error; it is never shortened, normalized, rewritten or deleted.
+fn read_sidecar(root: &Path, content_rel: &str) -> Result<Option<SidecarInfo>, String> {
+    let Some(source) = admission::read_source(root, content_rel)? else {
+        return Ok(None);
+    };
     let content_path = root.join(content_rel);
-    let raw = std::fs::read_to_string(sidecar_path(&content_path)).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
-    let vector: Vec<f32> = v
-        .get("vector")?
-        .as_array()?
+    let content_path = crate::vault::confine_delete_path(root, &content_path.to_string_lossy())?;
+    let path = sidecar_path(&content_path);
+    let path = crate::vault::confine_delete_path(root, &path.to_string_lossy())?;
+    let Some(raw) = crate::index_publication::read_checked(&path)? else {
+        return Ok(None);
+    };
+    let value: serde_json::Value = serde_json::from_slice(&raw)
+        .map_err(|_| "quarantine semantic sidecar is corrupt".to_string())?;
+    if !value.is_object() {
+        return Err("quarantine semantic sidecar is not an object".into());
+    }
+    let Some(stamp) = value.get("embedding").filter(|stamp| !stamp.is_null()) else {
+        return Ok(None);
+    };
+    let embedding: EmbeddingSpace = serde_json::from_value(stamp.clone())
+        .map_err(|_| "quarantine representation identity is malformed".to_string())?;
+    embedding.validate()?;
+    let vector: Vec<f32> = value
+        .get("vector")
+        .and_then(serde_json::Value::as_array)
+        .ok_or("quarantine semantic vector is missing or malformed")?
         .iter()
-        .filter_map(|x| x.as_f64().map(|f| f as f32))
-        .collect();
-    Some(SidecarInfo {
+        .map(|member| {
+            member
+                .as_f64()
+                .map(|number| number as f32)
+                .ok_or("quarantine semantic vector contains a nonnumeric member".to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    crate::embeddings::checked_vector_norm(&vector, Some(embedding.dim))?;
+    let s_knn = value
+        .get("s_knn")
+        .and_then(serde_json::Value::as_f64)
+        .ok_or("quarantine semantic score is missing or malformed")? as f32;
+    if !s_knn.is_finite() {
+        return Err("quarantine semantic score is nonfinite".into());
+    }
+    let nearest_cluster = value
+        .get("nearest_cluster")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("quarantine nearest-cluster metadata is malformed")?
+        .to_string();
+    let receipt = |key: &str| -> Result<Option<String>, String> {
+        match value.get(key).filter(|value| !value.is_null()) {
+            None => Ok(None),
+            Some(value) => value
+                .as_str()
+                .filter(|signature| admission::valid_digest(signature))
+                .map(|signature| Some(signature.to_string()))
+                .ok_or_else(|| format!("quarantine {key} provenance is malformed")),
+        }
+    };
+    let source_sha256 = receipt("source_sha256")?;
+    let decision_signature = receipt("decision_signature")?;
+    let (Some(source_sha256), Some(decision_signature)) = (source_sha256, decision_signature)
+    else {
+        return Ok(None);
+    };
+    if source.sha256 != source_sha256 {
+        return Ok(None);
+    }
+    let content =
+        String::from_utf8(source.bytes).map_err(|_| "quarantine semantic content is not UTF-8")?;
+    let first_line = content
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("")
+        .to_string();
+    Ok(Some(SidecarInfo {
         vector,
-        nearest_cluster: v
-            .get("nearest_cluster")
-            .and_then(|x| x.as_str())
-            .unwrap_or("")
-            .to_string(),
-        s_knn: v.get("s_knn").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
-    })
+        nearest_cluster,
+        s_knn,
+        embedding,
+        decision_signature,
+        source_sha256,
+        sidecar_sha256: admission::sha256(&raw),
+        first_line,
+    }))
 }
 
 /// Every currently-quarantined item's rel path + embedding vector, sorted by
 /// path — the deterministic order `emerging_clusters` groups over.
-fn quarantine_vectors(root: &Path) -> Vec<(String, Vec<f32>)> {
+fn quarantine_vectors(
+    root: &Path,
+    expected: Option<&EmbeddingSpace>,
+    decision_signature: Option<&str>,
+) -> Result<Vec<(String, SidecarInfo)>, String> {
+    if let Some(space) = expected {
+        space.validate()?;
+    }
     let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
-    let mut out: Vec<(String, Vec<f32>)> = crate::vault::vault_entries(&quarantine_dir)
-        .into_iter()
-        .filter(|(_, kind)| kind.is_file())
-        .filter_map(|(entry, _)| {
-            let name = entry.file_name().to_string_lossy().into_owned();
-            let stem = name.strip_suffix(".verdict.json")?;
-            let content_rel = format!("{}/{QUARANTINE_DIR}/{stem}.md", crate::commands::DEST_INBOX);
-            if !root.join(&content_rel).exists() {
-                return None;
+    let quarantine_dir =
+        crate::vault::confine_delete_path(root, &quarantine_dir.to_string_lossy())?;
+    let entries = match crate::vault::vault_entries_checked(&quarantine_dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(_) => return Err("quarantine semantic directory is unreadable or nonregular".into()),
+    };
+    // The generic vault walker deliberately skips symbolic links. A semantic
+    // snapshot instead rejects a linked/nonregular member so it cannot appear
+    // to be a complete valid collection after omitting one.
+    for entry in
+        std::fs::read_dir(&quarantine_dir).map_err(|_| "read quarantine semantic directory")?
+    {
+        let entry = entry.map_err(|_| "read quarantine semantic entry")?;
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !name.starts_with('.') && (name.ends_with(".verdict.json") || name.ends_with(".md")) {
+            let kind = entry
+                .file_type()
+                .map_err(|_| "inspect quarantine semantic entry")?;
+            if !kind.is_file() || kind.is_symlink() {
+                return Err("quarantine semantic member is not a regular file".into());
             }
-            let info = read_sidecar(root, &content_rel)?;
-            Some((content_rel, info.vector))
-        })
-        .collect();
+        }
+    }
+    let mut out = Vec::new();
+    for (entry, kind) in entries {
+        if !kind.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(stem) = name.strip_suffix(".verdict.json") else {
+            continue;
+        };
+        let content_rel = format!("{}/{QUARANTINE_DIR}/{stem}.md", crate::commands::DEST_INBOX);
+        let Some(info) = read_sidecar(root, &content_rel)? else {
+            continue;
+        };
+        // A valid old representation is retained pending migration, never
+        // compared with the active one or used to authorize a proposal.
+        if Some(&info.embedding) == expected
+            && Some(info.decision_signature.as_str()) == decision_signature
+        {
+            out.push((content_rel, info));
+        }
+    }
     out.sort_by(|a, b| a.0.cmp(&b.0));
-    out
+    Ok(out)
 }
 
 /// Greedy connected-components clustering over quarantine sidecar vectors:
@@ -1694,8 +2482,102 @@ fn quarantine_vectors(root: &Path) -> Vec<(String, Vec<f32>)> {
 /// ponytail: O(n^2) pairwise comparisons — fine at quarantine-pile sizes
 /// (tens to low hundreds); an ANN index would be the upgrade if quarantine
 /// ever grows into the thousands.
-pub fn emerging_clusters(root: &Path, min_size: usize, min_sim: f32) -> Vec<Vec<String>> {
-    let items = quarantine_vectors(root);
+pub fn emerging_clusters(
+    root: &Path,
+    min_size: usize,
+    min_sim: f32,
+) -> Result<Vec<Vec<String>>, String> {
+    let store = current_store(root)?;
+    let space = optional_store_space(&store)?;
+    let cfg = config_load_checked(root)?;
+    let inputs = admission::current(root, &store, &cfg)?;
+    let items = quarantine_vectors(
+        root,
+        space.as_ref(),
+        inputs.as_ref().map(|inputs| inputs.signature.as_str()),
+    )?;
+    let groups = emerging_groups(&items, min_size, min_sim)?;
+    Ok(groups
+        .into_iter()
+        .map(|group| {
+            group
+                .into_iter()
+                .map(|index| items[index].0.clone())
+                .collect()
+        })
+        .collect())
+}
+
+fn current_store(root: &Path) -> Result<crate::vector_index::VectorStore, String> {
+    let canonical = root
+        .canonicalize()
+        .map_err(|_| "canonicalize distill index root")?;
+    let path = crate::vector_index::VectorStore::path_for(&canonical.to_string_lossy())?;
+    crate::vector_index::VectorStore::load_checked(&path)
+}
+
+#[cfg(test)]
+pub(crate) fn test_current_decision_signature(root: &Path) -> Result<Option<String>, String> {
+    let store = current_store(root)?;
+    let cfg = config_load_checked(root)?;
+    Ok(admission::current(root, &store, &cfg)?.map(|inputs| inputs.signature))
+}
+
+fn optional_store_space(
+    store: &crate::vector_index::VectorStore,
+) -> Result<Option<EmbeddingSpace>, String> {
+    if store.dim == 0 && store.records.is_empty() {
+        return Ok(None);
+    }
+    store.embedding_space().map(Some)
+}
+
+/// Display counts may degrade after an explicit diagnostic, but they must not
+/// count stale semantic entries as current because the model name still matches.
+fn metadata_state(root: &Path) -> DistillState {
+    let result = current_store(root).and_then(|store| {
+        let space = optional_store_space(&store)?;
+        let cfg = config_load_checked(root)?;
+        let inputs = admission::current(root, &store, &cfg)?;
+        state_for_inputs(root, space.as_ref(), &store.model, inputs.as_ref())
+    });
+    result.unwrap_or_else(|error| {
+        eprintln!("myco: distill metadata context unavailable: {error}");
+        let mut state = state_load(root, "");
+        state.embedding = None;
+        state.decision_signature = None;
+        state
+    })
+}
+
+fn verify_current_inputs(
+    root: &Path,
+    cfg: &DistillConfig,
+    inputs: &admission::DecisionInputs,
+) -> Result<(), String> {
+    let current_cfg = config_load_checked(root)?;
+    if serde_json::to_value(&current_cfg).map_err(|_| "serialize current distill policy")?
+        != serde_json::to_value(cfg).map_err(|_| "serialize pinned distill policy")?
+    {
+        return Err("distill configuration changed before publication".into());
+    }
+    let store = current_store(root)?;
+    let current = admission::current(root, &store, &current_cfg)?;
+    if current.as_ref().map(|current| current.signature.as_str()) != Some(inputs.signature.as_str())
+    {
+        return Err("distill published decision inputs changed before publication".into());
+    }
+    Ok(())
+}
+
+fn emerging_groups(
+    items: &[(String, SidecarInfo)],
+    min_size: usize,
+    min_sim: f32,
+) -> Result<Vec<Vec<usize>>, String> {
+    if !min_sim.is_finite() {
+        return Err("emerging-cluster similarity threshold is nonfinite".into());
+    }
     let n = items.len();
 
     fn find(parent: &mut [usize], x: usize) -> usize {
@@ -1708,7 +2590,8 @@ pub fn emerging_clusters(root: &Path, min_size: usize, min_sim: f32) -> Vec<Vec<
     let mut parent: Vec<usize> = (0..n).collect();
     for i in 0..n {
         for j in (i + 1)..n {
-            if crate::embeddings::cosine(&items[i].1, &items[j].1) >= min_sim {
+            if crate::embeddings::checked_cosine(&items[i].1.vector, &items[j].1.vector)? >= min_sim
+            {
                 let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
                 if ri != rj {
                     parent[ri.max(rj)] = ri.min(rj);
@@ -1717,16 +2600,16 @@ pub fn emerging_clusters(root: &Path, min_size: usize, min_sim: f32) -> Vec<Vec<
         }
     }
 
-    let mut groups: HashMap<usize, Vec<String>> = HashMap::new();
-    for (i, item) in items.into_iter().enumerate() {
-        groups.entry(find(&mut parent, i)).or_default().push(item.0);
+    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in 0..n {
+        groups.entry(find(&mut parent, i)).or_default().push(i);
     }
-    let mut out: Vec<Vec<String>> = groups
+    let mut out: Vec<Vec<usize>> = groups
         .into_values()
         .filter(|g| g.len() >= min_size)
         .collect();
     out.sort_by(|a, b| a[0].cmp(&b[0])); // by first (already sorted) member
-    out
+    Ok(out)
 }
 
 /// A handful of connective words worth ignoring in `label_cluster`'s crude
@@ -1743,7 +2626,7 @@ const LABEL_STOPWORDS: &[&str] = &[
 /// member so one repetitive file can't dominate — tie-broken alphabetically.
 /// Simple on purpose; swap for something smarter (e.g. TF-IDF against the
 /// ontology's own vocabulary) if this proves too crude in practice.
-fn label_cluster(root: &Path, members: &[String]) -> String {
+fn label_cluster(items: &[(String, SidecarInfo)], members: &[usize]) -> String {
     fn tokens(s: &str) -> impl Iterator<Item = String> + '_ {
         s.split(|c: char| !c.is_alphanumeric())
             .map(str::to_lowercase)
@@ -1751,16 +2634,13 @@ fn label_cluster(root: &Path, members: &[String]) -> String {
     }
 
     let mut counts: HashMap<String, usize> = HashMap::new();
-    for m in members {
+    for index in members {
+        let (member, info) = &items[*index];
         let mut seen = std::collections::HashSet::new();
-        if let Some(stem) = Path::new(m).file_stem().and_then(|s| s.to_str()) {
+        if let Some(stem) = Path::new(member).file_stem().and_then(|s| s.to_str()) {
             seen.extend(tokens(stem));
         }
-        if let Ok(content) = std::fs::read_to_string(root.join(m)) {
-            if let Some(first_line) = content.lines().find(|l| !l.trim().is_empty()) {
-                seen.extend(tokens(first_line));
-            }
-        }
+        seen.extend(tokens(&info.first_line));
         for t in seen {
             *counts.entry(t).or_insert(0) += 1;
         }
@@ -1808,12 +2688,13 @@ fn pending_admit_cluster_exists(root: &Path, files: &[String]) -> bool {
         })
 }
 
-/// True if a PENDING `summary-batch` proposal already names this exact file
+/// True if a PENDING `action` proposal already names exactly this one file
 /// — the same de-dup `pending_admit_cluster_exists` gives `admit-cluster`,
-/// narrowed to a single file: unlike an emerging cluster, a summary-tier item
-/// gets its own proposal, mirroring the raw archive pass's per-file
-/// `archive-batch` proposals rather than grouping many files into one.
-fn pending_summary_batch_exists(root: &Path, rel: &str) -> bool {
+/// narrowed to a single file: unlike an emerging cluster, a summary-tier
+/// item or an expired quarantine item gets its own proposal, mirroring the
+/// raw archive pass's per-file `archive-batch` proposals rather than
+/// grouping many files into one.
+fn pending_file_proposal_exists(root: &Path, action: &str, rel: &str) -> bool {
     crate::vault::vault_entries(&root.join("work/feedback"))
         .into_iter()
         .filter(|(e, kind)| {
@@ -1829,9 +2710,9 @@ fn pending_summary_batch_exists(root: &Path, rel: &str) -> bool {
             if !is_pending_map(&map) {
                 return false;
             }
-            let is_summary_batch =
-                matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == "summary-batch");
-            is_summary_batch && proposal_payload_files(&map) == [rel.to_string()]
+            let is_action =
+                matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == action);
+            is_action && proposal_payload_files(&map) == [rel.to_string()]
         })
 }
 
@@ -1898,37 +2779,99 @@ fn pending_draft_map_exists(root: &Path, cluster_label: &str, cluster_members: &
 /// are proposed as a new topic, unless a pending `admit-cluster` proposal for
 /// the exact same file set already exists. Returns the number of proposals
 /// written; `save_manifest`s after each one, same as every other pass.
+#[cfg(test)]
 fn propose_emerging_clusters(root: &Path, manifest: &mut RunManifest) -> Result<usize, String> {
-    let mut written = 0usize;
-    for files in emerging_clusters(root, EMERGING_MIN_SIZE, EMERGING_MIN_SIM) {
+    let store = current_store(root)?;
+    let space = optional_store_space(&store)?;
+    let cfg = config_load_checked(root)?;
+    let inputs = admission::current(root, &store, &cfg)?;
+    propose_emerging_clusters_for_inputs(
+        root,
+        space.as_ref(),
+        inputs.as_ref(),
+        &cfg,
+        true,
+        manifest,
+    )
+}
+
+fn propose_emerging_clusters_for_inputs(
+    root: &Path,
+    space: Option<&EmbeddingSpace>,
+    inputs: Option<&admission::DecisionInputs>,
+    cfg: &DistillConfig,
+    verify_published: bool,
+    manifest: &mut RunManifest,
+) -> Result<usize, String> {
+    let items = quarantine_vectors(root, space, inputs.map(|inputs| inputs.signature.as_str()))?;
+    let groups = emerging_groups(&items, EMERGING_MIN_SIZE, EMERGING_MIN_SIM)?;
+    // Prepare every checked group from one immutable sidecar snapshot before
+    // writing the first proposal. A later input error cannot leave an earlier
+    // valid group's proposal or an incrementally changed manifest behind.
+    let mut prepared = Vec::new();
+    for indices in groups {
+        let files: Vec<String> = indices
+            .iter()
+            .map(|index| items[*index].0.clone())
+            .collect();
         if pending_admit_cluster_exists(root, &files) {
             continue;
         }
-        let infos: Vec<SidecarInfo> = files.iter().filter_map(|f| read_sidecar(root, f)).collect();
-
-        let mut sum = 0.0f32;
-        let mut pairs = 0u32;
-        for i in 0..infos.len() {
-            for j in (i + 1)..infos.len() {
-                sum += crate::embeddings::cosine(&infos[i].vector, &infos[j].vector);
+        let mut sum = crate::embeddings::CompensatedSum::default();
+        let mut pairs = 0usize;
+        for i in 0..indices.len() {
+            for j in (i + 1)..indices.len() {
+                sum.add(f64::from(crate::embeddings::checked_cosine(
+                    &items[indices[i]].1.vector,
+                    &items[indices[j]].1.vector,
+                )?));
                 pairs += 1;
             }
         }
-        let mean_sim = if pairs > 0 { sum / pairs as f32 } else { 0.0 };
-
-        let label = label_cluster(root, &files);
+        let mean_sim = if pairs > 0 {
+            sum.total() / pairs as f64
+        } else {
+            0.0
+        };
+        if !mean_sim.is_finite() {
+            return Err("emerging-cluster mean similarity is nonfinite".into());
+        }
+        let label = label_cluster(&items, &indices);
         let mut body = format!(
             "{} quarantined items cluster together (mean similarity {mean_sim:.2}). Admit as a \
              new topic?\n\n",
             files.len()
         );
-        for (f, info) in files.iter().zip(&infos) {
+        for index in indices {
+            let (file, info) = &items[index];
             body += &format!(
-                "- [[{f}]] — nearest '{}' {:.2}\n",
+                "- [[{file}]] — nearest '{}' {:.2}\n",
                 info.nearest_cluster, info.s_knn
             );
         }
-
+        prepared.push((label, body, files));
+    }
+    if !prepared.is_empty() {
+        if verify_published {
+            verify_current_inputs(
+                root,
+                cfg,
+                inputs.ok_or("distill proposal has no current decision context")?,
+            )?;
+        }
+        for (rel, info) in &items {
+            if !admission::source_matches(root, rel, &info.source_sha256)? {
+                return Err("quarantine source changed before proposal publication".into());
+            }
+            let path = sidecar_path(&root.join(rel));
+            let sidecar_rel = rel_string(root, &path);
+            if !admission::source_matches(root, &sidecar_rel, &info.sidecar_sha256)? {
+                return Err("quarantine sidecar changed before proposal publication".into());
+            }
+        }
+    }
+    let mut written = 0usize;
+    for (label, body, files) in prepared {
         let rel = write_proposal(
             root,
             "admit-cluster",
@@ -2137,6 +3080,38 @@ fn archive_resolved_proposals(root: &Path, manifest: &mut RunManifest) -> Result
     Ok(archived)
 }
 
+/// Owner decision 2026-10-03 (B1): no run touches raw/, so an `archive-batch`
+/// proposal an older run left that still awaits resolution (pending, or an
+/// approved one whose apply failed) is marked `done` without moving anything.
+/// Runs before `archive_resolved_proposals`, which then sweeps it out of the
+/// inbox the same run.
+fn retire_archive_batch_proposals(root: &Path) -> Result<usize, String> {
+    let mut retired = 0usize;
+    for (entry, kind) in crate::vault::vault_entries(&root.join("work/feedback")) {
+        let path = entry.path();
+        if !kind.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(map) = proposal_frontmatter(&content) else {
+            continue;
+        };
+        let is_archive_batch =
+            matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == "archive-batch");
+        if is_archive_batch && is_awaiting_resolution_map(&map) {
+            // Cleanup with nothing to apply: a file that cannot be written
+            // stays pending and listed (the Feedback card shows it as
+            // retired) rather than failing every run.
+            if set_proposal_status(&path, &content, "done").is_ok() {
+                retired += 1;
+            }
+        }
+    }
+    Ok(retired)
+}
+
 /// Rewrite a proposal file's `status:` line in place, leaving every other
 /// line (including the rest of the frontmatter and the body) untouched. Only
 /// touches the line inside the first `---`...`---` block — a `status:` -like
@@ -2170,10 +3145,17 @@ fn set_proposal_status(path: &Path, raw: &str, status: &str) -> Result<(), Strin
 struct ApplyOutcome {
     moved: usize,
     skipped: usize,
+    deleted: Option<usize>,
 }
 
 impl ApplyOutcome {
     fn summary(&self) -> String {
+        if let Some(deleted) = self.deleted {
+            return format!(
+                "permanently deleted {deleted}, skipped {} already-processed",
+                self.skipped
+            );
+        }
         format!(
             "moved {}, skipped {} already-processed",
             self.moved, self.skipped
@@ -2230,38 +3212,81 @@ fn is_session_payload_path(rel: &str) -> bool {
     rel.starts_with(&prefix) && !rel.starts_with(&format!("{prefix}{RAW_ARCHIVE_DIR}/"))
 }
 
-/// Move a quarantined item's content file back to `_inbox/`, delete its
-/// verdict sidecar, and drop its scan-ledger entry so the next `scan` scores
-/// it fresh against the (hopefully now-wider) ontology. Ledger compaction
-/// would eventually drop the entry anyway (its key stops existing the moment
-/// the file moves — see `compact_ledger`), but dropping it here rather than
-/// waiting for the next scan keeps the ledger accurate immediately, not just
-/// eventually.
+/// Where a quarantined item may be restored to: the inflow it can have come
+/// from — `sessions/` (not its archive) or `_inbox/` (not quarantine itself).
+/// Never raw/: nothing under it is ever quarantined (decision 7), so a
+/// sidecar naming it was edited.
+fn is_restore_target(rel: &str) -> bool {
+    let inbox = format!("{}/", crate::commands::DEST_INBOX);
+    is_session_payload_path(rel)
+        || rel
+            .strip_prefix(&inbox)
+            .is_some_and(|r| !r.is_empty() && !r.starts_with(&format!("{QUARANTINE_DIR}/")))
+}
+
+/// Move one quarantined item back where its sidecar says it came from
+/// (spec 2026-10-02 decision 6) and delete the sidecar. A sidecar without a
+/// usable origin (from before `from` existed) sends it to `_inbox/`, as
+/// restore always did. `Ok(None)`: already gone from quarantine; `Ok(Some)`:
+/// the vault-relative path it now has.
+fn restore_one(root: &Path, f: &str) -> Result<Option<String>, String> {
+    let content_path =
+        confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
+    if !content_path.exists() {
+        return Ok(None);
+    }
+    let sidecar = sidecar_path(&content_path);
+    let origin = sidecar_from(&sidecar)
+        .filter(|o| is_restore_target(o))
+        .and_then(|o| crate::myco_pro::safe_join(root, &o).ok());
+    let file_name = content_path
+        .file_name()
+        .ok_or_else(|| format!("bad proposal file path: {f}"))?;
+    let dest = free_path(
+        &origin.unwrap_or_else(|| root.join(crate::commands::DEST_INBOX).join(file_name)),
+    );
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("restore {f}: {e}"))?;
+    }
+    std::fs::rename(&content_path, &dest).map_err(|e| format!("restore {f}: {e}"))?;
+    // best-effort; a missing sidecar isn't fatal
+    let _ = std::fs::remove_file(sidecar);
+    Ok(Some(rel_string(root, &dest)))
+}
+
+/// Restore each quarantined item (`restore_one`) and mark where each landed
+/// as owner-kept (`record_kept`), so no later scan quarantines it again.
+/// The marks are written even when an item partway fails, so the ones
+/// already back are not set aside again.
 fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<ApplyOutcome, String> {
-    let inbox_dir = root.join(crate::commands::DEST_INBOX);
-    std::fs::create_dir_all(&inbox_dir).map_err(|e| format!("create _inbox dir: {e}"))?;
+    // An unavailable owner-mark ledger cannot be repaired by restoring files
+    // and then silently writing a fresh list over the lost decisions.
+    kept_load(root)?;
     let mut outcome = ApplyOutcome {
         moved: 0,
         skipped: 0,
+        deleted: None,
     };
+    let mut kept = Vec::new();
+    let mut failed = None;
     for f in files {
-        let content_path =
-            confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
-        if !content_path.exists() {
-            outcome.skipped += 1;
-            continue;
+        match restore_one(root, f) {
+            Ok(Some(dest)) => {
+                kept.push(dest);
+                outcome.moved += 1;
+            }
+            Ok(None) => outcome.skipped += 1,
+            Err(e) => {
+                failed = Some(e);
+                break;
+            }
         }
-        let file_name = content_path
-            .file_name()
-            .ok_or_else(|| format!("bad proposal file path: {f}"))?;
-        let dest = free_path(&inbox_dir.join(file_name));
-        std::fs::rename(&content_path, &dest).map_err(|e| format!("move {f} to _inbox: {e}"))?;
-        // best-effort; a missing sidecar isn't fatal
-        let _ = std::fs::remove_file(sidecar_path(&content_path));
-        outcome.moved += 1;
     }
-    drop_ledger_entries(root, files)?;
-    Ok(outcome)
+    record_kept(root, &kept)?;
+    match failed {
+        Some(e) => Err(e),
+        None => Ok(outcome),
+    }
 }
 
 /// "Restore to the vault" from the quarantine review UI — the SAME re-admit
@@ -2270,34 +3295,6 @@ fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<ApplyOutcome, St
 /// Returns its `"moved N, skipped M already-processed"` summary.
 pub fn readmit_quarantine(root: &Path, files: &[String]) -> Result<String, String> {
     Ok(apply_admit_cluster(root, files)?.summary())
-}
-
-/// Same move `run()`'s conservative archive pass would have made: top-level
-/// `raw/<file>.md` -> `raw/archive/<YYYY-MM>/<file>.md`, month from the
-/// file's own mtime. Reuses `month_bucket`/`free_path`, the same helpers that
-/// pass uses, rather than re-deriving the bucket/collision logic here.
-fn apply_archive_batch(root: &Path, files: &[String]) -> Result<ApplyOutcome, String> {
-    let mut outcome = ApplyOutcome {
-        moved: 0,
-        skipped: 0,
-    };
-    for f in files {
-        let from_path = confine_payload_file(root, f, is_raw_top_level_payload_path, "raw/")?;
-        if !from_path.exists() {
-            outcome.skipped += 1;
-            continue;
-        }
-        let mtime = mtime_secs(&from_path).unwrap_or_else(now_secs);
-        let file_name = from_path
-            .file_name()
-            .ok_or_else(|| format!("bad proposal file path: {f}"))?;
-        let archive_dir = root.join("raw/archive").join(month_bucket(mtime));
-        std::fs::create_dir_all(&archive_dir).map_err(|e| format!("create archive dir: {e}"))?;
-        let to_path = free_path(&archive_dir.join(file_name));
-        std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive move: {e}"))?;
-        outcome.moved += 1;
-    }
-    Ok(outcome)
 }
 
 /// Same move `run()`'s conservative TTL pass would have made, except the
@@ -2309,7 +3306,59 @@ fn apply_delete_batch(
     root: &Path,
     files: &[String],
     proposal_path: &Path,
+    permanent: bool,
 ) -> Result<ApplyOutcome, String> {
+    // A malformed later payload must not cause an earlier valid item to be
+    // destroyed before the batch is rejected.
+    let content_paths: Vec<PathBuf> = files
+        .iter()
+        .map(|f| {
+            let path =
+                confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
+            crate::vault::confine_delete_path(root, &path.to_string_lossy())
+        })
+        .collect::<Result<_, String>>()?;
+    let mut targets = Vec::new();
+    for content in &content_paths {
+        if content.exists() {
+            if !std::fs::symlink_metadata(content)
+                .map_err(|e| format!("inspect quarantine payload: {e}"))?
+                .is_file()
+            {
+                return Err("quarantine deletion payload must be a regular file".into());
+            }
+            targets.push(content.clone());
+            let sidecar = sidecar_path(content);
+            let sidecar = crate::vault::confine_delete_path(root, &sidecar.to_string_lossy())?;
+            if sidecar.exists() {
+                targets.push(sidecar);
+            }
+        }
+    }
+    if permanent {
+        crate::vault::validate_remove_all(&targets)?;
+        let mut outcome = ApplyOutcome {
+            moved: 0,
+            skipped: 0,
+            deleted: Some(0),
+        };
+        for content in content_paths {
+            if !content.exists() {
+                outcome.skipped += 1;
+                continue;
+            }
+            crate::vault::remove_all(std::slice::from_ref(&content))?;
+            let sidecar = sidecar_path(&content);
+            if sidecar.exists() {
+                crate::vault::remove_all(std::slice::from_ref(&sidecar))?;
+            }
+            *outcome
+                .deleted
+                .as_mut()
+                .expect("permanent deletion outcome") += 1;
+        }
+        return Ok(outcome);
+    }
     let slug = proposal_path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -2319,6 +3368,7 @@ fn apply_delete_batch(
     let mut outcome = ApplyOutcome {
         moved: 0,
         skipped: 0,
+        deleted: None,
     };
     for f in files {
         let content_path =
@@ -2346,38 +3396,14 @@ fn apply_delete_batch(
     Ok(outcome)
 }
 
-/// Best-effort removal of `rels`' scan-ledger entries (`scored`/
-/// `rejected_ttl`), regardless of which embed model the ledger on disk is
-/// currently stamped for — an `apply_proposal` call has no ontology/model
-/// context of its own, and the entries being dropped are being dropped
-/// because their file just moved, not because the model changed. A missing
-/// or corrupt ledger is a no-op: nothing to drop, and the next `scan` starts
-/// one fresh anyway.
-fn drop_ledger_entries(root: &Path, rels: &[String]) -> Result<(), String> {
-    let Ok(raw) = std::fs::read_to_string(state_path(root)) else {
-        return Ok(());
-    };
-    let Ok(mut state) = serde_json::from_str::<DistillState>(&raw) else {
-        return Ok(());
-    };
-    let mut changed = false;
-    for r in rels {
-        changed |= state.scored.remove(r).is_some();
-        changed |= state.rejected_ttl.remove(r).is_some();
-    }
-    if changed {
-        state_save(root, &state)?;
-    }
-    Ok(())
-}
-
 /// Execute a proposal's action and flip its `status` to `done`. The frontend
 /// (Task 9) flips `pending` -> `approved`/`dismissed` itself by rewriting the
 /// file directly; this is the one lifecycle step that actually touches the
 /// filesystem beyond that flip, so it is the one exposed as a command.
 ///
 /// - `admit-cluster` -> `apply_admit_cluster`
-/// - `archive-batch` -> `apply_archive_batch`
+/// - `archive-batch` -> retired: marked `done`, nothing moved (raw/ stays
+///   read-only)
 /// - `delete-batch` -> `apply_delete_batch`
 ///
 /// Each is idempotent per payload file (see `ApplyOutcome`), so re-running
@@ -2388,6 +3414,23 @@ fn drop_ledger_entries(root: &Path, rels: &[String]) -> Result<(), String> {
 /// skipped rather than erroring on the first missing source. Returns
 /// `"moved N, skipped M already-processed"`.
 pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
+    apply_proposal_confirmed(root, rel_path, None)
+}
+
+pub(crate) fn apply_proposal_confirmed(
+    root: &Path,
+    rel_path: &str,
+    expected_permanent: Option<bool>,
+) -> Result<String, String> {
+    let permanent = crate::settings::confirmed_deletion_policy(expected_permanent)?;
+    apply_proposal_with_policy(root, rel_path, permanent)
+}
+
+fn apply_proposal_with_policy(
+    root: &Path,
+    rel_path: &str,
+    permanent: bool,
+) -> Result<String, String> {
     let path = crate::myco_pro::safe_join(root, rel_path)?;
     let raw =
         std::fs::read_to_string(&path).map_err(|e| format!("read proposal {rel_path}: {e}"))?;
@@ -2401,8 +3444,14 @@ pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
 
     let outcome = match action.as_str() {
         "admit-cluster" => apply_admit_cluster(root, &files)?,
-        "archive-batch" => apply_archive_batch(root, &files)?,
-        "delete-batch" => apply_delete_batch(root, &files, &path)?,
+        // Owner decision 2026-10-03 (B1): raw/ is never moved; a proposal an
+        // older run wrote is retired (marked done below) rather than applied.
+        "archive-batch" => ApplyOutcome {
+            moved: 0,
+            skipped: 0,
+            deleted: None,
+        },
+        "delete-batch" => apply_delete_batch(root, &files, &path, permanent)?,
         other => return Err(format!("proposal {rel_path} has unknown action `{other}`")),
     };
 
@@ -2410,28 +3459,30 @@ pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
     Ok(outcome.summary())
 }
 
-/// `(cluster label, page centroid)` for every `wiki/maps/` page on disk whose
-/// `cluster:` frontmatter names a real cluster — `ontology::build`'s
-/// `map_anchors` parameter (Phase B, Task 4). Computed from `store`'s own
-/// per-page centroids (`page_centroids`, already computed for every other
-/// page) rather than re-embedding anything.
+/// Settled `type: map`, `status: active` references with current published
+/// chunks. Active metadata is not an independent human-approval attestation.
 fn map_anchors_from_store(
     root: &Path,
     store: &crate::vector_index::VectorStore,
-) -> Vec<(String, Vec<f32>)> {
-    store
-        .page_centroids()
-        .into_iter()
-        .filter(|(page, _)| page.starts_with("wiki/maps/"))
-        .filter_map(|(page, vector)| {
-            let content = std::fs::read_to_string(root.join(&page)).ok()?;
-            let map = page_frontmatter(&content)?;
-            match map.get("cluster") {
-                Some(gray_matter::Pod::String(s)) => Some((s.clone(), vector)),
-                _ => None,
-            }
-        })
-        .collect()
+) -> Result<Vec<(String, Vec<f32>)>, String> {
+    let mut anchors = Vec::new();
+    for (page, vector) in store.page_centroids()? {
+        if !page.starts_with("wiki/maps/") {
+            continue;
+        }
+        let source = admission::read_source(root, &page)?
+            .ok_or("organization map source is missing; reindex required")?;
+        let content =
+            String::from_utf8(source.bytes).map_err(|_| "organization map source is not UTF-8")?;
+        let Some(cluster) = knowledge::settled_map(&content)? else {
+            continue;
+        };
+        if !knowledge::has_current_chunks(store, &page, &content) {
+            return Err("organization map chunks are stale; reindex required".into());
+        }
+        anchors.push((cluster, vector));
+    }
+    Ok(anchors)
 }
 
 /// Idle-run orchestrator: the periodic batch the design spec calls "the
@@ -2440,31 +3491,29 @@ fn map_anchors_from_store(
 /// 1. `partition_sessions` — fold any loose `sessions/*.md` into their month
 ///    bucket before anything scores them (best-effort; a failure here does
 ///    not stop the run).
-/// 2. Ontology: rebuild if there is none yet, or the wiki's page count moved
-///    since it was built — a deliberately simple staleness check (an exact
-///    "did the wiki change" would need a content hash of every page; a page
-///    count catches the common case — pages added/removed — cheaply).
+/// 2. Ontology: reuse only the exact declared representation and complete
+///    index/title/map-anchor input digest; rebuild a stale derived cache.
+///    The lifecycle-only route skips ontology, profile and semantic passes.
 /// 3. The undo manifest (`.myco/distill-runs/<id>.json`) is created and
 ///    persisted — empty, but on disk — BEFORE anything else moves a file, so
 ///    even a crash on the very first move leaves a valid (empty) manifest
-///    rather than no manifest at all. `save_manifest` persists it again
-///    after every single successful move, trash, and proposal write from
-///    here on (including inside `scan` itself — see its own doc comment on
-///    quarantine moves), not once at the end: a mid-run I/O failure never
-///    loses the record of what already happened, only what would have
-///    happened next.
+///    rather than no manifest at all. Successful scan moves and proposal
+///    writes save incrementally. TTL commits save their actual pair outcome
+///    after releasing the writer; a crash or manifest-save failure in that
+///    interval can leave preserved trash bytes without durable move history.
+///    These ordinary manifests do not provide pre-mutation restart intent.
 /// 4. `scan` new inflow against that ontology (Task 4) plus the identity
 ///    layer — `profile.md`'s `## Interests` bullets, batch-embedded ONCE
 ///    here (Phase B, Task 5) and passed through to every `admit()` call —
 ///    quarantine moves are recorded into this same manifest as they happen.
-/// 5. Archive pass: a top-level `raw/<slug>.md` that is mature and already
-///    has a `wiki/source-<slug>.md` is "already represented" — move it to
-///    `raw/archive/YYYY-MM/` (month from the file's own mtime). At
-///    `Intensity::Conservative` this is a proposal instead of a move.
+/// 5. (The `raw/` archive pass is gone: no run touches `raw/`, owner
+///    decision 2026-10-03, B1.)
 /// 6. TTL pass: quarantine sidecars past their `expires` move (file +
 ///    sidecar) to `.myco/trash/<run-id>/` at Standard/Aggressive, or propose
-///    at Conservative. Trash dirs whose entire retention window has elapsed
-///    are purged regardless of this run's intensity.
+///    at Conservative — and always propose for a session, or an item of no
+///    recorded origin. Trash dirs whose entire retention window has elapsed
+///    are purged regardless of this run's intensity, except one that may hold
+///    a session.
 /// 7. Emerging-cluster + proposal pass (Task 7): quarantined items whose
 ///    pairwise similarity clusters into a group are proposed as a new topic
 ///    (`propose_emerging_clusters`), and any proposal already resolved
@@ -2477,34 +3526,145 @@ fn map_anchors_from_store(
 /// 9. Write the human report (`ingest-reports/distill-<id>.md`).
 /// 10. Append this run's backlog to the rolling trend, and commit if the
 ///     vault is a git repo.
+///
+/// No run changes anything under `raw/` (owner decision 2026-10-03, B1): it
+/// is not inflow, so never scored or quarantined, and a summary-tier
+/// `_inbox/` item, whose only destination was `raw/archive/`, stays put.
+pub fn run_checked(
+    root: &Path,
+    cfg: &DistillConfig,
+    expected: &EmbeddingSpace,
+    embed: &dyn Fn(Vec<String>) -> Result<EmbeddedBatch, String>,
+) -> Result<RunReport, String> {
+    expected.validate()?;
+    let checked = |texts: Vec<String>| {
+        let count = texts.len();
+        let batch = embed(texts)?;
+        if &batch.space != expected {
+            return Err("distill embedding batch representation changed".into());
+        }
+        batch.space.validate_batch(&batch.vectors, count)?;
+        Ok(batch.vectors)
+    };
+    run_inner(root, cfg, Some(&checked), RunMode::Checked(expected))
+}
+
+/// Preserve rule-only lifecycle work when no semantic index has been prepared.
+/// This route has no producer and refuses a nonempty or dimensioned index.
+pub fn run_without_embeddings(root: &Path, cfg: &DistillConfig) -> Result<RunReport, String> {
+    run_inner(root, cfg, None, RunMode::LifecycleOnly)
+}
+
+#[derive(Clone, Copy)]
+enum RunMode<'a> {
+    Synthetic,
+    Checked(&'a EmbeddingSpace),
+    LifecycleOnly,
+}
+
+/// Unlabelled synthetic harness entry point. Application execution must use
+/// `run_checked` so every producer batch is bound to the pinned representation.
+#[doc(hidden)]
 pub fn run(
     root: &Path,
     cfg: &DistillConfig,
-    embed: &dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>,
+    embed: &EmbedVectors<'_>,
 ) -> Result<RunReport, String> {
+    run_inner(root, cfg, Some(embed), RunMode::Synthetic)
+}
+
+fn run_inner(
+    root: &Path,
+    cfg: &DistillConfig,
+    embed: Option<&EmbedVectors<'_>>,
+    mode: RunMode<'_>,
+) -> Result<RunReport, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("canonicalize vault: {e}"))?;
+    let root = canonical_root.as_path();
+    crate::vault::confine_delete_path(root, &dir(root).to_string_lossy())?;
+    crate::vault::confine_delete_path(root, &dir(root).join("trash").to_string_lossy())?;
+    crate::vault::confine_delete_path(root, &root.join("_inbox/quarantine").to_string_lossy())?;
     let now = now_secs();
     let id = free_run_id(root, now);
+
+    // Validate the pinned store and state before session partitioning, cache
+    // publication or creation of a mutation manifest.
+    let store = current_store(root)?;
+    let space = optional_store_space(&store)?;
+    if let RunMode::Checked(expected) = &mode {
+        if space.as_ref() != Some(*expected) {
+            return Err("distill pinned representation does not match the current index".into());
+        }
+    }
+    let lifecycle_only = matches!(mode, RunMode::LifecycleOnly);
+    if lifecycle_only && (!store.records.is_empty() || store.dim != 0) {
+        return Err("distill lifecycle-only mode requires a genuinely empty index".into());
+    }
+    state_for_space(root, space.as_ref(), &store.model)?;
+    kept_load(root)?;
+
+    // Validate current source coverage before any run mutation. The unlabelled
+    // synthetic runner remains a geometry harness, not application authority.
+    let current_wiki = if !lifecycle_only && space.is_some() {
+        let snapshot = knowledge::read(root)?;
+        let covered = snapshot.covered_store(&store)?;
+        let titles = snapshot.titles()?;
+        Some((snapshot, covered, titles))
+    } else {
+        None
+    };
 
     if let Err(e) = crate::commands::partition_sessions(root) {
         crate::perf::log("distill_partition_sessions_failed", &[]);
         let _ = e;
     }
 
-    let index_path = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())?;
-    let store = crate::vector_index::VectorStore::load(&index_path);
-    let current_wiki_pages = crate::commands::wiki_titles(root).len();
-    let cached = crate::ontology::load(root, &store.model);
-    let ontology_rebuilt = !matches!(&cached, Some(o) if o.wiki_pages == current_wiki_pages);
-    let ontology = if ontology_rebuilt {
-        let titles = crate::commands::wiki_titles(root);
-        let map_anchors = map_anchors_from_store(root, &store);
-        let mut o = crate::ontology::build(&store, &titles, &map_anchors);
-        crate::ontology::stamp_last_touched(root, &mut o);
-        crate::ontology::save(root, &o)?;
-        o
+    let fallback_titles;
+    let (semantic_store, titles) = if let Some((_, covered, titles)) = &current_wiki {
+        (covered, titles)
     } else {
-        cached.expect("ontology_rebuilt is false only when `cached` is Some")
+        fallback_titles = crate::commands::wiki_titles(root);
+        (&store, &fallback_titles)
     };
+    let (ontology, ontology_rebuilt) = if lifecycle_only {
+        (None, false)
+    } else {
+        let map_anchors = map_anchors_from_store(root, semantic_store)?;
+        let cached = if space.is_some() {
+            crate::ontology::load_for_store(root, semantic_store, titles, &map_anchors)?
+        } else {
+            None
+        };
+        match cached {
+            Some(ontology) => (Some(ontology), false),
+            None => {
+                let mut ontology = crate::ontology::build(semantic_store, titles, &map_anchors)?;
+                crate::ontology::stamp_last_touched(root, &mut ontology);
+                if let Some((snapshot, _, _)) = &current_wiki {
+                    if knowledge::read(root)?.signature != snapshot.signature {
+                        return Err("organization wiki changed before cache publication".into());
+                    }
+                }
+                crate::ontology::save(root, &ontology)?;
+                (Some(ontology), true)
+            }
+        }
+    };
+    let inputs = ontology
+        .as_ref()
+        .filter(|ontology| ontology.embedding.is_some())
+        .map(|ontology| match &current_wiki {
+            Some((snapshot, _, _)) => {
+                if knowledge::read(root)?.signature != snapshot.signature {
+                    return Err("organization wiki changed before scan".into());
+                }
+                admission::capture_snapshot(root, ontology, cfg, &snapshot.signature)
+            }
+            None => admission::capture(root, ontology, cfg),
+        })
+        .transpose()?;
 
     let mut manifest = RunManifest {
         id: id.clone(),
@@ -2520,226 +3680,76 @@ pub fn run(
     // batch-embedded ONCE per run (not per item, unlike the per-candidate
     // embedding below) and handed to every `admit()` call `scan` makes.
     // Missing/interest-less profile.md costs nothing — no embed call at all.
-    // A failure here DEGRADES rather than fails the whole run (`unwrap_or_
-    // else`, not `?`) — same "log and proceed" precedent as
-    // `partition_sessions` above: personalisation is a nicety layered on
-    // top of the lifecycle engine, not a precondition for it, so one flaky
-    // embed-provider call must not take down scan/archive/TTL for the
-    // entire run. Degrading to `Vec::new()` means simply no profile lift
-    // this run (identical to no profile.md at all), never a corrupted one.
-    let profile_interests = read_profile_interests(root);
+    // The checked application runner requires a successful pinned producer
+    // result for every requested batch, including profile interests. The
+    // unlabelled synthetic harness retains its legacy no-lift failure control.
+    let profile_interests = inputs
+        .as_ref()
+        .map(|inputs| inputs.interests.clone())
+        .unwrap_or_default();
     let profile_vecs: Vec<Vec<f32>> = if profile_interests.is_empty() {
         Vec::new()
     } else {
-        embed(profile_interests).unwrap_or_else(|e| {
-            crate::perf::log("distill_profile_embed_failed", &[]);
-            eprintln!("distill profile embed failed (continuing without lift): {e}");
-            Vec::new()
-        })
+        let expected_count = profile_interests.len();
+        let expected_dim = space.as_ref().map(|space| space.dim);
+        let result = embed.ok_or("distill semantic producer is missing")?(profile_interests)
+            .and_then(|vectors| {
+                crate::embeddings::validate_embedding_batch(
+                    &vectors,
+                    expected_count,
+                    expected_dim,
+                )?;
+                Ok(vectors)
+            });
+        match result {
+            Ok(vectors) => vectors,
+            Err(error) if matches!(mode, RunMode::Checked(_)) => return Err(error),
+            Err(error) => {
+                crate::perf::log("distill_profile_embed_failed", &[]);
+                eprintln!("distill profile embed failed (continuing without lift): {error}");
+                Vec::new()
+            }
+        }
     };
 
-    let scan_outcome = scan(
-        root,
-        &ontology,
-        cfg,
-        cfg.run_budget_items,
-        embed,
-        &profile_vecs,
-        &mut manifest,
-    )?;
+    let scan_outcome = if let Some(ontology) = &ontology {
+        if let Some(inputs) = &inputs {
+            scan_with_inputs(
+                root,
+                ontology,
+                cfg,
+                cfg.run_budget_items,
+                embed.ok_or("distill semantic producer is missing")?,
+                &profile_vecs,
+                &mut manifest,
+                inputs,
+                matches!(mode, RunMode::Checked(_)),
+            )?
+        } else if ontology.wiki_pages < GATE_MIN_WIKI_PAGES {
+            ScanOutcome {
+                gate_wiki_pages: Some(ontology.wiki_pages),
+                ..Default::default()
+            }
+        } else {
+            return Err("distill semantic admission requires a stamped representation".into());
+        }
+    } else {
+        ScanOutcome {
+            gate_wiki_pages: (titles.len() < GATE_MIN_WIKI_PAGES).then_some(titles.len()),
+            ..Default::default()
+        }
+    };
 
     let conservative = matches!(cfg.intensity, Intensity::Conservative);
-    let maturation_secs = cfg.maturation_hours as i64 * 3600;
-    let mut archived = 0usize;
     let mut proposals = 0usize;
-
-    // ③.5 Summary-tier execution (Phase B, Task 1): a `scan` verdict of
-    // Tier::Summary is "too thin to admit, too topical to ignore" — record
-    // one low-confidence line in today's daily note and move the file out of
-    // the active inflow trees, the same cold-tier destination (`raw/archive/`)
-    // the "already represented" pass just below uses. Runs BEFORE that pass,
-    // not after: a raw/ item that is BOTH summary-tier AND already has a
-    // `wiki/source-<stem>.md` page must get its daily line here first — the
-    // archive pass below would otherwise move it under the "already
-    // represented" reason first, and this step would never see it again
-    // (its ledger entry, keyed by the pre-move path, is gone the moment the
-    // file moves).
-    //
-    // `sessions/` summary items are deliberately excluded: a per-session
-    // daily line would be one line per work log, not the day-level digest
-    // Phase B actually wants — see `digestable_session_days`/
-    // `archive_digested_sessions` below, the per-day path for those instead.
-    let summary_state = state_load(root, &ontology.model);
-    let mut summary_entries: Vec<String> = summary_state
-        .scored
-        .iter()
-        .filter(|(_, e)| e.tier == "summary")
-        .map(|(rel, _)| rel.clone())
-        .filter(|rel| {
-            is_raw_top_level_payload_path(rel)
-                || rel.starts_with(&format!("{}/", crate::commands::DEST_INBOX))
-        })
-        .collect();
-    summary_entries.sort();
-
-    let today = {
-        let (y, m, d, ..) = civil_datetime(now);
-        format!("{y:04}-{m:02}-{d:02}")
-    };
-
-    for rel in summary_entries {
-        let path = root.join(&rel);
-        if !path.exists() {
-            continue; // already moved/gone since scan recorded it
-        }
-        let Some(mtime) = mtime_secs(&path) else {
-            continue;
-        };
-        let Some(first_line) = std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|c| first_summary_line(&c))
-        else {
-            continue; // unreadable/empty — nothing to digest
-        };
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("item.md")
-            .to_string();
-        let month = month_bucket(mtime);
-
-        if conservative {
-            if pending_summary_batch_exists(root, &rel) {
-                continue;
-            }
-            let proposal_rel = write_proposal(
-                root,
-                "summary-batch",
-                &format!("Digest summary item {file_name}?"),
-                &format!(
-                    "`{rel}` scored summary-tier (low confidence). Standard/Aggressive \
-                     intensity would append one line to `daily/{today}.md` and move it to \
-                     `raw/archive/{month}/{file_name}`."
-                ),
-                &serde_json::json!({ "files": [rel.clone()] }),
-            )?;
-            manifest.created.push(proposal_rel);
-            save_manifest(root, &manifest)?;
-            proposals += 1;
-        } else {
-            // The marker is bound to the item's CONTENT, not just its path:
-            // `_inbox/` names get reused (a second clip or drop of the same
-            // slug), and a path-only token made the second one's summary
-            // vanish — a silent loss, where the worst case now is a duplicate
-            // line. Same `content_fingerprint` the session digest writes.
-            let stamp = std::fs::read(&path)
-                .map(|b| content_fingerprint(&b))
-                .unwrap_or_else(|_| "00000000".into());
-            let line = format!("- {first_line} — `{rel}` (low confidence) <!-- {stamp} -->");
-            // Idempotency: a run that crashed between a previous append and
-            // the move below left this item's line in a daily file already
-            // (the item stays tier "summary" until the move happens), so skip
-            // the append and retry only the move.
-            //
-            // Yesterday is checked too. `today` is the run's own date, so a
-            // retry that crosses midnight used to look at a fresh, empty file
-            // and append the same summary a second time.
-            // Match the token only on a summary bullet line, so prose
-            // elsewhere in the note that merely mentions the same path
-            // (a user's own writing, a digest quote) can't suppress a
-            // legitimate append.
-            let token = format!("`{rel}` (low confidence) <!-- {stamp} -->");
-            let seen_in = |day: &str| {
-                std::fs::read_to_string(root.join("daily").join(format!("{day}.md")))
-                    .map(|c| c.lines().any(|l| l.starts_with("- ") && l.contains(&token)))
-                    .unwrap_or(false)
-            };
-            let already_appended = seen_in(&today) || seen_in(&day_before(&today));
-            if !already_appended {
-                let day_created = append_daily_summary_line(root, &today, &line)?;
-                if day_created {
-                    manifest.created.push(format!("daily/{today}.md"));
-                    save_manifest(root, &manifest)?;
-                }
-            }
-
-            let archive_dir = root.join("raw/archive").join(&month);
-            std::fs::create_dir_all(&archive_dir)
-                .map_err(|e| format!("create archive dir: {e}"))?;
-            let to_path = free_path(&archive_dir.join(&file_name));
-            std::fs::rename(&path, &to_path).map_err(|e| format!("archive summary item: {e}"))?;
-            manifest.moves.push(MoveEntry {
-                from: rel.clone(),
-                to: rel_string(root, &to_path),
-            });
-            save_manifest(root, &manifest)?;
-            archived += 1;
-        }
-    }
-
-    // ④ Archive pass: top-level raw/*.md only — `vault_entries` already skips
-    // dotfiles/symlinks, and not recursing means `raw/archive/` (a directory,
-    // not a `.md` file) is never a candidate in the first place.
-    for (entry, kind) in crate::vault::vault_entries(&root.join("raw")) {
-        if !kind.is_file() {
-            continue;
-        }
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-        let Some(mtime) = mtime_secs(&path) else {
-            continue;
-        };
-        if now - mtime < maturation_secs {
-            continue;
-        }
-        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-            continue;
-        };
-        let source_page = format!("wiki/source-{stem}.md");
-        if !root.join(&source_page).exists() {
-            continue;
-        }
-        let file_name = entry.file_name().to_string_lossy().into_owned();
-        let from_rel = format!("raw/{file_name}");
-
-        if conservative {
-            let month = month_bucket(mtime);
-            let rel = write_proposal(
-                root,
-                "archive-batch",
-                &format!("Archive raw/{file_name}?"),
-                &format!(
-                    "`{source_page}` already represents this source. Standard/Aggressive \
-                     intensity would move it to `raw/archive/{month}/{file_name}`."
-                ),
-                &serde_json::json!({ "files": [from_rel.clone()] }),
-            )?;
-            manifest.created.push(rel);
-            save_manifest(root, &manifest)?;
-            proposals += 1;
-        } else {
-            let archive_dir = root.join("raw/archive").join(month_bucket(mtime));
-            std::fs::create_dir_all(&archive_dir)
-                .map_err(|e| format!("create archive dir: {e}"))?;
-            let to_path = free_path(&archive_dir.join(&file_name));
-            std::fs::rename(&path, &to_path).map_err(|e| format!("archive move: {e}"))?;
-            manifest.moves.push(MoveEntry {
-                from: from_rel,
-                to: rel_string(root, &to_path),
-            });
-            save_manifest(root, &manifest)?;
-            archived += 1;
-        }
-    }
 
     // ⑤ TTL pass: quarantine sidecars past their expiry. A future
     // never-clustered check could additionally gate this — no sidecar
     // carries cluster membership yet, so every expired one qualifies today.
     let mut trashed = 0usize;
+    let permanent = crate::settings::confirmed_deletion_policy(None)?;
+    let mut deleted = 0usize;
     let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
-    let trash_dir = dir(root).join("trash").join(&id);
     for (entry, kind) in crate::vault::vault_entries(&quarantine_dir) {
         if !kind.is_file() {
             continue;
@@ -2763,76 +3773,96 @@ pub fn run(
         }
 
         let content_path = quarantine_dir.join(format!("{stem}.md"));
+        crate::vault::confine_delete_path(root, &content_path.to_string_lossy())?;
+        crate::vault::confine_delete_path(root, &sidecar_path.to_string_lossy())?;
         if !content_path.exists() {
-            let _ = std::fs::remove_file(&sidecar_path); // orphaned sidecar
-            continue;
+            return Err(format!(
+                "orphaned quarantine verdict retained for review: {}",
+                sidecar_path.display()
+            ));
         }
         let content_rel = format!("{}/{QUARANTINE_DIR}/{stem}.md", crate::commands::DEST_INBOX);
-        let sidecar_rel = format!("{}/{QUARANTINE_DIR}/{name}", crate::commands::DEST_INBOX);
+        let ask = expiry_asks(conservative, sidecar.get("from").and_then(|v| v.as_str()));
 
-        if conservative {
+        if ask {
+            if pending_file_proposal_exists(root, "delete-batch", &content_rel) {
+                continue;
+            }
             let rel = write_proposal(
                 root,
                 "delete-batch",
                 &format!("Delete expired quarantine item {stem}.md?"),
-                &format!(
-                    "Quarantine TTL expired at unix {expires}. Standard/Aggressive intensity \
-                     would move `{content_rel}` and its sidecar to `.myco/trash/{id}/`."
-                ),
+                &if permanent {
+                    format!("Quarantine TTL expired at unix {expires}. Approving permanently deletes `{content_rel}` and its sidecar. This cannot be undone.")
+                } else {
+                    format!("Quarantine TTL expired at unix {expires}. Approving moves `{content_rel}` and its sidecar to `.myco/trash/`.")
+                },
                 &serde_json::json!({ "files": [content_rel.clone()] }),
             )?;
             manifest.created.push(rel);
             save_manifest(root, &manifest)?;
             proposals += 1;
+        } else if permanent {
+            ttl::delete_expired(
+                root,
+                &content_path,
+                &sidecar_path,
+                &raw,
+                now,
+                conservative,
+                &mut manifest,
+            )?;
+            deleted += 1;
         } else {
-            std::fs::create_dir_all(&trash_dir).map_err(|e| format!("create trash dir: {e}"))?;
-            let to_content = free_path(&trash_dir.join(format!("{stem}.md")));
-            std::fs::rename(&content_path, &to_content).map_err(|e| format!("trash move: {e}"))?;
-            manifest.trashed.push(MoveEntry {
-                from: content_rel,
-                to: rel_string(root, &to_content),
-            });
-            save_manifest(root, &manifest)?;
-            let to_sidecar = free_path(&trash_dir.join(&name));
-            std::fs::rename(&sidecar_path, &to_sidecar)
-                .map_err(|e| format!("trash sidecar move: {e}"))?;
-            manifest.trashed.push(MoveEntry {
-                from: sidecar_rel,
-                to: rel_string(root, &to_sidecar),
-            });
-            save_manifest(root, &manifest)?;
+            ttl::trash_expired(
+                root,
+                &content_path,
+                &sidecar_path,
+                &raw,
+                now,
+                conservative,
+                &mut manifest,
+            )?;
             trashed += 1;
         }
     }
 
     // Purge trash dirs past their retention window, regardless of this run's
     // intensity — housekeeping on already-committed deletions, not a new one.
-    let trash_root = dir(root).join("trash");
-    for (entry, kind) in crate::vault::vault_entries(&trash_root) {
-        if !kind.is_dir() {
-            continue;
-        }
-        if let Some(mtime) = mtime_secs(&entry.path()) {
-            if now - mtime > TRASH_RETENTION_DAYS * 86_400 {
-                let _ = std::fs::remove_dir_all(entry.path());
-            }
-        }
-    }
+    // Never a dir that may hold a session (decision 5).
+    deleted += purge_trash(root, now, permanent, &mut manifest)?;
 
     // ⑥ Emerging-cluster + proposal pass (Task 7, design spec: "≥5
     // quarantined items with pairwise similarity above threshold -> 'new
     // topic forming' proposal"). `save_manifest` after its own pushes, same
     // as every pass above.
-    proposals += propose_emerging_clusters(root, &mut manifest)?;
+    if !lifecycle_only {
+        proposals += propose_emerging_clusters_for_inputs(
+            root,
+            space.as_ref(),
+            inputs.as_ref(),
+            cfg,
+            matches!(mode, RunMode::Checked(_)),
+            &mut manifest,
+        )?;
+    }
 
     // ⑥.5 Map-candidate + proposal pass (Task 4, Phase B): a topic cluster
     // that has grown big and mature enough gets a `draft-map` proposal
     // instead — see `propose_map_candidates`'s own doc comment for the
     // Aggressive-intensity bridge to TS.
-    proposals += propose_map_candidates(root, &ontology, cfg, &mut manifest)?;
+    if let Some(ontology) = &ontology {
+        if matches!(mode, RunMode::Checked(_)) {
+            if let Some(inputs) = &inputs {
+                verify_current_inputs(root, cfg, inputs)?;
+            }
+        }
+        proposals += propose_map_candidates(root, ontology, cfg, &mut manifest)?;
+    }
 
-    // Archive any proposal (of either kind above) the lifecycle already
-    // resolved (approved/dismissed/done).
+    // Retire the raw/ archive proposals older runs left (B1), then archive
+    // any proposal the lifecycle already resolved (dismissed/done).
+    retire_archive_batch_proposals(root)?;
     archive_resolved_proposals(root, &mut manifest)?;
 
     // ⑦ Manifest — already persisted incrementally after every successful
@@ -2840,8 +3870,8 @@ pub fn run(
 
     // ⑨ (backlog half) Append this run's backlog to the rolling trend, so the
     // report below and the returned `RunReport` show the same number.
-    let mut state = state_load(root, &ontology.model);
-    let backlog_after = backlog_count(root, &state);
+    let mut state = state_for_inputs(root, space.as_ref(), &store.model, inputs.as_ref())?;
+    let backlog_after = backlog_count_checked(root, &state)?;
     state.last_run = Some(now);
     state.last_backlogs.push(backlog_after);
     let overflow = state.last_backlogs.len().saturating_sub(10);
@@ -2858,7 +3888,6 @@ pub fn run(
         cfg,
         ontology_rebuilt,
         &scan_outcome,
-        archived,
         trashed,
         proposals,
         &manifest,
@@ -2872,8 +3901,8 @@ pub fn run(
     Ok(RunReport {
         id,
         scan: scan_outcome,
-        archived,
         trashed,
+        deleted,
         proposals,
         backlog_after,
     })
@@ -2881,10 +3910,9 @@ pub fn run(
 
 /// Replay one run's manifest in reverse: restore every archived/trashed file
 /// to its pre-run location, and delete every proposal file that run created.
-/// An entry is skipped (with a warning to stderr, not silently) when the
-/// current file was modified since the run, or the restore destination is
-/// now occupied by something else — undo must never clobber data the user
-/// touched after the run. Returns the number of entries actually reversed.
+/// Entries with unknown byte revisions, changed bytes, or occupied restore
+/// destinations are preserved for manual recovery. Returns the number of
+/// revision-verified entries actually reversed.
 ///
 /// Ledger entries for a restored path's pre-run location are not explicitly
 /// cleaned up here — they were already pruned by `compact_ledger` the moment
@@ -2894,37 +3922,7 @@ pub fn run(
 /// reappearing at a path with no ledger entry — self-heals on the next
 /// `scan`, which just treats it as fresh, unscored inflow.
 pub fn undo(root: &Path, run_id: &str) -> Result<usize, String> {
-    let path = manifest_path(root, run_id);
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read manifest {}: {e}", path.display()))?;
-    let manifest: RunManifest =
-        serde_json::from_str(&raw).map_err(|e| format!("parse manifest: {e}"))?;
-
-    let mut reversed = 0usize;
-    for entry in manifest.trashed.iter().rev() {
-        if move_back(root, entry, run_id, manifest.started_at) {
-            reversed += 1;
-        }
-    }
-    for entry in manifest.moves.iter().rev() {
-        if move_back(root, entry, run_id, manifest.started_at) {
-            reversed += 1;
-        }
-    }
-    for rel in manifest.created.iter().rev() {
-        let p = root.join(rel);
-        let Some(mtime) = mtime_secs(&p) else {
-            continue; // already gone — nothing to reverse
-        };
-        if mtime > manifest.started_at {
-            eprintln!("distill undo {run_id}: skipping {rel} (modified since the run)");
-            continue;
-        }
-        if std::fs::remove_file(&p).is_ok() {
-            reversed += 1;
-        }
-    }
-    Ok(reversed)
+    archive::undo_checked(root, run_id)
 }
 
 /// The most recently started run's id, read by comparing each
@@ -2965,6 +3963,7 @@ pub struct RunSummary {
     pub started_at: i64,
     pub moves: usize,
     pub trashed: usize,
+    pub deleted: usize,
     pub created: usize,
 }
 
@@ -2986,6 +3985,11 @@ pub fn list_runs(root: &Path, limit: usize) -> Vec<RunSummary> {
                 started_at: m.started_at,
                 moves: m.moves.len(),
                 trashed: m.trashed.len(),
+                deleted: m
+                    .deleted
+                    .iter()
+                    .filter(|p| Path::new(p).extension().and_then(|s| s.to_str()) == Some("md"))
+                    .count(),
                 created: m.created.len(),
             })
         })
@@ -3005,6 +4009,7 @@ pub struct RunDetail {
     pub started_at: i64,
     pub moves: Vec<(String, String)>, // (from, to)
     pub trashed: Vec<(String, String)>,
+    pub deleted: Vec<String>,
     pub created: Vec<String>,
     /// `ingest-reports/distill-<id>.md` — `Some` only when it exists.
     pub report_rel: Option<String>,
@@ -3029,6 +4034,7 @@ pub fn run_detail(root: &Path, id: &str) -> Result<RunDetail, String> {
         started_at: m.started_at,
         moves: m.moves.into_iter().map(|e| (e.from, e.to)).collect(),
         trashed: m.trashed.into_iter().map(|e| (e.from, e.to)).collect(),
+        deleted: m.deleted,
         created: m.created,
         report_rel: root.join(&report_rel).exists().then_some(report_rel),
         commit: crate::vault_history::commit_for_message(root, &format!("distill: run {id}")),
@@ -3038,11 +4044,13 @@ pub fn run_detail(root: &Path, id: &str) -> Result<RunDetail, String> {
 /// Cheap vault-wide status for the settings tab / MCP `distill_status`: no
 /// scoring, just a fs walk against the ledger already on disk.
 pub fn status(root: &Path) -> DistillStatus {
-    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
-        .map(|p| crate::vector_index::VectorStore::load(&p))
-        .unwrap_or_default();
-    let state = state_load(root, &store.model);
-    let wiki_pages = crate::commands::wiki_titles(root).len();
+    let state = metadata_state(root);
+    let wiki_pages = knowledge::read(root)
+        .and_then(|snapshot| snapshot.titles().map(|titles| titles.len()))
+        .unwrap_or_else(|error| {
+            eprintln!("myco: distill wiki count unavailable: {error}");
+            0
+        });
     DistillStatus {
         backlog: backlog_count(root, &state),
         pending_proposals: awaiting_resolution_count(root),
@@ -3093,13 +4101,9 @@ pub struct DistillReport {
 const QUARANTINE_EXPIRING_WINDOW_SECS: i64 = 7 * 86_400;
 
 pub fn report(root: &Path) -> DistillReport {
-    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
-        .map(|p| crate::vector_index::VectorStore::load(&p))
-        .unwrap_or_default();
-    let state = state_load(root, &store.model);
-    let trees: [(&str, &[&str]); 3] = [
+    let state = metadata_state(root);
+    let trees: [(&str, &[&str]); 2] = [
         (crate::commands::DEST_INBOX, &[QUARANTINE_DIR]),
-        ("raw", &[RAW_ARCHIVE_DIR]),
         (crate::commands::DEST_SESSIONS, &[RAW_ARCHIVE_DIR]),
     ];
     let mut unscored_by_folder = std::collections::BTreeMap::new();
@@ -3108,7 +4112,7 @@ pub fn report(root: &Path) -> DistillReport {
         walk_inflow(root, start, exclude, &mut found);
         let unscored = found
             .iter()
-            .filter(|c| !state.scored.contains_key(&c.rel))
+            .filter(|c| !metadata_is_scored(root, &state, &c.rel))
             .count();
         unscored_by_folder.insert(start.to_string(), unscored);
     }
@@ -3167,15 +4171,42 @@ pub fn report(root: &Path) -> DistillReport {
     }
 }
 
+/// Every `source-*.md` summary under `wiki/`, at any depth, by lowercased
+/// stem → vault-relative path: the "already represented" signal both the
+/// raw/ archive pass and `full_tier_items` check. A summary represents its
+/// source wherever it sits (Tidy's `wiki/sessions/YYYY-MM/`, a hand move),
+/// the same way a link resolves it by stem, case-insensitively.
+fn source_pages(root: &Path) -> HashMap<String, String> {
+    fn walk(dir: &Path, root: &Path, out: &mut HashMap<String, String>) {
+        for (e, kind) in crate::vault::vault_entries(dir) {
+            let p = e.path();
+            if kind.is_dir() {
+                walk(&p, root, out);
+                continue;
+            }
+            let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+                continue;
+            };
+            if stem.starts_with("source-") && p.extension().and_then(|x| x.to_str()) == Some("md") {
+                out.entry(stem.to_lowercase())
+                    .or_insert_with(|| rel_string(root, &p));
+            }
+        }
+    }
+    let mut out = HashMap::new();
+    walk(&root.join("wiki"), root, &mut out);
+    out
+}
+
 /// Gate-admitted Full-tier ledger entries ready for the LLM ingest pipeline
 /// (Phase B, Task 3) — every `scored` entry whose tier is `"full"`, still
-/// sitting in `_inbox/` or `raw/`'s own top level, has no `wiki/source-
-/// <stem>.md` yet, and is still present on disk — oldest file mtime first,
+/// sitting in `_inbox/` or `raw/`'s own top level, has no `source-<stem>.md`
+/// under `wiki/` yet, and is still present on disk — oldest file mtime first,
 /// the same order `collect_candidates` fills the ledger in, so ingest drains
 /// the queue in the order `scan` built it.
 ///
-/// The `wiki/source-<stem>.md` check (same "already represented" signal the
-/// raw/ archive pass itself checks — see its `source_page` lookup above) is
+/// The `source-<stem>.md` check (`source_pages`, the same "already
+/// represented" signal the raw/ archive pass itself checks) is
 /// the fix for a Conservative-intensity re-ingest loop: at Standard/
 /// Aggressive, the archive pass moves an ingested item's file away the very
 /// next run, so the missing-file check below would eventually drop it on its
@@ -3190,39 +4221,78 @@ pub fn report(root: &Path) -> DistillReport {
 /// walks it as inflow, so no ledger key can ever point there. `sessions/` is
 /// excluded outright: Phase B routes it through the session digest instead
 /// of ingest, even on the rare transcript `admit` happens to score Full.
-pub fn full_tier_items(root: &Path) -> Vec<String> {
-    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
-        .map(|p| crate::vector_index::VectorStore::load(&p))
-        .unwrap_or_default();
-    let state = state_load(root, &store.model);
+pub fn full_tier_items(root: &Path) -> Result<Vec<String>, String> {
+    let sources = source_pages(root);
+    let store = current_store(root)?;
+    let space = optional_store_space(&store)?;
+    let cfg = config_load_checked(root)?;
+    let inputs = admission::current(root, &store, &cfg)?;
+    let state = state_for_inputs(root, space.as_ref(), &store.model, inputs.as_ref())?;
     let inbox_prefix = format!("{}/", crate::commands::DEST_INBOX);
-    let mut items: Vec<(String, i64)> = state
-        .scored
-        .iter()
-        .filter(|(rel, e)| {
-            e.tier == "full"
-                && (rel.starts_with(&inbox_prefix) || is_raw_top_level_payload_path(rel))
-        })
-        .filter(|(rel, _)| {
-            let stem = Path::new(rel.as_str())
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or(rel.as_str());
-            !root.join(format!("wiki/source-{stem}.md")).exists()
-        })
-        .filter_map(|(rel, _)| {
-            let meta = std::fs::metadata(root.join(rel)).ok()?;
+    let mut items: Vec<(String, i64)> = Vec::new();
+    for (rel, entry) in &state.scored {
+        if entry.tier != "full"
+            || !(rel.starts_with(&inbox_prefix) || is_raw_top_level_payload_path(rel))
+        {
+            continue;
+        }
+        let stem = Path::new(rel.as_str())
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(rel.as_str());
+        if sources.contains_key(&format!("source-{stem}").to_lowercase())
+            || !is_scored_current(root, &state, rel)?
+        {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(root.join(rel)) else {
+            continue;
+        };
+        let Ok(modified) = meta.modified() else {
+            continue;
+        };
+        let mtime = modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        items.push((rel.clone(), mtime));
+    }
+    // MCP conversation imports explicitly ask for wiki promotion. They are
+    // immutable sources, not raw inflow to score, quarantine, or archive.
+    // Include only the latest queued revision so the app's actual drain sees
+    // the same work as MCP, without enabling generic raw/ distillation.
+    {
+        let pending = crate::importers::wikify::Pending::try_load(root)?;
+        let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+        for item in pending.pending {
+            if !item.raw_path.starts_with("raw/conversations/") {
+                continue;
+            }
+            let Ok(path) = crate::vault::confine_path(
+                &canonical_root,
+                &canonical_root.join(&item.raw_path).to_string_lossy(),
+            ) else {
+                continue;
+            };
+            let Ok(meta) = std::fs::metadata(path) else {
+                continue;
+            };
+            if !meta.is_file() {
+                continue;
+            }
             let mtime = meta
                 .modified()
-                .ok()?
-                .duration_since(std::time::UNIX_EPOCH)
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
-            Some((rel.clone(), mtime))
-        })
-        .collect();
+            if !items.iter().any(|(rel, _)| rel == &item.raw_path) {
+                items.push((item.raw_path, mtime));
+            }
+        }
+    }
     items.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
-    items.into_iter().map(|(rel, _)| rel).collect()
+    Ok(items.into_iter().map(|(rel, _)| rel).collect())
 }
 
 // ---------------------------------------------------------------------------
@@ -3306,28 +4376,13 @@ fn frontmatter_created(path: &Path) -> Option<i64> {
 const DIGEST_MARKER_OPEN: &str = "<!-- myco:digested-sessions ";
 const DIGEST_MARKER_CLOSE: &str = "-->";
 
-/// The calendar day before `day` (`YYYY-MM-DD`), or `day` itself when it does
-/// not parse. Only used to widen the summary-digest idempotency check across
-/// midnight: a retry that starts on a new date must still see the line a
-/// crashed run appended minutes earlier.
-fn day_before(day: &str) -> String {
-    let parse = |r: std::ops::Range<usize>| day.get(r).and_then(|s| s.parse::<i64>().ok());
-    let (Some(y), Some(m), Some(d)) = (parse(0..4), parse(5..7), parse(8..10)) else {
-        return day.to_string();
-    };
-    // Reuses the registry's civil-date pair rather than carrying month lengths.
-    let days = crate::tasks::days_from_civil(y, m as u32, d as u32) - 1;
-    let (py, pm, pd) = crate::registry::civil_from_days(days);
-    format!("{py:04}-{pm:02}-{pd:02}")
-}
-
 /// FNV-1a (32-bit) over a session file's bytes, as 8 lowercase hex chars.
 /// Deliberately not a cryptographic hash: it only has to notice that a file
 /// changed since it was digested, and it must be reproducible in four lines of
 /// TypeScript (`fingerprint` in `src/lib/sessionDigest.ts` writes the marker
 /// this side reads back). Keep the two implementations byte-identical — both
 /// hash the file's UTF-8 bytes.
-fn content_fingerprint(bytes: &[u8]) -> String {
+pub(crate) fn content_fingerprint(bytes: &[u8]) -> String {
     let mut h: u32 = 0x811c_9dc5;
     for b in bytes {
         h = (h ^ *b as u32).wrapping_mul(0x0100_0193);
@@ -3423,7 +4478,7 @@ fn is_digested(entries: &std::collections::HashSet<String>, stem: &str, path: &P
 
 /// The `is_digested` record rule over an already-computed fingerprint. The
 /// archive passes use this instead of `is_digested` so the check and the
-/// post-rename verify (`archive_one_verified`) anchor to ONE read's bytes —
+/// journal revision checks anchor to ONE read's bytes —
 /// two separate reads would reopen the very race the verify closes.
 fn is_recorded(entries: &std::collections::HashSet<String>, stem: &str, fp: &str) -> bool {
     (!stem.contains(':') && entries.contains(stem)) || entries.contains(&format!("{stem}:{fp}"))
@@ -3444,15 +4499,15 @@ fn is_recorded(entries: &std::collections::HashSet<String>, stem: &str, fp: &str
 /// last straggler finally got scored, redigesting the same day's earlier
 /// files repeatedly at real LLM cost. Held back entirely, a day pays for
 /// exactly one digest call once it is actually complete.
-pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
-    let cfg = config_load(root);
+pub fn digestable_session_days(root: &Path) -> Result<Vec<DigestDay>, String> {
+    let cfg = config_load_checked(root)?;
     let maturation_secs = cfg.maturation_hours as i64 * 3600;
     let now = now_secs();
 
-    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
-        .map(|p| crate::vector_index::VectorStore::load(&p))
-        .unwrap_or_default();
-    let state = state_load(root, &store.model);
+    let store = current_store(root)?;
+    let space = optional_store_space(&store)?;
+    let inputs = admission::current(root, &store, &cfg)?;
+    let state = state_for_inputs(root, space.as_ref(), &store.model, inputs.as_ref())?;
 
     let mut candidates = Vec::new();
     walk_inflow(
@@ -3475,7 +4530,7 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
     let mut by_day: HashMap<String, Vec<DayEntry>> = HashMap::new();
     for c in candidates {
         let mature = now - c.mtime >= maturation_secs;
-        let ready = mature && state.scored.contains_key(&c.rel);
+        let ready = mature && is_scored_current(root, &state, &c.rel)?;
         let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let day = session_day(stem, &c.path, c.mtime);
         by_day.entry(day).or_default().push(DayEntry {
@@ -3510,25 +4565,12 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
         })
         .collect();
     days.sort_by(|a, b| a.day.cmp(&b.day));
-    days
+    Ok(days)
 }
 
-/// Archives one already-digested payload file with the check→rename race
-/// closed: re-checks that `from` still fingerprints as `expected_fp`, renames
-/// it to `to`, then verifies the bytes that actually arrived. A writer that
-/// wins the microsecond window after the check (or keeps writing through an
-/// open fd) makes the verify fail; the rename is undone and `Ok(false)` says
-/// "defer" — the file stays where the next run can digest it. `Ok(true)`
-/// means the verified bytes are in the archive; only then may the caller
-/// record the move in its manifest.
-fn archive_one_verified(from: &Path, to: &Path, expected_fp: &str) -> Result<bool, String> {
-    archive_one_verified_with_hook(from, to, expected_fp, || {})
-}
-
-/// `archive_one_verified`, with `between` running inside the exact window the
-/// verify closes (after the check, before the rename) — the seam the TOCTOU
-/// regression test injects its concurrent writer through. Production callers
-/// go through `archive_one_verified`, whose no-op hook inlines away.
+/// Test-only seam for the original check/rename race regression. Production
+/// archiving uses the revision journal and non-overwriting link in `archive`.
+#[cfg(test)]
 fn archive_one_verified_with_hook(
     from: &Path,
     to: &Path,
@@ -3548,40 +4590,26 @@ fn archive_one_verified_with_hook(
     Ok(verified)
 }
 
-/// Moves each of `files` (already-digested `sessions/...` items) into
-/// `sessions/archive/<YYYY-MM>/`, bucketed by `day`'s own month rather than
-/// each file's individual mtime — every file in one call came from the same
-/// `DigestDay`, so they share one bucket. Writes a fresh `RunManifest` (id
-/// `digest-<unix-seconds>`), saved incrementally after each move —
-/// `undo(root, id)` reverses it with zero new code, the same manifest shape
-/// every other pass in `run` already produces. `files` is IPC input, so each
-/// entry is confined to `sessions/...` and rejected if already under
-/// `sessions/archive/` before it is ever joined onto `root`
-/// (`confine_payload_file`, the same pattern `apply_proposal`'s passes use
-/// for their own payload files).
-///
-/// `fingerprints` is the caller's per-file record of the bytes it actually
-/// digested (parallel to `files`, the same values it wrote into the digest
-/// marker). Each file's fingerprint is recomputed here, immediately before
-/// its rename, and a mismatch LEAVES THE FILE IN `sessions/` and out of the
-/// manifest: the auto-collect sweep (src/lib/autoImport.ts) runs on its own
-/// timer and rewrites a resumed conversation's file in place, so bytes that
-/// arrived after the caller's read are undigested and must stay where the
-/// next run can see them — `walk_inflow` excludes `sessions/archive/`
-/// forever. `None` is the archive-retry path, whose digest was written by an
-/// earlier run and which therefore has no fingerprints of its own: the
-/// digest markers on disk are the record there, checked with the same
-/// `is_digested` that decided to offer the day at all.
+/// Archive revision-verified session sources and report actual outcomes.
+/// The checked IPC path additionally binds a stable journal ID and the exact
+/// published digest bytes; the compatibility helper is used by native callers.
+#[cfg(test)]
 pub fn archive_digested_sessions(
     root: &Path,
     day: &str,
     files: &[String],
     fingerprints: Option<&[String]>,
-) -> Result<String, String> {
-    // Same digit-run + dash shape check `session_day`/`session_bucket` use —
-    // `day` is IPC input, so this must reject a non-numeric day string
-    // outright rather than let it become a junk `sessions/archive/<junk>/`
-    // directory.
+) -> Result<ArchiveReceipt, String> {
+    archive_digested_sessions_with_context(root, day, files, fingerprints, None)
+}
+
+pub(crate) fn archive_digested_sessions_with_context(
+    root: &Path,
+    day: &str,
+    files: &[String],
+    fingerprints: Option<&[String]>,
+    context: Option<&ArchiveContext>,
+) -> Result<ArchiveReceipt, String> {
     let b = day.as_bytes();
     let valid_day = day.len() == 10
         && b[0..4].iter().all(u8::is_ascii_digit)
@@ -3592,80 +4620,33 @@ pub fn archive_digested_sessions(
     if !valid_day {
         return Err(format!("bad day `{day}`, expected YYYY-MM-DD"));
     }
-    let month = &day[..7];
-
-    if let Some(fps) = fingerprints {
-        if fps.len() != files.len() {
-            return Err(format!(
-                "{} fingerprints for {} files",
-                fps.len(),
-                files.len()
-            ));
+    if let Some(context) = context {
+        if context
+            .publications
+            .iter()
+            .any(|p| p.path != format!("daily/{day}.md"))
+        {
+            return Err("session archive publication must be its daily note".into());
         }
     }
-    let recorded = match fingerprints {
-        Some(_) => Default::default(),
-        None => digested_session_entries(root),
+    let recorded = if fingerprints.is_none() {
+        digested_session_entries(root)
+    } else {
+        Default::default()
     };
-
-    let now = now_secs();
-    let id = free_manifest_id(root, &format!("digest-{now}"));
-    let mut manifest = RunManifest {
-        id: id.clone(),
-        started_at: now,
-        ..Default::default()
-    };
-    save_manifest(root, &manifest)?;
-
-    let archive_dir = root
-        .join(crate::commands::DEST_SESSIONS)
-        .join(RAW_ARCHIVE_DIR)
-        .join(month);
-    std::fs::create_dir_all(&archive_dir)
-        .map_err(|e| format!("create session archive dir: {e}"))?;
-
-    for (i, f) in files.iter().enumerate() {
-        let from_path = confine_payload_file(root, f, is_session_payload_path, "sessions/")?;
-        if !from_path.exists() {
-            continue; // already moved/gone — idempotent, same as the apply_* passes
-        }
-        let stem = from_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let expected = match fingerprints {
-            Some(fps) => fps[i].clone(),
-            // Retry path: the expected fingerprint and the marker check come
-            // from ONE read, so the verify anchors to exactly the bytes that
-            // were found recorded.
-            None => match std::fs::read(&from_path) {
-                Ok(bytes) => {
-                    let fp = content_fingerprint(&bytes);
-                    if !is_recorded(&recorded, stem, &fp) {
-                        continue;
-                    }
-                    fp
-                }
-                Err(_) => continue,
-            },
-        };
-        let from_rel = rel_string(root, &from_path);
-        let file_name = from_path
-            .file_name()
-            .ok_or_else(|| format!("bad session path: {f}"))?;
-        let to_path = free_path(&archive_dir.join(file_name));
-        if !archive_one_verified(&from_path, &to_path, &expected)? {
-            // Rewritten under us since it was digested — before the re-check,
-            // or inside the check→rename window itself (the verify renamed it
-            // back). Leaving it in `sessions/` costs one duplicated digest of
-            // its earlier turns on the next run; archiving it loses the new
-            // ones for good.
-            continue;
-        }
-        manifest.moves.push(MoveEntry {
-            from: from_rel,
-            to: rel_string(root, &to_path),
-        });
-        save_manifest(root, &manifest)?;
-    }
-    Ok(id)
+    archive::archive(
+        root,
+        archive::ArchiveInput {
+            kind: "sessions",
+            bucket: day,
+            archive_dir: format!("sessions/archive/{}", &day[..7]),
+            files,
+            fingerprints,
+            recorded: &recorded,
+            payload_ok: is_session_payload_path,
+            context,
+        },
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -3976,114 +4957,88 @@ pub fn rollupable_buckets(root: &Path, layer: &RollupLayer) -> Vec<RollupBucket>
     weeks
 }
 
-/// Moves each of `files` (already-rolled-up `<layer.src>/...` notes) into
-/// `<layer.src>/archive/<bucket>/`, the cold tier (`vector_index::is_cold`) —
-/// the literal counterpart of `archive_digested_sessions`, which is where
-/// every guard below comes from: `confine_payload_file` on untrusted IPC
-/// paths, a fingerprint recheck immediately before each rename so a file
-/// rewritten since it was read stays put, and a `digest-<unix-seconds>`
-/// `RunManifest` saved after every move so `undo(root, id)` reverses it with
-/// no new code.
-///
-/// The archive bucket is the rolled-up unit itself (an ISO week for the
-/// weekly layer, a month for the monthly one) rather than
-/// `archive_digested_sessions`'s fixed `YYYY-MM`: a rollup covers exactly one
-/// bucket, so one directory per rollup maps 1:1 onto the
-/// `<layer.out>/<bucket>.md` that replaced it — and a week can straddle two
-/// months, which a month bucket would have to pick a side of anyway.
-///
-/// `fingerprints` is the caller's record of the bytes it actually rolled up.
-/// `None` is the archive-retry path (an earlier run wrote the rollup and this
-/// one only re-attempts the move), which falls back to the on-disk rollup
-/// markers via the same `is_digested` that offered the bucket.
+/// Archive source notes covered by a weekly/monthly rollup, preserving a
+/// recoverable SHA256-bound intent and reporting moves separately from pending.
+#[cfg(test)]
 pub fn archive_rolled(
     root: &Path,
     layer: &RollupLayer,
     bucket: &str,
     files: &[String],
     fingerprints: Option<&[String]>,
-) -> Result<String, String> {
-    // `bucket` is IPC input and becomes a directory name — reject anything
-    // that is not this layer's exact bucket shape rather than create a junk
-    // archive directory.
+) -> Result<ArchiveReceipt, String> {
+    archive_rolled_with_context(root, layer, bucket, files, fingerprints, None)
+}
+
+pub(crate) fn archive_rolled_with_context(
+    root: &Path,
+    layer: &RollupLayer,
+    bucket: &str,
+    files: &[String],
+    fingerprints: Option<&[String]>,
+    context: Option<&ArchiveContext>,
+) -> Result<ArchiveReceipt, String> {
     if !(layer.valid_bucket)(bucket) {
         return Err(format!("bad {} bucket `{bucket}`", layer.out));
     }
-
-    if let Some(fps) = fingerprints {
-        if fps.len() != files.len() {
-            return Err(format!(
-                "{} fingerprints for {} files",
-                fps.len(),
-                files.len()
-            ));
+    if let Some(context) = context {
+        if context
+            .publications
+            .iter()
+            .any(|p| p.path != format!("{}/{bucket}.md", layer.out))
+        {
+            return Err("rollup archive publication must be its output note".into());
         }
     }
-    let recorded = match fingerprints {
-        Some(_) => Default::default(),
-        None => marker_entries(&root.join(layer.out), ROLLUP_MARKER_OPEN),
+    let recorded = if fingerprints.is_none() {
+        marker_entries(&root.join(layer.out), ROLLUP_MARKER_OPEN)
+    } else {
+        Default::default()
     };
-
-    let now = now_secs();
-    let id = free_manifest_id(root, &format!("digest-{now}"));
-    let mut manifest = RunManifest {
-        id: id.clone(),
-        started_at: now,
-        ..Default::default()
-    };
-    save_manifest(root, &manifest)?;
-
-    let archive_dir = root.join(layer.src).join(RAW_ARCHIVE_DIR).join(bucket);
-    std::fs::create_dir_all(&archive_dir)
-        .map_err(|e| format!("create {} archive dir: {e}", layer.src))?;
-
-    let expected = format!("{}/", layer.src);
-    for (i, f) in files.iter().enumerate() {
-        let from_path = confine_payload_file(root, f, layer.payload_ok, &expected)?;
-        if !from_path.exists() {
-            continue; // already moved/gone — idempotent, same as every other pass
-        }
-        let stem = from_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let expected = match fingerprints {
-            Some(fps) => fps[i].clone(),
-            // Retry path: one read yields both the marker check and the
-            // expected fingerprint — same reasoning as the session archive.
-            None => match std::fs::read(&from_path) {
-                Ok(bytes) => {
-                    let fp = content_fingerprint(&bytes);
-                    if !is_recorded(&recorded, stem, &fp) {
-                        continue;
-                    }
-                    fp
-                }
-                Err(_) => continue,
-            },
-        };
-        let from_rel = rel_string(root, &from_path);
-        let file_name = from_path
-            .file_name()
-            .ok_or_else(|| format!("bad {} path: {f}", layer.src))?;
-        let to_path = free_path(&archive_dir.join(file_name));
-        if !archive_one_verified(&from_path, &to_path, &expected)? {
-            // Appended to (a later session digest) or hand-edited since it
-            // was read — before the re-check or inside the check→rename
-            // window (the verify renamed it back). Leaving it in `daily/`
-            // costs one duplicated rollup of its earlier bullets next run;
-            // archiving it loses the new ones.
-            continue;
-        }
-        manifest.moves.push(MoveEntry {
-            from: from_rel,
-            to: rel_string(root, &to_path),
-        });
-        save_manifest(root, &manifest)?;
-    }
-    Ok(id)
+    archive::archive(
+        root,
+        archive::ArchiveInput {
+            kind: layer.out,
+            bucket,
+            archive_dir: format!("{}/archive/{bucket}", layer.src),
+            files,
+            fingerprints,
+            recorded: &recorded,
+            payload_ok: layer.payload_ok,
+            context,
+        },
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    mod numeric_tests {
+        include!("distill_numeric_tests.rs");
+    }
+
+    mod provenance_tests {
+        include!("distill_provenance_tests.rs");
+    }
+
+    mod decision_context_tests {
+        include!("distill_decision_context_tests.rs");
+    }
+
+    mod decision_context_additional_tests {
+        include!("distill_decision_context_additional_tests.rs");
+    }
+
+    mod anchor_additional_tests {
+        include!("distill_anchor_additional_tests.rs");
+    }
+
+    // Preserve the original RED witness source; this allowance changes style only.
+    #[allow(clippy::single_match)]
+    mod anchor_tests {
+        include!("distill_anchor_tests.rs");
+    }
 
     #[test]
     fn slugify_keeps_hangul_titles() {
@@ -4168,6 +5123,8 @@ mod tests {
     fn tiny_ontology() -> Ontology {
         Ontology {
             model: "test-model".to_string(),
+            embedding: Some(synthetic_space(2)),
+            source_signature: "synthetic-ontology-inputs".into(),
             built_at: 0,
             // At/above GATE_MIN_WIKI_PAGES so scan()'s cold-start gate stays
             // active — these tests exercise real scoring, not the gate.
@@ -4196,6 +5153,8 @@ mod tests {
     fn ontology_with_cluster(id: u32, label: &str, members: Vec<String>) -> Ontology {
         Ontology {
             model: "test-model".to_string(),
+            embedding: Some(synthetic_space(2)),
+            source_signature: "synthetic-ontology-inputs".into(),
             built_at: 0,
             wiki_pages: members.len(),
             clusters: vec![crate::ontology::Cluster {
@@ -4239,13 +5198,170 @@ mod tests {
 
     const PROSE: &str = "This is a normal note about quantization techniques and how they reduce model size while preserving accuracy across a range of benchmarks and downstream tasks in real deployments, and it keeps going a little further so the byte count clears the junk-heuristic floor.";
 
+    fn synthetic_space(dim: usize) -> EmbeddingSpace {
+        EmbeddingSpace {
+            model: "test-model".into(),
+            signature: format!("synthetic-space-{dim}"),
+            dim,
+        }
+    }
+
+    /// Populate actual temporary sources and every section without changing
+    /// the requested fixture page count or the controlled member geometry.
+    fn synthetic_current_store(
+        root: &Path,
+        space: &EmbeddingSpace,
+        members: &[(String, Vec<f32>)],
+    ) -> crate::vector_index::VectorStore {
+        for (member, _) in members {
+            let target = root.join(member);
+            if target.exists() {
+                continue;
+            }
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            let placeholder = knowledge::read(root)
+                .unwrap()
+                .pages
+                .into_iter()
+                .find(|page| {
+                    (page.path.starts_with("wiki/seed-")
+                        || page.path.starts_with("wiki/fixture-context-"))
+                        && matches!(
+                            page.content.as_str(),
+                            "seed page" | "synthetic context page"
+                        )
+                });
+            if let Some(page) = placeholder {
+                std::fs::rename(root.join(page.path), &target).unwrap();
+            } else {
+                std::fs::write(&target, "synthetic indexed wiki member").unwrap();
+            }
+        }
+        let mut store = crate::vector_index::VectorStore::default();
+        store.ensure_signature(&space.model, &space.signature);
+        let mut fallback = vec![0.0; space.dim];
+        fallback[0] = 1.0;
+        let fallback = members
+            .first()
+            .map(|(_, vector)| vector)
+            .unwrap_or(&fallback);
+        for page in knowledge::read(root)
+            .unwrap()
+            .pages
+            .into_iter()
+            .filter(|page| page.eligible)
+        {
+            let vector = members
+                .iter()
+                .find(|(path, _)| path == &page.path)
+                .map(|(_, vector)| vector)
+                .unwrap_or(fallback);
+            let entries = crate::embeddings::chunk_page(&page.content)
+                .iter()
+                .enumerate()
+                .map(|(section, chunk)| {
+                    (
+                        section,
+                        crate::embeddings::content_hash(chunk),
+                        vector.clone(),
+                    )
+                })
+                .collect();
+            store
+                .upsert_page_sections(&page.path, &page.stem, entries)
+                .unwrap();
+        }
+        store
+    }
+
+    fn seed_semantic_store(root: &Path, dim: usize) {
+        let space = synthetic_space(dim);
+        let mut vector = vec![0.0; dim];
+        vector[0] = 1.0;
+        let store = synthetic_current_store(root, &space, &[("wiki/topic.md".into(), vector)]);
+        let path = crate::vector_index::VectorStore::path_for(
+            &root.canonicalize().unwrap().to_string_lossy(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        store.save(&path).unwrap();
+        let snapshot = knowledge::read(root).unwrap();
+        let titles = snapshot.titles().unwrap();
+        let anchors = map_anchors_from_store(root, &store).unwrap();
+        crate::ontology::save(
+            root,
+            &crate::ontology::build(&store, &titles, &anchors).unwrap(),
+        )
+        .unwrap();
+    }
+
+    /// Bind complete actual source chunks while preserving synthetic thresholds.
+    fn save_synthetic_ontology(root: &Path, mut ontology: Ontology) -> Ontology {
+        let space = ontology.embedding.clone().unwrap();
+        let members: Vec<_> = ontology
+            .clusters
+            .iter()
+            .flat_map(|cluster| {
+                cluster
+                    .members
+                    .iter()
+                    .map(|member| (member.clone(), cluster.centroid.clone()))
+            })
+            .collect();
+        let store = synthetic_current_store(root, &space, &members);
+        let path = crate::vector_index::VectorStore::path_for(
+            &root.canonicalize().unwrap().to_string_lossy(),
+        )
+        .unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        store.save(&path).unwrap();
+        let titles = knowledge::read(root).unwrap().titles().unwrap();
+        let anchors = map_anchors_from_store(root, &store).unwrap();
+        let built = crate::ontology::build(&store, &titles, &anchors).unwrap();
+        ontology.source_signature = built.source_signature;
+        ontology.wiki_pages = titles.len();
+        crate::ontology::save(root, &ontology).unwrap();
+        ontology
+    }
+
+    fn pin_scan_ontology(root: &Path, ontology: Ontology) -> Ontology {
+        let pages = crate::commands::wiki_titles(root).len();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        for index in pages..GATE_MIN_WIKI_PAGES {
+            std::fs::write(
+                root.join(format!("wiki/fixture-context-{index}.md")),
+                "synthetic context page",
+            )
+            .unwrap();
+        }
+        save_synthetic_ontology(root, ontology)
+    }
+
+    fn source_digest_for_test(root: &Path, rel: &str) -> String {
+        admission::read_source(root, rel).unwrap().unwrap().sha256
+    }
+
+    fn decision_signature_for_test(root: &Path) -> String {
+        test_current_decision_signature(root).unwrap().unwrap()
+    }
+
     /// Write a quarantined item's content file + verdict sidecar directly
     /// (bypassing `scan`) — the Task 7 clustering/proposal tests need control
     /// over the sidecar's `vector` field, which `scan`'s own embed closure
     /// does not expose per-file. `expires` is far in the future so the TTL
     /// pass never sweeps these away out from under a same-run cluster test.
     fn write_quarantine_item(dir: &Path, stem: &str, vector: Vec<f32>) {
-        std::fs::write(dir.join(format!("{stem}.md")), format!("{PROSE} ({stem})")).unwrap();
+        let body = format!("{PROSE} ({stem})");
+        std::fs::write(dir.join(format!("{stem}.md")), &body).unwrap();
+        let root = dir.parent().unwrap().parent().unwrap();
+        let ontology =
+            match crate::index_publication::read_checked(&super::dir(root).join("ontology.json"))
+                .unwrap()
+            {
+                Some(raw) => serde_json::from_slice(&raw).unwrap(),
+                None => tiny_ontology(),
+            };
+        let inputs = admission::capture(root, &ontology, &DistillConfig::default()).unwrap();
         let sidecar = serde_json::json!({
             "tier": "quarantine",
             "s_knn": 0.2,
@@ -4253,6 +5369,9 @@ mod tests {
             "reason": "test",
             "expires": now_secs() + 1_000_000,
             "vector": vector,
+            "embedding": synthetic_space(2),
+            "source_sha256": admission::sha256(body.as_bytes()),
+            "decision_signature": inputs.signature,
         });
         std::fs::write(
             dir.join(format!("{stem}.verdict.json")),
@@ -4340,11 +5459,9 @@ mod tests {
         assert_eq!(out2.scored, 0, "unchanged content must not be rescored");
     }
 
-    /// The ledger stamp (mtime+len) short-circuits the read: a file whose
-    /// stamp has not moved is never opened, so a warm scan no longer reads
-    /// all of the inflow just to compare hashes.
+    /// Equal metadata cannot authorize a score for different current bytes.
     #[test]
-    fn scan_skips_reading_an_unchanged_stamp_and_rereads_a_touched_file() {
+    fn scan_checks_same_stamp_replacements_and_reuses_unchanged_bytes() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("_inbox")).unwrap();
@@ -4365,33 +5482,34 @@ mod tests {
         assert_eq!(out.scored, 1);
         let first_hash = state_load(root, &o.model).scored["_inbox/a.md"].hash;
 
-        // Different bytes, same length, mtime put back: a scan that still read
-        // the file would see a new hash and re-score it.
+        // Different bytes remain different even when both metadata fields match.
         std::fs::write(&path, "x".repeat(PROSE.len())).unwrap();
         set_mtime(&path, stamp);
         let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
-        assert_eq!(out.scored, 0, "unchanged stamp: not re-scored");
-        assert_eq!(embeds.get(), 1, "unchanged stamp: not re-embedded");
-        assert_eq!(
+        assert_eq!(out.scored, 1, "changed bytes require a new verdict");
+        assert_eq!(embeds.get(), 2, "changed bytes require a new embedding");
+        assert_ne!(
             state_load(root, &o.model).scored["_inbox/a.md"].hash,
             first_hash,
-            "unchanged stamp: the file was never read"
+            "equal metadata must not hide the changed source"
         );
 
         // Move the mtime (still mature) and the file is read again.
         set_mtime(&path, stamp - std::time::Duration::from_secs(3600));
         let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
-        assert_eq!(out.scored, 1, "moved stamp: re-read and re-scored");
+        assert_eq!(
+            out.scored, 0,
+            "unchanged bytes retain their checked verdict"
+        );
+        assert_eq!(embeds.get(), 2, "a metadata touch needs no model call");
         assert_ne!(
             state_load(root, &o.model).scored["_inbox/a.md"].hash,
             first_hash
         );
     }
 
-    /// A ledger written before the stamp fields existed still loads (serde
-    /// defaults the stamp to 0/0): its first scan re-reads each file once,
-    /// finds the same hash, re-scores nothing and stamps the entry; the scan
-    /// after that no longer reads the file.
+    /// A checked source/decision receipt can predate metadata stamps. A reread
+    /// updates those hints without spending another embedding.
     #[test]
     fn scan_stamps_a_pre_stamp_ledger_on_its_first_reread() {
         let dir = tempfile::tempdir().unwrap();
@@ -4403,8 +5521,12 @@ mod tests {
         let o = tiny_ontology();
         let legacy = serde_json::json!({
             "model": o.model,
+            "embedding": o.embedding,
             "scored": { "_inbox/a.md": {
-                "hash": crate::embeddings::content_hash(PROSE), "tier": "full", "at": 1
+                "hash": crate::embeddings::content_hash(PROSE), "tier": "full", "at": 1,
+                "embedding": o.embedding,
+                "source_sha256": admission::sha256(PROSE.as_bytes()),
+                "decision_signature": admission::capture(root, &o, &DistillConfig::default()).unwrap().signature,
             } }
         });
         std::fs::create_dir_all(state_path(root).parent().unwrap()).unwrap();
@@ -4431,11 +5553,12 @@ mod tests {
                 .as_secs() as i64
         );
 
-        // Stamped now: swapped bytes under the same stamp are never read.
+        // A later equal-stamp replacement invalidates the source receipt.
         std::fs::write(&path, "x".repeat(PROSE.len())).unwrap();
         set_mtime(&path, meta.modified().unwrap());
-        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
-        assert_eq!(out.scored, 0, "stamped: the swap was never read");
+        let changed_embed = |texts: Vec<String>| Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect());
+        let out = scan(root, &o, &cfg, 10, &changed_embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.scored, 1, "stamped metadata cannot bless swapped bytes");
     }
 
     #[test]
@@ -4507,6 +5630,7 @@ mod tests {
         assert!(sidecar["reason"].is_string());
         assert!(sidecar["expires"].is_number());
         assert_eq!(sidecar["vector"].as_array().unwrap().len(), 2);
+        assert_eq!(sidecar["from"], "_inbox/c.md", "restore needs the origin");
 
         // The move and the sidecar creation are both undo-tracked.
         assert_eq!(manifest.moves.len(), 1);
@@ -4519,11 +5643,10 @@ mod tests {
     }
 
     #[test]
-    fn quarantine_from_raw_origin_moves_to_inbox_quarantine() {
-        // raw/ is immutable to edits/deletes, but the gate's quarantine move
-        // is a sanctioned transition (`app/docs/specs/2026-08-13-ontology-
-        // distill-design.md`: "Cleanup = state transition ... recorded in an
-        // undo manifest"), same as any other inflow tree.
+    fn quarantine_never_moves_a_raw_source() {
+        // raw/ is immutable and not inflow (owner decision 2026-10-03, B1): a
+        // raw/ item the similarity band would quarantine is never even
+        // scored, so it stays where it is.
         assert!(PROSE.len() >= JUNK_MIN_BYTES);
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -4540,14 +5663,267 @@ mod tests {
 
         let mut manifest = test_manifest();
         let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
-        assert_eq!(out.quarantined, 1);
-        assert!(
-            !root.join("raw/paper.md").exists(),
-            "raw/ source must be moved, never left behind after quarantine"
+        assert_eq!((out.scored, out.quarantined), (0, 0));
+        assert_eq!(
+            std::fs::read_to_string(root.join("raw/paper.md")).unwrap(),
+            PROSE
         );
-        assert!(root.join("_inbox/quarantine/paper.md").exists());
-        assert!(root.join("_inbox/quarantine/paper.verdict.json").exists());
-        assert_eq!(manifest.moves[0].from, "raw/paper.md");
+        assert!(!root.join("_inbox/quarantine").exists());
+        assert!(manifest.moves.is_empty());
+        assert!(!state_load(root, &o.model)
+            .scored
+            .contains_key("raw/paper.md"));
+    }
+
+    /// A synthetic imported session whose first user turn is `first`.
+    fn session_doc(first: &str) -> String {
+        format!(
+            "---\nsource: codex\nconversation_id: x\n---\n\n# t\n\n**User:**\n\n{first}\n\n**Assistant:**\n\n{PROSE}\n"
+        )
+    }
+
+    fn write_session(root: &Path, name: &str, first: &str) {
+        let path = root.join("sessions/2026-08").join(name);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, session_doc(first)).unwrap();
+        set_mtime(&path, old_mtime());
+    }
+
+    fn sidecar_reason(root: &Path, stem: &str) -> String {
+        let raw =
+            std::fs::read_to_string(root.join(format!("_inbox/quarantine/{stem}.verdict.json")))
+                .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(v["vector"].as_array().unwrap().len(), 0, "never embedded");
+        v["reason"].as_str().unwrap().to_string()
+    }
+
+    #[test]
+    fn machine_sessions_are_quarantined_before_embedding_and_outside_the_budget() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_session(
+            root,
+            "myco.md",
+            "You are planning how to ingest a new source into an existing wiki. Plan it.",
+        );
+        write_session(root, "hello.md", "User: hello\n\nAssistant:");
+        write_session(
+            root,
+            "empty.md",
+            "<environment_context>\n<cwd>/tmp</cwd>\n</environment_context>",
+        );
+        write_session(
+            root,
+            "work1.md",
+            "Why does the sidebar flicker when a folder collapses?",
+        );
+        write_session(
+            root,
+            "work2.md",
+            "Add a keyboard shortcut for the search box.",
+        );
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let seen = std::cell::RefCell::new(Vec::<String>::new());
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            seen.borrow_mut().extend(texts.iter().cloned());
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        };
+        let mut manifest = test_manifest();
+        // Budget 1: the three machine sessions still go in this one run.
+        let out = scan(root, &o, &cfg, 1, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 3);
+        assert_eq!(
+            out.scored, 4,
+            "three machine sessions + one within the budget"
+        );
+        for (stem, kind) in [("myco", "myco"), ("hello", "hello"), ("empty", "empty")] {
+            assert!(!root.join(format!("sessions/2026-08/{stem}.md")).exists());
+            assert_eq!(sidecar_reason(root, stem), format!("machine:{kind}"));
+        }
+        let seen = seen.borrow();
+        assert_eq!(
+            seen.len(),
+            1,
+            "only the budgeted person's session is embedded"
+        );
+        assert!(seen[0].contains("sidebar flicker"));
+        let state = state_load(root, &o.model);
+        assert!(state.scored.contains_key("sessions/2026-08/work1.md"));
+        assert!(
+            !state.scored.contains_key("sessions/2026-08/work2.md"),
+            "waits for a later run"
+        );
+    }
+
+    #[test]
+    fn a_long_first_turn_in_three_sessions_is_an_agent_prompt() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let task = "You just finished task t1. Summarise the transcript below in six bullets for the orchestrator. ".repeat(3);
+        assert!(task.chars().count() >= crate::machine_session::REPEAT_MIN_CHARS);
+        write_session(root, "a1.md", &task);
+        write_session(root, "a2.md", &task);
+        // Short openers repeat in real work and never count.
+        for n in ["c1.md", "c2.md", "c3.md"] {
+            write_session(root, n, "continue");
+        }
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 0, "two copies are not a pattern yet");
+
+        // The third copy makes it one: all three go, the two already scored
+        // ones without being re-read or re-embedded.
+        write_session(root, "a3.md", &task);
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 3);
+        for stem in ["a1", "a2", "a3"] {
+            assert_eq!(sidecar_reason(root, stem), "machine:agent");
+        }
+        for n in ["c1.md", "c2.md", "c3.md"] {
+            assert!(root.join("sessions/2026-08").join(n).exists());
+        }
+
+        // A later copy is still known once the others sit in quarantine.
+        write_session(root, "a4.md", &task);
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 1);
+        assert_eq!(sidecar_reason(root, "a4"), "machine:agent");
+    }
+
+    #[test]
+    fn agent_sessions_leave_the_whole_budget_to_the_rest() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let task = "You just finished task t1. Summarise the transcript below in six bullets for the orchestrator. ".repeat(3);
+        // Oldest first by name at equal mtimes: the three copies come first.
+        for n in ["a1.md", "a2.md", "a3.md"] {
+            write_session(root, n, &task);
+        }
+        write_session(
+            root,
+            "w.md",
+            "Why does the sidebar flicker when a folder collapses?",
+        );
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let embedded = std::cell::Cell::new(0usize);
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            embedded.set(embedded.get() + texts.len());
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 1, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 3);
+        assert_eq!(
+            embedded.get(),
+            1,
+            "the person's session still gets the one slot"
+        );
+        assert!(state_load(root, &o.model)
+            .scored
+            .contains_key("sessions/2026-08/w.md"));
+    }
+
+    #[test]
+    fn similarity_never_quarantines_a_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_session(
+            root,
+            "work.md",
+            "Why does the sidebar flicker when a folder collapses?",
+        );
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        std::fs::write(root.join("_inbox/c.md"), PROSE).unwrap();
+        set_mtime(&root.join("_inbox/c.md"), old_mtime());
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let borderline = vec![0.2_f32, (1.0 - 0.2_f32 * 0.2_f32).sqrt()]; // -> Quarantine band
+        let embed = move |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts.iter().map(|_| borderline.clone()).collect())
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!((out.quarantined, out.rejected), (1, 1));
+        assert!(
+            root.join("sessions/2026-08/work.md").exists(),
+            "a session stays put"
+        );
+        assert!(
+            root.join("_inbox/quarantine/c.md").exists(),
+            "other inflow still can go"
+        );
+        let state = state_load(root, &o.model);
+        assert_eq!(state.scored["sessions/2026-08/work.md"].tier, "reject");
+    }
+
+    #[test]
+    fn sessions_scored_under_older_rules_are_checked_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let myco = session_doc("You are reviewing a personal knowledge wiki (markdown files in the current directory). Go.");
+        let work = session_doc("Why does the sidebar flicker when a folder collapses?");
+        write_session(root, "myco.md", "You are reviewing a personal knowledge wiki (markdown files in the current directory). Go.");
+        write_session(
+            root,
+            "work.md",
+            "Why does the sidebar flicker when a folder collapses?",
+        );
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        std::fs::write(root.join("_inbox/a.md"), PROSE).unwrap();
+        set_mtime(&root.join("_inbox/a.md"), old_mtime());
+        let o = tiny_ontology();
+        // A ledger from before the machine check: no rule version anywhere.
+        let signature = admission::capture(root, &o, &DistillConfig::default())
+            .unwrap()
+            .signature;
+        let entry = |c: &str, tier: &str| serde_json::json!({ "hash": crate::embeddings::content_hash(c), "tier": tier, "at": 1, "embedding": o.embedding, "source_sha256": admission::sha256(c.as_bytes()), "decision_signature": signature });
+        let legacy = serde_json::json!({
+            "model": o.model,
+            "embedding": o.embedding,
+            "decision_signature": signature,
+            "scored": {
+                "sessions/2026-08/myco.md": entry(&myco, "summary"),
+                "sessions/2026-08/work.md": entry(&work, "summary"),
+                "_inbox/a.md": entry(PROSE, "full"),
+            }
+        });
+        std::fs::create_dir_all(state_path(root).parent().unwrap()).unwrap();
+        std::fs::write(state_path(root), legacy.to_string()).unwrap();
+        assert_eq!(
+            backlog_count(root, &state_load(root, &o.model)),
+            2,
+            "the two sessions wait for the new rules; the inbox item does not"
+        );
+
+        let cfg = DistillConfig::default();
+        let embed = |_: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            panic!("a re-check is not a re-embedding")
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 1);
+        assert_eq!(sidecar_reason(root, "myco"), "machine:myco");
+        let state = state_load(root, &o.model);
+        let kept = &state.scored["sessions/2026-08/work.md"];
+        assert_eq!((kept.tier.as_str(), kept.rules), ("summary", GATE_RULES));
+        assert_eq!(state.scored["_inbox/a.md"].tier, "full");
+        assert_eq!(
+            backlog_count(root, &state),
+            1,
+            "only the quarantined item is left"
+        );
     }
 
     /// Critical 2 fix: `scan`'s quarantine move used to be undo-blind (the
@@ -4556,7 +5932,7 @@ mod tests {
     /// handed, and that `undo` reverses both — the file returns to its
     /// origin, the quarantine copy and sidecar are gone.
     #[test]
-    fn undo_restores_a_quarantined_file_and_removes_its_sidecar() {
+    fn undo_preserves_unsigned_quarantine_move_and_sidecar() {
         assert!(PROSE.len() >= JUNK_MIN_BYTES);
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -4572,6 +5948,7 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
+        manifest.id = "digest-123".into();
         let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.quarantined, 1);
         assert_eq!(manifest.moves.len(), 1, "quarantine move must be recorded");
@@ -4584,13 +5961,13 @@ mod tests {
         assert!(root.join("_inbox/quarantine/c.verdict.json").exists());
 
         let reversed = undo(root, &manifest.id).unwrap();
-        assert_eq!(reversed, 2, "1 file move + 1 sidecar deletion");
+        assert_eq!(reversed, 0, "unsigned history requires manual recovery");
         assert!(
-            root.join("_inbox/c.md").exists(),
-            "file must be restored to its origin"
+            !root.join("_inbox/c.md").exists(),
+            "unsigned history must not infer ownership from its timestamp"
         );
-        assert!(!root.join("_inbox/quarantine/c.md").exists());
-        assert!(!root.join("_inbox/quarantine/c.verdict.json").exists());
+        assert!(root.join("_inbox/quarantine/c.md").exists());
+        assert!(root.join("_inbox/quarantine/c.verdict.json").exists());
     }
 
     #[test]
@@ -4689,54 +6066,9 @@ mod tests {
     // under test.
     // -----------------------------------------------------------------------
 
-    /// Embed closure for run() tests: the ontology these tests build is
-    /// always empty (no real `VectorStore` exists at the isolated test data
-    /// path), so `admit` never reaches `cosine` at all — the vector's
-    /// content is irrelevant, only its presence (so `scan`'s embed batching
-    /// has something to return).
+    /// Controlled two-dimensional unit output for synthetic runner fixtures.
     fn dummy_embed(texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
-        Ok(texts.iter().map(|_| vec![1.0]).collect())
-    }
-
-    #[test]
-    fn run_archives_represented_raw_and_writes_manifest() {
-        crate::settings::test_support::with_isolated_data("distill-run-archive", |_data| {
-            let dir = tempfile::tempdir().unwrap();
-            let root = dir.path();
-            std::fs::create_dir_all(root.join("raw")).unwrap();
-            std::fs::create_dir_all(root.join("wiki")).unwrap();
-            std::fs::write(root.join("raw/x.md"), PROSE).unwrap();
-            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
-            set_mtime(&root.join("raw/x.md"), old_mtime());
-
-            let cfg = DistillConfig::default(); // Standard intensity
-            let report = run(root, &cfg, &dummy_embed).unwrap();
-            assert_eq!(report.archived, 1);
-            assert_eq!(report.proposals, 0);
-            assert!(
-                !root.join("raw/x.md").exists(),
-                "archived source must move out of raw/"
-            );
-
-            let manifest_raw = std::fs::read_to_string(manifest_path(root, &report.id)).unwrap();
-            let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
-            let moves = manifest["moves"].as_array().unwrap();
-            assert_eq!(moves.len(), 1);
-            assert_eq!(moves[0]["from"], "raw/x.md");
-            let to = moves[0]["to"].as_str().unwrap().to_string();
-            assert!(
-                to.starts_with("raw/archive/") && to.ends_with("/x.md"),
-                "unexpected archive path: {to}"
-            );
-            assert!(root.join(&to).exists());
-
-            let report_raw = std::fs::read_to_string(
-                root.join(format!("ingest-reports/distill-{}.md", report.id)),
-            )
-            .unwrap();
-            assert!(report_raw.contains(&report.id));
-            assert!(report_raw.contains("1 moved"));
-        });
+        Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
     }
 
     /// Two clusters far enough apart (orthogonal centroids, plus a 3rd
@@ -4761,7 +6093,9 @@ mod tests {
             override_widen: 0.0,
         };
         Ontology {
-            model: String::new(),
+            model: "test-model".into(),
+            embedding: Some(synthetic_space(3)),
+            source_signature: "synthetic-ontology-inputs".into(),
             built_at: 0,
             wiki_pages: GATE_MIN_WIKI_PAGES,
             clusters: vec![
@@ -4772,23 +6106,92 @@ mod tests {
         }
     }
 
-    /// cosine 0.4 to cluster 0's centroid `[1,0,0]`, 0.0 to cluster 1's
-    /// `[0,1,0]` — clears `t_summary` (0.30) but not `t_full` (0.50) against
-    /// cluster 0 under `GatePreset::Normal`, and cluster 0 is the nearest
-    /// either way (0.4 > 0.0).
-    fn summary_tier_embed(texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
-        Ok(texts
-            .iter()
-            .map(|_| vec![0.4_f32, 0.0, (1.0 - 0.16_f32).sqrt()])
-            .collect())
-    }
-
+    /// Owner decision 2026-10-03 (B1): no run, manual or automatic, moves,
+    /// adds or changes anything under `raw/` — no archive pass for a raw
+    /// file that has a `source-` page, no summary-tier move into
+    /// `raw/archive/`, no quarantine move out of `raw/` — while the passes
+    /// outside `raw/` (here the quarantine TTL sweep) still run.
     #[test]
-    fn strip_atx_heading_only_strips_real_headings() {
-        assert_eq!(strip_atx_heading("#hashtag trending"), "#hashtag trending");
-        assert_eq!(strip_atx_heading("#1 issue"), "#1 issue");
-        assert_eq!(strip_atx_heading("## Real heading"), "Real heading");
-        assert_eq!(strip_atx_heading("# Title"), "Title");
+    fn a_run_keeps_raw_byte_identical_and_still_sweeps_the_rest() {
+        fn raw_snapshot(root: &Path) -> Vec<(String, Vec<u8>)> {
+            fn walk(dir: &Path, root: &Path, out: &mut Vec<(String, Vec<u8>)>) {
+                for e in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                    let path = e.path();
+                    if path.is_dir() {
+                        walk(&path, root, out);
+                    } else {
+                        let rel = rel_string(root, &path);
+                        out.push((rel, std::fs::read(&path).unwrap()));
+                    }
+                }
+            }
+            let mut out = Vec::new();
+            walk(&root.join("raw"), root, &mut out);
+            out.sort();
+            out
+        }
+        // cosine 0.2 to cluster 0: between its p5 (0.10) and t_summary
+        // (0.30), so the "Q:" item quarantines; everything else is Summary.
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts
+                .iter()
+                .map(|t| {
+                    let c = if t.starts_with("Q:") { 0.2_f32 } else { 0.4 };
+                    vec![c, 0.0, (1.0 - c * c).sqrt()]
+                })
+                .collect())
+        };
+
+        crate::settings::test_support::with_isolated_data("distill-keeps-raw", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // 49 seeds + source-x.md = the ontology's 50, so run()
+            // keeps the saved two-cluster ontology instead of
+            // rebuilding an empty one.
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES - 1);
+            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
+            save_synthetic_ontology(root, ontology_two_clusters());
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            std::fs::create_dir_all(root.join("_inbox/quarantine")).unwrap();
+            for (rel, body) in [
+                ("raw/x.md", PROSE.to_string()),
+                ("raw/y.md", PROSE.to_string()),
+                ("raw/q.md", format!("Q: {PROSE}")),
+                ("_inbox/note.md", PROSE.to_string()),
+            ] {
+                std::fs::write(root.join(rel), body).unwrap();
+                set_mtime(&root.join(rel), old_mtime());
+            }
+            std::fs::write(root.join("_inbox/quarantine/old.md"), PROSE).unwrap();
+            let expired = serde_json::json!({
+                "tier": "quarantine",
+                "s_knn": 0.2,
+                "nearest_cluster": "topic-a",
+                "reason": "test",
+                "expires": now_secs() - 1000,
+                "vector": [0.2, 0.0, 0.0],
+                "from": "_inbox/old.md",
+                "source_sha256": admission::sha256(PROSE.as_bytes()),
+            });
+            std::fs::write(
+                root.join("_inbox/quarantine/old.verdict.json"),
+                expired.to_string(),
+            )
+            .unwrap();
+            let before = raw_snapshot(root);
+
+            let cfg = DistillConfig::default(); // Standard intensity
+            let report = run(root, &cfg, &embed).unwrap();
+            assert_eq!(report.trashed, 1, "the TTL sweep still runs");
+            assert_eq!(raw_snapshot(root), before, "raw/ must be byte-identical");
+            assert!(!root.join("raw/archive").exists());
+            assert_eq!(report.scan.quarantined, 0);
+            assert_eq!(report.scan.scored, 1, "only _inbox/note.md is scored");
+            assert!(
+                root.join("_inbox/note.md").exists(),
+                "a summary-tier item has nowhere to go but raw/archive/, so it stays"
+            );
+        });
     }
 
     #[test]
@@ -4826,7 +6229,7 @@ mod tests {
             std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
             set_mtime(&root.join("_inbox/note.md"), old_mtime());
             std::fs::write(root.join("profile.md"), "## Interests\n- widgets\n").unwrap();
-            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
+            save_synthetic_ontology(root, ontology_two_clusters());
 
             let cfg = DistillConfig::default();
             // Errors ONLY on the profile-interests batch (`["widgets"]`); the
@@ -4851,199 +6254,10 @@ mod tests {
         });
     }
 
-    #[test]
-    fn summary_tier_items_get_a_daily_line_and_archive() {
-        crate::settings::test_support::with_isolated_data("distill-summary-tier", |_data| {
-            let dir = tempfile::tempdir().unwrap();
-            let root = dir.path();
-            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
-            std::fs::create_dir_all(root.join("_inbox")).unwrap();
-            // Real shape of an imported _inbox doc (importers::Conversation::
-            // to_inbox_doc): YAML frontmatter, then `# <title>` — the digest
-            // line must skip both, not literally quote "---".
-            std::fs::write(
-                root.join("_inbox/note.md"),
-                format!("---\nsource: test\n---\n\n# Heading text\n\n{PROSE}"),
-            )
-            .unwrap();
-            set_mtime(&root.join("_inbox/note.md"), old_mtime());
-            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
-
-            let cfg = DistillConfig::default(); // Standard intensity
-            let report = run(root, &cfg, &summary_tier_embed).unwrap();
-            assert_eq!(report.scan.summaries, 1);
-            assert_eq!(report.proposals, 0);
-
-            let (y, m, d, ..) = civil_datetime(now_secs());
-            let today = format!("{y:04}-{m:02}-{d:02}");
-            let daily =
-                std::fs::read_to_string(root.join("daily").join(format!("{today}.md"))).unwrap();
-            assert!(daily.contains("## Distill summary (auto)"));
-            assert!(daily.contains("(low confidence)"));
-            assert!(daily.contains("_inbox/note.md"));
-            assert!(
-                daily.contains("Heading text"),
-                "digest line must skip frontmatter + heading marker, got: {daily}"
-            );
-            assert!(
-                !daily.contains("---"),
-                "digest line must not literally quote the frontmatter delimiter: {daily}"
-            );
-
-            assert!(
-                !root.join("_inbox/note.md").exists(),
-                "digested item must move out of _inbox/"
-            );
-            let month_dirs: Vec<_> = std::fs::read_dir(root.join("raw/archive"))
-                .unwrap()
-                .flatten()
-                .collect();
-            assert_eq!(month_dirs.len(), 1);
-            let moved = std::fs::read_dir(month_dirs[0].path())
-                .unwrap()
-                .flatten()
-                .next()
-                .unwrap();
-            assert_eq!(moved.file_name(), "note.md");
-
-            let manifest_raw = std::fs::read_to_string(manifest_path(root, &report.id)).unwrap();
-            assert!(manifest_raw.contains("_inbox/note.md"));
-        });
-
-        // Conservative: the file stays put and a summary-batch proposal
-        // appears instead.
-        crate::settings::test_support::with_isolated_data(
-            "distill-summary-tier-conservative",
-            |_data| {
-                let dir = tempfile::tempdir().unwrap();
-                let root = dir.path();
-                seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
-                std::fs::create_dir_all(root.join("_inbox")).unwrap();
-                std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
-                set_mtime(&root.join("_inbox/note.md"), old_mtime());
-                crate::ontology::save(root, &ontology_two_clusters()).unwrap();
-
-                let cfg = DistillConfig {
-                    intensity: Intensity::Conservative,
-                    ..Default::default()
-                };
-                let report = run(root, &cfg, &summary_tier_embed).unwrap();
-                assert_eq!(report.scan.summaries, 1);
-                assert_eq!(report.proposals, 1);
-                assert!(
-                    root.join("_inbox/note.md").exists(),
-                    "conservative intensity must not move the file"
-                );
-
-                let feedback: Vec<_> = std::fs::read_dir(root.join("work/feedback"))
-                    .unwrap()
-                    .flatten()
-                    .collect();
-                assert_eq!(feedback.len(), 1);
-                let content = std::fs::read_to_string(feedback[0].path()).unwrap();
-                assert!(content.contains("action: summary-batch"));
-            },
-        );
-    }
-
     /// Crash-retry idempotency for the summary tier: run once (append + move
     /// done), then recreate the retry state a crash between the two leaves —
     /// the daily line already written, the file still in `_inbox/` — and run
     /// again. The line must not duplicate, and the move must still complete.
-
-    #[test]
-    fn day_before_walks_across_month_and_year_ends() {
-        assert_eq!(day_before("2026-08-28"), "2026-08-27");
-        assert_eq!(day_before("2026-09-01"), "2026-08-31");
-        assert_eq!(day_before("2026-01-01"), "2025-12-31");
-        assert_eq!(day_before("2028-03-01"), "2028-02-29"); // leap
-                                                            // Unparseable input is returned as-is rather than guessed at; the
-                                                            // caller only loses the extra idempotency window.
-        assert_eq!(day_before("nonsense"), "nonsense");
-    }
-
-    #[test]
-    fn a_reused_inbox_name_with_new_content_still_gets_its_summary() {
-        // The dedup token used to be the path alone, so a SECOND file landing
-        // under a name already digested today had its summary silently
-        // dropped. _inbox/ names repeat (a re-clip, a re-drop), which made
-        // that a real loss; the worst case now is a duplicate line.
-        crate::settings::test_support::with_isolated_data("distill-summary-reuse", |_data| {
-            let dir = tempfile::tempdir().unwrap();
-            let root = dir.path();
-            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
-            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
-            std::fs::create_dir_all(root.join("_inbox")).unwrap();
-            let cfg = DistillConfig::default();
-
-            for body in ["# First heading\n\n", "# Second heading\n\n"] {
-                std::fs::write(
-                    root.join("_inbox/note.md"),
-                    format!("---\nsource: test\n---\n\n{body}{PROSE}"),
-                )
-                .unwrap();
-                set_mtime(&root.join("_inbox/note.md"), old_mtime());
-                run(root, &cfg, &summary_tier_embed).unwrap();
-            }
-
-            let (y, m, d, ..) = civil_datetime(now_secs());
-            let today = format!("{y:04}-{m:02}-{d:02}");
-            let daily =
-                std::fs::read_to_string(root.join("daily").join(format!("{today}.md"))).unwrap();
-            assert!(
-                daily.contains("First heading"),
-                "the first file's summary must survive: {daily}"
-            );
-            assert!(
-                daily.contains("Second heading"),
-                "a different file reusing the name must not be skipped: {daily}"
-            );
-        });
-    }
-
-    #[test]
-    fn summary_tier_retry_skips_the_already_appended_line_and_still_moves() {
-        crate::settings::test_support::with_isolated_data("distill-summary-retry", |_data| {
-            let dir = tempfile::tempdir().unwrap();
-            let root = dir.path();
-            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
-            std::fs::create_dir_all(root.join("_inbox")).unwrap();
-            std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
-            set_mtime(&root.join("_inbox/note.md"), old_mtime());
-            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
-
-            let cfg = DistillConfig::default(); // Standard intensity
-            let report = run(root, &cfg, &summary_tier_embed).unwrap();
-            assert_eq!(report.archived, 1);
-
-            // Simulate the crash-before-move retry state: the appended line is
-            // durable in daily/<today>.md, but the item is back in _inbox/
-            // (as if the archive rename never happened).
-            let month_dir = std::fs::read_dir(root.join("raw/archive"))
-                .unwrap()
-                .flatten()
-                .next()
-                .unwrap()
-                .path();
-            std::fs::rename(month_dir.join("note.md"), root.join("_inbox/note.md")).unwrap();
-
-            let report = run(root, &cfg, &summary_tier_embed).unwrap();
-            assert_eq!(report.archived, 1, "the retry must still complete the move");
-            assert!(!root.join("_inbox/note.md").exists());
-            assert!(month_dir.join("note.md").exists());
-
-            let (y, m, d, ..) = civil_datetime(now_secs());
-            let daily = std::fs::read_to_string(
-                root.join("daily").join(format!("{y:04}-{m:02}-{d:02}.md")),
-            )
-            .unwrap();
-            assert_eq!(
-                daily.matches("`_inbox/note.md`").count(),
-                1,
-                "retry must not re-append the same summary line: {daily}"
-            );
-        });
-    }
 
     #[test]
     fn session_day_prefers_frontmatter_created_over_mtime() {
@@ -5134,7 +6348,12 @@ mod tests {
             }
 
             // a.md and b.md are already scored; c.md never was.
-            let mut state = DistillState::default();
+            seed_semantic_store(root, 2);
+            let mut state = DistillState {
+                model: "test-model".into(),
+                embedding: Some(synthetic_space(2)),
+                ..Default::default()
+            };
             for f in [
                 "sessions/2026-08/20260810-a.md",
                 "sessions/2026-08/20260810-b.md",
@@ -5147,12 +6366,18 @@ mod tests {
                         at: now_secs(),
                         mtime: 0,
                         len: 0,
+                        rules: GATE_RULES,
+                        turn: None,
+                        embedding: Some(synthetic_space(2)),
+                        nonsemantic: None,
+                        source_sha256: Some(source_digest_for_test(root, f)),
+                        decision_signature: Some(decision_signature_for_test(root)),
                     },
                 );
             }
             state_save(root, &state).unwrap();
 
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert_eq!(days[0].day, "2026-08-10");
             assert_eq!(
@@ -5181,7 +6406,12 @@ mod tests {
 
                 // a.md and b.md are scored; c.md is not — the day must not
                 // qualify at all, not appear with a partial (a, b) file list.
-                let mut state = DistillState::default();
+                seed_semantic_store(root, 2);
+                let mut state = DistillState {
+                    model: "test-model".into(),
+                    embedding: Some(synthetic_space(2)),
+                    ..Default::default()
+                };
                 for f in [
                     "sessions/2026-08/20260810-a.md",
                     "sessions/2026-08/20260810-b.md",
@@ -5194,12 +6424,18 @@ mod tests {
                             at: now_secs(),
                             mtime: 0,
                             len: 0,
+                            rules: GATE_RULES,
+                            turn: None,
+                            embedding: Some(synthetic_space(2)),
+                            nonsemantic: None,
+                            source_sha256: Some(source_digest_for_test(root, f)),
+                            decision_signature: Some(decision_signature_for_test(root)),
                         },
                     );
                 }
                 state_save(root, &state).unwrap();
                 assert!(
-                    digestable_session_days(root).is_empty(),
+                    digestable_session_days(root).unwrap().is_empty(),
                     "a day with any unscored file must not be offered, even partially"
                 );
 
@@ -5212,10 +6448,19 @@ mod tests {
                         at: now_secs(),
                         mtime: 0,
                         len: 0,
+                        rules: GATE_RULES,
+                        turn: None,
+                        embedding: Some(synthetic_space(2)),
+                        nonsemantic: None,
+                        source_sha256: Some(source_digest_for_test(
+                            root,
+                            "sessions/2026-08/20260810-c.md",
+                        )),
+                        decision_signature: Some(decision_signature_for_test(root)),
                     },
                 );
                 state_save(root, &state).unwrap();
-                let days = digestable_session_days(root);
+                let days = digestable_session_days(root).unwrap();
                 assert_eq!(days.len(), 1);
                 assert_eq!(
                     days[0].files,
@@ -5238,7 +6483,9 @@ mod tests {
         std::fs::write(&path, body).unwrap();
         set_mtime(&path, old_mtime());
 
-        let mut state = state_load(root, "");
+        seed_semantic_store(root, 2);
+        let space = synthetic_space(2);
+        let mut state = state_for_space(root, Some(&space), &space.model).unwrap();
         state.scored.insert(
             rel.clone(),
             ScoredEntry {
@@ -5247,6 +6494,12 @@ mod tests {
                 at: now_secs(),
                 mtime: 0,
                 len: 0,
+                rules: GATE_RULES,
+                turn: None,
+                embedding: Some(synthetic_space(2)),
+                nonsemantic: None,
+                source_sha256: Some(source_digest_for_test(root, &rel)),
+                decision_signature: Some(decision_signature_for_test(root)),
             },
         );
         state_save(root, &state).unwrap();
@@ -5342,7 +6595,7 @@ mod tests {
                 .map(|f| scored_session(root, f, PROSE))
                 .collect();
 
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(!days[0].already_digested, "nothing recorded yet");
 
@@ -5358,7 +6611,7 @@ mod tests {
             // Defect C fix: the day must still be OFFERED (its files are
             // un-archived) but FLAGGED, so the caller retries only the archive
             // step and never pays for a second LLM digest.
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(days[0].already_digested);
             assert_eq!(days[0].files, files);
@@ -5367,12 +6620,12 @@ mod tests {
             // archive failure — see archive_digested_sessions's validation)
             // leaves the record where it is: in daily/, untouched.
             assert!(archive_digested_sessions(root, "not-a-day", &files, None).is_err());
-            assert!(digestable_session_days(root)[0].already_digested);
+            assert!(digestable_session_days(root).unwrap()[0].already_digested);
 
             // Once the archive succeeds the files leave sessions/ and the day
             // disappears — nothing left to retry.
             archive_digested_sessions(root, "2026-08-10", &files, None).unwrap();
-            assert!(digestable_session_days(root).is_empty());
+            assert!(digestable_session_days(root).unwrap().is_empty());
         });
     }
 
@@ -5384,7 +6637,7 @@ mod tests {
             // A stem with no date in it, so session_day derives the day —
             // from mtime while there is no frontmatter.
             let rel = scored_session(root, "claude-code-abc.md", PROSE);
-            let day_one = digestable_session_days(root)[0].day.clone();
+            let day_one = digestable_session_days(root).unwrap()[0].day.clone();
             write_daily_with_marker(root, &day_one, &[&marker_entry(root, &rel)]);
 
             // Now the same UNCHANGED file derives a DIFFERENT day (a touch, a
@@ -5398,7 +6651,7 @@ mod tests {
                 old_mtime() - std::time::Duration::from_secs(5 * 86_400),
             );
 
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert_ne!(days[0].day, day_one, "the derived day must have moved");
             assert!(
@@ -5421,7 +6674,7 @@ mod tests {
             // A genuinely new session for an already-digested day is new
             // knowledge: it gets its own digest section, so the day comes back
             // unflagged with ONLY the new file.
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(!days[0].already_digested);
             assert_eq!(days[0].files, vec![new.clone()]);
@@ -5430,7 +6683,7 @@ mod tests {
             // which the next run picks up as a pure archive retry.
             let new_fp = file_fingerprint(root, &new);
             archive_digested_sessions(root, "2026-08-10", &[new], Some(&[new_fp])).unwrap();
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(days[0].already_digested);
             assert_eq!(days[0].files, vec![old]);
@@ -5456,10 +6709,10 @@ mod tests {
                 "claude-code-abc.md",
                 &format!("{first}\n\nand then we also decided the other thing.\n"),
             );
-            let day = digestable_session_days(root)[0].day.clone();
+            let day = digestable_session_days(root).unwrap()[0].day.clone();
             write_daily_with_marker(root, &day, &[&first_entry]);
 
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(
                 !days[0].already_digested,
@@ -5470,7 +6723,7 @@ mod tests {
             // …and once THIS content is recorded, the day goes back to being a
             // pure archive retry — no second LLM call.
             write_daily_with_marker(root, &day, &[&first_entry, &marker_entry(root, &rel)]);
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert!(days[0].already_digested);
             assert_eq!(days[0].files, vec![rel]);
         });
@@ -5485,10 +6738,10 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let rel = scored_session(root, "claude-code-abc.md", PROSE);
-            let day = digestable_session_days(root)[0].day.clone();
+            let day = digestable_session_days(root).unwrap()[0].day.clone();
             write_daily_with_marker(root, &day, &["claude-code-abc"]);
 
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(
                 days[0].already_digested,
@@ -5502,7 +6755,16 @@ mod tests {
             let path = root.join(&rel);
             std::fs::write(&path, format!("{PROSE}\n\nresumed later.\n")).unwrap();
             set_mtime(&path, old_mtime());
-            assert!(digestable_session_days(root)[0].already_digested);
+            assert!(
+                digestable_session_days(root).unwrap().is_empty(),
+                "changed bytes need current admission before an archive retry"
+            );
+            scored_session(
+                root,
+                "claude-code-abc.md",
+                &std::fs::read_to_string(&path).unwrap(),
+            );
+            assert!(digestable_session_days(root).unwrap()[0].already_digested);
         });
     }
 
@@ -5519,7 +6781,9 @@ mod tests {
             "sessions/2026-08/20260810-b.md".to_string(),
         ];
         let fps: Vec<String> = files.iter().map(|f| file_fingerprint(root, f)).collect();
-        let id = archive_digested_sessions(root, "2026-08-10", &files, Some(&fps)).unwrap();
+        let id = archive_digested_sessions(root, "2026-08-10", &files, Some(&fps))
+            .unwrap()
+            .manifest_id;
 
         for name in ["20260810-a.md", "20260810-b.md"] {
             assert!(root
@@ -5558,7 +6822,7 @@ mod tests {
             let root = dir.path();
             let stable = scored_session(root, "claude-code-aaa.md", PROSE);
             let resumed = scored_session(root, "claude-code-bbb.md", PROSE);
-            let day = digestable_session_days(root)[0].day.clone();
+            let day = digestable_session_days(root).unwrap()[0].day.clone();
 
             // What the caller digested, and what it recorded for it.
             let files = vec![stable.clone(), resumed.clone()];
@@ -5575,7 +6839,9 @@ mod tests {
             std::fs::write(&path, format!("{PROSE}\n\nand then we resumed.\n")).unwrap();
             set_mtime(&path, old_mtime());
 
-            let id = archive_digested_sessions(root, &day, &files, Some(&fps)).unwrap();
+            let id = archive_digested_sessions(root, &day, &files, Some(&fps))
+                .unwrap()
+                .manifest_id;
 
             assert!(root
                 .join("sessions/archive")
@@ -5594,7 +6860,16 @@ mod tests {
 
             // The next run sees it as new content: not digested, so offered
             // for a real digest rather than a bare archive retry.
-            let days = digestable_session_days(root);
+            assert!(
+                digestable_session_days(root).unwrap().is_empty(),
+                "the changed source is withheld until rescored"
+            );
+            scored_session(
+                root,
+                "claude-code-bbb.md",
+                &std::fs::read_to_string(&path).unwrap(),
+            );
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(!days[0].already_digested);
             assert_eq!(days[0].files, vec![resumed]);
@@ -5638,7 +6913,8 @@ mod tests {
             std::slice::from_ref(&rel),
             Some(std::slice::from_ref(&fp)),
         )
-        .unwrap();
+        .unwrap()
+        .manifest_id;
         let raw = std::fs::read_to_string(manifest_path(root, &id)).unwrap();
         let manifest: RunManifest = serde_json::from_str(&raw).unwrap();
         assert!(manifest.moves.is_empty(), "{:?}", manifest.moves);
@@ -5664,12 +6940,12 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let rel = scored_session(root, "claude-code-abc:1a2b3c4d.md", PROSE);
-            let day = digestable_session_days(root)[0].day.clone();
+            let day = digestable_session_days(root).unwrap()[0].day.clone();
             // A genuine record for a DIFFERENT (already archived) file, whose
             // fingerprint happens to be this hand-placed file's name tail.
             write_daily_with_marker(root, &day, &["claude-code-abc:1a2b3c4d"]);
 
-            let days = digestable_session_days(root);
+            let days = digestable_session_days(root).unwrap();
             assert_eq!(days.len(), 1);
             assert!(
                 !days[0].already_digested,
@@ -5679,7 +6955,7 @@ mod tests {
 
             // Its own content-bound record still works: <stem>:<fingerprint>.
             write_daily_with_marker(root, &day, &[&marker_entry(root, &rel)]);
-            assert!(digestable_session_days(root)[0].already_digested);
+            assert!(digestable_session_days(root).unwrap()[0].already_digested);
         });
     }
 
@@ -5699,6 +6975,16 @@ mod tests {
     fn append_distill_manifest_creates_then_extends() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
+        std::fs::create_dir_all(root.join("raw")).unwrap();
+        std::fs::create_dir_all(root.join("_inbox/.archived")).unwrap();
+        for name in ["a", "b"] {
+            std::fs::write(root.join(format!("raw/{name}.md")), "origin").unwrap();
+            std::fs::write(
+                root.join(format!("_inbox/.archived/{name}.md")),
+                "archived source",
+            )
+            .unwrap();
+        }
 
         append_distill_manifest(
             root,
@@ -5757,7 +7043,9 @@ mod tests {
                 from: "_inbox/junk.md".into(),
                 to: ".myco/trash/digest-100/junk.md".into(),
             }],
+            deleted: Vec::new(),
             created: vec!["daily/2026-08-21.md".into()],
+            ..Default::default()
         };
         save_manifest(root, &manifest).unwrap();
         std::fs::create_dir_all(root.join("ingest-reports")).unwrap();
@@ -5888,14 +7176,17 @@ mod tests {
         crate::settings::test_support::with_isolated_data("distill-run-crash-safety", |_data| {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
-            std::fs::create_dir_all(root.join("raw")).unwrap();
-            std::fs::create_dir_all(root.join("wiki")).unwrap();
             std::fs::create_dir_all(root.join("_inbox/quarantine")).unwrap();
-            // Archive pass: one item that will complete successfully, and be
-            // persisted, BEFORE the TTL pass below hits its induced failure.
-            std::fs::write(root.join("raw/a.md"), PROSE).unwrap();
-            std::fs::write(root.join("wiki/source-a.md"), "a source summary page").unwrap();
-            set_mtime(&root.join("raw/a.md"), old_mtime());
+            // Scan: a machine-made session quarantined (and persisted)
+            // BEFORE the TTL pass below hits its induced failure. The saved
+            // ontology matches the wiki's page count, so run() keeps it.
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
+            save_synthetic_ontology(root, ontology_two_clusters());
+            write_session(
+                root,
+                "m.md",
+                "You are planning how to ingest a new source into an existing wiki. Plan it.",
+            );
 
             // TTL pass: an expired quarantine item whose trash move will fail.
             std::fs::write(root.join("_inbox/quarantine/q.md"), PROSE).unwrap();
@@ -5906,6 +7197,8 @@ mod tests {
                 "reason": "test",
                 "expires": now_secs() - 1000,
                 "vector": [1.0, 0.0],
+                "from": "_inbox/q.md",
+                "source_sha256": admission::sha256(PROSE.as_bytes()),
             });
             std::fs::write(
                 root.join("_inbox/quarantine/q.verdict.json"),
@@ -5924,10 +7217,10 @@ mod tests {
             let err = run(root, &cfg, &dummy_embed).unwrap_err();
             assert!(err.contains("trash dir"), "unexpected error: {err}");
 
-            // The archive pass ran to completion (it precedes the TTL pass,
-            // which is where the induced failure lives), so a.md must
-            // actually be gone from raw/ ...
-            assert!(!root.join("raw/a.md").exists());
+            // The scan ran to completion (it precedes the TTL pass, which is
+            // where the induced failure lives), so m.md must actually be
+            // gone from sessions/ ...
+            assert!(!root.join("sessions/2026-08/m.md").exists());
             // ... and the crash must not have erased the record of it: the
             // manifest on disk (persisted incrementally, not just at the end)
             // still names that move.
@@ -5938,7 +7231,7 @@ mod tests {
             let manifest: serde_json::Value = serde_json::from_str(&raw).unwrap();
             let moves = manifest["moves"].as_array().unwrap();
             assert_eq!(moves.len(), 1);
-            assert_eq!(moves[0]["from"], "raw/a.md");
+            assert_eq!(moves[0]["from"], "sessions/2026-08/m.md");
             let to = moves[0]["to"].as_str().unwrap();
             assert!(
                 root.join(to).exists(),
@@ -5955,22 +7248,19 @@ mod tests {
         crate::settings::test_support::with_isolated_data("distill-run-conservative", |_data| {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
-            std::fs::create_dir_all(root.join("raw")).unwrap();
-            std::fs::create_dir_all(root.join("wiki")).unwrap();
-            std::fs::write(root.join("raw/x.md"), PROSE).unwrap();
-            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
-            set_mtime(&root.join("raw/x.md"), old_mtime());
+            let quarantine = root.join("_inbox/quarantine");
+            write_expired_item(&quarantine, "i", Some("_inbox/i.md"));
 
             let cfg = DistillConfig {
                 intensity: Intensity::Conservative,
                 ..DistillConfig::default()
             };
             let report = run(root, &cfg, &dummy_embed).unwrap();
-            assert_eq!(report.archived, 0);
+            assert_eq!(report.trashed, 0);
             assert_eq!(report.proposals, 1);
             assert!(
-                root.join("raw/x.md").exists(),
-                "conservative intensity must not move the source"
+                quarantine.join("i.md").exists(),
+                "conservative intensity must not move the expired item"
             );
 
             let feedback_dir = root.join("work/feedback");
@@ -6009,17 +7299,11 @@ mod tests {
     }
 
     #[test]
-    fn undo_restores_exact_layout() {
+    fn undo_preserves_unsigned_run_layout_for_manual_recovery() {
         crate::settings::test_support::with_isolated_data("distill-run-undo", |_data| {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
-            std::fs::create_dir_all(root.join("raw")).unwrap();
-            std::fs::create_dir_all(root.join("wiki")).unwrap();
             std::fs::create_dir_all(root.join("_inbox/quarantine")).unwrap();
-            std::fs::write(root.join("raw/x.md"), PROSE).unwrap();
-            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
-            set_mtime(&root.join("raw/x.md"), old_mtime());
-
             std::fs::write(root.join("_inbox/quarantine/q.md"), PROSE).unwrap();
             let expired = serde_json::json!({
                 "tier": "quarantine",
@@ -6028,6 +7312,8 @@ mod tests {
                 "reason": "test",
                 "expires": now_secs() - 1000,
                 "vector": [1.0, 0.0],
+                "from": "_inbox/q.md",
+                "source_sha256": admission::sha256(PROSE.as_bytes()),
             });
             std::fs::write(
                 root.join("_inbox/quarantine/q.verdict.json"),
@@ -6071,20 +7357,475 @@ mod tests {
 
             let cfg = DistillConfig::default(); // Standard intensity
             let report = run(root, &cfg, &dummy_embed).unwrap();
-            assert_eq!(report.archived, 1);
             assert_eq!(report.trashed, 1);
-            assert!(!root.join("raw/x.md").exists());
             assert!(!root.join("_inbox/quarantine/q.md").exists());
             assert!(!root.join("_inbox/quarantine/q.verdict.json").exists());
 
+            let after_run = snapshot(root);
+            assert_ne!(before, after_run);
             let reversed = undo(root, &report.id).unwrap();
             assert_eq!(
-                reversed, 3,
-                "1 archive move + 2 trash moves (content + verdict sidecar)"
+                reversed, 0,
+                "unsigned trash history requires manual recovery"
+            );
+            assert_eq!(after_run, snapshot(root));
+            let recorded: RunManifest = serde_json::from_str(
+                &std::fs::read_to_string(manifest_path(root, &report.id)).unwrap(),
+            )
+            .unwrap();
+            for moved in recorded.trashed {
+                assert!(
+                    root.join(moved.to).exists(),
+                    "recoverable trash bytes are preserved"
+                );
+            }
+        });
+    }
+
+    /// An expired quarantine item as a past `scan` left it: content file and
+    /// sidecar in `dir`, the sidecar naming its origin when `from` is given
+    /// (one written before the field existed names none).
+    fn write_expired_item(dir: &Path, stem: &str, from: Option<&str>) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join(format!("{stem}.md")), PROSE).unwrap();
+        let mut sidecar = serde_json::json!({
+            "tier": "quarantine",
+            "reason": "test",
+            "expires": now_secs() - 1000,
+            "vector": [],
+            "source_sha256": admission::sha256(PROSE.as_bytes()),
+        });
+        if let Some(f) = from {
+            sidecar["from"] = f.into();
+        }
+        std::fs::write(
+            dir.join(format!("{stem}.verdict.json")),
+            sidecar.to_string(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn permanent_cleanup_removes_expired_items_without_an_undo_copy() {
+        crate::settings::test_support::with_isolated_data("distill-permanent-cleanup", |_data| {
+            let settings: crate::settings::Settings =
+                serde_json::from_str(r#"{"permanent_delete":true}"#).unwrap();
+            crate::settings::save(&settings).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let quarantine = root.join("_inbox/quarantine");
+            write_expired_item(&quarantine, "expired", Some("_inbox/expired.md"));
+            write_expired_item(&quarantine, "session", Some("sessions/2026-08/session.md"));
+            let trash = root.join(".myco/trash");
+            write_expired_item(&trash.join("recent-run"), "old", Some("_inbox/old.md"));
+            save_manifest(
+                root,
+                &RunManifest {
+                    id: "recent-run".into(),
+                    trashed: vec![
+                        MoveEntry {
+                            from: "_inbox/quarantine/old.md".into(),
+                            to: ".myco/trash/recent-run/old.md".into(),
+                        },
+                        MoveEntry {
+                            from: "_inbox/quarantine/old.verdict.json".into(),
+                            to: ".myco/trash/recent-run/old.verdict.json".into(),
+                        },
+                    ],
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            write_expired_item(
+                &trash.join("unrecorded-run"),
+                "unrecorded",
+                Some("_inbox/unrecorded.md"),
+            );
+            write_expired_item(
+                &trash.join("session-run"),
+                "session",
+                Some("sessions/2026-08/session.md"),
             );
 
-            assert_eq!(before, snapshot(root));
+            let report = run(root, &DistillConfig::default(), &dummy_embed).unwrap();
+            assert!(
+                !trash.join(&report.id).exists(),
+                "no recoverable copy is created"
+            );
+            assert!(
+                !trash.join("recent-run").exists(),
+                "opt-in clears app-owned trash immediately"
+            );
+            assert!(
+                trash.join("unrecorded-run/unrecorded.md").exists(),
+                "unproven trash is retained"
+            );
+            assert!(
+                trash.join("session-run/session.md").exists(),
+                "automatic session cleanup remains protected"
+            );
+            assert!(!quarantine.join("expired.md").exists());
+            assert!(!quarantine.join("expired.verdict.json").exists());
+            assert!(
+                quarantine.join("session.md").exists(),
+                "session expiry still asks first"
+            );
+            let manifest = std::fs::read_to_string(manifest_path(root, &report.id)).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&manifest).unwrap();
+            assert_eq!(report.deleted, 2);
+            assert_eq!(manifest["deleted"].as_array().unwrap().len(), 4);
+            assert_eq!(
+                list_runs(root, 10)
+                    .into_iter()
+                    .find(|run| run.id == report.id)
+                    .unwrap()
+                    .deleted,
+                report.deleted
+            );
+            assert_eq!(run_detail(root, &report.id).unwrap().deleted.len(), 4);
+            assert!(manifest["deleted"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|path| !path.as_str().unwrap().starts_with('/')));
+            assert!(manifest["trashed"].as_array().unwrap().is_empty());
+            let report_text = std::fs::read_to_string(
+                root.join(format!("ingest-reports/distill-{}.md", report.id)),
+            )
+            .unwrap();
+            assert!(report_text.contains("cannot be restored"));
+            undo(root, &report.id).unwrap();
+            assert!(
+                !quarantine.join("expired.md").exists(),
+                "undo cannot restore permanent deletions"
+            );
         });
+    }
+
+    #[test]
+    fn permanent_delete_proposal_prevalidates_and_reports_irreversible_deletion() {
+        crate::settings::test_support::with_isolated_data("distill-permanent-proposal", |_data| {
+            let settings: crate::settings::Settings =
+                serde_json::from_str(r#"{"permanent_delete":true}"#).unwrap();
+            crate::settings::save(&settings).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let quarantine = root.join("_inbox/quarantine");
+            write_expired_item(&quarantine, "session", Some("sessions/2026-08/session.md"));
+            let rejected = write_proposal(
+                root,
+                "delete-batch",
+                "Invalid batch",
+                "synthetic",
+                &serde_json::json!({
+                    "files": ["_inbox/quarantine/session.md", "raw/immutable.md"]
+                }),
+            )
+            .unwrap();
+            assert!(apply_proposal(root, &rejected).is_err());
+            assert!(quarantine.join("session.md").exists());
+            assert!(quarantine.join("session.verdict.json").exists());
+
+            let approved = write_proposal(
+                root,
+                "delete-batch",
+                "Delete session",
+                "synthetic",
+                &serde_json::json!({
+                    "files": ["_inbox/quarantine/session.md"]
+                }),
+            )
+            .unwrap();
+            assert_eq!(
+                apply_proposal(root, &approved).unwrap(),
+                "permanently deleted 1, skipped 0 already-processed"
+            );
+            assert!(!quarantine.join("session.md").exists());
+            assert!(!quarantine.join("session.verdict.json").exists());
+            assert!(!root.join(".myco/trash").exists());
+            assert_eq!(
+                apply_proposal(root, &approved).unwrap(),
+                "permanently deleted 0, skipped 1 already-processed"
+            );
+        });
+    }
+
+    #[test]
+    fn deletion_proposal_rejects_changed_policy_and_keeps_the_confirmed_snapshot() {
+        crate::settings::test_support::with_isolated_data("distill-delete-confirmation", |_data| {
+            let mut settings = crate::settings::Settings::default();
+            crate::settings::save(&settings).unwrap();
+            let confirmed = crate::settings::confirmed_deletion_policy(Some(false)).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let quarantine = root.join("_inbox/quarantine");
+            write_expired_item(&quarantine, "note", Some("_inbox/note.md"));
+            let proposal = write_proposal(
+                root,
+                "delete-batch",
+                "Delete note",
+                "synthetic",
+                &serde_json::json!({
+                    "files": ["_inbox/quarantine/note.md"]
+                }),
+            )
+            .unwrap();
+            settings.permanent_delete = true;
+            crate::settings::save(&settings).unwrap();
+            let error = apply_proposal_confirmed(root, &proposal, Some(false)).unwrap_err();
+            assert!(error.contains("policy changed"), "{error}");
+            assert!(quarantine.join("note.md").exists());
+            assert!(!std::fs::read_to_string(root.join(&proposal))
+                .unwrap()
+                .contains("status: done"));
+
+            // A policy change after the native check cannot promote the
+            // already-confirmed recoverable operation to permanent deletion.
+            assert_eq!(
+                apply_proposal_with_policy(root, &proposal, confirmed).unwrap(),
+                "moved 1, skipped 0 already-processed"
+            );
+            let slug = Path::new(&proposal).file_stem().unwrap();
+            assert!(root.join(".myco/trash").join(slug).join("note.md").exists());
+            assert!(root
+                .join(".myco/trash")
+                .join(slug)
+                .join("note.verdict.json")
+                .exists());
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permanent_cleanup_refuses_redirected_app_trash_before_deleting() {
+        crate::settings::test_support::with_isolated_data(
+            "distill-permanent-trash-link",
+            |_data| {
+                let settings: crate::settings::Settings =
+                    serde_json::from_str(r#"{"permanent_delete":true}"#).unwrap();
+                crate::settings::save(&settings).unwrap();
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                let outside = tempfile::tempdir().unwrap();
+                std::fs::write(
+                    outside.path().join("retained.md"),
+                    "synthetic retained note",
+                )
+                .unwrap();
+                write_expired_item(
+                    &root.join("_inbox/quarantine"),
+                    "expired",
+                    Some("_inbox/expired.md"),
+                );
+                std::fs::create_dir(root.join(".myco")).unwrap();
+                std::os::unix::fs::symlink(outside.path(), root.join(".myco/trash")).unwrap();
+                let error = run(root, &DistillConfig::default(), &dummy_embed).unwrap_err();
+                assert!(error.contains("symbolic link"), "{error}");
+                assert!(outside.path().join("retained.md").exists());
+                assert!(root.join("_inbox/quarantine/expired.md").exists());
+            },
+        );
+    }
+
+    #[test]
+    fn an_expired_session_becomes_a_proposal_and_the_purge_spares_it() {
+        crate::settings::test_support::with_isolated_data("distill-ttl-sessions", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let quarantine = root.join("_inbox/quarantine");
+            write_expired_item(&quarantine, "s", Some("sessions/2026-08/s.md"));
+            write_expired_item(&quarantine, "i", Some("_inbox/i.md"));
+            write_expired_item(&quarantine, "legacy", None);
+            // Trash past runs left, all past the retention window.
+            let trash = root.join(".myco/trash");
+            write_expired_item(
+                &trash.join("old-session"),
+                "x",
+                Some("sessions/2026-07/x.md"),
+            );
+            write_expired_item(&trash.join("old-inbox"), "y", Some("_inbox/y.md"));
+            write_expired_item(&trash.join("old-legacy"), "z", None);
+            let long_ago = std::time::SystemTime::now()
+                - std::time::Duration::from_secs((TRASH_RETENTION_DAYS as u64 + 5) * 86_400);
+            for d in ["old-session", "old-inbox", "old-legacy"] {
+                std::fs::File::open(trash.join(d))
+                    .unwrap()
+                    .set_modified(long_ago)
+                    .unwrap();
+            }
+
+            let cfg = DistillConfig::default(); // Standard: trashes on expiry
+            let report = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(report.trashed, 1, "only the item known to be from _inbox/");
+            assert!(!quarantine.join("i.md").exists());
+            for stem in ["s", "legacy"] {
+                assert!(
+                    quarantine.join(format!("{stem}.md")).exists(),
+                    "{stem} waits for a click"
+                );
+            }
+            assert_eq!(report.proposals, 2, "one delete proposal each");
+            assert_eq!(
+                run(root, &cfg, &dummy_embed).unwrap().proposals,
+                0,
+                "nothing asked twice while those wait"
+            );
+
+            assert!(!trash.join("old-inbox").exists());
+            assert!(trash.join("old-session/x.md").exists());
+            assert!(
+                trash.join("old-legacy/z.md").exists(),
+                "an unknown origin may be a session"
+            );
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn permanent_delete_proposal_refuses_a_raw_source_alias_before_deleting_the_batch() {
+        crate::settings::test_support::with_isolated_data("distill-permanent-raw-alias", |_data| {
+            let settings: crate::settings::Settings =
+                serde_json::from_str(r#"{"permanent_delete":true}"#).unwrap();
+            crate::settings::save(&settings).unwrap();
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            std::fs::write(root.join("raw/original.md"), "synthetic immutable source").unwrap();
+            let quarantine = root.join("_inbox/quarantine");
+            write_expired_item(&quarantine, "ordinary", Some("_inbox/ordinary.md"));
+            std::os::unix::fs::symlink(root.join("raw/original.md"), quarantine.join("alias.md"))
+                .unwrap();
+            let proposal = write_proposal(
+                root,
+                "delete-batch",
+                "Unsafe alias",
+                "synthetic",
+                &serde_json::json!({
+                    "files": ["_inbox/quarantine/ordinary.md", "_inbox/quarantine/alias.md"]
+                }),
+            )
+            .unwrap();
+            let error = apply_proposal(root, &proposal).unwrap_err();
+            assert!(error.contains("symbolic link"), "{error}");
+            assert!(quarantine.join("ordinary.md").exists());
+            assert_eq!(
+                std::fs::read_to_string(root.join("raw/original.md")).unwrap(),
+                "synthetic immutable source"
+            );
+        });
+    }
+
+    /// The 격리 tab says what expiry will do, so it reads the TTL pass's own
+    /// rule: an item it would only ask about must not read "may be trashed".
+    #[test]
+    fn quarantine_entries_say_whether_expiry_asks_or_trashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let quarantine = root.join("_inbox/quarantine");
+        write_expired_item(&quarantine, "s", Some("sessions/2026-08/s.md"));
+        write_expired_item(&quarantine, "i", Some("_inbox/i.md"));
+        write_expired_item(&quarantine, "legacy", None);
+        let asks = |root: &Path| -> Vec<(String, bool)> {
+            let mut v: Vec<_> = quarantine_entries(root)
+                .into_iter()
+                .map(|(e, _)| (e.name, e.asks_on_expiry))
+                .collect();
+            v.sort();
+            v
+        };
+        let at = |names: [(&str, bool); 3]| names.map(|(n, a)| (n.to_string(), a)).to_vec();
+        // Standard: only the item known to be from _inbox/ is trashed.
+        assert_eq!(
+            asks(root),
+            at([("i.md", false), ("legacy.md", true), ("s.md", true)])
+        );
+        let cfg = DistillConfig {
+            intensity: Intensity::Conservative,
+            ..DistillConfig::default()
+        };
+        config_save(root, &cfg).unwrap();
+        assert_eq!(
+            asks(root),
+            at([("i.md", true), ("legacy.md", true), ("s.md", true)])
+        );
+    }
+
+    #[test]
+    fn restore_puts_a_session_back_where_it_was_and_keeps_it_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_session(
+            root,
+            "m.md",
+            "You are planning how to ingest a new source into an existing wiki. Plan it.",
+        );
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 1);
+
+        readmit_quarantine(root, &["_inbox/quarantine/m.md".to_string()]).unwrap();
+        let home = root.join("sessions/2026-08/m.md");
+        assert!(home.exists(), "back where it came from");
+        assert!(!root.join("_inbox/m.md").exists(), "never _inbox/");
+        assert!(!root.join("_inbox/quarantine/m.verdict.json").exists());
+
+        // Later scans honour the owner's choice, whatever the embed model.
+        assert!(kept_load(root)
+            .unwrap()
+            .contains(&"sessions/2026-08/m.md".to_string()));
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 0);
+        assert!(home.exists());
+
+        // A recorded origin outside the inflow trees is not followed.
+        write_expired_item(&root.join("_inbox/quarantine"), "q", Some("raw/q.md"));
+        readmit_quarantine(root, &["_inbox/quarantine/q.md".to_string()]).unwrap();
+        assert!(!root.join("raw/q.md").exists());
+        assert!(root.join("_inbox/q.md").exists());
+    }
+
+    /// A restore clicked while a run is embedding (`restore_quarantine` and
+    /// `distill_run` share no lock) must outlive that run's ledger save.
+    #[test]
+    fn a_restore_during_a_scan_keeps_its_owner_kept_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write_session(
+            root,
+            "m.md",
+            "You are planning how to ingest a new source into an existing wiki. Plan it.",
+        );
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let plain = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &plain, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 1);
+
+        write_session(
+            root,
+            "w.md",
+            "Why does the sidebar flicker when a folder collapses?",
+        );
+        let racing = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            readmit_quarantine(root, &["_inbox/quarantine/m.md".to_string()])?;
+            plain(texts)
+        };
+        scan(root, &o, &cfg, 10, &racing, &[], &mut manifest).unwrap();
+        assert!(kept_load(root)
+            .unwrap()
+            .contains(&"sessions/2026-08/m.md".to_string()));
+
+        let out = scan(root, &o, &cfg, 10, &plain, &[], &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 0, "the restored session stays home");
+        assert!(root.join("sessions/2026-08/m.md").exists());
     }
 
     #[test]
@@ -6094,6 +7835,7 @@ mod tests {
             let root = dir.path();
             std::fs::create_dir_all(root.join("_inbox")).unwrap();
             seed_wiki_pages(root, GATE_MIN_WIKI_PAGES); // keep the cold-start gate active
+            seed_semantic_store(root, 2);
             std::fs::write(root.join("_inbox/a.md"), PROSE).unwrap();
             std::fs::write(root.join("_inbox/b.md"), PROSE).unwrap();
             set_mtime(&root.join("_inbox/a.md"), old_mtime());
@@ -6140,40 +7882,35 @@ mod tests {
     }
 
     #[test]
-    fn full_tier_items_lists_inbox_and_raw_oldest_first_and_drops_missing_or_wrong_tier() {
+    fn full_tier_items_lists_oldest_first_and_drops_missing_or_wrong_tier() {
         crate::settings::test_support::with_isolated_data("distill-full-tier-items", |_data| {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             std::fs::create_dir_all(root.join("_inbox")).unwrap();
-            std::fs::create_dir_all(root.join("raw")).unwrap();
 
             let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
             let quarantine_text =
                 format!("{PROSE} BORDERLINE marker so this note lands the quarantine tier.");
             std::fs::write(root.join("_inbox/newer-full.md"), &full_text).unwrap();
-            std::fs::write(root.join("raw/older-full.md"), &full_text).unwrap();
+            std::fs::write(root.join("_inbox/older-full.md"), &full_text).unwrap();
             std::fs::write(root.join("_inbox/quar.md"), &quarantine_text).unwrap();
             for name in [
                 "_inbox/newer-full.md",
-                "raw/older-full.md",
+                "_inbox/older-full.md",
                 "_inbox/quar.md",
             ] {
                 set_mtime(&root.join(name), old_mtime());
             }
             // Strictly older than the other two, so it must sort first.
             set_mtime(
-                &root.join("raw/older-full.md"),
+                &root.join("_inbox/older-full.md"),
                 old_mtime() - std::time::Duration::from_secs(3600),
             );
 
-            // `full_tier_items` resolves its ledger's model the same way
-            // `status` does — off the on-disk VectorStore for `root`, which
-            // this test never writes, so it defaults to "". The scan below
-            // must ledger against that same "" or `state_load` sees a model
-            // mismatch and hands back an empty (fresh) ledger instead of the
-            // one just written.
-            let mut o = tiny_ontology();
-            o.model = String::new();
+            // Semantic eligibility uses the exact active store representation,
+            // which the controlled ontology and score fixtures also declare.
+            seed_semantic_store(root, 2);
+            let o = pin_scan_ontology(root, tiny_ontology());
             let cfg = DistillConfig::default();
             let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
                 Ok(texts
@@ -6192,101 +7929,91 @@ mod tests {
             assert_eq!(out.full, 2);
             assert_eq!(out.quarantined, 1);
 
-            let items = full_tier_items(root);
+            let items = full_tier_items(root).unwrap();
             assert_eq!(
                 items,
-                vec!["raw/older-full.md", "_inbox/newer-full.md"],
+                vec!["_inbox/older-full.md", "_inbox/newer-full.md"],
                 "full-tier only, oldest mtime first; the quarantine-tier item is excluded"
             );
 
-            // Phase A's later archive pass moves an ingested raw/ file away —
-            // the stale ledger key must drop out rather than point nowhere.
-            std::fs::remove_file(root.join("raw/older-full.md")).unwrap();
-            let items2 = full_tier_items(root);
+            // A file gone from disk — the stale ledger key must drop out
+            // rather than point nowhere.
+            std::fs::remove_file(root.join("_inbox/older-full.md")).unwrap();
+            let items2 = full_tier_items(root).unwrap();
             assert_eq!(
                 items2,
                 vec!["_inbox/newer-full.md"],
-                "a retired raw file drops out even though its ledger entry remains"
+                "a removed file drops out even though its ledger entry remains"
             );
         });
     }
 
     #[test]
-    fn full_tier_items_excludes_a_nested_raw_file() {
-        // `raw/` is walked recursively by `collect_candidates`, so a file at
-        // e.g. `raw/sub/x.md` can score full tier same as a top-level one —
-        // but `run`'s own archive pass and the ingest prompt both assume a
-        // flat `raw/<slug>.md`. Listing it here would hand ingest a path it
-        // can never actually act on.
+    fn full_tier_items_skips_an_item_whose_source_page_moved_under_wiki() {
+        // Tidy's "gather session summaries" (and any hand move) puts the
+        // summary at wiki/sessions/<month>/: links still resolve it by stem,
+        // so it still represents the source and must not be re-ingested.
         crate::settings::test_support::with_isolated_data(
-            "distill-full-tier-nested-raw",
+            "distill-full-tier-moved-summary",
             |_data| {
                 let dir = tempfile::tempdir().unwrap();
                 let root = dir.path();
-                std::fs::create_dir_all(root.join("raw/sub")).unwrap();
-
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
+                std::fs::create_dir_all(root.join("wiki/sessions/2026-09")).unwrap();
                 let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
-                std::fs::write(root.join("raw/sub/nested.md"), &full_text).unwrap();
-                std::fs::write(root.join("raw/top.md"), &full_text).unwrap();
-                for name in ["raw/sub/nested.md", "raw/top.md"] {
+                std::fs::write(root.join("_inbox/already-ingested.md"), &full_text).unwrap();
+                std::fs::write(root.join("_inbox/fresh.md"), &full_text).unwrap();
+                for name in ["_inbox/already-ingested.md", "_inbox/fresh.md"] {
                     set_mtime(&root.join(name), old_mtime());
                 }
+                std::fs::write(
+                    root.join("wiki/sessions/2026-09/source-already-ingested.md"),
+                    "a source summary page",
+                )
+                .unwrap();
 
-                let mut o = tiny_ontology();
-                o.model = String::new();
+                seed_semantic_store(root, 2);
+                let o = pin_scan_ontology(root, tiny_ontology());
                 let cfg = DistillConfig::default();
                 let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
                     Ok(texts.iter().map(|_| vec![1.0_f32, 0.0_f32]).collect())
                 };
                 let mut manifest = test_manifest();
                 let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
-                assert_eq!(
-                    out.full, 2,
-                    "both score full tier — the check is not about scoring"
-                );
-
-                let items = full_tier_items(root);
-                assert_eq!(
-                    items,
-                    vec!["raw/top.md"],
-                    "the nested raw file must not be listed"
-                );
+                assert_eq!(out.full, 2);
+                assert_eq!(full_tier_items(root).unwrap(), vec!["_inbox/fresh.md"]);
             },
         );
     }
 
     #[test]
     fn full_tier_items_skips_an_item_whose_source_page_already_exists() {
-        // Reproduces the Conservative-intensity re-ingest loop: `run`'s raw/
-        // archive pass only writes a proposal at Conservative, so an ingested
-        // full-tier item's file never moves and its ledger entry never goes
-        // stale — without the source-page check, it would be re-listed (and
-        // re-ingested) every run until a human approves the proposal.
+        // An ingested full-tier item's file never moves, so its ledger entry
+        // never goes stale — without the source-page check, it would be
+        // re-listed (and re-ingested) every run.
         crate::settings::test_support::with_isolated_data(
             "distill-full-tier-already-represented",
             |_data| {
                 let dir = tempfile::tempdir().unwrap();
                 let root = dir.path();
-                std::fs::create_dir_all(root.join("raw")).unwrap();
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
                 std::fs::create_dir_all(root.join("wiki")).unwrap();
 
                 let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
-                std::fs::write(root.join("raw/already-ingested.md"), &full_text).unwrap();
-                std::fs::write(root.join("raw/fresh.md"), &full_text).unwrap();
-                for name in ["raw/already-ingested.md", "raw/fresh.md"] {
+                std::fs::write(root.join("_inbox/already-ingested.md"), &full_text).unwrap();
+                std::fs::write(root.join("_inbox/fresh.md"), &full_text).unwrap();
+                for name in ["_inbox/already-ingested.md", "_inbox/fresh.md"] {
                     set_mtime(&root.join(name), old_mtime());
                 }
-                // The "already represented" signal `run`'s own archive pass
-                // checks (`source_page` above) — present here even though, at
-                // Conservative, nothing ever moved the raw file to match it.
+                // The "already represented" signal: a source page exists.
                 std::fs::write(
                     root.join("wiki/source-already-ingested.md"),
                     "a source summary page",
                 )
                 .unwrap();
 
-                let mut o = tiny_ontology();
-                o.model = String::new();
+                seed_semantic_store(root, 2);
+                let o = pin_scan_ontology(root, tiny_ontology());
                 let cfg = DistillConfig::default();
                 let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
                     Ok(texts.iter().map(|_| vec![1.0_f32, 0.0_f32]).collect())
@@ -6298,10 +8025,10 @@ mod tests {
                     "both score full tier — the check is not about scoring"
                 );
 
-                let items = full_tier_items(root);
+                let items = full_tier_items(root).unwrap();
                 assert_eq!(
                     items,
-                    vec!["raw/fresh.md"],
+                    vec!["_inbox/fresh.md"],
                     "already-ingested.md has a source page and must not be re-listed"
                 );
             },
@@ -6314,28 +8041,34 @@ mod tests {
 
     #[test]
     fn emerging_clusters_ignores_dissimilar_and_undersized_groups() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let quarantine = root.join("_inbox/quarantine");
-        std::fs::create_dir_all(&quarantine).unwrap();
+        crate::settings::test_support::with_isolated_data(
+            "distill-emerging-cluster-geometry",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                seed_semantic_store(root, 2);
+                let quarantine = root.join("_inbox/quarantine");
+                std::fs::create_dir_all(&quarantine).unwrap();
 
-        // 5 similar items -> one qualifying group.
-        for i in 0..5 {
-            write_quarantine_item(&quarantine, &format!("sim{i}"), vec![1.0, 0.0]);
-        }
-        // 4 similar-among-themselves items -> group exists but below min_size.
-        for i in 0..4 {
-            write_quarantine_item(&quarantine, &format!("small{i}"), vec![0.0, 1.0]);
-        }
-        // A singleton, dissimilar to both groups (cosine ~0.71 < 0.9 threshold).
-        write_quarantine_item(&quarantine, "lonely", vec![0.5, 0.5]);
+                // 5 similar items -> one qualifying group.
+                for i in 0..5 {
+                    write_quarantine_item(&quarantine, &format!("sim{i}"), vec![1.0, 0.0]);
+                }
+                // 4 similar-among-themselves items -> group exists but below min_size.
+                for i in 0..4 {
+                    write_quarantine_item(&quarantine, &format!("small{i}"), vec![0.0, 1.0]);
+                }
+                // A singleton, dissimilar to both groups (cosine ~0.71 < 0.9 threshold).
+                write_quarantine_item(&quarantine, "lonely", vec![0.5, 0.5]);
 
-        let groups = emerging_clusters(root, 5, 0.9);
-        assert_eq!(groups.len(), 1, "only the 5-item group clears min_size");
-        assert_eq!(groups[0].len(), 5);
-        for i in 0..5 {
-            assert!(groups[0].contains(&format!("_inbox/quarantine/sim{i}.md")));
-        }
+                let groups = emerging_clusters(root, 5, 0.9).unwrap();
+                assert_eq!(groups.len(), 1, "only the 5-item group clears min_size");
+                assert_eq!(groups[0].len(), 5);
+                for i in 0..5 {
+                    assert!(groups[0].contains(&format!("_inbox/quarantine/sim{i}.md")));
+                }
+            },
+        );
     }
 
     #[test]
@@ -6397,6 +8130,7 @@ mod tests {
         assert_eq!(after, before + 7 * 86_400);
         // The vector survives the rewrite — the clustering pass still sees it.
         assert!(read_sidecar(root, "_inbox/quarantine/good.md")
+            .unwrap()
             .is_some_and(|s| s.vector == vec![1.0, 0.0]));
 
         // Path confinement is the same one proposal payloads get.
@@ -6408,6 +8142,7 @@ mod tests {
         crate::settings::test_support::with_isolated_data("distill-emerging-cluster", |_data| {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
+            seed_semantic_store(root, 2);
             let quarantine = root.join("_inbox/quarantine");
             std::fs::create_dir_all(&quarantine).unwrap();
             for stem in ["a", "b", "c", "d", "e"] {
@@ -6550,7 +8285,7 @@ mod tests {
         std::fs::create_dir_all(root.join("wiki")).unwrap();
         std::fs::write(root.join("wiki/index.md"), "top page").unwrap();
 
-        for kind in ["admit-cluster", "archive-batch", "delete-batch"] {
+        for kind in ["admit-cluster", "delete-batch"] {
             let rel = write_proposal(
                 root,
                 kind,
@@ -6571,16 +8306,16 @@ mod tests {
         }
     }
 
+    /// Owner decision 2026-10-03 (B1): an `archive-batch` proposal an older
+    /// run left behind is retired when approved — marked done, no error, and
+    /// raw/ stays put.
     #[test]
-    fn archive_batch_and_delete_batch_apply_the_same_move_semantics_as_run() {
+    fn an_old_archive_batch_proposal_is_retired_and_leaves_raw_alone() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         std::fs::create_dir_all(root.join("raw")).unwrap();
         std::fs::write(root.join("raw/paper.md"), PROSE).unwrap();
-        set_mtime(&root.join("raw/paper.md"), old_mtime());
-        let mtime = mtime_secs(&root.join("raw/paper.md")).unwrap();
-
-        let archive_rel = write_proposal(
+        let rel = write_proposal(
             root,
             "archive-batch",
             "Archive raw/paper.md?",
@@ -6588,11 +8323,106 @@ mod tests {
             &serde_json::json!({ "files": ["raw/paper.md"] }),
         )
         .unwrap();
-        apply_proposal(root, &archive_rel).unwrap();
-        assert!(!root.join("raw/paper.md").exists());
-        let month = month_bucket(mtime);
-        assert!(root.join(format!("raw/archive/{month}/paper.md")).exists());
+        assert!(apply_proposal(root, &rel).is_ok());
+        assert!(std::fs::read_to_string(root.join(&rel))
+            .unwrap()
+            .contains("status: done"));
+        assert_eq!(
+            std::fs::read_to_string(root.join("raw/paper.md")).unwrap(),
+            PROSE
+        );
+        assert!(!root.join("raw/archive").exists());
+    }
 
+    /// Follow-up to B1: the next run marks every unresolved `archive-batch`
+    /// proposal done (pending, and an approved one whose apply failed)
+    /// without moving anything in raw/, so it leaves the inbox.
+    #[test]
+    fn run_retires_old_archive_batch_proposals_without_touching_raw() {
+        crate::settings::test_support::with_isolated_data(
+            "distill-retire-archive-batch",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
+                std::fs::create_dir_all(root.join("raw")).unwrap();
+                std::fs::write(root.join("raw/paper.md"), PROSE).unwrap();
+                let mut rels = Vec::new();
+                for status in ["pending", "approved"] {
+                    let rel = write_proposal(
+                        root,
+                        "archive-batch",
+                        &format!("Archive raw/paper.md {status}"),
+                        "body",
+                        &serde_json::json!({ "files": ["raw/paper.md"] }),
+                    )
+                    .unwrap();
+                    let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
+                    std::fs::write(
+                        root.join(&rel),
+                        raw.replace("status: pending", &format!("status: {status}")),
+                    )
+                    .unwrap();
+                    rels.push(rel);
+                }
+
+                run(root, &DistillConfig::default(), &dummy_embed).unwrap();
+
+                for rel in &rels {
+                    assert!(!root.join(rel).exists(), "{rel} must leave the inbox");
+                    let archived = root
+                        .join("work/feedback/archive")
+                        .join(Path::new(rel).file_name().unwrap());
+                    assert!(std::fs::read_to_string(archived)
+                        .unwrap()
+                        .contains("status: done"));
+                }
+                assert_eq!(
+                    std::fs::read_to_string(root.join("raw/paper.md")).unwrap(),
+                    PROSE
+                );
+                assert!(!root.join("raw/archive").exists());
+            },
+        );
+    }
+
+    /// Retiring is cleanup: an `archive-batch` proposal the run cannot mark
+    /// done (read-only file) is skipped and stays listed instead of failing
+    /// the whole run on every later run too.
+    #[cfg(unix)]
+    #[test]
+    fn run_skips_an_archive_batch_proposal_it_cannot_write() {
+        use std::os::unix::fs::PermissionsExt;
+        crate::settings::test_support::with_isolated_data("distill-retire-readonly", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            let rel = write_proposal(
+                root,
+                "archive-batch",
+                "Archive raw/paper.md",
+                "body",
+                &serde_json::json!({ "files": ["raw/paper.md"] }),
+            )
+            .unwrap();
+            let path = root.join(&rel);
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o444)).unwrap();
+
+            run(root, &DistillConfig::default(), &dummy_embed).unwrap();
+            run(root, &DistillConfig::default(), &dummy_embed).unwrap();
+
+            assert!(path.exists(), "the unwritable proposal stays listed");
+            assert!(std::fs::read_to_string(&path)
+                .unwrap()
+                .contains("status: pending"));
+        });
+    }
+
+    #[test]
+    fn delete_batch_applies_the_same_move_semantics_as_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
         let quarantine = root.join("_inbox/quarantine");
         std::fs::create_dir_all(&quarantine).unwrap();
         write_quarantine_item(&quarantine, "old", vec![1.0, 0.0]);
@@ -6663,12 +8493,13 @@ mod tests {
                 let root = dir.path();
                 std::fs::create_dir_all(root.join("_inbox")).unwrap();
 
+                // Not `archive-batch`: a run retires those whatever their status.
                 let rel = write_proposal(
                     root,
-                    "archive-batch",
-                    "Archive raw/x.md?",
+                    "delete-batch",
+                    "Delete expired quarantine item x.md?",
                     "body",
-                    &serde_json::json!({ "files": ["raw/x.md"] }),
+                    &serde_json::json!({ "files": ["_inbox/quarantine/x.md"] }),
                 )
                 .unwrap();
                 // Simulate the frontend's pending -> approved flip, then the
@@ -6937,7 +8768,7 @@ mod tests {
         std::fs::create_dir_all(root.join("wiki/maps")).unwrap();
         std::fs::write(
             root.join("wiki/maps/topic-a.md"),
-            "---\ntitle: \"Map: topic-a\"\ntype: map\ncluster: topic-a\ncreated: 2026-01-01\nconfidence: medium\nstatus: draft\n---\n\nbody\n",
+            "---\ntitle: \"Map: topic-a\"\ntype: map\ncluster: topic-a\ncreated: 2026-01-01\nconfidence: medium\nstatus: active\n---\n\nbody\n",
         )
         .unwrap();
         // A non-map wiki page must never contribute an anchor even if it
@@ -6957,7 +8788,11 @@ mod tests {
             page: "wiki/maps/topic-a.md".into(),
             stem: "topic-a".into(),
             section: 0,
-            hash: 0,
+            hash: crate::embeddings::content_hash(
+                &crate::embeddings::chunk_page(
+                    &std::fs::read_to_string(root.join("wiki/maps/topic-a.md")).unwrap(),
+                )[0],
+            ),
             vector: vec![0.6, 0.8],
         });
         store.records.push(crate::vector_index::Record {
@@ -6969,7 +8804,7 @@ mod tests {
             vector: vec![1.0, 0.0],
         });
 
-        let anchors = map_anchors_from_store(root, &store);
+        let anchors = map_anchors_from_store(root, &store).unwrap();
         assert_eq!(anchors, vec![("topic-a".to_string(), vec![0.6, 0.8])]);
     }
 
@@ -7254,7 +9089,8 @@ mod tests {
                 std::slice::from_ref(&rel),
                 Some(&[fp]),
             )
-            .unwrap();
+            .unwrap()
+            .manifest_id;
             assert!(id.starts_with("digest-"), "{id}");
             // The TS step folds the weekly file it created into the SAME
             // manifest, exactly as the session digest does for its daily file.
@@ -7346,7 +9182,8 @@ mod tests {
 
             let fps = vec![file_fingerprint(root, &a), file_fingerprint(root, &b)];
             let id = archive_rolled(root, &MONTHLY, &month, &[a.clone(), b.clone()], Some(&fps))
-                .unwrap();
+                .unwrap()
+                .manifest_id;
             assert!(id.starts_with("digest-"), "{id}");
             let moved = format!("weekly/archive/{month}/{week_a}.md");
             assert!(

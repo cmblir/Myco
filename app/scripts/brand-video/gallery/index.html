@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>myco — 미코 모션 라이브러리</title>
+    <link rel="stylesheet" href="gallery.css" />
+    <script src="pack-config.js" defer></script>
+    <script src="copy.js" defer></script>
+    <script src="motions.js" defer></script>
+    <script src="gallery.js" defer></script>
+  </head>
+  <body data-background="ivory">
+    <header class="page-header wrap">
+      <a class="wordmark" href="index.html" aria-label="myco"
+        >myco<span aria-hidden="true">✦</span></a
+      >
+      <span class="edition">MOTION LIBRARY / 05</span>
+      <a
+        class="header-download"
+        href="myco-video-pack.zip"
+        download
+        data-archive
+        data-copy="downloadAll"
+      ></a>
+    </header>
+    <main class="wrap">
+      <section class="hero" aria-labelledby="page-title">
+        <div class="hero-copy">
+          <p class="eyebrow">A LITTLE COMPANY, IN MOTION</p>
+          <h1 id="page-title" data-copy="title"></h1>
+          <p class="intro" data-copy="intro"></p>
+          <div class="hero-downloads">
+            <a
+              class="button button-primary"
+              href="myco-video-web.zip"
+              download
+              data-archive
+              data-copy="downloadWebPack"
+            ></a
+            ><a
+              class="button button-secondary"
+              href="myco-video-pack.zip"
+              download
+              data-archive
+              data-copy="downloadPack"
+            ></a>
+          </div>
+          <p class="hero-detail" data-copy="packDetail"></p>
+        </div>
+        <div class="hero-art" aria-hidden="true">
+          <span class="orbit orbit-outer"></span
+          ><span class="orbit orbit-inner"></span>
+          <img data-hero width="768" height="768" alt="" />
+          <span class="hero-caption" data-copy="heroCaption"></span>
+        </div>
+      </section>
+      <section class="library" aria-labelledby="collection-title">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">THE COLLECTION</p>
+            <h2 id="collection-title" data-copy="collectionTitle"></h2>
+          </div>
+          <div
+            class="background-control"
+            role="group"
+            data-label="backgroundLabel"
+          >
+            <button
+              type="button"
+              data-background-choice="ivory"
+              aria-pressed="true"
+            >
+              <span class="swatch swatch-ivory" aria-hidden="true"></span
+              ><span data-copy="ivory"></span>
+            </button>
+            <button
+              type="button"
+              data-background-choice="dark"
+              aria-pressed="false"
+            >
+              <span class="swatch swatch-dark" aria-hidden="true"></span
+              ><span data-copy="dark"></span>
+            </button>
+            <button
+              type="button"
+              data-background-choice="checker"
+              aria-pressed="false"
+            >
+              <span class="swatch swatch-checker" aria-hidden="true"></span
+              ><span data-copy="checker"></span>
+            </button>
+          </div>
+        </div>
+        <p class="collection-help" data-copy="collectionHelp"></p>
+        <p id="motion-notice" class="notice" role="status" hidden></p>
+        <div id="motion-grid" class="motion-grid"></div>
+        <noscript
+          ><p>
+            JavaScript is required for video previews. Individual video files
+            are available in the clips folder.
+          </p></noscript
+        >
+      </section>
+      <section class="usage" aria-labelledby="usage-title">
+        <div>
+          <p class="eyebrow">READY FOR YOUR NEXT THING</p>
+          <h2 id="usage-title" data-copy="usageTitle"></h2>
+          <p class="usage-intro" data-copy="usageIntro"></p>
+        </div>
+        <div class="format-list">
+          <article>
+            <span class="format-name">WEBM</span>
+            <div>
+              <h3 data-copy="webTitle"></h3>
+              <p data-copy="webDescription"></p>
+            </div>
+          </article>
+          <article>
+            <span class="format-name">MOV</span>
+            <div>
+              <h3 data-copy="editTitle"></h3>
+              <p data-copy="editDescription"></p>
+            </div>
+          </article>
+          <article>
+            <span class="format-name">MP4</span>
+            <div>
+              <h3 data-copy="previewTitle"></h3>
+              <p data-copy="previewDescription"></p>
+            </div>
+          </article>
+        </div>
+      </section>
+      <section class="next-motion" aria-labelledby="next-title">
+        <div>
+          <p class="eyebrow">MORE WAYS TO BE MYCO</p>
+          <h2 id="next-title" data-copy="nextTitle"></h2>
+          <p data-copy="nextDescription"></p>
+        </div>
+        <a
+          class="button button-secondary"
+          href="motion-prompts.md"
+          download
+          data-copy="downloadPrompts"
+        ></a>
+      </section>
+      <p class="source-note" data-copy="sourceNote"></p>
+    </main>
+    <footer class="wrap">
+      <span data-copy="footer"></span>
+      <nav aria-label="Documentation">
+        <a href="README.ko.md" data-copy="usageGuide"></a
+        ><a href="README.md">English guide</a>
+      </nav>
+    </footer>
+  </body>
+</html>

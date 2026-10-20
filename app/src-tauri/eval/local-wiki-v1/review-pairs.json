@@ -1,0 +1,4549 @@
+{
+  "version": 1,
+  "id": "local-wiki-review-pairs-v1",
+  "suite": "internal_meaning_review",
+  "syntheticOnly": true,
+  "baseManifestSha256": "445b06f5ca5664042edf9f26a5ed549ce619aa0e1c8c9301db87ec801da88b2b",
+  "labelStatus": "frozen_before_inference",
+  "semanticReviewStatus": "source_review_required",
+  "provenance": "deterministic_synthetic_reference_not_human_reviewed",
+  "independence": "paired_variants_of_existing_project_families",
+  "counts": {
+    "projects": 20,
+    "pairs": 40,
+    "verdictCases": 80,
+    "mutations": {
+      "actor": 10,
+      "action": 10,
+      "eventTime": 10,
+      "status": 10
+    }
+  },
+  "splits": {
+    "development": {
+      "projectIds": [
+        "p01",
+        "p02",
+        "p03",
+        "p04",
+        "p05",
+        "p06",
+        "p07",
+        "p08"
+      ],
+      "pairIds": [
+        "review:p01:t1",
+        "review:p01:t2",
+        "review:p02:t1",
+        "review:p02:t2",
+        "review:p03:t1",
+        "review:p03:t2",
+        "review:p04:t1",
+        "review:p04:t2",
+        "review:p05:t1",
+        "review:p05:t2",
+        "review:p06:t1",
+        "review:p06:t2",
+        "review:p07:t1",
+        "review:p07:t2",
+        "review:p08:t1",
+        "review:p08:t2"
+      ]
+    },
+    "calibration": {
+      "projectIds": [
+        "p09",
+        "p10",
+        "p11",
+        "p12"
+      ],
+      "pairIds": [
+        "review:p09:t1",
+        "review:p09:t2",
+        "review:p10:t1",
+        "review:p10:t2",
+        "review:p11:t1",
+        "review:p11:t2",
+        "review:p12:t1",
+        "review:p12:t2"
+      ]
+    },
+    "held_out": {
+      "projectIds": [
+        "p13",
+        "p14",
+        "p15",
+        "p16",
+        "p17",
+        "p18",
+        "p19",
+        "p20"
+      ],
+      "pairIds": [
+        "review:p13:t1",
+        "review:p13:t2",
+        "review:p14:t1",
+        "review:p14:t2",
+        "review:p15:t1",
+        "review:p15:t2",
+        "review:p16:t1",
+        "review:p16:t2",
+        "review:p17:t1",
+        "review:p17:t2",
+        "review:p18:t1",
+        "review:p18:t2",
+        "review:p19:t1",
+        "review:p19:t2",
+        "review:p20:t1",
+        "review:p20:t2"
+      ]
+    }
+  },
+  "gates": {
+    "maxCriticalWrongMeaningAcceptance": 0,
+    "minCorrectProposalAcceptance": 0.9,
+    "requiresAllIncorrectVerdicts": true
+  },
+  "pairs": [
+    {
+      "id": "review:p01:t1",
+      "projectId": "p01",
+      "familyId": "p01:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p01_t1_r1",
+        "originalSourceId": "p01:t1:r1",
+        "path": "raw/p01/t1/revision-1.md",
+        "sha256": "2b9c07be377f11e2bb4016f4b1d852667eb2380f87a46843e4bcf0a51fb01614",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p01_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p01-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "6ba62a59451f8b7a4215f4fff7a9ea4b698873b62994d56748aa693c2430dc8c"
+      },
+      "cases": [
+        {
+          "id": "review:p01:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p01-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p01_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p01_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p01_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p01_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ab43104e2c7d97ac70a3184a2999ff81ca342e7684baf1fe992b5bda488f1ffd",
+          "claimSha256": "17772460a8ae88ba0df7d38d5e118b7dc84dff261f42e2a25b55cd7047ab30b3",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p01:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p01-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p01_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p01_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p01_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p01_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "029f5311a98240c80ebd80d5db2905d257faa6718dd8f6d51e940a869d90c0bd",
+          "claimSha256": "61822be3170be594ea268e242b1b27454e6fdb4969615739b5c70f1ad9595de0",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p01:t2",
+      "projectId": "p01",
+      "familyId": "p01:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p01_t2_r2",
+        "originalSourceId": "p01:t2:r2",
+        "path": "raw/p01/t2/revision-2.md",
+        "sha256": "8a01a67d6a873173d60a5f78677212eeff5df0e103213f9bfbdf2943ac43f274",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p01_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p01-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "7ef75befc107bffd5b1f6f6e2c3a3a9b674d8371c733e37a4ca6ab0f65099eed"
+      },
+      "cases": [
+        {
+          "id": "review:p01:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p01-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p01_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p01_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p01_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p01_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "f1143fcece9f3c79f4d224b259da48751cb023b102e72dd1208df0257cc072f1",
+          "claimSha256": "aa3156890468884a261853f59c262614e976bb8e8af8ef985f00847aa4765f09",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p01:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p01-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p01_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p01_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p01_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p01_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "4a61384197c51e83494e0afb3a3a89e52e379d7f43dbfd69ff5dd46dbc4d7b3f",
+          "claimSha256": "714aaae4dbe50c3c76b629683882f806c200d10b415813e0ee204309f60406aa",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p02:t1",
+      "projectId": "p02",
+      "familyId": "p02:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p02_t1_r1",
+        "originalSourceId": "p02:t1:r1",
+        "path": "raw/p02/t1/revision-1.md",
+        "sha256": "8d3f4c3df255ff75ac22ee8e409d440d1d7ba1030f148e6b98c20b6c48a8c134",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p02_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p02-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "c501059c925dfa1254361a64a3e34e762ad2a38e47418ec1adacb098e1dec40b"
+      },
+      "cases": [
+        {
+          "id": "review:p02:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p02-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p02_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p02_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p02_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p02_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "0651590e2b6789c0ab548f52aead8647a86b6c71788c02682f2143f2f8c8af1a",
+          "claimSha256": "ef08e392f0353a2f7ce223e2dbf038df3f104d12aaa6e0ca95afccbae4ef00e3",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p02:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p02-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p02_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p02_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p02_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p02_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "a6c100add63b2fb5ea47ed6fe87d9af68f1da9ddcf6b86d3c8b0914a9b75f101",
+          "claimSha256": "297c120215f312100a640f52c5c615a1b62d3fc0c798ae5eedcd705d49a47416",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p02:t2",
+      "projectId": "p02",
+      "familyId": "p02:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p02_t2_r2",
+        "originalSourceId": "p02:t2:r2",
+        "path": "raw/p02/t2/revision-2.md",
+        "sha256": "e8b3ed9da0895b1ed9cb7d8ed1f5d90ff5fcaaa11d2dd4b4b2a9e98a693ca666",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p02_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "00c6541d864655ab02503e87107ae39eff4b9de0dca898a99998a139aa21e3a8"
+      },
+      "cases": [
+        {
+          "id": "review:p02:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p02_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p02_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p02_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p02_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "dcbf734a28077a4cacb7b1a9ada2faa20340e166efc731f2a9ff2c46dce52b2d",
+          "claimSha256": "456e6415450ac2a453302a89d23a67dbe5cc3f2878b376c671c85df2ddccdf77",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p02:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p02_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p02_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p02_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p02_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "cb4262896ecde707b41b817014733b08ccd06817bc243c6366781dd9aefa30a5",
+          "claimSha256": "2671906d3d9528492a76db24f76b6b9b99e4ebac2c13181c5fb2e68f21ec3389",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p03:t1",
+      "projectId": "p03",
+      "familyId": "p03:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p03_t1_r1",
+        "originalSourceId": "p03:t1:r1",
+        "path": "raw/p03/t1/revision-1.md",
+        "sha256": "201493bcc0016ac3cf74e8e3a3b1fa88e4c9abc27b7a1363824d94d23efe700e",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p03_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p03-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "78cc8a59b84fbfceaf5c57d029322b6836ebfd6ed9be35a506ad9f243a275e96"
+      },
+      "cases": [
+        {
+          "id": "review:p03:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p03-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p03_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p03_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p03_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p03_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "fd827e1059475f43d6726383e6565d2ba1c2fc03e3ae7aa5b9729463ad2e59db",
+          "claimSha256": "955352f0ab6f2e547dc6e655bdeac753eb5f7b09401d196a7c9577317a926830",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p03:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p03-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p03_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p03_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p03_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p03_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "9781e6c789b50dab318ca94f2b1e310ad0be076e279eda80e731f173a53c875f",
+          "claimSha256": "6ed6bd2a00cdc77a97a8a551d171a63489918d664a4ff41e3d84d32dbb112716",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p03:t2",
+      "projectId": "p03",
+      "familyId": "p03:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p03_t2_r2",
+        "originalSourceId": "p03:t2:r2",
+        "path": "raw/p03/t2/revision-2.md",
+        "sha256": "67a30d7bc0d28cd77ba5333714e13b7948446c5d892fd31dedf7bf918f2c9a14",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p03_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p03-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "920039de5b0878c2cecd31f24bbe9e14b62c25743e6a312d5214489d930799cb"
+      },
+      "cases": [
+        {
+          "id": "review:p03:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p03-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p03_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p03_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p03_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p03_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "4c1f60a58d38b2cd2d248ebbebdbf49cfffb366c603ff58affe30dcf77375d75",
+          "claimSha256": "b54eb5a063868fa0da2d9d477b04587c078462a873898c386b72856f717407fa",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p03:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p03-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p03_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p03_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p03_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p03_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ac2ffcbec3231a921d048f76fd1d82406ce3232160514bd9b653c2d5ef175fe2",
+          "claimSha256": "5136d901af2bc80c6ca7a31dbe54a7f32f969928b4b3bee50e2bb7f372467b5c",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p04:t1",
+      "projectId": "p04",
+      "familyId": "p04:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p04_t1_r1",
+        "originalSourceId": "p04:t1:r1",
+        "path": "raw/p04/t1/revision-1.md",
+        "sha256": "fbb47b2dcb15c294f4b57e909140133ce69c84336b89881be6019d4c41c4dd14",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p04_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p04-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "574d484ec7873866a76e2be36b396b8437bd6f92517f47f11627536311867482"
+      },
+      "cases": [
+        {
+          "id": "review:p04:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p04-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p04_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p04_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p04_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p04_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ed6787d783ac200c18d4c17ffe3482fecd347c9b4d1eb5af70e68fcd668701e9",
+          "claimSha256": "b43356a43fb3bd0f8271e798c7822bc40202113b5d5c0a459dde4c5b49c91b3a",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p04:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p04-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p04_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p04_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p04_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p04_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "cce1970e2eb507ed6e12b9a6b1d3c2e5292ad044d4cd2714b5005e3d7d0fa73c",
+          "claimSha256": "03b4ff7cd0799e9c0a5e986918f9dbe4e08d9fd9b0bb182348f2cd4698f68ba0",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p04:t2",
+      "projectId": "p04",
+      "familyId": "p04:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p04_t2_r2",
+        "originalSourceId": "p04:t2:r2",
+        "path": "raw/p04/t2/revision-2.md",
+        "sha256": "09e2f9ead68fa6b343d0521d48ce18c45e79a88dafb3f866f32b0c353d4aae0e",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p04_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "4e15325ac42d601aa5ba1e96f56c1d6cfc019dd71a531debf32ddb76096902ad"
+      },
+      "cases": [
+        {
+          "id": "review:p04:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p04_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p04_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p04_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p04_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "b33f19435d6fdc280a0c404e2f854f0e6d636464419104953a56a6d4273db484",
+          "claimSha256": "36f76b4deca0d9dc7f9322d43dbda0b07f2636355a91cb0e6534f6d029fbb66e",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p04:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p04_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p04_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p04_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p04_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "0a96c21417540ca297b904069f7964e4bb26fe92808063cf3a11c3331e0090ea",
+          "claimSha256": "6e2da3326a0959976f237094038db28c6a6c0c6de8681910b1b96b7ae2f249b3",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p05:t1",
+      "projectId": "p05",
+      "familyId": "p05:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p05_t1_r1",
+        "originalSourceId": "p05:t1:r1",
+        "path": "raw/p05/t1/revision-1.md",
+        "sha256": "79c1db634b49f0031fdf8c902e64bd618ae515c4e750f3d7f03ce1eeba9580fd",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p05_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p05-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "ee4bb0ebfd34d92fb7d24aace323b5c28bf312f29636dac33aace9d7015710ad"
+      },
+      "cases": [
+        {
+          "id": "review:p05:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p05-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p05_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p05_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p05_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p05_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "a885ceaad1d1d5d79d7978cee9ef52460ce350a256e7f4508f51aef5c33bfae2",
+          "claimSha256": "703e5586c8213ac4886654e54715b89086c6d90fa36fcd043d2d851839eb300d",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p05:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p05-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p05_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p05_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p05_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p05_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "4295cb7b387c393201d8f9b7411087003c80b1e8374ed170e3dea80ec1bc6304",
+          "claimSha256": "6a5cdd68ee3aa07dc491328faa711dfca9cdc77e2091b53781020aa89ed07a03",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p05:t2",
+      "projectId": "p05",
+      "familyId": "p05:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p05_t2_r2",
+        "originalSourceId": "p05:t2:r2",
+        "path": "raw/p05/t2/revision-2.md",
+        "sha256": "920f359208ce4d4c501effa7abdf35c8cf3da795b2f31738d0f263ccdd7f03f7",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p05_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p05-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "0df6cffeaed8f33cd0a74880acdac4a9f20c5689cc52792e13b7522afff6bece"
+      },
+      "cases": [
+        {
+          "id": "review:p05:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p05-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p05_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p05_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p05_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p05_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "05bd0f37905baa1ca5ae0bc28b31d09744df13f6103e4576ffa6a708fce6c99b",
+          "claimSha256": "83409050ae6367d80e0dd3a18b9b84f1c1c55690a0d653ca600ea39e12da5d69",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p05:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p05-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p05_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p05_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p05_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p05_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "f452bca59ac26640fffa1b7ed1f04f4adbb79fdf8c1e4447a8b32f702be7f075",
+          "claimSha256": "f1dcd7788afb38774be8f7063ce69efe5e4a57a00b36dce2e70c8c0835cb2f2d",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p06:t1",
+      "projectId": "p06",
+      "familyId": "p06:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p06_t1_r1",
+        "originalSourceId": "p06:t1:r1",
+        "path": "raw/p06/t1/revision-1.md",
+        "sha256": "b607300ee66834641dc76e5d7265fd6eabd667efe24b704ec5361a711e9dfa98",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p06_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p06-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "4b3ac17a5aca6f60a524e014090a190d26088c9a05356824f71ad652ead79cb3"
+      },
+      "cases": [
+        {
+          "id": "review:p06:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p06-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p06_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p06_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p06_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p06_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "210aa9134fd99fe77af7759c2b933ae53f673b4070fb006c4ff2605cbc04a5a1",
+          "claimSha256": "e6475abb7cfb2119b9b8c5b65847f97c4174364812fb3038daaae3bc3e71dd14",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p06:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p06-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p06_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p06_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p06_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p06_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "d14090db461e10adfe84785cc43de68be58af24c4fb4ab12c494bd14e1dde478",
+          "claimSha256": "0c502302cf0a73fb5822714de826b71eee83fac886f7e7cd626eed58eabbfb7d",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p06:t2",
+      "projectId": "p06",
+      "familyId": "p06:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p06_t2_r2",
+        "originalSourceId": "p06:t2:r2",
+        "path": "raw/p06/t2/revision-2.md",
+        "sha256": "337742c5da235bd24a1294ee3a26302ec037b5f86488e1686d8dfe1d633003ea",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p06_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "4b3965485c02f14192acd9f80329cc7512c55c89bb69b53d107fefb796a15c35"
+      },
+      "cases": [
+        {
+          "id": "review:p06:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p06_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p06_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p06_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p06_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ac1be65f0ab1c0844da90d357f193538f9e98af1f293eae23808261cc8852395",
+          "claimSha256": "aa921a545ca2173d52c984935bd0d5d12bd89bd80b7c3caeb84a0624996e97a9",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p06:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p06_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p06_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p06_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p06_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "31724b5dc3cb85607fa7fd0e8f8953b8303c67ee6cdcf51b6ab852120a371059",
+          "claimSha256": "ed79ec81ea31fd01b4dddda8e8b4ac6d17e054521fd93c2fad2d29b235dfd5a6",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p07:t1",
+      "projectId": "p07",
+      "familyId": "p07:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p07_t1_r1",
+        "originalSourceId": "p07:t1:r1",
+        "path": "raw/p07/t1/revision-1.md",
+        "sha256": "d1240523fcececee986d52a89d212908210498e961c0be5020540a5ae05804d7",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p07_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 48,
+        "endByte": 114,
+        "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p07-feature-1.",
+        "sha256": "ed6ff303a04bb3cdaf25d816378745b64cb7d8e987f4a47f1ed21dc0688ab23e"
+      },
+      "cases": [
+        {
+          "id": "review:p07:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p07-feature-1.",
+                "anchorSpanId": "span_p07_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p07_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p07_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p07_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "c85b6d9995ec25cc72c8f3a165e87984399f0b8a4cb56520c5691113cbb177f3",
+          "claimSha256": "e1006226890bff162df4efea77a65ecfe685cc13c66114d893f6a0dc0aa9737a",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p07:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p07-feature-1.",
+                "anchorSpanId": "span_p07_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p07_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p07_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p07_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "7036fd7292ef494d3731d29aaffc5b125733337723da8e28d6922e6c53daa79a",
+          "claimSha256": "8a91fb96303b93e51611524a35c00da03375243f5ec6338cfc137e89be1b312d",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p07:t2",
+      "projectId": "p07",
+      "familyId": "p07:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p07_t2_r2",
+        "originalSourceId": "p07:t2:r2",
+        "path": "raw/p07/t2/revision-2.md",
+        "sha256": "a4e11185974518d206c794dc91d41d1720a75ce2983310d1ecc595adbe903742",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p07_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 215,
+        "endByte": 395,
+        "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p07-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+        "sha256": "a53735033a4968d106a0e1ea40635133198049de755f8a57aa164795e6e36c90"
+      },
+      "cases": [
+        {
+          "id": "review:p07:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p07-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p07_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p07_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p07_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p07_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ddfeab5b740e731bc2382a3fcc3c5abc384ff088f912bfc2a40af78028719b94",
+          "claimSha256": "280f564662a12bfbed5e863c72fec0988406da1d592e002d8caa28be7b9c6b4f",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p07:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p07-feature-99 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p07_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p07_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p07_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p07_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "37fd63017442b40367eecc798998b5a8af30de459699e1fe97a7c517799718b3",
+          "claimSha256": "e152bb38dc74522f5554ddfaceb6409028266c3f0a94080ffb3e1ac7be119757",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p08:t1",
+      "projectId": "p08",
+      "familyId": "p08:t1",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p08_t1_r1",
+        "originalSourceId": "p08:t1:r1",
+        "path": "raw/p08/t1/revision-1.md",
+        "sha256": "3bd4b791dcc78cfe2dcaded9ac64de66770fd6033de4d992de0a3d46c8908dda",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p08_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 48,
+        "endByte": 114,
+        "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p08-feature-1.",
+        "sha256": "a5631d45808f6f2fb00e417496105563e8a406c177fdc59c7c97c6e35e59d4af"
+      },
+      "cases": [
+        {
+          "id": "review:p08:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p08-feature-1.",
+                "anchorSpanId": "span_p08_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p08_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p08_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p08_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "6d8fea581b6ad5892053f8d5c51ae32f9f3f757d857408d84bb5a554a5bcf8e6",
+          "claimSha256": "d3c06f431790451cf6849912c1a3eeb644cf485cd5656314a7902a5dd4af15b7",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p08:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p08-feature-1.",
+                "anchorSpanId": "span_p08_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p08_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p08_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p08_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "1e19695781ae3c9c2ff7db8d9d8bf2b7e89ff8e6fb75ab27a384602809084ef3",
+          "claimSha256": "d4334f85ba9f5762e8301a0c34b0910423d2201a9a5b0a5ba21afc32dc051821",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p08:t2",
+      "projectId": "p08",
+      "familyId": "p08:t2",
+      "split": "development",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p08_t2_r2",
+        "originalSourceId": "p08:t2:r2",
+        "path": "raw/p08/t2/revision-2.md",
+        "sha256": "b4e24512d5fd36f5a9d300bd921024a82117d36d729ab2faf5a708da4df7a96e",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p08_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 215,
+        "endByte": 395,
+        "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+        "sha256": "dddbe5953e207cd17d529d9e739f29fef6a573820a394934efb4e10f1001fe53"
+      },
+      "cases": [
+        {
+          "id": "review:p08:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p08_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p08_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p08_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p08_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "47d414bf183ac26d931792ffae0feabc3d8313a5644a4c41b7f3de914c4d5aba",
+          "claimSha256": "caeaa75dd8330227c7fea6faf336f417190072fe5bc28fa5beed32313283a57c",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p08:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p08_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p08_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p08_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p08_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "4b0fb33de8a3e9ae734728f725a2e34663d433e996d0a880b57c1805ab6fa31d",
+          "claimSha256": "ec39250ddbddf4dc0d7bf706373166b0500e5b05e8b0d21f4d5b73b1d882a1a3",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p09:t1",
+      "projectId": "p09",
+      "familyId": "p09:t1",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p09_t1_r1",
+        "originalSourceId": "p09:t1:r1",
+        "path": "raw/p09/t1/revision-1.md",
+        "sha256": "3648e3f01223d8212f2d380a5cab5a714fc606f2487410b5f01cc0bb1323f6f6",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p09_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 50,
+        "endByte": 155,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p09-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "7c7d05640fd88456c8de0fa134c0d5e2575c562da02030391841e769cee0f9c5"
+      },
+      "cases": [
+        {
+          "id": "review:p09:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p09-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p09_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p09_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p09_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p09_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "5139495722b638c7d8802cf8428cd1b02a8b0366ff87f4408c6fb4c40121d520",
+          "claimSha256": "2f45552c7953bfebea924c7d4781517e367a2ca9cc102b9d21843cb53e85a6b5",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p09:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p09-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p09_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p09_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p09_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p09_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "de5c2cf577732504584b7fc54d698148d312ed0230d34e7c54d94139961e932b",
+          "claimSha256": "9dd5ba4271ef53d04b4bb0902992a33136986bb858255418eca02d07b69a1c86",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p09:t2",
+      "projectId": "p09",
+      "familyId": "p09:t2",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p09_t2_r2",
+        "originalSourceId": "p09:t2:r2",
+        "path": "raw/p09/t2/revision-2.md",
+        "sha256": "c9c5db9de223ab44600a1ec088eaee6ce19c7ffa85d6e50fd48e4de32f02b4e4",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p09_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 276,
+        "endByte": 465,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p09-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "83583e3aa43ba82866ae7004b034846e4ee7dbbba1380d99e5ad44a0cef15697"
+      },
+      "cases": [
+        {
+          "id": "review:p09:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p09-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p09_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p09_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p09_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p09_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "2be64e12f379602e9cfc829a43381be050e7e42532f8e11fcb6ada96091b8ebf",
+          "claimSha256": "ee54d31e47406db03269727f56ede706461665d78f30c247a6db2a016deced7c",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p09:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p09-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p09_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p09_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p09_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p09_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "2a905958f39ece0b07bccbc988ee347b98047e8351b966b5ae63f886369fd947",
+          "claimSha256": "f498c686f0c40334d1ccf6de8b46b0dabc6462396939b9e89dfadc5007d79e73",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p10:t1",
+      "projectId": "p10",
+      "familyId": "p10:t1",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p10_t1_r1",
+        "originalSourceId": "p10:t1:r1",
+        "path": "raw/p10/t1/revision-1.md",
+        "sha256": "bc3acc47c2c77f4308bbacb9007391217a95c10aedcef0ab3a85915deaf4db4b",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p10_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p10-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "d483360ff15643819d087ad1b1cb934a9909723773f1f186aa960c2c0ee18767"
+      },
+      "cases": [
+        {
+          "id": "review:p10:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p10-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p10_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p10_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p10_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p10_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "29b9812e981dd0ec9f141d92fe7a10c9b3b6fa1674c2cc2a68351f9aaf7dacb2",
+          "claimSha256": "486d333dfae33526560c3c0f6e32e35fa4e3ef5038df8aa76a7c7c1552de12fc",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p10:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p10-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p10_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p10_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p10_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p10_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "419b833866b222ec1cf8c379bb21864cbdeaf2e54cb3c998f1f67ae665246ad2",
+          "claimSha256": "e0ef435edb670592f043b7c921db009663a564f6366af1038f24918620641ee1",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p10:t2",
+      "projectId": "p10",
+      "familyId": "p10:t2",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p10_t2_r2",
+        "originalSourceId": "p10:t2:r2",
+        "path": "raw/p10/t2/revision-2.md",
+        "sha256": "082c5b5a544cb10fbae3e712fdb3cd6eed887d71af74fcc25c614fb5c81366aa",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p10_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p10-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "0d00378559c9bd1e847417a97482eb190779018f2de39a0b3deb0b502ab18a31"
+      },
+      "cases": [
+        {
+          "id": "review:p10:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p10-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p10_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p10_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p10_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p10_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "90bfdb27b09e542ec5cd3088d62e9aba4582658242d5579057f10b8df7cebab3",
+          "claimSha256": "9b15c3a3e6b445f2c59c2f9b855ab264c5112dfe3ddad22add4426b6968d0e67",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p10:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p10-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p10_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p10_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p10_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p10_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "45f28b6d594209d4134ef0d2e86918d5c40d000710f911fe7a934d65cea7cd9d",
+          "claimSha256": "088c2b37278b7833d9331a494ad71420e4e1a4de00c48909181bae136071b6f5",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p11:t1",
+      "projectId": "p11",
+      "familyId": "p11:t1",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p11_t1_r1",
+        "originalSourceId": "p11:t1:r1",
+        "path": "raw/p11/t1/revision-1.md",
+        "sha256": "422dda7552dac8aa80a001dc6e70808bdc66dfb1ee89a42645f89123072adf6c",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p11_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 49,
+        "endByte": 115,
+        "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p11-feature-1.",
+        "sha256": "5e066ec8e5a751a05703b426b08d99c6a2072915e99210e27c82346a165483bc"
+      },
+      "cases": [
+        {
+          "id": "review:p11:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p11-feature-1.",
+                "anchorSpanId": "span_p11_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p11_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p11_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p11_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "68110c6580ff82df038b493f8b8df6d091e1daff49ea170bf5bf6c73f9af4c9b",
+          "claimSha256": "cb22a010cb8dbf28de5bcdc63c87010e8f604c21af21aa14f9a18925c8e9cbbb",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p11:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p11-feature-1.",
+                "anchorSpanId": "span_p11_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p11_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p11_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p11_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "0598913d2f2e400bfb3e755e1ae9c764e1ebc3ca8ba137bfa9ef391535664492",
+          "claimSha256": "a912884d9ed45c9c607b496028f6d4ff45687584187bb4d27dd5b575d09862e6",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p11:t2",
+      "projectId": "p11",
+      "familyId": "p11:t2",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p11_t2_r2",
+        "originalSourceId": "p11:t2:r2",
+        "path": "raw/p11/t2/revision-2.md",
+        "sha256": "96592e4e0b6317e895fc1fe37a164eb37d6030f54a5f0b098229b95366bf5886",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p11_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 216,
+        "endByte": 396,
+        "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p11-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+        "sha256": "008c1c1634a5ef1ec015cb4a2e2858515b6ab49ac08af151094bfe8e9f6f2474"
+      },
+      "cases": [
+        {
+          "id": "review:p11:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p11-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p11_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p11_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p11_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p11_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "603bd8c98c7467a27b81022e8503a8c15b0b9810d26fd84ad24e82ff5a757d42",
+          "claimSha256": "9fdc21f72dc737f24f508e3897b3182c4cb5dcb87b9b5c224a8972b273bbadd5",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p11:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p11-feature-99 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p11_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p11_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p11_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p11_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "079e2e6e6a46d85270678cc55300582059cdd1bd5f48f0e13bdeea53f35c3d8a",
+          "claimSha256": "4e41edd838e00269fcdaa203509ae18546937cc3fc9589dc2e6420cf199bd5bf",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p12:t1",
+      "projectId": "p12",
+      "familyId": "p12:t1",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p12_t1_r1",
+        "originalSourceId": "p12:t1:r1",
+        "path": "raw/p12/t1/revision-1.md",
+        "sha256": "9c4d372b32c02579ac42ed1ca016fc8eac1610b6dcdee36b79fc4acca679edeb",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p12_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 49,
+        "endByte": 115,
+        "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p12-feature-1.",
+        "sha256": "130ffa0ab1e9aa13fc4163a014b1ff785246336ec2ac702fd3833190328ee9c3"
+      },
+      "cases": [
+        {
+          "id": "review:p12:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p12-feature-1.",
+                "anchorSpanId": "span_p12_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p12_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p12_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p12_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "aab262cb4afa0320fafa6e58bdde1a01c4225d2e283078856deb8f2ce96a56ad",
+          "claimSha256": "641fcd8046a788b4489a20faaa6ec8286625aa8e83616ccfe6e22c271ec9ffca",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p12:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p12-feature-1.",
+                "anchorSpanId": "span_p12_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p12_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p12_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p12_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "b338f44478e2dd56d91cd10e9a27db3f4ed8311b33d54bca61fabd414fc0f004",
+          "claimSha256": "125b032834758e6b1600ea72d04e1aa3744a11bd933520ece1be6a0805f17ee6",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p12:t2",
+      "projectId": "p12",
+      "familyId": "p12:t2",
+      "split": "calibration",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p12_t2_r2",
+        "originalSourceId": "p12:t2:r2",
+        "path": "raw/p12/t2/revision-2.md",
+        "sha256": "9388afbadb533a422dd30039db65c850bc7098083b5aa2cb3b4dce2993f546f4",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p12_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 216,
+        "endByte": 396,
+        "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p12-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+        "sha256": "d63cbf0b89d15be642afe92e0b7ec722ca20b4b807f42dfd1d0727d9c7b074ff"
+      },
+      "cases": [
+        {
+          "id": "review:p12:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p12-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p12_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p12_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p12_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p12_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "6586c0680dd98134719e8416b8545de8f70e4f94e5df735a26631f9c637bef15",
+          "claimSha256": "229f64ca6dee4e3ac6b8cc2c6a259d20ab5c4a0513959bbe0380e01762c8536f",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p12:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p12-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p12_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p12_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p12_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p12_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "5279d88f8997256a483492261ec66b7234e97b0d9f20b040ae3ead41803aa9cc",
+          "claimSha256": "54580abd7aba2f17fc683e43e7099396a42be0fd1f366d274ae5d2549bb2683c",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p13:t1",
+      "projectId": "p13",
+      "familyId": "p13:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p13_t1_r1",
+        "originalSourceId": "p13:t1:r1",
+        "path": "raw/p13/t1/revision-1.md",
+        "sha256": "d5333792265684c3fd60f14aa045d817bf555b49f906771b46bb30939e817efe",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p13_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p13-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "16cdc7669614a7516f8bdd99eeec98489e4e71d025e08a90923cb3bb5de1c5f2"
+      },
+      "cases": [
+        {
+          "id": "review:p13:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p13-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p13_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p13_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p13_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p13_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "41b56d6ee9d23d4ecb39a03281acb35d60c1807da2be4c040bdb60dc5c3889e7",
+          "claimSha256": "a69d15dbfa2af5b64b879e34075a648cf9678cd3a7abbc69f3d5ae78aeaddfca",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p13:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p13-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p13_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p13_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p13_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p13_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "df80ae93da6a6037055e76f0bac38f16ec5868c80a12c1c50aa99bcb57e6c517",
+          "claimSha256": "81e0c31453b021ddd029776cbf7b99cf77081785862526d4064e3a90f1769a3e",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p13:t2",
+      "projectId": "p13",
+      "familyId": "p13:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p13_t2_r2",
+        "originalSourceId": "p13:t2:r2",
+        "path": "raw/p13/t2/revision-2.md",
+        "sha256": "e7577395c29376d38e81b4b714c500aeb4e65eb148e097ebd408de8dfc1f12d8",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p13_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p13-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "8521480fab3a7a166bd7ac75dd0b7da95ccc2b99095823c514b7ce68deb8f182"
+      },
+      "cases": [
+        {
+          "id": "review:p13:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p13-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p13_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p13_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p13_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p13_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "0de4158430d73ef90bf3844ba2771485588ea69eff1c9212f988c49f1b9c371b",
+          "claimSha256": "36822c0b6ac7ad05b83bafcc4aadc13e5f208262e9dc43c49980d4fe63280559",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p13:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p13-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p13_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p13_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p13_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p13_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "a870334cd9a9aeec4357279d7b126d014f9e802dc51e7558418683b6640d8aa2",
+          "claimSha256": "0d516cb607efb1906e9cfb570456387f41cefbe0ded124e53477d56a87f34169",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p14:t1",
+      "projectId": "p14",
+      "familyId": "p14:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p14_t1_r1",
+        "originalSourceId": "p14:t1:r1",
+        "path": "raw/p14/t1/revision-1.md",
+        "sha256": "3df48f099d2524b3037cda7a6d622b01fd9bdc02e40d2b816527bfadcde035e4",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p14_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p14-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "ee29c289d1a45fa0c8f0ced937e7aff0975599fb6b0fea1e7c561d2faeabfa03"
+      },
+      "cases": [
+        {
+          "id": "review:p14:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p14-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p14_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p14_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p14_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p14_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "bb1d205895c79e3a950dd61d94b01dcbb10891870845d3c9f36ac052668fcc20",
+          "claimSha256": "d018339e30700bbbc3534e40e2a54ede31aca5723dd2adbc297480c30941b010",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p14:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p14-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p14_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p14_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p14_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p14_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "4f29500cff926f52f66eb706d6f9627623f237485ecd4a7976657322c9f5c107",
+          "claimSha256": "79f968ed84d8cf4a9bb8d44258d3e1f2ad4dd17ad18571efdfec0cd801c1d19a",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p14:t2",
+      "projectId": "p14",
+      "familyId": "p14:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p14_t2_r2",
+        "originalSourceId": "p14:t2:r2",
+        "path": "raw/p14/t2/revision-2.md",
+        "sha256": "7b19f9cbd6b5da7d1f883c8cf4a93459d8199521557343720bdfefd66b0cf7ab",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p14_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p14-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "196aeca8c687561a018495d3e1bd54819bbbcd463889ed5502d834b3986718b2"
+      },
+      "cases": [
+        {
+          "id": "review:p14:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p14-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p14_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p14_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p14_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p14_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "d6f6d3a2d7625aa94d24c8775ab5136d59983f9ee4400c44881a683403259b9c",
+          "claimSha256": "290233f4e2cd669ff7a07a4afca6cb5b2bd6690ebd3dffd3e758b50937203922",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p14:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p14-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p14_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p14_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p14_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p14_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "8a09140f6d69535700e120d3e66403491d7aca90b91c8feaf7ce79f834b48fb1",
+          "claimSha256": "3e679e0b3de59ebbf7c538d7cdf9268c6c4050d646f64a6b15de5de56245c0ca",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p15:t1",
+      "projectId": "p15",
+      "familyId": "p15:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p15_t1_r1",
+        "originalSourceId": "p15:t1:r1",
+        "path": "raw/p15/t1/revision-1.md",
+        "sha256": "677e5e35b06eeee2eb38c611af741df020e1ce8e846db9b95dbf35f7a4e24855",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p15_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p15-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "d4edd7d7e26ccc3e80f3aed261c4202394c669ae4e67ff4a1c1d84e07275e34c"
+      },
+      "cases": [
+        {
+          "id": "review:p15:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p15-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p15_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p15_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p15_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p15_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "aa6811c3b247f321b4b269246d3b238b2aff026d67d7b6c8dca5a7c1e6b2da38",
+          "claimSha256": "855a5af22c108f7138b18e009fe3fabe15115704d5086e10d636825836c76b60",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p15:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p15-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p15_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p15_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p15_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p15_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "910404033e1c68c658d67f03aee3bad950f26679de21f313781a3fb0335a2067",
+          "claimSha256": "dde31b9be220d38bcf192f9380484b36d031763a2904192ea056e38b4a4e7453",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p15:t2",
+      "projectId": "p15",
+      "familyId": "p15:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p15_t2_r2",
+        "originalSourceId": "p15:t2:r2",
+        "path": "raw/p15/t2/revision-2.md",
+        "sha256": "cd3eb1899b1ee16fcd6e4c9fe93a2e7840770fd7ad1219404ecd8568c3feb12b",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p15_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p15-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "f38704d95733ef965195375891e1c23c0acb82e05537c772ffe8d30ba68d5b99"
+      },
+      "cases": [
+        {
+          "id": "review:p15:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p15-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p15_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p15_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p15_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p15_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "d7f192ccb9f389fcd0e64f3e9680ab0914bffd8dd9380b6464b1a5dec87a686b",
+          "claimSha256": "b5df7c6226170f2ae7c372dc3f2ac88c2db5a2d777dbf148faf0f1a9cfe0e993",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p15:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p15-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p15_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p15_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p15_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p15_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "900d6354b10972957c430f3079b45ce19ffe12fa91e19a3bc1748394509d4686",
+          "claimSha256": "4f6424df4f98b10082717d9ba4e8ec0248bf50d61d676c2f2d599db2c18613c6",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p16:t1",
+      "projectId": "p16",
+      "familyId": "p16:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p16_t1_r1",
+        "originalSourceId": "p16:t1:r1",
+        "path": "raw/p16/t1/revision-1.md",
+        "sha256": "dde6f67fd42fefb4b70e8805287639ca3f20d2547ec35d5bcc9545499236e7e1",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p16_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p16-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "e16df5b6a21e4c25aa34a2169a8ee4cb783a43615ee505f4946253afdaf60c98"
+      },
+      "cases": [
+        {
+          "id": "review:p16:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p16-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p16_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p16_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p16_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p16_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "d2737d95950fc1549a7930685efa9b349d99fcdb0f64eb6b129cc8a34e0947fc",
+          "claimSha256": "f253b8357d837d8e8bedddcdd2333848f893f88e29fa9cf0d74a2376c57b7ad1",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p16:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p16-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p16_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p16_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p16_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p16_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "d6ca7645ce0c385832c78229b67d5e7f90abdbd00a03c5617321f47ef46683ac",
+          "claimSha256": "bc67ab79138f4a009b648f3bc1b3428c1bffaeaeb709ac2fb35c6dcd0143dbbe",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p16:t2",
+      "projectId": "p16",
+      "familyId": "p16:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p16_t2_r2",
+        "originalSourceId": "p16:t2:r2",
+        "path": "raw/p16/t2/revision-2.md",
+        "sha256": "308799eb2f75a917830e40d8584fa93fffa7c282ee7b9f98d7b6e6a77346681c",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p16_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p16-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "e09654b083df9ced18cae45d98932b6012fe3b6dc0c0fb7eb19d82ad9e46f22e"
+      },
+      "cases": [
+        {
+          "id": "review:p16:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p16-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p16_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p16_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p16_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p16_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ee9867557979f097068f2714458073a5140fcc3f79f79340df883f1656339cb5",
+          "claimSha256": "f5f777b7db2fd50b3539134a69020bb925697ff192ef3511dc7aa2501e83c1ae",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p16:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p16-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p16_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p16_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p16_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p16_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "400d816c0148e9639358304003a3895deab8c8af02701fe7225382608d629266",
+          "claimSha256": "7d3c469eab801e9d8242ee3cd6e46a9e0c07fa040f9bdbd3e40bfa1adfd3aaa0",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p17:t1",
+      "projectId": "p17",
+      "familyId": "p17:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p17_t1_r1",
+        "originalSourceId": "p17:t1:r1",
+        "path": "raw/p17/t1/revision-1.md",
+        "sha256": "8632ead2577936d041ef256c221c796a6b4eb35d3d0419b1859a2a61cb6ae38a",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p17_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p17-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "22c31e1ee487de18e90af4facee16e77b25fa6b8819400e1bffa26baefd73945"
+      },
+      "cases": [
+        {
+          "id": "review:p17:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p17-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p17_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p17_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p17_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p17_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "5b55edf3872f835719b3b4d7a0042934c886229b503b267fe20910159aab26c1",
+          "claimSha256": "53ba505a63d7071c0788be221c25044605a127f3ba6bb31ff826bf4f00d1e8f7",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p17:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p17-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p17_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p17_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p17_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p17_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "1ba5a73b27bd9d2621e3614ba577166d5747cc0a8ea20638d404b1a20c734f45",
+          "claimSha256": "416f110a812b4116444d19a29b9c0f10a3feb847cc383cdb75cd6accc69c6e7a",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p17:t2",
+      "projectId": "p17",
+      "familyId": "p17:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p17_t2_r2",
+        "originalSourceId": "p17:t2:r2",
+        "path": "raw/p17/t2/revision-2.md",
+        "sha256": "fc636842ecea31ee4f4e41d6b04c5fd41f62b106406a88c3fe05acaa6b726943",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p17_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p17-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "2f8add51f2b28f2f5aed0869398dc272423015df4592d9c33b72f0c30912bf71"
+      },
+      "cases": [
+        {
+          "id": "review:p17:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p17-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p17_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p17_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p17_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p17_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "705d07d8717b0c0628c921e7a58b889fc79c08fc362bf656a2e9b7528186f9d5",
+          "claimSha256": "59133ad75a7abf32dd8a1040907f6e1a929e9278d6cb3f37010b39948f0796a8",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p17:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p17-feature-99를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p17_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p17_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p17_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p17_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "b8f58fa2f60a4b4509dfc28f6390e3c2410561c81423f1be41118b4c7431f79e",
+          "claimSha256": "65ee38b8306379b3c27bdc09c094ed35a8a9b5bc7473f64c56b9d8aae3f36f26",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p18:t1",
+      "projectId": "p18",
+      "familyId": "p18:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p18_t1_r1",
+        "originalSourceId": "p18:t1:r1",
+        "path": "raw/p18/t1/revision-1.md",
+        "sha256": "13b5044511809cadc962fb6ec89fdeeffdfc6968374d0b12a6362bcfbd7cc96c",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p18_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 51,
+        "endByte": 156,
+        "text": "2026-10-01T08:00:00Z · User request: synthetic-p18-feature-1 기능을 추가해 달라고 요청했다.",
+        "sha256": "98eb1b853e9b85fc571f882dd027c4f45e70dd266a413ece0e5a79270c95bcfa"
+      },
+      "cases": [
+        {
+          "id": "review:p18:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p18-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p18_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p18_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p18_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p18_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "f2b37083d8f5a21211fb33ef847a43a24041809bf75a0f0b49514a625e41a378",
+          "claimSha256": "f0f3cb3032caef43f09bde3c0fbce4944ec41ee4a385d8331185721a397e4c18",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p18:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p18-feature-1 기능을 추가해 달라고 요청했다.",
+                "anchorSpanId": "span_p18_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p18_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p18_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p18_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "ff0d8a4cd291c6680b9e5e1b410d661babdb25e1efd5b7cc8ed8681dbc16a169",
+          "claimSha256": "4e6509308063ad564dccc53491265782c13fdc8a4d316ef062e1ab012f49709a",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p18:t2",
+      "projectId": "p18",
+      "familyId": "p18:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p18_t2_r2",
+        "originalSourceId": "p18:t2:r2",
+        "path": "raw/p18/t2/revision-2.md",
+        "sha256": "ad8f2974cd91feb8f173029343f93a588d9068fa4b8651be462b4ad3332de8c9",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p18_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 277,
+        "endByte": 466,
+        "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p18-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+        "sha256": "48f927f290a30ef87babc798526c4f6de2841f9c672e5d7bb3903bb37bd697f3"
+      },
+      "cases": [
+        {
+          "id": "review:p18:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p18-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p18_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p18_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p18_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p18_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "71740c6511321c252bcd0cbd5a6627dce1e730d1bdf8bef911a5a100b814b171",
+          "claimSha256": "863357cb5eec7527773ef8dd91642b1bdfdf07af7f06d2366eef1228ff857458",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p18:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "synthetic-p18-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+                "anchorSpanId": "span_p18_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p18_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p18_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p18_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "a143ede8272424a2b5d2083a8099f8d80459f42b13c92c3922b46927da1254aa",
+          "claimSha256": "4b68119d2afbe76d2a350aa4271e290f031f3614c0886e979380ead595e3c5bc",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    },
+    {
+      "id": "review:p19:t1",
+      "projectId": "p19",
+      "familyId": "p19:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "actor",
+      "source": {
+        "id": "source_p19_t1_r1",
+        "originalSourceId": "p19:t1:r1",
+        "path": "raw/p19/t1/revision-1.md",
+        "sha256": "89acfc0159709b32f9d3c1fe5de82a8b4c86eaac1b396ba093b57849dc1b81fe",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p19_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 49,
+        "endByte": 115,
+        "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p19-feature-1.",
+        "sha256": "96bede693bc84bc2da948ecb18b6ab3655761a2a36a9b5f60524493bcc43fcd7"
+      },
+      "cases": [
+        {
+          "id": "review:p19:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p19-feature-1.",
+                "anchorSpanId": "span_p19_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p19_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p19_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p19_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "f299763bc4f2d9ed78b33d19a7f46857dc8238cd2ed6f546c71f78023a017975",
+          "claimSha256": "3623fe58e4beff28c8839bc358906b392e3a84235f2687a64dd47f48d68547bf",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p19:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p19-feature-1.",
+                "anchorSpanId": "span_p19_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p19_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p19_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p19_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "0094cb46e2787631deca9329afaf4bc6c5fe93b92a6854fd65397dd8b244f7eb",
+          "claimSha256": "c1dc61c028adce327f34d5609f5df21ec4d8bb70587f814c12b8e69ffd994a66",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "actor",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "4ec96bbe5c05e450718054a6d1e119237bea752855646225c09181b446468ffa"
+        }
+      ]
+    },
+    {
+      "id": "review:p19:t2",
+      "projectId": "p19",
+      "familyId": "p19:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "action",
+      "source": {
+        "id": "source_p19_t2_r2",
+        "originalSourceId": "p19:t2:r2",
+        "path": "raw/p19/t2/revision-2.md",
+        "sha256": "0665a4b5a882dc58f5bba199e474a1add4f19d44dc3bc1e6128b2b24e3cd2a8f",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p19_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 216,
+        "endByte": 396,
+        "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p19-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+        "sha256": "e244feb0f5c0a35f5bfed484dc5bfa3e293ab044a82aa0f56217941531ba22f8"
+      },
+      "cases": [
+        {
+          "id": "review:p19:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p19-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p19_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p19_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p19_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p19_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "c21a21449678cc9061036b20e5a44fb6773d92d3c58845ac85439eaa51a78524",
+          "claimSha256": "e3b167f94edcb55e9da86dbd9100691a4647be42bbb2047a161ce721cbe77dec",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p19:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p19-feature-99 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p19_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p19_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p19_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p19_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "15ae71bcc2ee23397d57c06b3669a7294bb250fa3f2a4126d3beb6970b7d2f51",
+          "claimSha256": "e2f9200e305ddb638370caf55b4dfc2147d5950cf7c8776faa4ee009f3c1a862",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "action",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "96855b57dfd7eb7d92a01c77d83adbb9a92d107a3542b4661ce555861cb6548d"
+        }
+      ]
+    },
+    {
+      "id": "review:p20:t1",
+      "projectId": "p20",
+      "familyId": "p20:t1",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "eventTime",
+      "source": {
+        "id": "source_p20_t1_r1",
+        "originalSourceId": "p20:t1:r1",
+        "path": "raw/p20/t1/revision-1.md",
+        "sha256": "aa825fe2849eca89c8931dfb8585dc4bb96065d4cfa5ae92d810f5f67f663efd",
+        "revision": 1,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p20_t1_r1_user",
+        "speakerRole": "user",
+        "turnTime": "2026-10-01T08:00:00Z",
+        "startByte": 49,
+        "endByte": 115,
+        "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p20-feature-1.",
+        "sha256": "e62dbf067034601b85dd200141e2b145bc5687e00e72497fecbe5c75398ba70f"
+      },
+      "cases": [
+        {
+          "id": "review:p20:t1:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p20-feature-1.",
+                "anchorSpanId": "span_p20_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p20_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p20_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-01T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p20_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "bb74ab39c96aa6c45d596175654f41f10dedb4a6e1d0b2b25443d0aacb027508",
+          "claimSha256": "c5410b21692c6e2713d01869b9f8ee53537f7165ca9c780e5df425da20666832",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p20:t1:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Add synthetic-p20-feature-1.",
+                "anchorSpanId": "span_p20_t1_r1_user",
+                "supportSpanIds": [
+                  "span_p20_t1_r1_user"
+                ],
+                "actor": {
+                  "role": "user",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p20_t1_r1_user"
+                },
+                "eventTime": {
+                  "value": "2026-10-08T01:00:00Z",
+                  "basis": "date_reference",
+                  "precision": "instant",
+                  "uncertainty": "inferred",
+                  "supportSpanId": "span_p20_t1_r1_user"
+                },
+                "speechAct": "request",
+                "status": "requested",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "3fdfc1d041cb8bd1e2c06ff4fd9cb686582a1e889015a67d11ba535ceda5618d",
+          "claimSha256": "3f7088df4f5f8bbdeb3768b2cda44356854d328475acd85fe8bc735f3354acb1",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "eventTime",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "71413d5853ee3a333a285e1ff15e8258769e0d58dd5bef040d824123e7561ec5"
+        }
+      ]
+    },
+    {
+      "id": "review:p20:t2",
+      "projectId": "p20",
+      "familyId": "p20:t2",
+      "split": "held_out",
+      "scope": "all",
+      "mutationKind": "status",
+      "source": {
+        "id": "source_p20_t2_r2",
+        "originalSourceId": "p20:t2:r2",
+        "path": "raw/p20/t2/revision-2.md",
+        "sha256": "744e90fd454e22f3d7867e0ddabb32170a5e3d902c4c8f834c031c1ce621410f",
+        "revision": 2,
+        "kind": "raw",
+        "importedAt": "2026-10-08T01:00:00Z",
+        "modifiedAt": "2026-10-08T02:00:00Z"
+      },
+      "originalSpan": {
+        "id": "span_p20_t2_r2_assistant",
+        "speakerRole": "assistant",
+        "turnTime": "2026-10-02T08:00:00Z",
+        "startByte": 216,
+        "endByte": 396,
+        "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p20-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+        "sha256": "eb4cd7d407df53df12edfbaa0f6635830cabe765a807157fd7d33cb46595ab63"
+      },
+      "cases": [
+        {
+          "id": "review:p20:t2:supported",
+          "variant": "source_supported",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p20-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p20_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p20_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p20_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p20_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_completed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "05c83235cb478fa6a62131a58c69d2d4c8afc37ffc9c885d944a530b4b4ac812",
+          "claimSha256": "4de1ae75bc11341e8a490d7a61af590ea9135dc8f1c9fe283dccb84a086c2753",
+          "label": {
+            "expectedVerdict": "accept",
+            "critical": false,
+            "mutationKind": null,
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "6dd68dc129fcea3e598abe2b8305875556581037277f50c6c50eec6b4891cb52"
+        },
+        {
+          "id": "review:p20:t2:wrong_meaning",
+          "variant": "wrong_meaning",
+          "proposal": {
+            "outcome": "claims",
+            "claims": [
+              {
+                "action": "Implemented synthetic-p20-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+                "anchorSpanId": "span_p20_t2_r2_assistant",
+                "supportSpanIds": [
+                  "span_p20_t2_r2_assistant"
+                ],
+                "actor": {
+                  "role": "assistant",
+                  "basis": "explicit_subject",
+                  "subjectSpanId": "span_p20_t2_r2_assistant"
+                },
+                "eventTime": {
+                  "value": "2026-10-02T08:00:00Z",
+                  "basis": "explicit",
+                  "precision": "instant",
+                  "uncertainty": "specified",
+                  "supportSpanId": "span_p20_t2_r2_assistant"
+                },
+                "speechAct": "report",
+                "status": "reported_failed",
+                "verificationId": null
+              }
+            ]
+          },
+          "proposalSha256": "88a580a44b08ac341370b16548e05fcb39b9a2b7568db0c8994de56404ff8e72",
+          "claimSha256": "478ef3363e9b83c411683a5b0dcc914ca78b34eb24e8511cbeb41b06ab3e1a27",
+          "label": {
+            "expectedVerdict": "reject",
+            "critical": true,
+            "mutationKind": "status",
+            "reviewStatus": "source_review_required",
+            "provenance": "deterministic_synthetic_reference_not_human_reviewed"
+          },
+          "labelSha256": "c8f871480c599bf534f4bbe1a4da425c40082e0acbc54ffd2e2f840ad01fa27c"
+        }
+      ]
+    }
+  ]
+}

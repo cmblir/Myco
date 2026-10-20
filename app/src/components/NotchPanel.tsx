@@ -27,11 +27,16 @@
 import { useEffect, useState } from "react";
 import type { CSSProperties, JSX } from "react";
 import LiveCaption from "./LiveCaption";
+import NotchMascot from "./NotchMascot";
 import VoiceWave from "./VoiceWave";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
-import type { NotchAgendaPayload, NotchAgendaRow } from "../lib/ipc";
+import type {
+  NotchAgendaPayload,
+  NotchAgendaRow,
+  TrayRunningRow,
+} from "../lib/ipc";
 import type { CaptionState } from "../lib/liveCaption";
 import { formatTicker } from "../lib/time";
 import { voiceHotkeyGate } from "../lib/voiceCapture";
@@ -55,12 +60,21 @@ export type NotchState =
   | { kind: "peek"; due?: { today: number; overdue: number } }
   | { kind: "dragging"; name: string; meta: string }
   | { kind: "accepted"; rel: string }
-  | { kind: "running"; percent: number; detail: string; elapsedMs: number }
+  // `job` is the running row's kind (ipc TrayRunningRow): which work this is,
+  // for the clip myco plays while it roams (lib/roamTrigger).
+  | {
+      kind: "running";
+      percent: number;
+      detail: string;
+      elapsedMs: number;
+      job?: TrayRunningRow["kind"];
+    }
   | { kind: "done"; summary: string }
   | { kind: "capture"; text: string }
   // S7's success: the daily line landed at `rel`. Green like S6, and folds
-  // itself away on the same 4s clock.
-  | { kind: "captured"; rel: string }
+  // itself away on the same 4s clock. `line` (the written `- HH:MM` line)
+  // arrives with capture_note's answer; from then on the receipt can open it.
+  | { kind: "captured"; rel: string; line?: string }
   // `note` overrides the lip clock — the one-time whisper model download
   // narrates its percent there instead of freezing on the last second.
   // `caption` is the live transcript (partials every few seconds); `noInput`
@@ -87,7 +101,10 @@ export type NotchState =
     }
   // `reason` (already translated, like every free-text member) overrides the
   // {ext}-templated line — a write failure has a reason but no extension.
-  | { kind: "rejected"; ext: string; reason?: string };
+  | { kind: "rejected"; ext: string; reason?: string }
+  // A running job that ended in a failure (the tray push names its kind);
+  // `summary` is its last running line.
+  | { kind: "failed"; summary: string };
 
 export interface NotchView {
   /** Lip label. Empty renders the bare cap (S1) — an idle notch has to look
@@ -103,15 +120,7 @@ export interface NotchView {
 
 /** How a decided row reports back, for the beat before it leaves. Both words
  *  the surface already owns: green "done", amber "dropped". */
-export type AgendaOutcome = "done" | "dropped";
-
-/** The collapsed strip's number: how many decisions are waiting, or null when
- *  the answer is none. Null is the load-bearing case — an idle notch with
- *  nothing waiting draws NOTHING, which is the owner's original call about
- *  always-visible attachments and still stands. */
-export function markCount(view: NotchView, waiting: number): number | null {
-  return !view.open && waiting > 0 ? waiting : null;
-}
+export type AgendaOutcome = "pending" | "done" | "dropped" | "failed";
 
 /** S6 folds away on its own — the sheet's rule is that a finished surface
  *  never asks to be dismissed. */
@@ -142,19 +151,10 @@ export function clampPercent(value: number): number {
 export function describeNotch(
   state: NotchState,
   t: Strings,
-  pill = false,
 ): NotchView {
   switch (state.kind) {
     case "idle":
-      // S10: with no notch to hide inside, the pill has to say whose it is.
-      return pill
-        ? {
-            lip: t.app_name.toUpperCase(),
-            tone: "live",
-            open: false,
-            dwellMs: null,
-          }
-        : { lip: "", tone: "dim", open: false, dwellMs: null };
+      return { lip: "", tone: "dim", open: false, dwellMs: null };
     case "peek": {
       // S2 invites, it does not accept — nothing is read in this state.
       // With work due, the lip reports it instead of repeating the invitation.
@@ -220,7 +220,7 @@ export function describeNotch(
       };
     case "captured":
       return {
-        lip: t.notch_capture_saved ?? "Saved",
+        lip: t.home_captured,
         tone: "ok",
         open: true,
         dwellMs: DONE_DWELL_MS,
@@ -269,6 +269,13 @@ export function describeNotch(
         open: true,
         dwellMs: null,
       };
+    case "failed":
+      return {
+        lip: t.notch_failed ?? "Did not finish",
+        tone: "warn",
+        open: true,
+        dwellMs: null,
+      };
   }
 }
 
@@ -304,7 +311,10 @@ export const MOCK_FRAMES: readonly NotchFrame[] = [
     state: { kind: "capture", text: "why we picked OTP over magic links" },
     pill: false,
   },
-  { state: { kind: "captured", rel: "daily/2026-08-25.md" }, pill: false },
+  {
+    state: { kind: "captured", rel: "daily/2026-08-25.md", line: "- 09:12 call the dentist" },
+    pill: false,
+  },
   {
     state: {
       kind: "recording",
@@ -335,6 +345,10 @@ const MOCK_STEP_MS = 2600;
 
 const IDLE_STATE: NotchState = { kind: "idle" };
 
+/** The mock walk's cutout: the 14" MacBook Pro's, as devMock reports it under
+ *  ?mock=1. Painted, so a preview screenshot shows what the hardware hides. */
+const MOCK_CUTOUT_PX = 37;
+
 interface MockParams {
   on: boolean;
   /** Pinned frame index, or null to cycle. */
@@ -344,11 +358,13 @@ interface MockParams {
 /** Read at first render, never at module scope: the node-only unit test
  *  imports this file and there is no `location` there. */
 function readMockParams(): MockParams {
-  if (!import.meta.env.DEV) return { on: false, pinned: null };
+  const off = { on: false, pinned: null };
+  if (!import.meta.env.DEV) return off;
   const params = new URLSearchParams(location.search);
-  if (!params.has("notchMock")) return { on: false, pinned: null };
-  const raw = params.get("notchFrame");
-  const n = raw === null ? Number.NaN : Number.parseInt(raw, 10);
+  if (!params.has("notchMock")) return off;
+  const int = (key: string): number =>
+    Number.parseInt(params.get(key) ?? "", 10);
+  const n = int("notchFrame");
   return {
     on: true,
     pinned: Number.isInteger(n) && n >= 0 ? n % MOCK_FRAMES.length : null,
@@ -373,6 +389,8 @@ export interface NotchPanelProps {
   onCaptureVoice?: () => void;
   /** Peek "note" row: open the text capture (the lip click does the same). */
   onCaptureOpen?: () => void;
+  /** S7 receipt: open the written line in the main window. */
+  onCapturedOpen?: () => void;
   /** S8 ⏎ / the save button: stop the take and transcribe it. */
   onRecordStop?: () => void;
   /** S7 paste: true = the driver took it (a URL/large selection became an
@@ -382,8 +400,7 @@ export interface NotchPanelProps {
    *  it. Omitted (mock walk, plain browser) → a flat line. */
   levels?: LevelHistory;
   /** Decisions waiting, built and translated in the main window and pushed
-   *  here (lib/notchAgenda, lib/trayStatus). Absent/empty = nothing waiting,
-   *  and the collapsed surface stays invisible. */
+   *  here (lib/notchAgenda, lib/trayStatus). Only the open peek renders them. */
   agenda?: NotchAgendaPayload | null;
   /** A row's yes (`primary`) or no. The driver emits the row's action string
    *  to the main window, which owns every one of these writers. */
@@ -391,6 +408,9 @@ export interface NotchPanelProps {
   /** Rows mid-outcome, by row id: the ~1.5 s beat between the decision and
    *  the row leaving. */
   agendaActed?: Readonly<Record<string, AgendaOutcome>>;
+  /** myco is out of the notch, roaming the screen (lib/roamTrigger): the
+   *  surface stays as it is, without a myco of its own. */
+  mascotAway?: boolean;
 }
 
 export default function NotchPanel({
@@ -401,14 +421,18 @@ export default function NotchPanel({
   onCaptureCancel,
   onCaptureVoice,
   onCaptureOpen,
+  onCapturedOpen,
   onRecordStop,
   onCapturePaste,
   levels,
   agenda,
   onAgendaAct,
   agendaActed,
+  mascotAway = false,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
+  // This preference applies to the open panel; idle never paints a mascot.
+  const mascot = useUIStore((s) => s.mascotEnabled);
   const t = STRINGS[lang];
   const [mock] = useState(readMockParams);
   const [step, setStep] = useState(0);
@@ -421,8 +445,8 @@ export default function NotchPanel({
       : mocking
         ? MOCK_FRAMES[mock.pinned ?? step % MOCK_FRAMES.length]
         : { state: IDLE_STATE, pill };
-  const view = describeNotch(frame.state, t, frame.pill);
-  const mark = markCount(view, agenda?.total ?? 0);
+  const view = describeNotch(frame.state, t);
+  const hardware = mocking && !frame.pill;
   // Only the hover peek carries the agenda: every other open state is
   // reporting on something the user just did, and decisions do not belong on
   // top of a report.
@@ -446,41 +470,36 @@ export default function NotchPanel({
 
   return (
     <div
-      className={`notch${view.open ? " notch-open" : ""}${frame.pill ? " notch-pill" : ""}${rows.length > 0 ? " notch-has-agenda" : ""}`}
+      className={`notch${view.open ? " notch-open" : ""}${frame.pill ? " notch-pill" : ""}${rows.length > 0 ? " notch-has-agenda" : ""}${view.open && mascot ? " notch-has-mascot" : ""}`}
       data-state={frame.state.kind}
       style={
-        collapsedWidth
-          ? ({ "--notch-collapsed": `${collapsedWidth}px` } as CSSProperties)
-          : undefined
+        {
+          ...(collapsedWidth ? { "--notch-collapsed": `${collapsedWidth}px` } : null),
+          ...(hardware ? { "--notch-cutout": `${MOCK_CUTOUT_PX}px` } : null),
+        } as CSSProperties
       }
     >
+      {/* Idle remains invisible, including while decisions are waiting. */}
+      {view.open && mascot && !mascotAway ? (
+        <NotchMascot
+          kind={frame.state.kind}
+          placement="panel"
+          levels={levels ?? flat}
+        />
+      ) : null}
       {view.open ? (
         <div className="notch-lip">
-          <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
+          {/* The mascot stands in for the cap; the lip text stays the
+              source of status. */}
+          {mascot ? null : (
+            <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
+          )}
           {/* No live region here: the lip TICKS ("Ingesting · 00:42"), so
               aria-live would re-announce every second, and the rows that
               matter (done/rejected) carry their own status/alert. */}
           {view.lip ? (
             <span className="notch-lip-label">{view.lip}</span>
           ) : null}
-        </div>
-      ) : mark !== null ? (
-        // Collapsed WITH work waiting: the smallest mark that can carry a
-        // number — the lit cap and the count, inside the 14px strip that
-        // peeks below the hardware cutout. With nothing waiting this branch
-        // is null and the surface draws NOTHING, which is the owner's
-        // original call (an always-visible attachment reads as a foreign
-        // widget); a decision nobody has made is the one thing worth breaking
-        // it for.
-        <div
-          className="notch-mark"
-          role="status"
-          aria-label={t.notch_waiting.replace("{n}", String(mark))}
-        >
-          <i aria-hidden className="notch-cap notch-cap-live" />
-          <span aria-hidden className="notch-mark-n">
-            {mark}
-          </span>
         </div>
       ) : null}
       {/* OUTSIDE the keyed body on purpose: `.notch-body` remounts on every
@@ -503,12 +522,14 @@ export default function NotchPanel({
             onCaptureCancel={onCaptureCancel}
             onCaptureVoice={onCaptureVoice}
             onCaptureOpen={onCaptureOpen}
+            onCapturedOpen={onCapturedOpen}
             onRecordStop={onRecordStop}
             onCapturePaste={onCapturePaste}
             levels={levels ?? flat}
           />
         </div>
       ) : null}
+      {hardware ? <i aria-hidden className="notch-hw" /> : null}
     </div>
   );
 }
@@ -552,9 +573,9 @@ function AgendaRow({
         // it. The row leaves on its own; there is nothing to acknowledge.
         <span
           role="status"
-          className={outcome === "done" ? "notch-ok" : "notch-warn"}
+          className={outcome === "done" ? "notch-ok" : outcome === "pending" ? "notch-muted" : "notch-warn"}
         >
-          {outcome === "done" ? t.notch_done : t.notch_agenda_dropped}
+          {outcome === "done" ? t.notch_done : outcome === "pending" ? t.st_loading : outcome === "failed" ? t.notch_failed : t.notch_agenda_dropped}
         </span>
       ) : (
         <>
@@ -600,6 +621,7 @@ function NotchBody({
   onCaptureCancel,
   onCaptureVoice,
   onCaptureOpen,
+  onCapturedOpen,
   onRecordStop,
   onCapturePaste,
   levels,
@@ -613,6 +635,7 @@ function NotchBody({
   onCaptureCancel?: () => void;
   onCaptureVoice?: () => void;
   onCaptureOpen?: () => void;
+  onCapturedOpen?: () => void;
   onRecordStop?: () => void;
   onCapturePaste?: (text: string) => boolean;
   levels: LevelHistory;
@@ -767,7 +790,7 @@ function NotchBody({
           />
           <div className="notch-hint">
             <span className="notch-mono">
-              {t.notch_capture_save ?? "⏎ daily note"}
+              {t.notch_capture_save ?? "⏎ today's note"}
             </span>
             <span className="notch-mono notch-hint-end">
               {t.notch_capture_voice ?? "⌥M voice"}
@@ -776,11 +799,25 @@ function NotchBody({
         </>
       );
     case "captured":
-      // Where it landed is the whole message — same green row shape as S6.
+      // Where it landed, then its Open — the done frame's shape (UX S39).
+      // Open waits for capture_note's answer: the line is what it lands on.
       return (
-        <div className="notch-row notch-ok" role="status">
-          <span className="notch-grow notch-path">{state.rel}</span>
-        </div>
+        <>
+          <div className="notch-row notch-ok" role="status">
+            <span className="notch-grow notch-path">{state.rel}</span>
+          </div>
+          {state.line ? (
+            <div className="notch-hint">
+              <button
+                type="button"
+                className="notch-key notch-key-bright"
+                onClick={onCapturedOpen}
+              >
+                {t.notch_done_open ?? "⏎ open"}
+              </button>
+            </div>
+          ) : null}
+        </>
       );
     case "recording":
       return (
@@ -856,6 +893,12 @@ function NotchBody({
             </span>
           </div>
         </>
+      );
+    case "failed":
+      return (
+        <div className="notch-row notch-warn" role="alert">
+          <span className="notch-grow">{state.summary}</span>
+        </div>
       );
   }
 }

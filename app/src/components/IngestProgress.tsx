@@ -13,9 +13,10 @@ import type { Strings } from "../lib/i18n";
 import { formatTicker } from "../lib/time";
 import { defaultSelection } from "../lib/planGate";
 import type { PlanItem } from "../lib/ingestPlan";
-import { useIngestStore } from "../stores/ingestStore";
-import type { IngestEvent } from "../stores/ingestStore";
+import { runElapsedMs, useIngestStore } from "../stores/ingestStore";
+import type { IngestEvent, IngestStage } from "../stores/ingestStore";
 import IngestMiniGraph from "./IngestMiniGraph";
+import { workflowLabel, type WorkflowStatus } from "../lib/workflowOutcome";
 
 // Only the tail of the capped 500-event feed is rendered. Rendering all 500
 // rows on every stream event was the ingest lag: 500 React elements rebuilt
@@ -51,6 +52,18 @@ const DECISION_FG: Record<string, string> = {
   NOOP: "var(--ink-3)",
 };
 
+/** A plan decision as the user reads it: 고침 / 새로 만듦 / 합침 / 이미 있음,
+ *  never the planner's op code (UX S14). An unknown code stays as it came. */
+export function decisionLabel(t: Strings, decision: string): string {
+  const labels: Record<string, string> = {
+    UPDATE: t.ing_dec_update,
+    ADD: t.ing_dec_add,
+    MERGE: t.ing_dec_merge,
+    NOOP: t.ing_dec_noop,
+  };
+  return labels[decision] ?? decision;
+}
+
 function describe(ev: IngestEvent): string {
   if (ev.kind === "tool") {
     const target = ev.detail ?? "";
@@ -62,12 +75,14 @@ function describe(ev: IngestEvent): string {
 
 export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
   const stage = useIngestStore((s) => s.stage);
+  const workflowStatus = useIngestStore((s) => s.workflowStatus);
   const events = useIngestStore((s) => s.events);
   const readCount = useIngestStore((s) => s.readCount);
   const writeCount = useIngestStore((s) => s.writeCount);
   const model = useIngestStore((s) => s.model);
   const startedAt = useIngestStore((s) => s.startedAt);
   const finishedAt = useIngestStore((s) => s.finishedAt);
+  const gateAt = useIngestStore((s) => s.gateAt);
   const candidates = useIngestStore((s) => s.candidates);
   const plan = useIngestStore((s) => s.plan);
   const cancelIngest = useIngestStore((s) => s.cancelIngest);
@@ -77,14 +92,20 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
     stage === "plan-gate" ||
     stage === "claude" ||
     stage === "indexing";
+  // Paused on the user's decision: cancel stays live, but nothing is being
+  // written, so it must not read (or pulse, or tick) as working (UX S35).
+  const waiting = stage === "plan-gate";
 
-  // 1 Hz elapsed ticker while the run is live.
+  // 1 Hz elapsed ticker while the run works; the gate holds it still.
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    if (!running) return;
+    if (!running || waiting) return;
+    // Catch up at once: `now` is from before the gate, so the first second
+    // after it would otherwise clamp to 0:00.
+    setNow(Date.now());
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [running]);
+  }, [running, waiting]);
 
   // Auto-scroll the feed to the newest entry.
   const feedRef = useRef<HTMLDivElement | null>(null);
@@ -94,24 +115,24 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
   }, [events.length]);
 
   const last = events.length > 0 ? events[events.length - 1] : null;
-  const currentAction = last ? describe(last) : t.ing_live_warmup;
+  const warmup = feedIdleLine(stage, t, workflowStatus);
+  const currentAction = last ? describe(last) : warmup;
   // Frozen at the final duration once the run ends — the panel stays up as
   // the run's result view.
-  const elapsedMs = running
-    ? startedAt
-      ? now - startedAt
-      : 0
-    : startedAt && finishedAt
-      ? finishedAt - startedAt
-      : 0;
-  const elapsed = formatTicker(elapsedMs);
-  const title = running
-    ? t.ing_live_title
-    : stage === "done"
-      ? t.ing_success_title
-      : stage === "cancelled"
-        ? t.ing_cancelled
-        : t.ing_chip_error;
+  const elapsed = formatTicker(
+    runElapsedMs({ stage, startedAt, finishedAt, gateAt }, now),
+  );
+  const title = waiting
+    ? t.ing_gate_title
+    : running
+      ? t.ing_live_title
+      : workflowStatus && workflowStatus !== "success"
+        ? workflowLabel(workflowStatus, t)
+      : stage === "done"
+        ? t.ing_success_title
+        : stage === "cancelled"
+          ? t.ing_cancelled
+          : t.ing_chip_error;
 
   const visibleEvents =
     events.length > FEED_ROWS ? events.slice(-FEED_ROWS) : events;
@@ -124,7 +145,7 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
     <div className="ingest-live">
       <div className="ingest-live-hero">
         <div
-          className={"ingest-orb" + (running ? "" : " idle")}
+          className={"ingest-orb" + (running && !waiting ? "" : " idle")}
           aria-hidden="true"
         >
           <span className="ingest-orb-ring r1" />
@@ -132,7 +153,10 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
           <span className="ingest-orb-core" />
         </div>
         <div className="ingest-live-headline">
-          <div className="ingest-live-title">{title}</div>
+          {/* At done and cancelled the page's card carries the title. */}
+          {pageCardCarriesTitle(stage) ? null : (
+            <div className="ingest-live-title">{title}</div>
+          )}
           <div
             className="ingest-live-action"
             title={currentAction}
@@ -141,10 +165,13 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
           >
             {currentAction}
           </div>
-          <div className="ingest-live-meta muted">
-            {model ? `${model} · ` : ""}
-            {elapsed}
-          </div>
+          {pageCardCarriesTitle(stage) ? null : (
+            <div className="ingest-live-meta muted">
+              {model ? `${model} · ` : ""}
+              {waiting ? `${t.ing_gate_paused} · ` : ""}
+              {elapsed}
+            </div>
+          )}
         </div>
         {running ? (
           <button
@@ -157,11 +184,12 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
         ) : null}
       </div>
 
+      {/* The decision goes first: it is the only thing waiting on the user. */}
+      {waiting && plan.length > 0 ? <PlanGateCard t={t} plan={plan} /> : null}
+
       <IngestMiniGraph t={t} />
 
-      {stage === "plan-gate" && plan.length > 0 ? (
-        <PlanGateCard t={t} plan={plan} />
-      ) : plan.length > 0 ? (
+      {waiting && plan.length > 0 ? null : plan.length > 0 ? (
         <div className="card" data-testid="ingest-plan" style={{ padding: "10px 12px" }}>
           <div className="section-title" style={{ fontSize: 13, marginBottom: 2 }}>
             <Icon name="sparkles" size={12} />{" "}
@@ -188,7 +216,7 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
                     color: DECISION_FG[p.decision] ?? "var(--ink-3)",
                   }}
                 >
-                  {p.decision}
+                  {decisionLabel(t, p.decision)}
                 </span>
                 <span style={{ minWidth: 0, flex: 1 }}>
                   {p.subject}
@@ -247,7 +275,7 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
         <div className="ingest-feed" ref={feedRef}>
           {events.length === 0 ? (
             <div className="muted" style={{ fontSize: 12 }}>
-              {t.ing_live_warmup}
+              {warmup}
             </div>
           ) : (
             <>
@@ -278,6 +306,21 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
   );
 }
 
+/** The page shows one card per terminal state; at done and cancelled that
+ *  card has the title, so the panel drops its own and the frozen ticker.
+ *  The terminal page cards carry their own workflow title. */
+export function pageCardCarriesTitle(stage: IngestStage): boolean {
+  return stage === "done" || stage === "cancelled" || stage === "error";
+}
+
+/** The live line (and empty feed) before any stream event. At the gate the
+ *  run waits on the user, so it says so: "Starting Claude…" would be false,
+ *  and a blank polite live region announces nothing. */
+export function feedIdleLine(stage: IngestStage, t: Strings, status?: WorkflowStatus | null): string {
+  if (status && status !== "success") return workflowLabel(status, t);
+  return stage === "plan-gate" ? t.ing_gate_waiting : t.ing_live_warmup;
+}
+
 // Plan gate card (mockup M4-b): the run is paused at stage "plan-gate" — one
 // checkbox per plan item (NOOP pre-unchecked, dimmed at 60% when off), primary
 // "apply {n}" resolves the gate with the reviewed selection, ghost "everything
@@ -286,13 +329,29 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
 function PlanGateCard({ t, plan }: { t: Strings; plan: PlanItem[] }): JSX.Element {
   const resolvePlanGate = useIngestStore((s) => s.resolvePlanGate);
   const skipPlanGate = useIngestStore((s) => s.skipPlanGate);
+  const sourceText = useIngestStore((s) => s.sourceText);
   const [sel, setSel] = useState<boolean[]>(() => defaultSelection(plan));
   const n = sel.filter(Boolean).length;
+  // What "apply all" applies: skipPlanGate's default selection.
+  const all = defaultSelection(plan).filter(Boolean).length;
+  // The run just paused on this card, usually below the page's other
+  // sections — bring it into view once. "nearest", not "start": aligning it
+  // to the top scrolled the rail (and its active step) under the sticky
+  // topbar, and no scroll margin helps with the hero between the two.
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    ref.current?.scrollIntoView({ block: "nearest" });
+  }, []);
 
   return (
-    <div className="card" data-testid="ingest-plan-gate" style={{ padding: "10px 12px" }}>
+    <div
+      ref={ref}
+      className="card"
+      data-testid="ingest-plan-gate"
+      style={{ padding: "10px 12px" }}
+    >
       <div className="section-title" style={{ fontSize: 13, marginBottom: 2 }}>
-        <Icon name="sparkles" size={12} /> {t.ingest_gate_title}
+        {t.ingest_gate_title}
       </div>
       {plan.some((p) => p.decision === "NOOP") ? (
         <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
@@ -331,7 +390,7 @@ function PlanGateCard({ t, plan }: { t: Strings; plan: PlanItem[] }): JSX.Elemen
                 color: DECISION_FG[p.decision] ?? "var(--ink-3)",
               }}
             >
-              {p.decision}
+              {decisionLabel(t, p.decision)}
             </span>
             <span style={{ minWidth: 0, flex: 1 }}>
               {p.subject}
@@ -351,9 +410,31 @@ function PlanGateCard({ t, plan }: { t: Strings; plan: PlanItem[] }): JSX.Elemen
           {t.ingest_gate_apply.replace("{n}", String(n))}
         </button>
         <button className="btn btn-ghost" onClick={skipPlanGate}>
-          {t.ingest_gate_all}
+          {t.ingest_gate_all.replace("{n}", String(all))}
         </button>
       </div>
+      {/* The form that held the text is hidden while the run is up; the
+          text stays here, folded, for checking the plan against it. */}
+      {sourceText.trim() ? (
+        <details className="intake-disclosure" style={{ marginTop: 10 }}>
+          <summary>{t.ing_gate_source}</summary>
+          <pre
+            // Scrolls when long; focusable so a keyboard can scroll it too.
+            tabIndex={0}
+            style={{
+              whiteSpace: "pre-wrap",
+              wordBreak: "break-word",
+              fontFamily: "inherit",
+              fontSize: 12.5,
+              margin: "8px 0 0",
+              maxHeight: 200,
+              overflow: "auto",
+            }}
+          >
+            {sourceText}
+          </pre>
+        </details>
+      ) : null}
     </div>
   );
 }

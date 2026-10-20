@@ -249,3 +249,38 @@ describe("bucketWeekly", () => {
     expect(r.days.length).toBeLessThan(60);
   });
 });
+
+// The Overview's arrangement lives in the same .myco/dashboards/ folder as the
+// boards, so the listing returns it too; New board used to save over any name.
+describe("board names", () => {
+  it("lists the default first and never the Overview's layout file", async () => {
+    const { boardNames } = await import("./board");
+    expect(boardNames(["mcp-daily", "overview-layout", "overview"])).toEqual([
+      "overview",
+      "mcp-daily",
+    ]);
+    expect(boardNames([])).toEqual(["overview"]);
+  });
+
+  it("New board opens a board that exists instead of emptying it", async () => {
+    const { newBoardAction } = await import("./board");
+    expect(newBoardAction("overview", ["overview", "plan"])).toBe("open");
+    expect(newBoardAction("plan", ["overview", "plan"])).toBe("open");
+    expect(newBoardAction("plan-b", ["overview", "plan"])).toBe("create");
+  });
+
+  it("New board refuses the layout file and names that are paths", async () => {
+    const { newBoardAction } = await import("./board");
+    for (const n of ["overview-layout", "a/b", "a\\b", "..", "x..y"]) {
+      expect(newBoardAction(n, ["overview"])).toBe("refuse");
+    }
+  });
+
+  it("a remembered active board that is the layout file opens the default", async () => {
+    const { storedBoard } = await import("./board");
+    expect(storedBoard("overview-layout")).toBe("overview");
+    expect(storedBoard(null)).toBe("overview");
+    expect(storedBoard("")).toBe("overview");
+    expect(storedBoard("plan")).toBe("plan");
+  });
+});

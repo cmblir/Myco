@@ -11,7 +11,7 @@ import { ipc } from "./ipc";
 import { useReflectStore } from "../stores/reflectStore";
 import { useVaultStore } from "../stores/vaultStore";
 
-/** Vault revision at the last SCHEDULED pass, per vault path. A reflect run
+/** Vault revision at the last successful scheduled pass, per vault path. A reflect run
  * (LLM or extractive) reads the whole link graph — repeating that every
  * interval against an unchanged vault is pure waste, so scheduled ticks skip
  * when nothing changed. Manual runs (the Overview button) bypass this. */
@@ -20,23 +20,33 @@ const lastTickRevision = new Map<string, number>();
 /** Run one reflect pass unless one is already in flight. The old
  * builtin-local pre-check is gone: that provider now runs the extractive
  * reflect variant (see reflectStore) instead of blocking. */
-export async function runReflectPass(): Promise<void> {
+export async function runReflectPass(): Promise<boolean> {
   const st = useReflectStore.getState();
+  const vault = useVaultStore.getState();
   // `applying`: runReflect refuses anyway, but skipping here keeps the tick
   // from burning a vault_revision read during a bulk apply.
-  if (st.stage === "running" || st.applying) return;
-  await useReflectStore.getState().runReflect();
+  if (!vault.currentVault || vault.isOpeningVault || st.stage === "running" || st.applying) return false;
+  await useReflectStore.getState().runReflect("automatic");
+  return useReflectStore.getState().stage === "done";
 }
 
 /** Scheduled-tick variant: skip when the vault hasn't changed since the last
  * scheduled pass (vault_revision is a stat-only hash — ~free). */
 export async function runReflectTick(): Promise<void> {
-  const path = useVaultStore.getState().currentVault?.path;
+  const vault = useVaultStore.getState();
+  const path = vault.currentVault?.path;
   if (!path) return;
-  const rev = await ipc.vaultRevision(path).catch(() => null);
+  const rev = await ipc.vaultRevision(path).catch(error => {
+    console.error("[reflect] revision read failed", error);
+    return null;
+  });
   if (rev !== null && lastTickRevision.get(path) === rev) return;
-  if (rev !== null) lastTickRevision.set(path, rev);
-  await runReflectPass();
+  const succeeded = await runReflectPass();
+  const current = useVaultStore.getState();
+  if (succeeded && rev !== null && current.currentVault?.path === path && current.vaultToken === vault.vaultToken) {
+    // Remember the input revision, so edits made during the pass trigger a retry.
+    lastTickRevision.set(path, rev);
+  }
 }
 
 /** React hook: drive runReflectPass on an interval while enabled. */
@@ -49,7 +59,7 @@ export function useAutoReflectScheduler(
     if (!enabled || !vaultPath || intervalMin <= 0) return;
     let cancelled = false;
     const tick = (): void => {
-      if (!cancelled) void runReflectTick();
+      if (!cancelled) void runReflectTick().catch(error => console.error("[reflect] scheduled pass failed", error));
     };
     // First kick rides AFTER the index updater's 180s launch catch-up
     // window, not 4s into boot: reflect's retrieval loads the ~400 MB embed

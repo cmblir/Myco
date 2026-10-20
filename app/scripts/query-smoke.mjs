@@ -1,4 +1,4 @@
-// Ask-intent-routing E2E (anti-hallucination). "What did I do recently?" must
+// Ask-intent-routing E2E (anti-hallucination). "Which notes did I edit recently?" must
 // be answered from git history (factual bullet list), NOT sent to the model
 // where a small local model confabulates. A normal topic question must still go
 // through the model path.
@@ -27,7 +27,7 @@ await page.locator(".side-nav .nav-item", { hasText: /^Ask$|질문|質問/ }).fi
 await page.waitForSelector(".input", { timeout: 20_000 });
 
 // --- Activity question → git-log answer (no model) ---
-await page.locator("input.input").first().fill("최근에 내가 한 일이 뭐야?");
+await page.locator(".ask-composer input.input").fill("최근에 수정한 노트는 뭐야?");
 await page.keyboard.press("Enter");
 await page.waitForFunction(
   () => /git 기록/.test(document.querySelector(".workspace")?.innerText || ""),
@@ -45,7 +45,7 @@ check(
 check("no hallucinated content", !/이뮤노테크|v24\.md|3PL/.test(answer));
 
 // --- Normal topic question still uses the model path (no git list) ---
-await page.locator("input.input").first().fill("어텐션이 뭐야?");
+await page.locator(".ask-composer input.input").fill("어텐션이 뭐야?");
 await page.keyboard.press("Enter");
 await page.waitForTimeout(1500);
 const all = await page.locator(".workspace").innerText();

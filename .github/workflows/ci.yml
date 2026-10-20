@@ -111,3 +111,22 @@ jobs:
           workspaces: app/src-tauri
       - name: tests
         run: cargo test
+
+  # Compile and test the native paths on both supported Mac architectures.
+  rust-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [macos-15, macos-15-intel]
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: tests
+        run: cargo test

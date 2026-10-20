@@ -6,6 +6,8 @@
 
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
+import MascotClip from "./MascotClip";
+import { SURFACE_CLIPS } from "../lib/mascotClips";
 
 const W = 640;
 const H = 220;
@@ -33,11 +35,14 @@ interface Pulse {
 export default function ThinkingGalaxy({
   pages,
   label,
+  elapsed,
 }: {
   /** Real vault page names to light up (sampled by the caller). */
   pages: string[];
   /** Status line under the canvas (e.g. "searching the vault…"). */
   label: string;
+  /** Actual time spent on the active Ask, without a completion estimate. */
+  elapsed?: string;
 }): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -169,11 +174,19 @@ export default function ThinkingGalaxy({
 
   return (
     <div className="thinking-galaxy" role="status" aria-label={label}>
-      <canvas
-        ref={canvasRef}
-        style={{ width: "100%", maxWidth: W, height: H, display: "block" }}
-      />
-      <div className="thinking-galaxy__label">{label}</div>
+      {/* MYCO thinks at the hub the pulses leave from. */}
+      <div className="thinking-galaxy__stage" style={{ maxWidth: W }}>
+        <canvas
+          ref={canvasRef}
+          style={{ width: "100%", height: H, display: "block" }}
+        />
+        <span className="thinking-galaxy__mascot">
+          <MascotClip {...SURFACE_CLIPS.askPending} />
+        </span>
+      </div>
+      <div className="thinking-galaxy__label">
+        {label}{elapsed ? <> · <span role="timer" aria-live="off">{elapsed}</span></> : null}
+      </div>
     </div>
   );
 }

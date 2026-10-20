@@ -19,7 +19,12 @@ export interface DragLive<T> {
 }
 
 export interface PointerDragMachine {
-  begin(id: string, x: number, y: number): void;
+  /** `held: false` (a finger) needs `hold()` before travel counts as a drag;
+   *  travel before it is a scroll and lets the press go. */
+  begin(id: string, x: number, y: number, held?: boolean): void;
+  /** The finger held still long enough: the press may now drag. False when
+   *  no press is pending (it was let go, or is already a drag). */
+  hold(): boolean;
   move(x: number, y: number): void;
   /** Drops on the current target (if any). Returns whether a drag was live —
    *  the caller uses it to swallow the click that follows pointerup. */
@@ -28,6 +33,10 @@ export interface PointerDragMachine {
   cancel(): boolean;
 }
 
+/** Pointer travel (px) before a press becomes a drag; below it, a click.
+ *  A long press (lib/longPress) cancels on the same travel. */
+export const DRAG_THRESHOLD = 4;
+
 export function createPointerDrag<T>(opts: {
   /** Pointer travel (px) before a press becomes a drag; below it, a click. */
   threshold?: number;
@@ -35,8 +44,8 @@ export function createPointerDrag<T>(opts: {
   onChange: (live: DragLive<T> | null) => void;
   onDrop: (id: string, target: T) => void;
 }): PointerDragMachine {
-  const threshold = opts.threshold ?? 4;
-  let pending: { id: string; x: number; y: number } | null = null;
+  const threshold = opts.threshold ?? DRAG_THRESHOLD;
+  let pending: { id: string; x: number; y: number; held: boolean } | null = null;
   let live: DragLive<T> | null = null;
 
   const finish = (): boolean => {
@@ -48,13 +57,22 @@ export function createPointerDrag<T>(opts: {
   };
 
   return {
-    begin(id, x, y) {
-      pending = { id, x, y };
+    begin(id, x, y, held = true) {
+      pending = { id, x, y, held };
       live = null;
+    },
+    hold() {
+      if (!pending) return false;
+      pending.held = true;
+      return true;
     },
     move(x, y) {
       if (pending) {
         if (Math.hypot(x - pending.x, y - pending.y) < threshold) return;
+        if (!pending.held) {
+          pending = null;
+          return;
+        }
         live = { id: pending.id, target: null };
         pending = null;
         opts.onChange(live);
@@ -86,19 +104,28 @@ export function dropTargetAt(x: number, y: number): string | null {
   );
 }
 
+/** How long a finger holds a card still before it lifts (UX S52). Shorter
+ *  than a menu's long press: here the hold is the start of a gesture. */
+export const HOLD_TO_DRAG_MS = 300;
+
 /// Wires the machine to window pointer events. Spread `start(id)` onto a
 /// draggable element's `onPointerDown`; mark drop zones with `data-drop`.
 /// `live` drives the `.is-dragging` / `.is-over` classes; `consumeClick()` in the
 /// source's onClick returns true when that click was really the end of a drag.
+/// A finger drags only after holding still HOLD_TO_DRAG_MS; a swipe before
+/// that scrolls the page. `held` names the card a finger holds, for its
+/// `.is-held` look (and `touch-action: none`).
 export function usePointerDrag(
   onDrop: (id: string, target: string) => void,
   enabled: boolean,
 ): {
   live: DragLive<string> | null;
+  held: string | null;
   start: (id: string) => (e: React.PointerEvent) => void;
   consumeClick: () => boolean;
 } {
   const [live, setLive] = useState<DragLive<string> | null>(null);
+  const [held, setHeld] = useState<string | null>(null);
   const wasDrag = useRef(false);
   const onDropRef = useRef(onDrop);
   onDropRef.current = onDrop;
@@ -112,9 +139,24 @@ export function usePointerDrag(
       onChange: setLive,
       onDrop: (dragId, target) => onDropRef.current(dragId, target),
     });
-    machine.begin(id, e.clientX, e.clientY);
+    const touch = e.pointerType === "touch";
+    machine.begin(id, e.clientX, e.clientY, !touch);
+    // Once held, the browser must not take the finger's travel as a scroll:
+    // touch-action is fixed when the touch starts, so a held drag cancels
+    // the scroll on touchmove instead.
+    const noScroll = (ev: TouchEvent): void => ev.preventDefault();
+    const holdTimer = touch
+      ? setTimeout(() => {
+          if (!machine.hold()) return;
+          setHeld(id);
+          window.addEventListener("touchmove", noScroll, { passive: false });
+        }, HOLD_TO_DRAG_MS)
+      : undefined;
 
     const off = (): void => {
+      clearTimeout(holdTimer);
+      setHeld(null);
+      window.removeEventListener("touchmove", noScroll);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       window.removeEventListener("pointercancel", onCancel);
@@ -145,5 +187,5 @@ export function usePointerDrag(
     return was;
   };
 
-  return { live, start, consumeClick };
+  return { live, held, start, consumeClick };
 }

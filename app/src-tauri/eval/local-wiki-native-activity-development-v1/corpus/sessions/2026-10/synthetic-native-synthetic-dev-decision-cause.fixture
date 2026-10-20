@@ -1,0 +1,11 @@
+---
+fixture_kind: synthetic_native_activity_development
+title: "Synthetic index filter rollback"
+created: "2026-10-04T09:00:00Z"
+last_updated: "2026-10-04T09:00:00Z"
+turn_metadata: [{"message_id":"D2A","original_role":"assistant","timestamp":"2026-10-02T10:00:00Z","phase":null},{"message_id":"D2B","original_role":"user","timestamp":"2026-10-03T10:00:00Z","phase":null}]
+---
+**Assistant:**
+제가 2026-10-01에 합성 색인 필터를 바꿨다고 보고합니다. 독립적인 실행 검증은 없습니다.
+**User:**
+합성 색인 필터 변경을 되돌렸어. 결과에서 항목이 빠져서 이 변경을 배포하지 않기로 결정했어.

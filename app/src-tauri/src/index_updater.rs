@@ -1,7 +1,7 @@
 //! Background actor that keeps the vector index up to date as wiki pages
 //! change, without making a write wait on re-embedding.
 //!
-//! A write calls `mark_dirty(rel)` — a non-blocking channel send, safe from
+//! A write calls `mark_dirty(root, rel)` — a non-blocking channel send, safe from
 //! any thread (the Task 3 filesystem watcher runs on its own non-tokio
 //! thread). The actor debounces a burst of dirty pages into one batch, then
 //! either re-embeds just those pages or, when the on-disk index predates the
@@ -11,71 +11,76 @@
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
+
+use crate::commands::AgentVaultSession;
 
 use tauri::Manager as _;
 
 use crate::commands::LocalLlmState;
-use crate::retrieval::{Bm25Cache, Bm25Index};
-use crate::vector_index::{is_cold, VectorCache, VectorStore};
+use crate::retrieval::Bm25Cache;
+#[cfg(test)]
+use crate::retrieval::Bm25Index;
+#[cfg(test)]
+use crate::vector_index::VectorStore;
+use crate::vector_index::{is_cold, VectorCache};
 
 /// A message for the actor. `Dirty` marks one vault-relative page path as
 /// needing re-embedding; `Rebind` points the actor at a (possibly new) vault
 /// root (e.g. on `open_vault`) and forces a batch so a stale/empty index gets
 /// picked up immediately rather than waiting for the next write.
 pub enum UpdateMsg {
-    Dirty(String),
-    Rebind(PathBuf),
+    Dirty(AgentVaultSession, String),
+    Rebind(AgentVaultSession),
+    Unbind,
+    Reconciled(AgentVaultSession),
+    #[cfg(feature = "native-index-probe")]
+    Probe(tokio::sync::oneshot::Sender<(Option<AgentVaultSession>, HashSet<String>)>),
 }
 
-/// Handle to the running actor. Cheap to clone: every call is a non-blocking
-/// send over an unbounded channel, so callers — including the Task 3
-/// filesystem watcher, which runs on its own non-tokio thread — never block
-/// or drop a message.
+fn same_origin(first: &AgentVaultSession, second: &AgentVaultSession) -> bool {
+    first.vault_path == second.vault_path && first.opening_token == second.opening_token
+}
+
+fn is_bound(binding: &Mutex<Option<AgentVaultSession>>, origin: &AgentVaultSession) -> bool {
+    binding.lock().is_ok_and(|current| {
+        current
+            .as_ref()
+            .is_some_and(|current| same_origin(current, origin))
+    })
+}
+
+/// Every queued path carries the root and opening that produced it.
 #[derive(Clone)]
 pub struct IndexUpdater {
     tx: tokio::sync::mpsc::UnboundedSender<UpdateMsg>,
+    binding: Arc<Mutex<Option<AgentVaultSession>>>,
+    watcher: Arc<Mutex<Option<notify::RecommendedWatcher>>>,
 }
 
 impl IndexUpdater {
-    /// Start the actor on the Tauri async runtime and return a handle to it.
     pub fn spawn(app: tauri::AppHandle) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<UpdateMsg>();
+        let binding = Arc::new(Mutex::new(None));
+        let watcher = Arc::new(Mutex::new(None));
+        let actor_binding = binding.clone();
+        let actor_watcher = watcher.clone();
         let watcher_tx = tx.clone();
         tauri::async_runtime::spawn(async move {
             const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
-            // A rebind's "*" full-reconcile batch waits much longer than an
-            // edit's debounce. At launch it used to fire 500 ms in — walking
-            // every wiki/sessions page and embedding any session backlog
-            // (loading the 411 MB embed model) exactly while the webview,
-            // shaders, and first render compete for the same cores and GPU.
-            // The catch-up is not urgent: searches read the on-disk index
-            // either way until it lands. The window also coalesces the two
-            // launch rebinds (lib.rs pre-arm + the frontend's open_vault)
-            // into one reconcile instead of two back-to-back full walks.
-            // 180s, not 30: the catch-up loads the ~400 MB embed model, and on
-            // a memory-pressed machine that landed exactly in the "app just
-            // launched" window the owner felt as a system-wide swap storm.
-            // A genuine search loads the model on demand regardless — this
-            // delay only moves background catch-up work off the launch spike.
+            // Defer launch catch-up while rendering and initial model work settle.
             const REBIND_CATCHUP_DELAY: std::time::Duration = std::time::Duration::from_secs(180);
-            let mut root: Option<PathBuf> = None;
-            // Held only for its Drop side effect: reassigning on `Rebind` stops
-            // the previous vault's watch. Never read directly, so both
-            // unused-variable lints are expected false positives here.
-            #[allow(unused_variables, unused_assignments)]
-            let mut watcher: Option<notify::RecommendedWatcher> = None;
+            let mut origin: Option<AgentVaultSession> = None;
             let mut dirty: HashSet<String> = Default::default();
             let mut consecutive_errors: u32 = 0;
             loop {
-                // Never busy-loops: with nothing dirty the timer arm parks
-                // forever and the select is driven purely by `rx.recv()`.
                 let timer = async {
                     if dirty.is_empty() {
                         std::future::pending::<()>().await
                     } else {
                         tokio::time::sleep(batch_delay(
                             &dirty,
-                            root.as_deref(),
+                            origin.as_ref().map(|origin| Path::new(&origin.vault_path)),
                             DEBOUNCE,
                             REBIND_CATCHUP_DELAY,
                         ))
@@ -83,101 +88,131 @@ impl IndexUpdater {
                     }
                 };
                 tokio::select! {
-                    msg = rx.recv() => match msg {
-                        None => break, // all senders dropped
-                        Some(UpdateMsg::Dirty(rel)) => {
-                            if should_index(&rel) {
+                    message = rx.recv() => match message {
+                        None => break,
+                        Some(UpdateMsg::Dirty(message_origin, rel)) => {
+                            if is_bound(&actor_binding, &message_origin)
+                                && origin.as_ref().is_some_and(|current| same_origin(current, &message_origin))
+                                && should_index(&rel)
+                            {
                                 dirty.insert(rel);
                             }
                         }
-                        Some(UpdateMsg::Rebind(new_root)) => {
-                            // Reassigning drops the old watcher (if any), which stops
-                            // the previous vault's watch before the new one starts.
-                            // `watcher` is held only for that Drop side effect and
-                            // never read, hence the lint override.
-                            #[allow(unused_assignments)]
-                            {
-                                watcher = start_watcher(&new_root, watcher_tx.clone());
-                            }
-                            dirty.clear(); // drop paths queued for the OLD vault — the
-                                           // "*" sentinel below reconciles the NEW one
-                                           // in full regardless
-                            root = Some(new_root);
-                            dirty.insert("*".into()); // force a full-reconcile batch
+                        Some(UpdateMsg::Rebind(new_origin)) => {
+                            if !is_bound(&actor_binding, &new_origin) { continue; }
+                            let next = start_watcher(&new_origin, watcher_tx.clone(), actor_binding.clone());
+                            if let Ok(mut watcher) = actor_watcher.lock() { *watcher = next; }
+                            dirty.clear();
+                            origin = Some(new_origin);
+                            dirty.insert("*".into());
+                            consecutive_errors = 0;
                         }
+                        Some(UpdateMsg::Unbind) => {
+                            if actor_binding.lock().is_ok_and(|binding| binding.is_none()) {
+                                origin = None;
+                                dirty.clear();
+                                consecutive_errors = 0;
+                            }
+                        }
+                        Some(UpdateMsg::Reconciled(message_origin)) => {
+                            if is_bound(&actor_binding, &message_origin)
+                                && origin.as_ref().is_some_and(|current| same_origin(current, &message_origin))
+                            { dirty.remove("*"); }
+                        }
+                        #[cfg(feature = "native-index-probe")]
+                        Some(UpdateMsg::Probe(reply)) => { let _ = reply.send((origin.clone(), dirty.clone())); }
                     },
                     _ = timer => {
-                        if let Some(r) = root.clone() {
-                            // Snapshot rather than drain: on failure we need to
-                            // keep exactly these paths dirty for a retry. Any
-                            // new `Dirty`/`Rebind` that arrives while this
-                            // `.await` runs buffers in the unbounded channel
-                            // (`rx.recv()` isn't polled until the next loop
-                            // iteration) rather than landing in `dirty`, so
-                            // removing exactly `batch` on success is correct.
-                            // Background embedding is deferrable by nature —
-                            // searches read the on-disk index either way — so
-                            // under system memory pressure the batch WAITS
-                            // rather than adding a transient multi-hundred-MB
-                            // compute buffer to a machine already evicting
-                            // pages. Interactive query embeds do not come
-                            // through this actor and are never gated.
-                            // `sysctl` is spawned via `spawn_blocking` rather
-                            // than inline: it is a process spawn + wait on the
-                            // actor's tokio worker thread, once per batch,
-                            // which is exactly the kind of stall that delays
-                            // unrelated IPC responses.
-                            if tauri::async_runtime::spawn_blocking(memory_pressured)
-                                .await
-                                .unwrap_or(false)
-                            {
-                                eprintln!(
-                                    "[index_updater] memory pressure — deferring {} dirty path(s)",
-                                    dirty.len()
-                                );
-                                tokio::time::sleep(std::time::Duration::from_secs(120)).await;
-                                continue;
+                        let Some(current) = origin.as_ref() else { dirty.clear(); continue; };
+                        if !is_bound(&actor_binding, current) { dirty.clear(); continue; }
+                        if crate::local_generation::busy() {
+                            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                            continue;
+                        }
+                        if tauri::async_runtime::spawn_blocking(memory_pressured).await.unwrap_or(false) {
+                            eprintln!("[index_updater] memory pressure — deferring {} dirty path(s)", dirty.len());
+                            tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                            continue;
+                        }
+                        let batch: Vec<String> = dirty.iter().cloned().collect();
+                        match process_batch(&app, current, batch.clone()).await {
+                            Ok(_) => {
+                                for path in &batch { dirty.remove(path); }
+                                consecutive_errors = 0;
                             }
-                            let batch: Vec<String> = dirty.iter().cloned().collect();
-                            match process_batch(&app, &r, batch.clone()).await {
-                                Ok(()) => {
-                                    for p in &batch {
-                                        dirty.remove(p);
-                                    }
-                                    consecutive_errors = 0;
-                                }
-                                Err(e) => {
-                                    consecutive_errors = (consecutive_errors + 1).min(6);
-                                    eprintln!("[index_updater] batch failed (will retry): {e}");
-                                    // Keep `dirty` so the batch is retried next
-                                    // cycle; back off so a persistent error
-                                    // (e.g. the embed model won't load) can't
-                                    // spin every 500ms.
-                                    tokio::time::sleep(std::time::Duration::from_millis(
-                                        500u64 << consecutive_errors,
-                                    ))
-                                    .await;
-                                }
+                            Err(error) => {
+                                consecutive_errors = (consecutive_errors + 1).min(6);
+                                eprintln!("[index_updater] batch failed (will retry): {error}");
+                                tokio::time::sleep(std::time::Duration::from_millis(500u64 << consecutive_errors)).await;
                             }
-                        } else {
-                            dirty.clear(); // no vault bound yet — a `Dirty` before the
-                                            // first `Rebind` is intentionally dropped
                         }
                     }
                 }
             }
         });
-        Self { tx }
+        Self {
+            tx,
+            binding,
+            watcher,
+        }
     }
 
-    /// Mark one vault-relative path dirty. Non-blocking; safe from any thread.
-    pub fn mark_dirty(&self, rel: impl Into<String>) {
-        let _ = self.tx.send(UpdateMsg::Dirty(rel.into()));
+    /// The caller's root is required; a write to a closed or other vault is ignored.
+    pub fn mark_dirty(&self, root: &Path, rel: impl Into<String>) {
+        let origin = self.binding.lock().ok().and_then(|binding| {
+            binding
+                .as_ref()
+                .filter(|origin| Path::new(&origin.vault_path) == root)
+                .cloned()
+        });
+        if let Some(origin) = origin {
+            let _ = self.tx.send(UpdateMsg::Dirty(origin, rel.into()));
+        }
     }
 
-    /// Point the actor at a (possibly new) vault root.
-    pub fn rebind(&self, root: PathBuf) {
-        let _ = self.tx.send(UpdateMsg::Rebind(root));
+    pub fn rebind(&self, origin: AgentVaultSession) {
+        if let Ok(mut binding) = self.binding.lock() {
+            *binding = Some(origin.clone());
+        }
+        // Stop old callbacks now, even while a model batch or backoff is pending.
+        if let Ok(mut watcher) = self.watcher.lock() {
+            watcher.take();
+        }
+        let _ = self.tx.send(UpdateMsg::Rebind(origin));
+    }
+
+    pub fn unbind(&self) {
+        if let Ok(mut binding) = self.binding.lock() {
+            *binding = None;
+        }
+        if let Ok(mut watcher) = self.watcher.lock() {
+            watcher.take();
+        }
+        let _ = self.tx.send(UpdateMsg::Unbind);
+    }
+
+    #[cfg(feature = "native-index-probe")]
+    pub(crate) fn enqueue_probe_dirty(&self, origin: AgentVaultSession, rel: &str) {
+        let _ = self.tx.send(UpdateMsg::Dirty(origin, rel.into()));
+    }
+
+    #[cfg(feature = "native-index-probe")]
+    pub(crate) fn watcher_is_stopped_for_probe(&self) -> bool {
+        self.watcher.lock().unwrap().is_none()
+    }
+
+    #[cfg(feature = "native-index-probe")]
+    pub(crate) async fn probe_state(
+        &self,
+    ) -> Result<(Option<AgentVaultSession>, HashSet<String>), String> {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        self.tx
+            .send(UpdateMsg::Probe(reply))
+            .map_err(|_| "index actor stopped")?;
+        tokio::time::timeout(std::time::Duration::from_secs(10), result)
+            .await
+            .map_err(|_| "index actor probe timed out")?
+            .map_err(|_| "index actor stopped".into())
     }
 }
 
@@ -317,12 +352,48 @@ fn bm25_is_incomplete(dense_page_count: usize, bm25_page_count: usize) -> bool {
     dense_page_count > 0 && bm25_page_count < dense_page_count
 }
 
+/// Read the entire dirty batch before any embedding checkpoint can publish.
+fn read_dirty_pages(
+    root: &Path,
+    batch: Vec<String>,
+) -> Result<Vec<(String, Option<String>)>, String> {
+    // A missing/unreadable vault is never proof that all dirty pages were
+    // deleted. Confirm the root before classifying individual missing paths.
+    crate::vault::vault_entries_checked(root)
+        .map_err(|error| format!("read index vault: {error}"))?;
+    batch
+        .into_iter()
+        .filter(|rel| should_index(rel))
+        .map(|rel| {
+            let abs = crate::vault::confine_delete_path(root, &root.join(&rel).to_string_lossy())
+                .map_err(|error| format!("inspect index page {rel}: {error}"))?;
+            let content = match std::fs::metadata(&abs) {
+                Ok(metadata) if metadata.is_file() => Some(
+                    std::fs::read_to_string(&abs)
+                        .map_err(|e| format!("read index page {rel}: {e}"))?,
+                ),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(format!("inspect index page {rel}: {error}")),
+                Ok(_) => return Err(format!("index page is not a regular file: {rel}")),
+            };
+            Ok((rel, content))
+        })
+        .collect()
+}
+
 /// Top-level trees the watcher attaches to and the incremental path accepts —
 /// kept in lockstep with `collect_wiki_pages`'s walk (`wiki/`, `sessions/`,
-/// `daily/`, `weekly/`, `monthly/`) so a change the reindex would pick up is also caught by the
-/// fast incremental path instead of waiting for the next reconcile. `raw/`
-/// (immutable) and everything else is never indexed.
-const WATCHED_TREES: [&str; 5] = ["wiki", "sessions", "daily", "weekly", "monthly"];
+/// `daily/`, `weekly/`, `monthly/`, `raw/conversations/`) so a change the
+/// reindex would pick up is also caught by the fast incremental path.
+/// Conversation originals are read only; the rest of `raw/` is not indexed.
+const WATCHED_TREES: [&str; 6] = [
+    "wiki",
+    "sessions",
+    "daily",
+    "weekly",
+    "monthly",
+    "raw/conversations",
+];
 
 /// Whether vault-relative `rel` falls under one of `WATCHED_TREES`.
 fn in_watched_tree(rel: &str) -> bool {
@@ -356,8 +427,7 @@ fn should_index(rel: &str) -> bool {
     rel.ends_with(".md") && in_watched_tree(rel) && !is_cold(rel)
 }
 
-/// Start watching `root`'s `WATCHED_TREES` (`wiki/`, `sessions/`, `daily/`,
-/// `weekly/`)
+/// Start watching `root`'s `WATCHED_TREES`
 /// for filesystem changes, marking each changed markdown page dirty via
 /// `tx`. Returns `None` only if the watch backend itself couldn't be
 /// created. A tree that doesn't exist under this vault root is skipped
@@ -368,29 +438,42 @@ fn should_index(rel: &str) -> bool {
 /// unbounded, non-blocking, thread-safe send, so it never blocks that thread
 /// or drops an event.
 fn start_watcher(
-    root: &Path,
+    origin: &AgentVaultSession,
     tx: tokio::sync::mpsc::UnboundedSender<UpdateMsg>,
+    binding: Arc<Mutex<Option<AgentVaultSession>>>,
 ) -> Option<notify::RecommendedWatcher> {
     use notify::{RecursiveMode, Watcher};
-    let root_buf = root.to_path_buf();
-    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
-        Ok(ev) => {
-            for p in ev.paths {
-                if let Some(rel) = wiki_rel_of(&root_buf, &p) {
-                    let _ = tx.send(UpdateMsg::Dirty(rel));
-                }
+    let origin = origin.clone();
+    let root = PathBuf::from(&origin.vault_path);
+    let callback_root = root.clone();
+    let mut watcher =
+        match notify::recommended_watcher(move |result: notify::Result<notify::Event>| {
+            if !is_bound(&binding, &origin) {
+                return;
             }
-        }
-        Err(e) => eprintln!("[index_updater] watch error: {e}"),
-    })
-    .ok()?;
-    for tree in WATCHED_TREES {
-        let dir = root.join(tree);
-        if dir.is_dir() {
-            w.watch(&dir, RecursiveMode::Recursive).ok()?;
-        }
+            match result {
+                Ok(event) => {
+                    for path in event.paths {
+                        if let Some(rel) = wiki_rel_of(&callback_root, &path) {
+                            let _ = tx.send(UpdateMsg::Dirty(origin.clone(), rel));
+                        }
+                    }
+                }
+                Err(error) => eprintln!("[index_updater] watch error: {error}"),
+            }
+        }) {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                eprintln!("[index_updater] cannot create watcher: {error}");
+                return None;
+            }
+        };
+    // Watch the root so optional trees created after binding are observed too.
+    if let Err(error) = watcher.watch(&root, RecursiveMode::Recursive) {
+        eprintln!("[index_updater] cannot watch vault: {error}");
+        return None;
     }
-    Some(w)
+    Some(watcher)
 }
 
 /// Bring the index for `root` up to date with `batch` (the paths that went
@@ -419,158 +502,306 @@ fn start_watcher(
 /// changed, so a rebind onto an already-current index costs a walk plus a
 /// hash check per page but never forces a save or resets the
 /// semantic-edge cache.
-async fn process_batch(
+pub(crate) async fn process_batch(
     app: &tauri::AppHandle,
-    root: &Path,
+    origin: &AgentVaultSession,
     batch: Vec<String>,
-) -> Result<(), String> {
-    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let bm25_path = Bm25Index::path_for(&root.to_string_lossy())?;
-    // Both loads are synchronous multi-MB reads + decodes (7.7 MB `.mxv`,
-    // 6.3 MB `.mxb` on the owner's vault) and this runs inside a
-    // `tauri::async_runtime::spawn` task, so doing them inline blocked a tokio
-    // worker and delayed unrelated IPC responses. Off to the blocking pool.
-    //
-    // BM25 has no model field and is never wiped by `ensure_model` below: it
-    // is derived from raw chunk text, not embedding geometry, so it stays
-    // valid across an embed-model migration. Re-upserting every page during
-    // the reconcile pass a stale store forces is what keeps it correct then
-    // — not a wipe.
-    let (mut store, mut bm25) = {
-        let (ip, bp) = (index_path.clone(), bm25_path.clone());
-        tauri::async_runtime::spawn_blocking(move || (VectorStore::load(&ip), Bm25Index::load(&bp)))
+) -> Result<usize, String> {
+    build_index(
+        app,
+        origin,
+        batch,
+        "builtin-local",
+        crate::local_llm::BUILTIN_EMBED_MODEL,
+        false,
+    )
+    .await
+}
+
+pub(crate) async fn reindex(
+    app: &tauri::AppHandle,
+    origin: &AgentVaultSession,
+    provider: &str,
+    model: &str,
+) -> Result<usize, String> {
+    build_index(app, origin, vec!["*".into()], provider, model, true).await
+}
+
+async fn build_index(
+    app: &tauri::AppHandle,
+    origin: &AgentVaultSession,
+    batch: Vec<String>,
+    provider: &str,
+    model: &str,
+    progress: bool,
+) -> Result<usize, String> {
+    let _publisher = crate::index_publication::PUBLISHER.lock().await;
+    let vault = app.state::<crate::commands::VaultRoot>();
+    vault.with_origin(origin, |_| Ok(()))?;
+    let root = PathBuf::from(&origin.vault_path);
+    let load_root = root.clone();
+    let mut pair =
+        tauri::async_runtime::spawn_blocking(move || crate::index_publication::load(&load_root))
             .await
-            .map_err(|e| format!("index load join: {e}"))?
-    };
-    // Snapshot once, same spirit as `store.hashes_by_page()` below: lets
-    // `embed_one_page` detect "BM25 doesn't have this page yet" (e.g.
-    // bootstrapping a fresh/dropped `.mxb` against an already-current
-    // `.mxv`, where every page's dense side skips via the content-hash
-    // match) without an O(n) scan per page.
-    let bm25_pages = bm25.pages();
-    let model_id = format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL);
-
-    let stale = index_is_stale(&store.model);
-    // A lexical index with fewer pages than the dense store — empty (never
-    // built) or partial (a checkpointed-then-aborted bootstrap) — cannot be
-    // trusted: see `bm25_is_incomplete` and the comment on
-    // `reconcile_requested` for why a partial `.mxb` is actively harmful,
-    // not just incomplete.
-    let bm25_incomplete = bm25_is_incomplete(store.indexed_pages(), bm25_pages.len());
-    let reconcile = reconcile_requested(&batch, stale, bm25_incomplete);
+            .map_err(|error| format!("index load join: {error}"))??;
+    let signature = crate::commands::embedding_index_signature(app, provider, model).await?;
+    let model_id = crate::commands::embedding_model_id(provider, model)?;
+    let stale_model =
+        if provider == "builtin-local" && model == crate::local_llm::BUILTIN_EMBED_MODEL {
+            index_is_stale(&pair.store.model)
+        } else {
+            pair.store.model != model_id
+        };
+    let stale = stale_model || pair.store.signature != signature;
+    let bm25_pages = pair.lexical.pages();
+    let reconcile = reconcile_requested(
+        &batch,
+        stale,
+        bm25_is_incomplete(pair.store.indexed_pages(), bm25_pages.len()),
+    );
     if stale {
-        // First index, or a migration to the current model: wipe so the
-        // reconcile pass below re-embeds against the new geometry rather
-        // than trying to reconcile a batch against records that no longer
-        // match it. BM25 is deliberately NOT wiped here (see the comment on
-        // `bm25` above) — only the vector store is model-specific.
-        store.ensure_model(&model_id);
+        pair.store.ensure_signature(&model_id, &signature);
     }
-
-    let mut changed = false;
-    if reconcile {
-        let existing = store.hashes_by_page(); // empty right after a wipe
-        let pages = crate::commands::collect_wiki_pages(root);
-        for (rel, stem, content) in &pages {
-            let llm = app.state::<LocalLlmState>();
+    let pages = if reconcile {
+        crate::commands::collect_wiki_pages_checked(&root)?
+            .into_iter()
+            .map(|(rel, stem, content)| (rel, stem, Some(content)))
+            .collect::<Vec<_>>()
+    } else {
+        read_dirty_pages(&root, batch.clone())?
+            .into_iter()
+            .map(|(rel, content)| {
+                let stem = Path::new(&rel)
+                    .file_stem()
+                    .and_then(|stem| stem.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                (rel, stem, content)
+            })
+            .collect()
+    };
+    #[cfg(feature = "native-index-probe")]
+    crate::index_publication::probe_hooks::after_scan(&root).await;
+    let existing = pair.store.hashes_by_page();
+    let mut changed = stale || pair.generation == 0;
+    let mut embedded = 0;
+    let started = std::time::Instant::now();
+    for (position, (rel, stem, content)) in pages.iter().enumerate() {
+        vault.with_origin(origin, |_| Ok(()))?;
+        emit_progress(app, progress, position, pages.len(), rel, false);
+        if let Some(content) = content {
             let outcome = crate::commands::embed_one_page(
                 app,
-                &llm,
-                "builtin-local",
-                crate::local_llm::BUILTIN_EMBED_MODEL,
+                &app.state::<LocalLlmState>(),
+                provider,
+                model,
                 rel,
                 stem,
                 content,
                 &existing,
-                &mut store,
-                &mut bm25,
+                &mut pair.store,
+                &mut pair.lexical,
                 &bm25_pages,
+                origin,
             )
             .await?;
             changed |= outcome.changed;
-        }
-        let present: HashSet<String> = pages.into_iter().map(|(r, _, _)| r).collect();
-        changed |= store.prune(&present) > 0;
-        changed |= bm25.prune(&present) > 0;
-    } else {
-        let to_process: Vec<String> = batch.into_iter().filter(|r| should_index(r)).collect();
-        let existing = store.hashes_by_page();
-        for rel in to_process {
-            let abs = root.join(&rel);
-            if abs.is_file() {
-                let content = std::fs::read_to_string(&abs).unwrap_or_default();
-                let stem = Path::new(&rel)
-                    .file_stem()
-                    .and_then(|s| s.to_str())
-                    .unwrap_or("")
-                    .to_string();
-                let llm = app.state::<LocalLlmState>();
-                let outcome = crate::commands::embed_one_page(
-                    app,
-                    &llm,
-                    "builtin-local",
-                    crate::local_llm::BUILTIN_EMBED_MODEL,
-                    &rel,
-                    &stem,
-                    &content,
-                    &existing,
-                    &mut store,
-                    &mut bm25,
-                    &bm25_pages,
-                )
-                .await?;
-                changed |= outcome.changed;
-            } else {
-                store.upsert_page(&rel, "", Vec::new()); // deleted → drop its records
-                bm25.upsert_page(&rel, "", &[]); // upsert with no chunks == delete, same as store
-                changed = true;
-            }
+            embedded += usize::from(outcome.embedded);
+            emit_progress(
+                app,
+                progress,
+                position + 1,
+                pages.len(),
+                rel,
+                outcome.embedded,
+            );
+        } else {
+            pair.store.upsert_page(rel, "", Vec::new())?;
+            pair.lexical.upsert_page(rel, "", &[]);
+            changed = true;
         }
     }
-
-    // `VectorCache::put` resets the semantic-edge cache, so only pay for a
-    // save (and that reset) when something actually changed — a rebind onto
-    // an already-current index should walk + hash-check every page for
-    // free, not force every `open_vault` to needlessly recompute edges.
-    //
-    // Both `.mxv` and `.mxb` are saved under this one `changed` flag, which
-    // either index can set alone above — `changed` covers a BM25-only
-    // bootstrap update (dense already current, lexical catching up) just as
-    // much as a normal lockstep re-embed of both. `bm25.save` runs FIRST and
-    // `store.save` second — deliberately, not arbitrarily: the retry
-    // decision on the next batch is gated on `store`'s on-disk content
-    // hashes (`hashes_by_page`), not on bm25's. If `.mxv` were saved first
-    // and `.mxb` then failed, a retry would see the new hashes already on
-    // disk, skip re-embedding those pages entirely, and never re-upsert
-    // BM25 for them — a permanent drift. Saving `.mxb` first means any
-    // failure there aborts via `?` before `.mxv` is written, so the next
-    // retry still sees stale hashes, re-embeds, and re-upserts both indexes.
-    // A failed `.mxb` save surfaces as a batch error, retried with backoff
-    // by the caller, exactly like a failed `store.save` already does.
-    //
-    // Both saves are multi-MB encodes + writes, off the tokio worker for the
-    // same reason as the loads above; the indexes come back so the caches can
-    // still be primed with them.
+    if reconcile {
+        let present = pages
+            .iter()
+            .map(|(rel, _, _)| rel.clone())
+            .collect::<HashSet<_>>();
+        changed |= pair.store.prune(&present) > 0;
+        changed |= pair.lexical.prune(&present) > 0;
+    }
+    let indexed = pair.store.indexed_pages();
+    if crate::commands::embedding_index_signature(app, provider, model).await? != signature {
+        return Err("embedding representation changed before index publication".into());
+    }
     if changed {
-        let (ip, bp) = (index_path.clone(), bm25_path.clone());
-        let (bm25, store) = tauri::async_runtime::spawn_blocking(
-            move || -> Result<(Bm25Index, VectorStore), String> {
-                bm25.save(&bp)?;
-                store.save(&ip)?;
-                Ok((bm25, store))
-            },
-        )
+        pair.generation = pair
+            .generation
+            .checked_add(1)
+            .ok_or("index generation exhausted")?;
+        let prepare_root = root.clone();
+        let (pair, prepared) = tauri::async_runtime::spawn_blocking(move || {
+            let prepared = crate::index_publication::PreparedPair::prepare(&prepare_root, &pair)?;
+            Ok::<_, String>((pair, prepared))
+        })
         .await
-        .map_err(|e| format!("index save join: {e}"))??;
-        app.state::<Bm25Cache>().put(&bm25_path, bm25);
-        app.state::<VectorCache>().put(&index_path, store);
+        .map_err(|error| format!("index stage join: {error}"))??;
+        if crate::commands::embedding_index_signature(app, provider, model).await? != signature {
+            return Err("embedding representation changed while staging index publication".into());
+        }
+        let path = vault.with_origin(origin, |_| {
+            validate_snapshot(&root, &pages, reconcile, &batch)?;
+            prepared.commit()
+        })?;
+        app.state::<VectorCache>().put(&path, pair.store)?;
+        app.state::<Bm25Cache>().put_checked(&path, pair.lexical)?;
+    } else {
+        vault.with_origin(origin, |_| {
+            validate_snapshot(&root, &pages, reconcile, &batch)
+        })?;
+    }
+    crate::perf::log(
+        "index_batch",
+        &[
+            ("total_ms", crate::perf::ms(started.elapsed())),
+            ("pages", pages.len() as f64),
+            ("embedded_pages", embedded as f64),
+            ("indexed_pages", indexed as f64),
+        ],
+    );
+    if reconcile {
+        if let Some(updater) = crate::INDEX_UPDATER.get() {
+            let _ = updater.tx.send(UpdateMsg::Reconciled(origin.clone()));
+        }
+    }
+    Ok(indexed)
+}
+
+fn validate_snapshot(
+    root: &Path,
+    pages: &[(String, String, Option<String>)],
+    reconcile: bool,
+    batch: &[String],
+) -> Result<(), String> {
+    let mut current = if reconcile {
+        crate::commands::collect_wiki_pages_checked(root)?
+            .into_iter()
+            .map(|(rel, _, content)| (rel, Some(content)))
+            .collect::<Vec<_>>()
+    } else {
+        read_dirty_pages(root, batch.to_vec())?
+    };
+    current.sort_by(|first, second| first.0.cmp(&second.0));
+    let mut captured = pages
+        .iter()
+        .map(|(rel, _, content)| (rel.clone(), content.clone()))
+        .collect::<Vec<_>>();
+    captured.sort_by(|first, second| first.0.cmp(&second.0));
+    if current != captured {
+        return Err("indexed sources changed during the build; retry required".into());
     }
     Ok(())
+}
+
+fn emit_progress(
+    app: &tauri::AppHandle,
+    enabled: bool,
+    done: usize,
+    total: usize,
+    page: &str,
+    embedded: bool,
+) {
+    if enabled {
+        use tauri::Emitter;
+        if let Err(error) = app.emit(
+            "reindex-progress",
+            crate::commands::ReindexProgress {
+                done,
+                total,
+                page: page.into(),
+                embedded,
+            },
+        ) {
+            eprintln!("[index_updater] progress event failed: {error}");
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn checked_dirty_batch_distinguishes_content_from_confirmed_missing_page() {
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::create_dir(vault.path().join("wiki")).unwrap();
+        std::fs::write(vault.path().join("wiki/note.md"), "synthetic note").unwrap();
+        let pages = read_dirty_pages(
+            vault.path(),
+            vec!["wiki/note.md".into(), "wiki/deleted.md".into()],
+        )
+        .unwrap();
+        assert_eq!(pages[0].1.as_deref(), Some("synthetic note"));
+        assert_eq!(pages[1].1, None);
+    }
+
+    #[test]
+    fn checked_dirty_batch_rejects_a_missing_vault_root() {
+        let vault = tempfile::tempdir().unwrap();
+        let result = read_dirty_pages(&vault.path().join("missing"), vec!["wiki/note.md".into()]);
+        assert!(result.is_err(), "a missing vault is not a deleted page");
+    }
+
+    #[test]
+    fn checked_dirty_batch_rejects_a_directory_in_place_of_a_page() {
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(vault.path().join("wiki/note.md")).unwrap();
+        assert!(read_dirty_pages(vault.path(), vec!["wiki/note.md".into()]).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn checked_dirty_batch_stat_failure_preserves_the_indexed_page() {
+        let vault = tempfile::tempdir().unwrap();
+        let wiki = vault.path().join("wiki");
+        std::fs::create_dir(&wiki).unwrap();
+        std::fs::write(wiki.join("note.md"), "synthetic note").unwrap();
+        let mut store = VectorStore::default();
+        store
+            .upsert_page("wiki/note.md", "note", vec![(1, vec![1.0, 0.0])])
+            .unwrap();
+        let mut bm25 = Bm25Index::new();
+        bm25.upsert_page("wiki/note.md", "note", &["synthetic note".into()]);
+        let denied = crate::vault::scan_tests::DeniedDirectory::new(&wiki);
+        let result = read_dirty_pages(vault.path(), vec!["wiki/note.md".into()]);
+        if let Ok(pages) = &result {
+            for (rel, content) in pages {
+                if content.is_none() {
+                    store.upsert_page(rel, "", Vec::new()).unwrap();
+                    bm25.upsert_page(rel, "", &[]);
+                }
+            }
+        }
+        drop(denied);
+        assert!(
+            result.is_err(),
+            "stat denial must not authorize index deletion"
+        );
+        assert_eq!(store.indexed_pages(), 1);
+        assert!(bm25.pages().contains("wiki/note.md"));
+    }
+
+    #[test]
+    fn checked_dirty_batch_read_failure_aborts_before_any_publication() {
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::create_dir(vault.path().join("wiki")).unwrap();
+        std::fs::write(vault.path().join("wiki/good.md"), "synthetic note").unwrap();
+        std::fs::write(vault.path().join("wiki/bad.md"), [0xff]).unwrap();
+        assert!(read_dirty_pages(
+            vault.path(),
+            vec!["wiki/good.md".into(), "wiki/bad.md".into()],
+        )
+        .is_err());
+    }
 
     #[test]
     fn stale_detection_matches_current_model() {
@@ -878,7 +1109,14 @@ mod tests {
     fn watched_trees_cover_wiki_sessions_and_both_digest_layers() {
         assert_eq!(
             WATCHED_TREES,
-            ["wiki", "sessions", "daily", "weekly", "monthly"]
+            [
+                "wiki",
+                "sessions",
+                "daily",
+                "weekly",
+                "monthly",
+                "raw/conversations"
+            ]
         );
     }
 

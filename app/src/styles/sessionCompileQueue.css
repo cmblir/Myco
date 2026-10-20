@@ -1,0 +1,41 @@
+.session-compile-queue {
+  min-width: 0;
+  margin-top: 1rem;
+  overflow-wrap: anywhere;
+}
+.session-compile-queue__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+.session-compile-queue__header h3 {
+  margin: 0;
+}
+.session-compile-queue button,
+.session-compile-queue summary {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+.session-compile-queue summary {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.session-compile-queue summary:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: 3px;
+}
+.session-compile-queue__rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.session-compile-queue__rows > li {
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--line);
+}
+.session-compile-queue__rows p {
+  margin: 0.375rem 0;
+}

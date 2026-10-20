@@ -1,32 +1,35 @@
 // Full-tier ingest execution (Phase B, Task 3). The distill gate's ontology
-// admission pass (Rust `ontology::admit`, via `scan`) tags some `_inbox/`/
-// `raw/` items `Tier::Full` — worth a real LLM ingest, not just a one-line
+// admission pass (Rust `ontology::admit`, via `scan`) tags some items
+// `Tier::Full` — worth a real LLM ingest, not just a one-line
 // digest. This module drains that ledger through the SAME prompt + provider
 // machinery interactive Ingest uses (`INGEST_PROMPT` + `runIngestProvider`,
 // both exported from ingestStore.ts) rather than a second hand-maintained
 // implementation, budgeted so one automatic pass cannot run away with LLM
 // spend.
 //
-// This runs headless — no Zustand store, no stage UI, no `claude-stream`
-// event listener — so it always uses non-streaming providers. anthropic-cli
-// therefore calls `ipc.claudeRun` (the blocking variant `chat.ts`'s query
-// path also uses) directly instead of `runIngestProvider`, which does not
-// cover that provider — see `runIngestProvider`'s own doc comment for why.
+// Headless providers receive the original Compilation grant; unavailable
+// transports remain pending instead of bypassing the native admission.
 
-import { ipc } from "./ipc";
-import { getActiveModel } from "./chat";
+import { ipc, type AgentVaultSession, type SessionCompileContext, type SessionCompileStepResult } from "./ipc";
+import type { RoleSnapshot, RoleUsage } from "./modelRoles";
 import { stripFrontmatter } from "./markdown";
 import { loadProfile } from "./profile";
-import { shouldPromote } from "./redaction";
 import { INGEST_PROMPT, runIngestProvider } from "../stores/ingestStore";
+import { sha256 } from "./tidyRun";
+import { log } from "./log";
+import { sessionIdentity } from "./sessionIdentity";
+import { sessionTitle } from "./sessionTitle";
+import { runNativeSessionCompile } from "./sessionCompileIO";
+import { useUIStore } from "../stores/uiStore";
+import { WorkflowOperationError, workflowIssue, workflowStatus, type WorkflowProgress, type WorkflowIssue } from "./workflowOutcome";
 
-export interface FullTierOutcome {
+export interface FullTierOutcome extends WorkflowProgress {
   ingested: number;
   skipped: "no-provider" | "nothing" | null;
   errors: string[];
-  /** Q4 item 13 — sources left waiting in `_inbox/` because the redaction
-   *  scan flagged them (secrets always; PII when quarantine is on). */
-  held: number;
+  sourcesPending?: number;
+  /** Confirmed persisted session artifacts, independent of compiler success. */
+  publishedSources?: number;
 }
 
 // Fallback llm_ingest_budget when getDistillConfig is unavailable — mirrors
@@ -51,79 +54,95 @@ function stemOf(rel: string): string {
   return rel.split("/").pop()!.replace(/\.md$/, "");
 }
 
+/** DTO consistency only; native admission and each use prove authority. */
+function checkedCompilationRole(origin: AgentVaultSession, role: RoleSnapshot, usage: RoleUsage): RoleSnapshot {
+  if (!origin?.openingToken || !role || role.role !== "compilation" || role.usage !== usage ||
+      role.origin?.vaultPath !== origin.vaultPath || role.origin.openingToken !== origin.openingToken ||
+      role.routeSignature?.role !== "compilation" || !role.routeSignature.providerId) {
+    throw new WorkflowOperationError("pending", "validation_rejected", "Compilation grant does not match this job");
+  }
+  return role;
+}
+
+function compilationAdmissionError(error: unknown): unknown {
+  if (error instanceof WorkflowOperationError) return error;
+  const message = String(error);
+  if (/snapshot_stale|origin_mismatch|active vault changed|vault opening was superseded/i.test(message)) {
+    return new WorkflowOperationError("stopped", "cancelled", message);
+  }
+  if (/automatic_external_not_permitted|route_unconfirmed|connection_unavailable|capability_unavailable/i.test(message)) {
+    return new WorkflowOperationError("pending", "unavailable", message);
+  }
+  return error;
+}
+
 /** Runs the existing ingest pipeline over every gate-admitted Full-tier item
  * (`ipc.fullTierItems`, oldest first), up to `llm_ingest_budget` items —
  * the per-run LLM-cost cap, same idea as `runSessionDigest`'s
  * `llm_digest_days`. Called from `runDistillGuarded` after the session
  * digest, inside the same guard window.
  *
- * DECISION (`_inbox/` items): promoted to `raw/<slug>.md` — via
- * `archiveInboxSource` + `availableRawPath` + `writeFile`, same three ipc
- * calls `autoIngest.ts`'s `runInboxPass` uses for its own inbox sources —
- * rather than ingested in place. `INGEST_PROMPT` hardcodes `raw/${slug}.md`
- * as the path it tells the model to read; ingesting an `_inbox/` file in
- * place would hand the model a path that does not exist. Promoting also
- * means Phase A's raw/-only archive pass (`distill::run`'s "already
- * represented" step) can retire it later like any other raw source — left in
- * `_inbox/`, it would never be swept (that pass never walks `_inbox/`).
+ * `_inbox/` items are skipped (owner decision 2026-10-03, B1): `INGEST_PROMPT`
+ * reads `raw/${slug}.md`, so ingesting one meant first writing a copy into
+ * raw/, and no run writes into raw/. They are dropped before the budget slice
+ * so they cannot starve the raw/ items, which are only read here.
  *
- * Order matters and is deliberately archive-BEFORE-write (not write-then-
- * archive): `archiveInboxSource` moves the original into `_inbox/.archived/`
- * — dot-prefixed, so `vault_entries`/`collect_candidates` never walk it, no
- * second scoring possible once it lands there. That makes every failure mode
- * safe with no rollback/delete needed at all (an earlier version of this
- * function tried to roll back by deleting the raw copy on an archive
- * failure — unworkable, because `delete_path` unconditionally refuses any
- * `raw/` path, immutability rule, no "our own recent write" exception; the
- * "rollback" silently never ran against the real backend):
- *   - `archiveInboxSource` fails: nothing has been written yet — the item is
- *     collected as an error, original untouched in `_inbox/`, retried next
- *     pass exactly as before.
- *   - `writeFile` fails after a successful archive: the original is already
- *     safely in `_inbox/.archived/` (content preserved, walk-invisible) —
- *     the item is collected as an error and effectively retired; a human can
- *     recover it from `.archived/` by hand, but nothing duplicates.
- *   - ingest itself fails after archive+write both succeeded: the raw copy
- *     stays on disk and is a legitimate NEW, unscored `raw/` file — the next
- *     scan scores and offers it again on its own. No duplicate, because the
- *     `_inbox/` original is already archived (walk-invisible).
- *
- * No retry: an item whose read/promote/ingest throws is recorded in `errors`
+ * No retry: an item whose read/ingest throws is recorded in `errors`
  * and the loop moves to the next one. The next scan/ingest pass offers it
  * again on its own (same ledger tier, unchanged content hash).
  *
- * Validation (`ipc.validateIngest`) is deliberately skipped (v1): this path
- * has no UI to surface a validation failure to, and the nightly distill lint
- * plus the CLI's own self-reported ingest report already catch problems. */
-export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutcome> {
+ * A successful provider exit is only a draft: the actual pages are read and
+ * validated before a source revision can receive a completion receipt. */
+export async function runFullTierIngest(
+  vaultPath: string,
+  options: { pendingOnly?: boolean; origin?: AgentVaultSession; roleSnapshot?: RoleSnapshot; usage?: RoleUsage; signal?: AbortSignal;
+    onSessionStarted?: (context: SessionCompileContext) => void;
+    onSessionProgress?: (context: SessionCompileContext, result: SessionCompileStepResult) => void } = {},
+): Promise<FullTierOutcome> {
   // Emptiness is checked BEFORE the provider: "waiting for a provider" with
   // an empty queue is a lie the Overview card would faithfully repeat — a
   // vault with nothing to promote reports "nothing" whatever the provider.
   const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
-  const budget = cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
-  const items = (await ipc.fullTierItems(vaultPath)).slice(0, budget);
+  const budget = options.pendingOnly ? 1 : cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
+  const usage = options.usage ?? "foreground";
+  let origin = options.origin ?? options.roleSnapshot?.origin ?? (options.pendingOnly ? await ipc.agentVaultSession() : undefined);
+  if (origin && origin.vaultPath !== vaultPath) throw new Error("the active vault changed before session compilation");
+  const pending = options.pendingOnly ? await ipc.listWikifyPending(vaultPath, origin!, budget) : null;
+  const items = (pending ? pending.items.map(item => item.rawPath) : await ipc.fullTierItems(vaultPath))
+    .filter((rel) => !rel.startsWith("_inbox/"))
+    .slice(0, budget);
   if (items.length === 0) {
-    return { ingested: 0, skipped: "nothing", errors: [], held: 0 };
+    return { ingested: 0, skipped: "nothing", errors: [] };
   }
 
-  const { provider, model, effort } = await getActiveModel("ingest");
-  if (provider === "builtin-local") {
-    return { ingested: 0, skipped: "no-provider", errors: [], held: 0 };
-  }
-  if (provider === "myco-pro") {
-    const settings = await ipc.getSettings();
-    if (!settings.providers.myco_pro) {
-      return { ingested: 0, skipped: "no-provider", errors: [], held: 0 };
+  // Canonical sessions issue a source-bound attempt. Ordinary documents share
+  // one Compilation grant; legacy display settings never select their route.
+  const hasOrdinarySources = items.some(rel => !rel.startsWith("raw/conversations/"));
+  let ordinaryRole = options.roleSnapshot;
+  if (hasOrdinarySources || ordinaryRole) {
+    try {
+      origin ??= await ipc.agentVaultSession();
+      if (origin.vaultPath !== vaultPath) throw new Error("the active vault changed before session compilation");
+      ordinaryRole = checkedCompilationRole(origin,
+        ordinaryRole ?? await ipc.captureModelRole(origin, "compilation", usage), usage);
+    } catch (error) {
+      const failure = compilationAdmissionError(error);
+      const issues = items.map(item => workflowIssue("ingest", failure, item));
+      return { ingested: 0, skipped: null, errors: items.map(item => `${item}: ${String(failure)}`),
+        sourcesPending: items.length, status: workflowStatus(issues, 0, items.length), issues };
     }
   }
-
-  // Q4 item 13 — the PII response mode for _inbox/ promotions below (secrets
-  // always block). An unreadable settings file falls back to warn-only, the
-  // same default Rust's add_raw_source guard uses.
-  const piiQuarantine = await ipc
-    .getSettings()
-    .then((s) => s.pii_quarantine_enabled)
-    .catch(() => false);
+  const provider = ordinaryRole?.routeSignature.providerId ?? "builtin-local";
+  const model = ordinaryRole?.routeSignature.modelId ?? "";
+  let ordinaryProviderConnected = true;
+  if (provider === "myco-pro") {
+    const settings = await ipc.getSettings();
+    ordinaryProviderConnected = settings.providers.myco_pro === true;
+    if (!ordinaryProviderConnected && items.every(rel => !rel.startsWith("raw/conversations/"))) {
+      return { ingested: 0, skipped: "no-provider", errors: [], sourcesPending: items.length,
+        status: "pending", issues: [workflowIssue("ingest", new WorkflowOperationError("pending", "unavailable", "Selected provider is not connected"))] };
+    }
+  }
 
   // Phase B, Task 6 — same grounding line startIngest passes, computed once
   // for the whole run rather than per item (the profile does not change
@@ -131,82 +150,118 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
   // reason (see startIngest's comment): this line is still profile content
   // sent to a provider. `cfg` above already failed CLOSED (`?? null` on a
   // read error) — no profile, no interests line.
-  const profile = cfg?.profile_injection ? await loadProfile(vaultPath) : null;
+  const profile = cfg?.profile_injection && ordinaryProviderConnected ? await loadProfile(vaultPath) : null;
   const profileInterests = profile?.interests.join(", ") ?? "";
 
-  // Important 4 (Phase B whole-branch review): one manifest per RUN — every
-  // _inbox/ archive-move + raw/ create this run performs lands in the SAME
-  // undo-manifest Rust's own passes already write incrementally, so "undo
-  // this run" can reverse them too. Recorded per item, right after the
-  // move/write (not batched at the end), to keep the manifest close to the
-  // actual file mtimes for undo's own "modified since the run" check.
-  const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
-
   let ingested = 0;
-  let held = 0;
+  let sourcesPending = 0;
+  let partialSession = false;
   const errors: string[] = [];
-  for (const rel of items) {
+  const issues: WorkflowIssue[] = [];
+  for (const [index, rel] of items.entries()) {
+    let hasDelegatedOutcome = false;
     try {
-      let sourceRel = rel;
-      let content: string;
-      if (rel.startsWith("_inbox/")) {
-        content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
-        // Q4 item 13 — scan BEFORE the archive move + raw/ write (raw/ is
-        // immutable; a flagged write could never be unwound). A flagged
-        // source is held, not errored: it stays untouched in _inbox/ for the
-        // user to redact, and the next pass offers it again. raw/ items are
-        // not scanned here — they already passed their own entry boundary.
-        if (!shouldPromote(await ipc.scanTextSecrets(content), piiQuarantine)) {
-          held++;
-          continue;
-        }
-        // Archive BEFORE writing the raw copy — see the archive-before-write
-        // ordering note above for why this makes every failure mode safe.
-        const archivedAbs = await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
-        sourceRel = await ipc.availableRawPath(stemOf(rel));
-        await ipc.writeFile(`${vaultPath}/${sourceRel}`, content);
-        const archivedRel = archivedAbs.startsWith(`${vaultPath}/`)
-          ? archivedAbs.slice(vaultPath.length + 1)
-          : archivedAbs;
-        await ipc
-          .appendDistillManifest(
-            vaultPath,
-            manifestId,
-            [{ from: rel, to: archivedRel }],
-            [sourceRel],
-          )
-          .catch((e) => {
-            console.error(`[distill] manifest append failed for ${rel}:`, e);
-          });
-      } else {
-        content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
+      if (!ordinaryProviderConnected && !rel.startsWith("raw/conversations/")) {
+        throw new WorkflowOperationError("pending", "unavailable", "Selected provider is not connected");
       }
-
-      const slug = stemOf(sourceRel);
-      const title = titleFromContent(content, slug);
+      const content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
+      const identity = rel.startsWith("raw/conversations/") ? await sessionIdentity(content) : null;
+      const pendingSource = pending?.items.find(item => item.rawPath === rel);
+      if (pending && (!pendingSource || !identity || pendingSource.key !== identity.key ||
+          pendingSource.sourceRevision !== await sha256(content))) {
+        throw new Error("pending session identity or source revision does not match; reload the import queue");
+      }
+      if (rel.startsWith("raw/conversations/")) {
+        if (!identity) throw new Error("pending session identity or source revision does not match; reload the import queue");
+        const boundOrigin = origin ?? await ipc.agentVaultSession();
+        if (boundOrigin.vaultPath !== vaultPath) throw new Error("the active vault changed before session compilation");
+        let context: SessionCompileContext | undefined;
+        try {
+          context = await ipc.sessionCompileBegin(boundOrigin, { key: identity.key, rawPath: rel,
+            sourceRevision: await sha256(content) }, usage);
+          checkedCompilationRole(boundOrigin, context.roleSnapshot, usage);
+          options.onSessionStarted?.(context);
+          const route = context.roleSnapshot.routeSignature;
+          if (route.providerId !== "builtin-local") {
+            throw new WorkflowOperationError("pending", "unavailable", "Selected external session compiler adapter is unavailable; source remains pending");
+          }
+          const issued = context;
+          hasDelegatedOutcome = true;
+          const completion = await runNativeSessionCompile(issued, {
+            lang: useUIStore.getState().lang, signal: options.signal,
+            onProgress: result => options.onSessionProgress?.(issued, result),
+          });
+          if (completion.state === "completed") ingested++;
+          else {
+            sourcesPending++;
+            partialSession = true;
+            issues.push(workflowIssue("session-compile", new WorkflowOperationError("pending", "validation_rejected",
+              "Original-source compilation review was not accepted for every packet"), rel));
+          }
+        } catch (error) {
+          const stopped = error instanceof WorkflowOperationError && error.status === "stopped";
+          const unavailableExternal = error instanceof WorkflowOperationError && error.status === "pending" &&
+            error.code === "unavailable" && context?.roleSnapshot.routeSignature.providerId !== "builtin-local";
+          if (context && !hasDelegatedOutcome && (stopped || unavailableExternal)) {
+            try { await ipc.sessionCompileStop(context, stopped ? "stopped" : "preparation_required"); }
+            catch (stopError) {
+              throw new Error(`${String(error)}; native attempt outcome could not be saved: ${String(stopError)}`);
+            }
+          }
+          if (!context && String(error).includes("SEMANTIC_ADAPTER_REQUIRED")) {
+            throw new WorkflowOperationError("pending", "unavailable", String(error));
+          }
+          throw hasDelegatedOutcome ? error : compilationAdmissionError(error);
+        }
+        continue;
+      }
+      const before = new Map(await ipc.fileMtimes(vaultPath));
+      // Sessions were dispatched above through their native canonical attempt.
+      const slug = stemOf(rel);
+      const source = rel.replace(/^raw\//, "").replace(/\.md$/i, "");
+      const title = sessionTitle(content) ?? titleFromContent(content, slug);
+      const summary = `wiki/source-${slug}.md`;
       // Same grounding the manual ingest path builds (ingestStore:
       // wikifyCandidates → groundingBlock): without it the headless pass told
       // the LLM nothing about existing pages, so voice notes and promoted
       // sessions grew fresh near-duplicate pages instead of updating the page
       // they echo. Best-effort — an empty list just omits the block.
-      const candidates = await ipc.wikifyCandidates(content.trim(), 8).catch(() => []);
-      const prompt = INGEST_PROMPT(slug, title, candidates, [], profileInterests);
+      const candidates = await ipc.wikifyCandidates(content.trim(), 8).catch((error) => {
+        log.warn("full_tier.grounding_failed", { error: String(error) });
+        return [];
+      });
+      const prompt = INGEST_PROMPT(source, title, candidates, [], profileInterests, slug, summary, identity?.key);
+      let chunksPending = 0;
 
-      if (provider === "anthropic-cli") {
-        const res = await ipc.claudeRun(prompt, vaultPath, model || undefined, effort);
-        if (res.status !== 0) {
-          throw new Error(res.stderr.trim() || `claude exit ${res.status}`);
-        }
-      } else {
-        await runIngestProvider({ provider, vaultPath, prompt, slug, title, body: content });
-      }
-      // On success: nothing else. Phase A's next archive pass sees
-      // wiki/source-<slug>.md and retires the raw file with full
-      // manifest/undo — the designed handoff between the two systems.
+      await runIngestProvider({ provider, modelId: model, origin, roleSnapshot: ordinaryRole, usage,
+        signal: options.signal, vaultPath, prompt, slug, source, title, body: content, candidates,
+        sessionKey: identity?.key,
+        summaryPath: summary,
+        onCoverage: (pending) => { chunksPending = pending; },
+      });
+      // Reading the expected page catches a provider that only replied "done".
+      await ipc.readFile(`${vaultPath}/${summary}`);
+      const changed = (await ipc.fileMtimes(vaultPath))
+        .filter(([path, mtime]) => path.startsWith(`${vaultPath}/wiki/`) && before.get(path) !== mtime)
+        .map(([path]) => path.slice(vaultPath.length + 1));
+      const validation = await ipc.validateIngest(vaultPath, [...new Set([summary, ...changed])]).catch(error => {
+        throw new WorkflowOperationError("pending", "unavailable", `Ingest validator unavailable: ${String(error)}`);
+      });
+      if (validation.errors.length) throw new Error(validation.errors.map((error) => `${error.page}: ${error.detail}`).join("; "));
+      if (chunksPending > 0) { sourcesPending++; continue; }
       ingested++;
     } catch (err) {
-      errors.push(`${rel}: ${String(err)}`);
+      const failure = hasDelegatedOutcome ? err : compilationAdmissionError(err);
+      errors.push(`${rel}: ${String(failure)}`);
+      sourcesPending++;
+      const issue = workflowIssue("ingest", failure, rel);
+      issues.push(issue);
+      if (issue.status === "stopped") { sourcesPending += items.length - index - 1; break; }
     }
   }
-  return { ingested, skipped: null, errors, held };
+  return { ingested, skipped: null, errors, ...(sourcesPending ? { sourcesPending } : {}),
+    ...(issues.length || sourcesPending ? { status: partialSession && !issues.some(issue => issue.status === "failed" || issue.status === "stopped")
+        ? "partial" : workflowStatus(issues, ingested, sourcesPending) } : {}),
+    ...(issues.length ? { issues } : {}),
+  };
 }

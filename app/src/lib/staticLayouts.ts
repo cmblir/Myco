@@ -67,24 +67,18 @@ export function applySpiralLayout(g: VaultGraph, o: SpiralOpts): void {
     ci++;
   }
 
-  // Log spiral r = r0·e^(kθ), θ ∈ [0.5π, 3.4π] per arm; r0 chosen so the arm
-  // end lands on targetRadius. k tuned to the M101 pitch (~0.2 gives the open
-  // pinwheel; smaller coils tighter).
-  const thetaMin = Math.PI * 0.5;
-  const thetaMax = Math.PI * 3.4;
-  const k = 0.2;
-  const r0 = R / Math.exp(k * thetaMax);
-
   for (let arm = 0; arm < arms; arm++) {
     const seq = armSeqs[arm];
     for (let i = 0; i < seq.length; i++) {
       const id = seq[i];
       const t = seq.length > 1 ? i / (seq.length - 1) : 0; // 0 core → 1 rim
-      const theta = thetaMin + t * (thetaMax - thetaMin);
-      const r = r0 * Math.exp(k * theta);
+      // Open arms leave dark lanes between real notes. More than a full turn
+      // plus wide scatter previously filled those lanes into a circular cloud.
+      const r = R * (0.055 + 0.945 * Math.pow(t, 1.1));
+      const theta = 0.6 + Math.log(0.16 + 0.84 * t) * 2.1;
       const phase = theta + (arm * 2 * Math.PI) / arms;
       // Arm width tapers outward; the core is a fat bulge, the rim a thin wisp.
-      const width = R * (0.085 - 0.05 * t);
+      const width = R * (0.026 - 0.011 * t);
       const across = seededGauss(id, 11) * width;
       const along = seededGauss(id, 13) * width * 1.6;
       // Perpendicular (in-plane) and tangential unit vectors of the arm.
@@ -93,13 +87,10 @@ export function applySpiralLayout(g: VaultGraph, o: SpiralOpts): void {
       g.setNodeAttribute(id, "x", px * r + px * across - py * along * 0.4);
       g.setNodeAttribute(id, "y", py * r + py * across + px * along * 0.4);
       // Thin disc with a thicker core bulge — the galaxy silhouette from a tilt.
-      g.setNodeAttribute(id, "z", seededGauss(id, 17) * R * (0.05 - 0.032 * t));
+      g.setNodeAttribute(id, "z", seededGauss(id, 17) * R * (0.025 - 0.018 * t));
     }
   }
-  // Arms are THIN (width ~0.085R tapering to 0.035R) — the shape's whole point —
-  // so an arm packs its own stars tighter than anything else here (measured at
-  // 1244 notes: 32 overlapping pairs). The sweeps widen the arm locally; the
-  // disc's overall extent is untouched, so the spiral still reads as a spiral.
+  // Separate nearby notes locally without replacing the arm composition.
   separateGraphLayout(g);
 }
 

@@ -23,6 +23,9 @@ import type { TaskItem, InflowDay } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { confirmAction, promptText } from "../stores/dialogStore";
+import { notice } from "../lib/notice";
+import { OVERVIEW_LAYOUT_COPY } from "../lib/overviewLayoutCopy";
 import { flattenMarkdown } from "../lib/graphData";
 import { facetValues, wikiPagesOnly } from "../lib/queryViews";
 import Viewer from "./Viewer";
@@ -32,6 +35,7 @@ import {
   BOARD_COLS,
   BOARD_PRESETS,
   BOARD_ROW_PX,
+  boardNames,
   CHANNELS,
   DEFAULT_BOARD,
   duplicateWidget,
@@ -40,11 +44,13 @@ import {
   freshId,
   loadBoard,
   minSize,
+  newBoardAction,
   removeWidget,
   ruleColor,
   runBoardQuery,
   saveBoard,
   statValue,
+  storedBoard,
   type BoardData,
   type BoardDoc,
   type BoardRange,
@@ -53,6 +59,7 @@ import {
   type BoardWidget,
 } from "../lib/board";
 import { CatTable, DayBars, DayLine, HBars, TYPE_COLORS } from "./DashCharts";
+import { useModalFocus } from "./useModalFocus";
 
 const RANGES: BoardRange[] = ["7d", "30d", "90d", "all"];
 
@@ -105,7 +112,7 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
   // the listing IS the list, and the active pick survives restarts.
   const [boardName, setBoardName] = useState<string>(() => {
     try {
-      return localStorage.getItem("myco.board.active") ?? DEFAULT_BOARD;
+      return storedBoard(localStorage.getItem("myco.board.active"));
     } catch {
       return DEFAULT_BOARD;
     }
@@ -114,10 +121,7 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
   const refreshBoards = (): void => {
     void ipc
       .listDashboards()
-      .then((names) => {
-        const all = [...new Set([DEFAULT_BOARD, ...names])];
-        setBoards(all);
-      })
+      .then((names) => setBoards(boardNames(names)))
       .catch(() => setBoards([DEFAULT_BOARD]));
   };
   const switchBoard = (name: string): void => {
@@ -135,6 +139,11 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
   /** Widget opened in the detail modal (view-mode click) — full-size chart
    *  plus the numbers behind it. */
   const [detailId, setDetailId] = useState<string | null>(null);
+  const detailRef = useRef<HTMLDivElement | null>(null);
+  const detailFocus = useModalFocus(detailRef, {
+    open: detailId,
+    onEscape: () => setDetailId(null),
+  });
 
   // --- data the queries read ------------------------------------------------
   const files = useMemo(
@@ -194,7 +203,9 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void saveBoard(boardName, next).catch(() => undefined);
+      void saveBoard(boardName, next, vaultPath).catch((error: unknown) => {
+        notice.warn(OVERVIEW_LAYOUT_COPY[useUIStore.getState().lang].boardSaveFailed, { sub: String(error) });
+      });
     }, 400);
   };
 
@@ -389,18 +400,33 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
             </select>
             <button
               className="btn"
-              onClick={() => {
-                const name = window
-                  .prompt(t.bd_new_board_prompt ?? "Board name:")
-                  ?.trim();
+              onClick={async () => {
+                const name = await promptText({
+                  title: t.bd_new_board,
+                  message: t.bd_new_board_prompt,
+                });
                 if (!name) return;
-                if (name.includes("/") || name.includes("\\") || name.includes("..")) return;
-                void saveBoard(name, emptyBoard())
+                // The listing itself, not `boards`: a refresh still in flight
+                // must not let an empty board land on one that exists.
+                const listed = await ipc.listDashboards().catch(() => boards);
+                const action = newBoardAction(name, boardNames(listed));
+                if (action === "refuse") {
+                  notice.warn(t.bd_name_refused.replace("{name}", name));
+                  return;
+                }
+                if (action === "open") {
+                  switchBoard(name);
+                  notice.info(t.bd_board_exists.replace("{name}", name));
+                  return;
+                }
+                void saveBoard(name, emptyBoard(), vaultPath)
                   .then(() => {
                     refreshBoards();
                     switchBoard(name);
                   })
-                  .catch(() => undefined);
+                  .catch((error: unknown) => {
+                    notice.warn(OVERVIEW_LAYOUT_COPY[useUIStore.getState().lang].boardSaveFailed, { sub: String(error) });
+                  });
               }}
             >
               {t.bd_new_board ?? "New board"}
@@ -408,17 +434,23 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
             {boardName !== DEFAULT_BOARD ? (
               <button
                 className="btn"
-                onClick={() => {
+                onClick={async () => {
                   const msg = (t.bd_delete_confirm ?? "Delete board “{name}”?").replace(
                     "{name}",
                     boardName,
                   );
-                  if (!window.confirm(msg)) return;
+                  const ok = await confirmAction({
+                    title: t.bd_delete_board,
+                    message: msg,
+                    danger: true,
+                  });
+                  if (!ok) return;
                   void ipc
                     .deleteDashboard(boardName)
                     .then(() => {
                       refreshBoards();
                       switchBoard(DEFAULT_BOARD);
+                      notice.ok(t.bd_deleted.replace("{name}", boardName));
                     })
                     .catch(() => undefined);
                 }}
@@ -562,14 +594,14 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
                     .reverse();
             return (
               <div
+                ref={detailRef}
                 className="myco-modal__backdrop"
+                tabIndex={-1}
                 role="dialog"
                 aria-modal="true"
                 aria-label={w.title || autoTitle(t, w)}
                 onClick={() => setDetailId(null)}
-                onKeyDown={(e) => {
-                  if (e.key === "Escape") setDetailId(null);
-                }}
+                onKeyDown={detailFocus.onKeyDown}
               >
                 <div
                   className="myco-modal board-detail"

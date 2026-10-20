@@ -11,6 +11,7 @@
 
 import type { InflowStats } from "./ipc";
 import type { Strings } from "./i18n";
+import type { WorkflowStatus } from "./workflowOutcome";
 
 export interface InflowLines {
   header: string;
@@ -38,6 +39,8 @@ export interface InflowLines {
 export interface InflowExtras {
   /** When the last session sweep finished (ms epoch); null before one runs. */
   sweepAt: number | null;
+  /** The latest attempt may be incomplete while an earlier clean time remains. */
+  sweepStatus?: WorkflowStatus;
   /** Auto-import interval in minutes; null (or 0) when the toggle is off. */
   autoImportMin: number | null;
 }
@@ -96,10 +99,12 @@ export function inflowLines(
         String(extras.autoImportMin),
       )
     : "";
+  const issue = extras?.sweepStatus === "failed" ? t.tb_inflow_sweep_failed :
+    extras?.sweepStatus && extras.sweepStatus !== "success" ? t.tb_inflow_sweep_incomplete : "";
   return {
     header: t.tb_inflow_header ?? "Today's inflow",
     sessions: t.tb_inflow_sessions ?? "Sessions swept",
-    sessionsSub: [sweep, auto].filter(Boolean).join(" · "),
+    sessionsSub: [issue, sweep, auto].filter(Boolean).join(" · "),
     sessionsCount: `+${s.sessionsToday}`,
     mcp: t.tb_inflow_mcp ?? "MCP tool calls",
     mcpSub: top ? `${top} · ${since}` : since,

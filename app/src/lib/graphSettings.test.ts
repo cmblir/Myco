@@ -5,6 +5,7 @@ import {
   LAYOUT_RECOMMENDED,
   loadGraphSettings,
   matchMyceliumBg,
+  matchVibe,
   normalizeMyceliumPair,
   MYCELIUM_BG_PRESETS,
   myceliumBranchPct,
@@ -66,7 +67,7 @@ describe("saveLook", () => {
     expect(look.settings.layout).toBe("atlas");
     // …but every transient key is stripped (applying multiverse:true would bounce
     // the user to the bubble field; a stale tag/folder could empty the graph).
-    for (const k of ["search", "tagFilter", "folderFilter", "multiverse"] as const) {
+    for (const k of ["search", "tagFilter", "folderFilter", "multiverse", "gapsRailOpen", "legendRailOpen"] as const) {
       expect(k in look.settings, `${k} must not be saved into a look`).toBe(false);
     }
   });
@@ -115,27 +116,11 @@ describe("LAYOUT_RECOMMENDED", () => {
     }
   });
 
-  it("every vibe is a complete look: skin + layout + that layout's recommend", () => {
+  it("every vibe chooses a skin, layout and edge treatment", () => {
     for (const [name, vibe] of Object.entries(VIBE_PRESETS)) {
       expect(vibe.skin, `${name}: a vibe must pick a skin`).toBeTruthy();
       expect(vibe.layout, `${name}: a vibe must pick a layout`).toBeTruthy();
-      // Spot-check the recommend actually got spread: every layout recommend
-      // sets edgeTint, so a vibe missing it forgot the spread.
-      expect(vibe.edgeTint, `${name}: must spread LAYOUT_RECOMMENDED`).toBeTruthy();
-    }
-  });
-
-  it("vibes on baked layouts never carry sim-only forces", () => {
-    const SIM = ["centerForce", "repelForce", "linkForce", "clusterForce"];
-    for (const [name, vibe] of Object.entries(VIBE_PRESETS)) {
-      const layout = vibe.layout as string;
-      if (layout === "galaxy" || layout === "synapse3d") continue; // sim layouts
-      for (const f of SIM) {
-        expect(
-          f in vibe,
-          `${name} (${layout}): baked layout must not write ${f}`,
-        ).toBe(false);
-      }
+      expect(vibe.edgeTint, `${name}: a vibe must pick an edge treatment`).toBeTruthy();
     }
   });
 
@@ -145,6 +130,124 @@ describe("LAYOUT_RECOMMENDED", () => {
       expect(rec.nodeColor, `${layout}: a categorical map is unreadable mono`).toBe("community");
       expect(rec.nodeColorDepth ?? 0, `${layout}: flat maps need deepened dots`).toBeGreaterThanOrEqual(1.3);
     }
+  });
+});
+
+describe("VIBE_PRESETS", () => {
+  const context = {
+    question: "time" as const,
+    sizeBy: "cites" as const,
+    hideSample: true,
+    search: "synthetic note",
+    showOrphans: false,
+    existingOnly: true,
+    tagFilter: "synthetic-tag",
+    folderFilter: "wiki/example",
+    multiverse: true,
+    // Page chrome, not appearance: a folded rail stays folded across looks.
+    gapsRailOpen: false,
+    legendRailOpen: false,
+  };
+
+  it("replaces the same complete appearance for every look without data controls", () => {
+    const expected = Object.keys(DEFAULT_GRAPH_SETTINGS)
+      .filter((field) => !(field in context)).sort();
+    for (const preset of Object.values(VIBE_PRESETS)) {
+      expect(Object.keys(preset).sort()).toEqual(expected);
+    }
+  });
+
+  it("all 100 look transitions land on the destination and preserve the question and filters", () => {
+    for (const [sourceName, source] of Object.entries(VIBE_PRESETS)) {
+      for (const [targetName, target] of Object.entries(VIBE_PRESETS)) {
+        const changed = { ...DEFAULT_GRAPH_SETTINGS, ...context, ...source, ...target };
+        expect(changed, `${sourceName} → ${targetName}`).toEqual({
+          ...DEFAULT_GRAPH_SETTINGS, ...context, ...target,
+        });
+        expect(matchVibe(changed)).toBe(targetName);
+      }
+    }
+  });
+
+  it("clears custom pixels, motion, colours and force values when restoring a look", () => {
+    const custom = {
+      ...DEFAULT_GRAPH_SETTINGS, ...context,
+      pixelNodes: true, nearFieldPlanets: true, skyStyle: "dense" as const,
+      nodeColor: "black" as const, arrows: true, arrowSize: 1.5,
+      nodeSize: 3, linkThickness: 3, brightness: 1.6,
+      ambientMotion: true, cinematic: true, cosmicEvents: true,
+      neuralFiring: true, edgeFlow: true, mascotCameo: true,
+      myceliumDim: "2d" as const, myceliumBackground: "#ffffff",
+      myceliumNodeColor: "#000000", myceliumHyphaColor: "#123456",
+      centerForce: 1, repelForce: 20, linkForce: 1,
+      linkDistance: 500, clusterForce: 1,
+    };
+    for (const preset of Object.values(VIBE_PRESETS)) {
+      expect({ ...custom, ...preset }).toEqual({
+        ...DEFAULT_GRAPH_SETTINGS, ...context, ...preset,
+      });
+    }
+  });
+
+  it("uses the real spiral layout and restrained stars for the living galaxy", () => {
+    expect(VIBE_PRESETS.living).toMatchObject({
+      skin: "galaxy", layout: "spiral", skyStyle: "stars", pixelNodes: false,
+      cosmicEvents: false, neuralFiring: false, edgeFlow: false,
+    });
+    expect(VIBE_PRESETS.living.nodeSize).toBeLessThan(1);
+    expect(VIBE_PRESETS.living.linkThickness).toBeLessThan(1);
+    expect(VIBE_PRESETS.living.textFadeThreshold).toBeGreaterThan(1.1);
+  });
+
+  it("keeps paper, chronicle and sigma still and free of sky effects", () => {
+    for (const key of ["paper", "chronicle", "sigma"] as const) {
+      expect(VIBE_PRESETS[key]).toMatchObject({
+        ambientMotion: false, cinematic: false, cosmicEvents: false,
+        neuralFiring: false, edgeFlow: false, clickBurst: false,
+        nearFieldPlanets: false, pixelNodes: false, skyStyle: "void",
+      });
+    }
+  });
+
+  it("keeps each specialist look's distinguishing structure", () => {
+    expect(VIBE_PRESETS.planetarium).toMatchObject({ layout: "celestial", skyStyle: "stars" });
+    expect(VIBE_PRESETS.cosmicweb).toMatchObject({ skin: "web", nodeColor: "white" });
+    expect(VIBE_PRESETS.neural).toMatchObject({ layout: "synapse3d", edgeFlow: true, neuralFiring: true });
+    expect(VIBE_PRESETS.nebula).toMatchObject({ skin: "galaxy", layout: "semantic" });
+    expect(VIBE_PRESETS.walrus).toMatchObject({ layout: "walrus", edgeBundles: false });
+    expect(VIBE_PRESETS.mycelium).toMatchObject({
+      skin: "mycelium", layout: "mycelium", myceliumDim: "3d",
+      myceliumBackground: "#0d0a13",
+      myceliumNodeColor: "#eadcff",
+      myceliumHyphaColor: "#a593bf",
+    });
+  });
+
+  it("runs the default look's cosmic events on Woven", () => {
+    expect(VIBE_PRESETS.ribbon.cosmicEvents).toBe(VIBE_PRESETS.default.cosmicEvents);
+  });
+
+  it("draws Woven's notes as the default look's", () => {
+    // As glow stars only a core 0.375 of each sprite showed, so its dimmed
+    // leaves read as 1–3 px points beside the default look's discs.
+    expect(VIBE_PRESETS.ribbon.pixelNodes).toBe(VIBE_PRESETS.default.pixelNodes);
+    expect(LAYOUT_RECOMMENDED.ribbon.pixelNodes).toBe(true);
+  });
+
+  it("marks a changed appearance as adjusted while ignoring question and filter changes", () => {
+    const living = { ...DEFAULT_GRAPH_SETTINGS, ...VIBE_PRESETS.living, ...context };
+    expect(matchVibe(living)).toBe("living");
+    expect(matchVibe({ ...living, pixelNodes: true })).toBeNull();
+    expect(matchVibe({ ...living, nodeSize: 1.2 })).toBeNull();
+    expect(matchVibe({ ...living, ambientMotion: false })).toBeNull();
+  });
+
+  it("names the defaults as a look, so Reset leaves one active", () => {
+    expect(matchVibe(DEFAULT_GRAPH_SETTINGS)).toBe("default");
+    expect(matchVibe({ ...DEFAULT_GRAPH_SETTINGS, ...context })).toBe("default");
+    expect({ ...DEFAULT_GRAPH_SETTINGS, ...context, ...VIBE_PRESETS.default }).toEqual({
+      ...DEFAULT_GRAPH_SETTINGS, ...context,
+    });
   });
 });
 
@@ -274,6 +377,25 @@ describe("graph settings persistence", () => {
     const loaded = loadGraphSettings();
     expect(loaded.myceliumBackground).toBe("#123456");
     expect(loaded.myceliumHyphaColor).toBe("#654321");
+  });
+
+  it("opens both rails by default and remembers a folded one across reloads", () => {
+    expect(DEFAULT_GRAPH_SETTINGS.gapsRailOpen).toBe(true);
+    expect(DEFAULT_GRAPH_SETTINGS.legendRailOpen).toBe(true);
+    saveGraphSettings({ ...DEFAULT_GRAPH_SETTINGS, gapsRailOpen: false });
+    const loaded = loadGraphSettings();
+    expect(loaded.gapsRailOpen).toBe(false);
+    expect(loaded.legendRailOpen).toBe(true);
+  });
+
+  it("opens both rails for a persisted blob predating them", () => {
+    saveGraphSettings({ ...DEFAULT_GRAPH_SETTINGS });
+    const raw = localStorage.getItem("myco.graph.settings.v26") as string;
+    const blob = JSON.parse(raw) as Record<string, unknown>;
+    delete blob.gapsRailOpen;
+    delete blob.legendRailOpen;
+    localStorage.setItem("myco.graph.settings.v26", JSON.stringify(blob));
+    expect(loadGraphSettings()).toMatchObject({ gapsRailOpen: true, legendRailOpen: true });
   });
 
   it("back-fills myceliumBackground on a persisted blob predating the field", () => {

@@ -4,17 +4,20 @@
 // a target note (today's daily, or a roadmap page), and the same scheduling
 // fields the detail panel edits. The page owns the write; this builds one line.
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import ChipInput from "./ChipInput";
 import DatePicker from "./DatePicker";
 import type { Strings } from "../lib/i18n";
-import { isComposingKey } from "../lib/ime";
+import { afterComposition, isComposingKey } from "../lib/ime";
 import { serializeTaskText, type TaskMeta } from "../lib/taskLine";
 import { composeTitle } from "../lib/taskTokens";
-import { parseDuration } from "../lib/taskDuration";
-import { parseRecurrence } from "../lib/taskRecurrence";
+import { normalizeDuration, parseDuration } from "../lib/taskDuration";
+import { normalizeRecurrence, parseRecurrence } from "../lib/taskRecurrence";
+import { formatDue, parseKoDue } from "../lib/taskDueKo";
+import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { promptText } from "../stores/dialogStore";
 
 /** Where the new task line goes. */
 export type ComposeTarget = { kind: "daily" } | { kind: "page"; path: string };
@@ -32,6 +35,7 @@ export default function TaskComposer({
   onDueChange,
   onAdd,
   onNewRoadmap,
+  view,
 }: {
   t: Strings;
   busy: boolean;
@@ -41,9 +45,11 @@ export default function TaskComposer({
    *  day, which predates the composer. */
   due: string;
   onDueChange: (iso: string) => void;
-  onAdd: (task: ComposedTask) => void;
+  onAdd: (task: ComposedTask) => Promise<boolean>;
   /** Create a roadmap page; resolves its vault-relative path. */
   onNewRoadmap: (title: string) => Promise<string | null>;
+  /** The page's current view; switching it folds the details away. */
+  view: string;
 }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -58,6 +64,15 @@ export default function TaskComposer({
   const [estimate, setEstimate] = useState("");
   const [recur, setRecur] = useState("");
   const newRoadmapBusy = useRef(false);
+  const lang = useUIStore((s) => s.lang);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const composing = useRef(false);
+  // The draft as of the last finished keystroke: the due chip is computed from
+  // this, never from a half-built syllable, and never writes back to the input.
+  const [settled, setSettled] = useState("");
+  const parsedDue = useMemo(() => parseKoDue(settled, new Date()), [settled]);
+
+  useEffect(() => setExpanded(false), [view]);
 
   // Existing categories, most-used first — "is this related to something the
   // vault already has" is answered by the suggestion list itself.
@@ -77,41 +92,48 @@ export default function TaskComposer({
       .sort();
   }, [adjacency, currentVault]);
 
+  // Korean ("2일", "매주") is read too, and saved as the stored token.
   const estimateBad =
-    estimate.trim() !== "" && parseDuration(estimate) === null;
+    estimate.trim() !== "" && parseDuration(normalizeDuration(estimate)) === null;
   const recurBad =
-    recur.trim() !== "" && parseRecurrence(recur.trim()) === null;
+    recur.trim() !== "" && parseRecurrence(normalizeRecurrence(recur)) === null;
 
-  const add = (): void => {
-    const text = draft.trim();
+  const add = async (): Promise<void> => {
+    // Read the field itself: a press held back for an IME commit runs after the
+    // commit, when `draft` in this closure is still the uncommitted value.
+    const text = (inputRef.current?.value ?? draft).trim();
     if (!text || busy || estimateBad) return;
+    // A date named in the text wins over the picker and leaves the title.
+    const named = parseKoDue(text, new Date());
     const meta: TaskMeta = {
-      title: composeTitle(text, tags, links),
+      title: composeTitle(named?.title || text, tags, links),
       start,
       scheduled,
-      due,
+      due: named?.due ?? due,
       doneAt: "",
-      recur: recurBad ? "" : recur.trim(),
-      estimate: estimate.trim(),
+      recur: recurBad ? "" : normalizeRecurrence(recur),
+      estimate: normalizeDuration(estimate),
       priority,
     };
-    onAdd({
+    const saved = await onAdd({
       line: `- [ ] ${serializeTaskText(meta)}`,
       target:
         target === "daily" ? { kind: "daily" } : { kind: "page", path: target },
     });
+    if (!saved) return;
     setDraft("");
+    setSettled("");
     // Dates/fields intentionally kept: adding several items to one milestone
     // in a row shares its category, project and target.
   };
 
   const newRoadmap = async (): Promise<void> => {
     if (newRoadmapBusy.current) return;
-    const title = window.prompt(t.tasks_new_roadmap_ph ?? "Roadmap title");
-    if (!title?.trim()) return;
+    const title = await promptText({ title: t.tasks_new_roadmap_ph });
+    if (!title) return;
     newRoadmapBusy.current = true;
     try {
-      const rel = await onNewRoadmap(title.trim());
+      const rel = await onNewRoadmap(title);
       if (rel) setTarget(rel);
     } finally {
       newRoadmapBusy.current = false;
@@ -123,25 +145,45 @@ export default function TaskComposer({
       className="card"
       style={{ padding: 12, marginTop: 8, marginBottom: 16 }}
     >
-      <div className="row" style={{ gap: 8, alignItems: "center" }}>
+      <div className="row task-composer__row" style={{ gap: 8, alignItems: "center" }}>
         <input
-          className="input"
+          className="input task-composer__title"
           style={{
             border: "none",
             padding: "4px 0",
             boxShadow: "none",
-            flex: 1,
           }}
           placeholder={t.tasks_ph ?? "What do you have to do?"}
+          ref={inputRef}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (!composing.current) setSettled(e.target.value);
+          }}
+          onCompositionStart={() => {
+            composing.current = true;
+          }}
+          onCompositionEnd={(e) => {
+            composing.current = false;
+            setSettled(e.currentTarget.value);
+          }}
           onKeyDown={(e) => {
             if (isComposingKey(e)) return;
-            if (e.key === "Enter") add();
+            if (e.key === "Enter") void add();
           }}
           disabled={busy}
           data-testid="task-input"
         />
+        <span aria-live="polite" data-testid="task-due-chip">
+          {parsedDue ? (
+            <span className="chip">
+              {(t.tasks_due_named ?? "Due {date}").replace(
+                "{date}",
+                formatDue(parsedDue.due, lang),
+              )}
+            </span>
+          ) : null}
+        </span>
         <DatePicker t={t} value={due} onChange={onDueChange} disabled={busy} />
         <button
           className="btn btn-ghost"
@@ -153,7 +195,11 @@ export default function TaskComposer({
         </button>
         <button
           className="btn btn-primary"
-          onClick={add}
+          onClick={() => {
+            const field = inputRef.current;
+            if (field) afterComposition(field, composing.current, () => void add());
+            else void add();
+          }}
           disabled={busy || !draft.trim() || estimateBad}
         >
           {t.tasks_add ?? "Add"}
@@ -172,7 +218,7 @@ export default function TaskComposer({
               chips={tags}
               setChips={setTags}
               suggestions={tagSuggestions}
-              placeholder="#dev"
+              placeholder={t.tasks_compose_category_ph ?? "e.g. work"}
               listId="task-tags"
               disabled={busy}
               prefix="#"
@@ -184,7 +230,7 @@ export default function TaskComposer({
               chips={links}
               setChips={setLinks}
               suggestions={linkSuggestions}
-              placeholder="[[project]]"
+              placeholder={t.tasks_compose_project_ph ?? "e.g. a project note"}
               listId="task-links"
               disabled={busy}
               prefix=""
@@ -263,7 +309,7 @@ export default function TaskComposer({
               className="input"
               style={{ width: 150, flex: "none" }}
               value={estimate}
-              placeholder="2d"
+              placeholder={t.tasks_detail_estimate_ph ?? "e.g. 2d"}
               aria-invalid={estimateBad || undefined}
               disabled={busy}
               onChange={(e) => setEstimate(e.target.value)}
@@ -281,7 +327,7 @@ export default function TaskComposer({
               className="input"
               style={{ width: 150, flex: "none" }}
               value={recur}
-              placeholder="every week"
+              placeholder={t.tasks_detail_recur_ph ?? "e.g. every week"}
               aria-invalid={recurBad || undefined}
               disabled={busy}
               onChange={(e) => setRecur(e.target.value)}

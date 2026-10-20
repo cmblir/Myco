@@ -81,3 +81,6 @@ app/src-tauri/models/bge-m3-Q4_K_M.gguf
 /cosmic-refs/
 /plans/
 /docs/superpowers/
+
+# 3D myco turntable videos (app/scripts/myco3d-turntable.mjs); large, rebuilt on demand
+/output/myco3d/

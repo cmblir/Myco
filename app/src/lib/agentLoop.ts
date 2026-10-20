@@ -13,7 +13,9 @@ import type {
   AgentMessage,
   AgentToolCall,
   AgentToolDescriptor,
+  AgentVaultSession,
 } from "./ipc";
+import type { RoleSnapshot } from "./modelRoles";
 import { overBudget, recordUsage, getBudgetThreshold } from "./budget";
 
 export interface AgentStep {
@@ -39,6 +41,9 @@ export interface AgentRunOpts {
   model: string;
   system: string;
   question: string;
+  /** Immutable native vault opening captured before the run's first model call. */
+  origin: AgentVaultSession;
+  roleSnapshot?: RoleSnapshot;
   /** Prior transcript turns (for multi-turn agent chats). */
   history?: AgentMessage[];
   tools: AgentToolDescriptor[];
@@ -50,6 +55,8 @@ export interface AgentRunOpts {
   confirmWrite?: (call: AgentToolCall) => Promise<boolean>;
   onStep?: (step: AgentStep) => void;
   signal?: AbortSignal;
+  /** False once the originating vault opening or run has been replaced. */
+  isCurrent?: () => boolean;
 }
 
 const DEFAULT_MAX_ITERATIONS = 8;
@@ -61,6 +68,8 @@ function summarize(value: unknown, max = 600): string {
 }
 
 export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
+  const roleSnapshot = opts.roleSnapshot ?? await ipc.captureModelRole(opts.origin, "agent", "foreground");
+  if (roleSnapshot.role !== "agent" || roleSnapshot.routeSignature.providerId !== opts.provider || roleSnapshot.routeSignature.modelId !== opts.model) throw new Error("Agent route must be explicitly selected for the Agent feature");
   const maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
   // Offer write tools only when write mode is on; the Rust side re-checks the
   // allow_write flag and refuses raw/ regardless.
@@ -74,11 +83,11 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
     { role: "user", content: opts.question },
   ];
   const steps: AgentStep[] = [];
+  const isCurrent = () => !opts.signal?.aborted && (opts.isCurrent?.() ?? true);
+  const cancelled = (): AgentRunResult => ({ answer: "", steps, stoppedAtLimit: true });
 
   for (let iter = 0; iter < maxIterations; iter++) {
-    if (opts.signal?.aborted) {
-      return { answer: lastText(messages), steps, stoppedAtLimit: true };
-    }
+    if (!isCurrent()) return cancelled();
     // Paid HTTP providers only reach this loop; stop before spending if the
     // monthly budget is already crossed (mirrors chat.ts).
     if (overBudget()) {
@@ -94,10 +103,11 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
       system: opts.system,
       messages,
       tools,
-    });
+    }, opts.origin, roleSnapshot);
     if (turn.usage) {
       recordUsage(opts.model, turn.usage.input_tokens, turn.usage.output_tokens);
     }
+    if (!isCurrent()) return cancelled();
 
     if (!turn.tool_calls || turn.tool_calls.length === 0) {
       return { answer: turn.text, steps, stoppedAtLimit: false };
@@ -112,9 +122,7 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
     });
 
     for (const call of turn.tool_calls) {
-      if (opts.signal?.aborted) {
-        return { answer: turn.text, steps, stoppedAtLimit: true };
-      }
+      if (!isCurrent()) return cancelled();
       const isWrite = writeNames.has(call.name);
       const step: AgentStep = { kind: "tool", tool: call.name, args: call.input };
 
@@ -123,6 +131,8 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
         const confirmed = opts.confirmWrite
           ? await opts.confirmWrite(call)
           : false;
+        // A confirmation can outlive a vault switch or cancellation.
+        if (!isCurrent()) return cancelled();
         step.confirmed = confirmed;
         if (!confirmed) {
           step.result = "declined by user";
@@ -138,7 +148,8 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
       }
 
       try {
-        const result = await ipc.agentToolCall(call.name, call.input, isWrite);
+        const result = await ipc.agentToolCall(call.name, call.input, isWrite, opts.origin);
+        if (!isCurrent()) return cancelled();
         step.result = summarize(result);
         messages.push({
           role: "tool",
@@ -146,6 +157,7 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
           content: typeof result === "string" ? result : JSON.stringify(result),
         });
       } catch (err) {
+        if (!isCurrent()) return cancelled();
         // Feed the error back so the model can recover instead of crashing.
         step.error = String(err);
         messages.push({
@@ -161,6 +173,7 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
 
   // Hit the iteration cap: ask once more for a final answer without tools so the
   // user gets a partial conclusion rather than an empty result.
+  if (!isCurrent()) return cancelled();
   try {
     const final = await ipc.agentChat({
       provider_id: opts.provider,
@@ -170,12 +183,14 @@ export async function runAgent(opts: AgentRunOpts): Promise<AgentRunResult> {
         "\n\nYou have reached the tool-use limit. Give your best final answer now using what you have gathered.",
       messages,
       tools: [],
-    });
+    }, opts.origin, roleSnapshot);
     if (final.usage) {
       recordUsage(opts.model, final.usage.input_tokens, final.usage.output_tokens);
     }
+    if (!isCurrent()) return cancelled();
     return { answer: final.text, steps, stoppedAtLimit: true };
   } catch {
+    if (!isCurrent()) return cancelled();
     return { answer: lastText(messages), steps, stoppedAtLimit: true };
   }
 }

@@ -65,6 +65,26 @@ export const LIGHT_BG_PIXEL_SIZE_MUL = 1.1;
 export const SIGMA_SKIN_NODE_SCALE = 1.15; // sigma skin's per-skin size multiplier
 export const WEB_SKIN_NODE_SCALE = 0.34; // web skin's per-skin size multiplier
 
+// --- link light (GraphScene's links and the Woven strands) --------------------
+// One definition for every line that joins two notes, so a look that routes its
+// links differently (Woven) still draws the same light. Why each value is what
+// it is: graphScene.ts, next to writeEdges / writeEdgeGeometry.
+export const EDGE_OPACITY_DARK = 0.2; // material opacity × linkThickness, additive
+// Light bg uses NormalBlending (not additive), so thousands of overlapping
+// star-spoke edges STACK into an opaque grey wash that buries the nodes. Keep
+// the per-edge alpha low so a dense hub-and-spoke vault stays readable on paper.
+export const EDGE_OPACITY_LIGHT = 0.42;
+export const EDGE_BASE_DARK = 0.22; // per-end brightness (edges are tissue, not light)
+export const EDGE_BASE_LIGHT = 0.9;
+export const EDGE_HI = 1.15; // incident edges on hover (pop)
+export const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
+export const FOCUS_EDGE_DIM = 0.03; // edges leaving a held focus frame
+// Each end takes its note's colour pulled this far toward the neutral.
+export const EDGE_NEUTRAL_DARK_HEX = "#8b93a8";
+export const EDGE_NEUTRAL_LIGHT_HEX = "#2c3446";
+export const EDGE_GREY_MIX = 0.5;
+export const EDGE_END_FADE = 0.45; // endpoint brightness × (mid stays ×1.0)
+
 // --- inter-cluster / inter-galaxy link weakening --------------------------------
 export const INTER_LINK_DIST_MUL = 1.8; // cross-community links stretch longer
 // Links between DIFFERENT clusters attract almost not at all, so every cluster

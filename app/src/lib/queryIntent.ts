@@ -5,8 +5,31 @@
 // a question confabulates (the reported bug). We detect this intent and answer
 // factually from `git log` instead of sending it to the LLM.
 
-import type { GitCommit } from "./ipc";
+import type { SearchScope, GitCommit } from "./ipc";
 import type { Lang } from "./i18n";
+import { sourceTier } from "./extractive";
+import { chunkCitation } from "./retrievalContext";
+import { queryDateRange, type DateRange } from "./timeQuery";
+
+// Shared by memory routing and metadata fallback: an activity-shaped question
+// alone never establishes that file modification times answer it.
+const REPOSITORY_HISTORY = /\bgit\s+(?:log|history|commits?)\b|\b(?:commit|edit|version)\s+history\b|\b(?:recent|latest)\s+commits?\b|\bchangelog\b|커밋\s*(?:내역|목록|기록|히스토리|로그)|(?:최근|최신)\s*커밋|편집\s*(?:이력|내역)/i;
+const VAULT_FILES_PATTERNS = [
+  REPOSITORY_HISTORY,
+  /(?:노트|파일|볼트|문서|마크다운)[^\n]{0,30}(?:추가|수정|변경|작성|생성|만들|최근|최신)|(?:추가|수정|변경|작성|생성|만든|쌓인|최신)[^\n]{0,25}(?:노트|파일|볼트|문서|마크다운)/,
+  /\b(?:files?|notes?|vault|documents?|markdown)\b[^\n]{0,40}\b(?:add(?:ed|ing)?|chang(?:e[ds]?|ing)|edit(?:ed|ing|s)?|modif(?:y|ied|ying)|creat(?:e[ds]?|ing)|new(?:est)?|recent(?:ly)?)\b|\b(?:added|changed|edited|modified|created|newest|recent)\b[^\n]{0,25}\b(?:files?|notes?|vault|documents?|markdown)\b/i,
+  /(?:ノート|ファイル)[^\n]{0,25}(?:追加|編集|変更|作成)|(?:追加|編集|変更|作成)[^\n]{0,25}(?:ノート|ファイル)/,
+];
+
+/** Whether the question explicitly asks about repository or file activity. */
+export function isVaultFilesQuery(question: string): boolean {
+  return VAULT_FILES_PATTERNS.some((pattern) => pattern.test(question));
+}
+
+/** Explicit repository history cannot be answered by file modification times. */
+export function isRepositoryHistoryQuery(question: string): boolean {
+  return REPOSITORY_HISTORY.test(question);
+}
 
 // Phrases that signal "tell me about my recent activity / what changed in the
 // vault". Curated to target vault-meta questions, NOT topic queries that merely
@@ -61,47 +84,94 @@ const FILE_EMPTY: Record<Lang, string> = {
   ja: "このボルトにはまだマークダウンファイルがありません。",
 };
 
+const FILE_RANGE_EMPTY: Record<Lang, string> = {
+  en: "No markdown files were modified in {start}–{end} (by file modification time).",
+  ko: "선택한 기간({start}–{end})에 수정된 마크다운 파일이 없습니다 (파일 수정 시각 기준).",
+  ja: "選択した期間（{start}–{end}）に変更されたマークダウンファイルはありません（ファイル更新時刻基準）。",
+};
+
+const FILE_RANGE_HEADERS: Record<Lang, string> = {
+  en: "Notes modified in {start}–{end} (by file modification time):",
+  ko: "선택한 기간({start}–{end})에 바뀐 노트입니다 (파일 수정 시각 기준):",
+  ja: "選択した期間（{start}–{end}）に変更されたノートです（ファイル更新時刻基準）：",
+};
+
+export interface RecentFilesOptions {
+  /** Inclusive local calendar dates; this filters modification time only. */
+  range?: DateRange;
+  /** Capture the answer's vault so citations preserve the exact relative path. */
+  vaultRoot?: string;
+  /** Requires vaultRoot so absolute entries cannot disguise their source tier. */
+  scope?: SearchScope;
+}
+
+function recentFilePath(path: string, root?: string): string | null {
+  const normalized = path.replace(/\\/g, "/");
+  if (normalized.split("/").some((part) => part === "." || part === "..")) return null;
+  if (root === undefined) return normalized;
+  const normalizedRoot = root.replace(/\\/g, "/");
+  if (!/^(?:\/|[A-Za-z]:\/)/.test(normalizedRoot)) return null;
+  const prefix = `${normalizedRoot.replace(/\/+$/, "")}/`;
+  return normalized.startsWith(prefix) ? normalized.slice(prefix.length) : null;
+}
+
+function recentFileInScope(path: string, scope?: SearchScope): boolean {
+  if (!scope) return true;
+  const tier = sourceTier(path);
+  if (scope === "sessions") return tier === "session";
+  if (scope === "wiki") return tier !== "session" && tier !== "source";
+  if (scope === "pages") return tier === "note" || tier === "map";
+  return !path.startsWith("raw/") || path.startsWith("raw/conversations/");
+}
+
 /** Render a factual, no-LLM answer listing the vault's most recently modified
  * notes. This answers "what did I add today / which notes changed this week",
  * which page CONTENT cannot: the answer lives in file metadata.
  *
  * `entries` are `[absolutePath, unixSeconds]` exactly as `ipc.fileMtimes`
  * returns them; `now` is injected so the relative dates are testable. Paths are
- * emitted as `[[stem]]` so each row is a working wikilink, the same as every
- * other citation the app renders. */
+ * emitted as exact relative-path citations when `vaultRoot` is supplied.
+ * Existing callers without options retain their stem citation format. */
 export function formatRecentFilesAnswer(
   entries: [string, number][],
   lang: Lang,
   now: number = Date.now(),
   limit = 15,
+  options: RecentFilesOptions = {},
 ): string {
+  if (options.scope && options.vaultRoot === undefined) {
+    throw new Error("vaultRoot is required for scoped recent files");
+  }
   const L = FILE_HEADERS[lang] ? lang : "en";
-  if (!entries || entries.length === 0) return FILE_EMPTY[L];
-  const today = new Date(now);
-  const startOfToday = new Date(
-    today.getFullYear(),
-    today.getMonth(),
-    today.getDate(),
-  ).getTime();
-  const rows = [...entries]
-    .sort((a, b) => b[1] - a[1])
+  const range = options.range ? queryDateRange(options.range) : null;
+  const clock = new Date(now);
+  const today = localDate(now);
+  const yesterday = localDate(new Date(clock.getFullYear(), clock.getMonth(), clock.getDate() - 1).getTime());
+  const rows = (entries ?? [])
+    .flatMap(([path, secs]) => {
+      const relative = recentFilePath(path, options.vaultRoot);
+      if (!relative || !Number.isFinite(secs) || secs <= 0 ||
+          (range && !(range.startEpoch <= secs && secs < range.endEpoch)) ||
+          !recentFileInScope(relative, options.scope)) return [];
+      return [{ path: relative, secs }];
+    })
+    .sort((a, b) => b.secs - a.secs)
     .slice(0, limit)
-    .map(([path, secs]) => {
+    .map(({ path, secs }) => {
       const ms = secs * 1000;
-      const stem = (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, "");
-      // Day offset from today rather than an elapsed-hours bucket: "yesterday"
-      // has to mean the calendar day, or a note written at 23:00 reads as
-      // "today" for the next hour.
-      const days = Math.floor((startOfToday - ms) / 86_400_000) + (ms >= startOfToday ? 0 : 1);
-      const when =
-        ms >= startOfToday
-          ? RELATIVE[L].today
-          : days <= 1
-            ? RELATIVE[L].yesterday
-            : localDate(ms);
-      return `- **${when}** · [[${stem}]]`;
+      const stem = (path.split("/").pop() ?? path).replace(/\.md$/i, "");
+      const date = localDate(ms);
+      const when = date === today ? RELATIVE[L].today : date === yesterday ? RELATIVE[L].yesterday : date;
+      const citation = options.vaultRoot === undefined ? `[[${stem}]]` : chunkCitation({ page: path, stem });
+      return `- **${when}** · ${citation}`;
     });
-  return `${FILE_HEADERS[L]}\n\n${rows.join("\n")}`;
+  if (!rows.length) return range
+    ? FILE_RANGE_EMPTY[L].replace("{start}", range.start).replace("{end}", range.end)
+    : FILE_EMPTY[L];
+  const header = range
+    ? FILE_RANGE_HEADERS[L].replace("{start}", range.start).replace("{end}", range.end)
+    : FILE_HEADERS[L];
+  return `${header}\n\n${rows.join("\n")}`;
 }
 
 /** `YYYY-MM-DD` in the user's own timezone. `toISOString()` would print the UTC

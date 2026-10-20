@@ -8,6 +8,7 @@ import { ipc } from "../../lib/ipc";
 import type { PanicEntry } from "../../lib/ipc";
 import { formatCrashReport } from "../../lib/crashReport";
 import MascotClip from "../../components/MascotClip";
+import { SURFACE_CLIPS } from "../../lib/mascotClips";
 import { useUpdateStore } from "../../stores/updateStore";
 import type { UpdateState } from "../../stores/updateStore";
 import {
@@ -56,8 +57,8 @@ export function SettingsAbout({ t }: { t: Strings }): JSX.Element {
           flexWrap: "wrap",
         }}
       >
-        {/* MYCO idle loop (transparent) — the living version of the logo. */}
-        <MascotClip clip="idle" size={96} />
+        {/* MYCO greets once on entry, then holds the attention pose. */}
+        <MascotClip {...SURFACE_CLIPS.about} />
         <div style={{ flex: "1 1 220px", minWidth: 0 }}>
           <div
             style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.01em" }}

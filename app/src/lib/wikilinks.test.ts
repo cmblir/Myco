@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml, matchWikilinkAt, wikilinkBase } from "./wikilinks";
+import { escapeHtml, matchWikilinkAt, resolveStem, wikilinkBase } from "./wikilinks";
+import type { FileNode } from "./ipc";
+
+describe("path citations", () => {
+  const tree: FileNode[] = [{ kind: "directory", name: "wiki", path: "/v/wiki", children:
+    ["first", "second"].map((name) => ({ kind: "directory", name, path: `/v/wiki/${name}`, children: [
+      { kind: "file", name: "status.md", path: `/v/wiki/${name}/status.md` },
+    ] })),
+  }];
+  it("opens the exact path when stems collide", () => {
+    expect(resolveStem(tree, "wiki/second/status")).toBe("/v/wiki/second/status.md");
+    expect(resolveStem(tree, "wiki/first/status.md")).toBe("/v/wiki/first/status.md");
+    expect(resolveStem(tree, "status")).toBe("/v/wiki/first/status.md");
+  });
+  it("never redirects a missing or traversing path to another same-stem note", () => {
+    expect(resolveStem(tree, "wiki/missing/status")).toBeNull();
+    expect(resolveStem(tree, "../wiki/first/status")).toBeNull();
+    expect(resolveStem(tree, "/v/wiki/first/status")).toBeNull();
+  });
+});
 
 describe("matchWikilinkAt", () => {
   it("matches a bare target anchored at pos", () => {

@@ -16,7 +16,7 @@
 //! (see `strip_injected`) before anything is counted or titled from it; a
 //! message with real prose in it is kept verbatim.
 
-use super::{Conversation, Role, Source, Turn};
+use super::{Conversation, Role, Source, Turn, TurnMetadata};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -31,6 +31,10 @@ struct Line {
     session_id: Option<String>,
     #[serde(default)]
     timestamp: Option<String>,
+    #[serde(default)]
+    uuid: Option<String>,
+    #[serde(rename = "parentUuid", default)]
+    parent_uuid: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +43,12 @@ struct Message {
     // only need the content here.
     #[serde(default)]
     content: serde_json::Value,
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    role: Option<String>,
+    #[serde(default)]
+    phase: Option<String>,
 }
 
 /// Parse a whole session file (its raw text) into one conversation. Returns None
@@ -48,10 +58,10 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
     let mut turns = Vec::new();
     let mut session_id: Option<String> = None;
     let mut first_ts: Option<String> = None;
+    let mut seen = std::collections::HashSet::new();
 
     for raw in jsonl.lines() {
-        let raw = raw.trim();
-        if raw.is_empty() {
+        if raw.trim().is_empty() {
             continue;
         }
         // A malformed line is skipped, not fatal — a session can be appended to
@@ -74,11 +84,29 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
             _ => continue,
         };
         let Some(msg) = &line.message else { continue };
-        let text = spoken_text(&msg.content);
+        let text = super::strip_session_harness(&spoken_text(&msg.content));
         if text.is_empty() {
             continue;
         }
-        turns.push(Turn { role, text });
+        let message_id = line.uuid.or(msg.id.clone());
+        if let Some(message_id) = &message_id {
+            if !seen.insert((message_id.clone(), role, text.clone())) {
+                continue;
+            }
+        }
+        turns.push(Turn {
+            role,
+            text,
+            metadata: TurnMetadata {
+                message_id,
+                parent_id: line.parent_uuid,
+                timestamp: line.timestamp,
+                phase: msg.phase.clone(),
+                original_role: msg.role.clone().or(line.kind),
+                session_provenance: None,
+                original_record: Some(raw.to_string()),
+            },
+        });
     }
 
     if turns.is_empty() {
@@ -91,7 +119,15 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
         id,
         source: Source::ClaudeCode,
         title: title_from(&turns),
-        created: first_ts.as_deref().and_then(super::parse_iso8601),
+        created: turns
+            .iter()
+            .find_map(|t| {
+                t.metadata
+                    .timestamp
+                    .as_deref()
+                    .and_then(super::parse_iso8601)
+            })
+            .or_else(|| first_ts.as_deref().and_then(super::parse_iso8601)),
         turns,
     })
 }
@@ -329,5 +365,23 @@ mod tests {
         let c = parse(json, "s").unwrap();
         assert_eq!(c.turns.len(), 1);
         assert_eq!(c.turns[0].text, "real");
+    }
+
+    #[test]
+    fn preserves_original_coordinates_and_dedups_resume_replay() {
+        let record = serde_json::json!({"type":"user", "uuid":"message-1","parentUuid":"parent-1",
+            "sessionId":"stable-session","timestamp":"2026-10-03T12:00:00Z",
+            "message":{"role":"user","content":"<environment_context>machine cwd</environment_context>\nExplain the timer race."}}).to_string();
+        let record = format!(" \t{record}  ");
+        let c = parse(&format!("{record}\n{record}"), "fallback").unwrap();
+        assert_eq!(c.id, "stable-session");
+        assert_eq!(c.turns.len(), 1);
+        assert_eq!(c.turns[0].text, "Explain the timer race.");
+        assert_eq!(c.turns[0].metadata.parent_id.as_deref(), Some("parent-1"));
+        assert_eq!(c.turns[0].metadata.original_role.as_deref(), Some("user"));
+        assert_eq!(
+            c.turns[0].metadata.original_record.as_deref(),
+            Some(record.as_str())
+        );
     }
 }

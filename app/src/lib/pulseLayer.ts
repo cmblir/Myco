@@ -15,6 +15,11 @@ const MAX_PULSES = 140;
 const SPEED_MIN = 0.12; // edge fractions per second
 const SPEED_VAR = 0.33;
 
+/** Places `out` a share `f` of the way along the link s → t as it is drawn
+ *  (Woven's curved strand: WovenGraphLayer.pointAlong). False leaves the
+ *  straight chord between the two notes. */
+export type LinkRoute = (s: string, t: string, f: number, out: THREE.Vector3) => boolean;
+
 const PULSE_VERT = /* glsl */ `
 attribute float a_psize;
 attribute vec3 a_pcolor;
@@ -53,6 +58,9 @@ export class PulseLayer {
   private speed!: Float32Array; // signed (direction baked in)
   private cs = new THREE.Color();
   private ct = new THREE.Color();
+  private at = new THREE.Vector3();
+  /** The drawn path of each link, when it is not the straight chord. */
+  along: LinkRoute | null = null;
 
   constructor(graph: VaultGraph, edgePairs: [string, string][], pr: number, dark: boolean) {
     this.graph = graph;
@@ -131,12 +139,9 @@ export class PulseLayer {
         col.setXYZ(i, 0, 0, 0);
         continue;
       }
-      pos.setXYZ(
-        i,
-        sa.x + (ta.x - sa.x) * p,
-        sa.y + (ta.y - sa.y) * p,
-        sa.z + (ta.z - sa.z) * p,
-      );
+      if (!this.along?.(s, t, p, this.at))
+        this.at.set(sa.x + (ta.x - sa.x) * p, sa.y + (ta.y - sa.y) * p, sa.z + (ta.z - sa.z) * p);
+      pos.setXYZ(i, this.at.x, this.at.y, this.at.z);
       // Take the edge's gradient colour at this point, with a soft head/tail
       // fade so a pulse brightens mid-edge and dims at the endpoints.
       this.cs.set(sa.color);

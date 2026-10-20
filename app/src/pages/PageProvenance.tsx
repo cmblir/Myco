@@ -3,6 +3,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
+import { VENDOR_LABEL } from "../lib/displayName";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import type { SourceRef } from "../lib/ipc";
@@ -47,7 +48,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
 
   return (
     <AppPage
-      eyebrow={t.nav_provenance}
+      eyebrow={t.nav_tools}
       title={t.p_title}
       note={t.p_lede}
       tools={
@@ -135,10 +136,11 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
       {!currentVault ? (
         <p className="muted">{t.p_open_vault ?? "Open a vault to scan provenance."}</p>
       ) : loading ? (
-        <p className="muted">{t.p_scanning ?? "Scanning vault…"}</p>
+        <p className="muted" role="status">{t.p_scanning ?? "Scanning vault…"}</p>
       ) : error ? (
-        <div className="card-flat" style={{ color: "#dc2626" }}>
-          {error}
+        <div className="card-flat" role="alert" style={{ color: "var(--danger)" }}>
+          <p>{error}</p>
+          <Button onClick={() => void scan(currentVault.path, true)}>{t.q_retry}</Button>
         </div>
       ) : !rows || rows.length === 0 ? (
         <p className="muted">
@@ -216,9 +218,8 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
               return (
                 <Fragment key={r.path}>
                 <button
-                  className="list-row"
+                  className="list-row prov-row"
                   style={{
-                    gridTemplateColumns: "20px 1.4fr 2fr auto auto",
                     background: "transparent",
                     border: 0,
                     textAlign: "left",
@@ -327,14 +328,6 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
     </AppPage>
   );
 }
-
-// Vendor display names are proper nouns — shown as-is, not translated.
-const VENDOR_LABEL: Record<string, string> = {
-  chatgpt: "ChatGPT",
-  claude: "Claude.ai",
-  "claude-code": "Claude Code",
-  codex: "Codex",
-};
 
 // `created` is an epoch (seconds, from the importer) or a date string (a
 // hand-authored source). Format both; fall back to the raw value if neither.

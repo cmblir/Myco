@@ -7,6 +7,8 @@
 
 import type { Adjacency, SemEdge } from "./ipc";
 import { stem } from "./graphData";
+import { sha256 } from "./tidyRun";
+import { matchWikilinkAt, wikilinkBase } from "./wikilinks";
 
 export interface LinkSuggestion {
   source: string;
@@ -26,6 +28,10 @@ function linked(adj: Adjacency, a: string, b: string): boolean {
   );
 }
 
+// All surfaces request the same full queue, often on every progress tick.
+// Store snapshots are immutable: reuse the derivation until one input moves.
+let pendingCache: { adj: Adjacency; sem: SemEdge[]; dismissed: ReadonlySet<string>; value: LinkSuggestion[] } | null = null;
+
 /** Filter the semantic pairs down to actionable, novel, non-dismissed ones. */
 export function suggestLinks(
   adj: Adjacency,
@@ -33,19 +39,23 @@ export function suggestLinks(
   dismissed: ReadonlySet<string>,
   max = 12,
 ): LinkSuggestion[] {
+  if (max <= 0) return [];
+  if (pendingCache?.adj === adj && pendingCache.sem === sem && pendingCache.dismissed === dismissed) {
+    return Number.isFinite(max) ? pendingCache.value.slice(0, max) : pendingCache.value;
+  }
   const seen = new Set<string>();
   const out: LinkSuggestion[] = [];
   const sorted = [...sem].sort((a, b) => b.score - a.score);
   for (const e of sorted) {
-    if (e.source === e.target) continue;
+    if (e.source === e.target || !Number.isFinite(e.score)) continue;
     const key = pairKey(e.source, e.target);
     if (seen.has(key) || dismissed.has(key)) continue;
     seen.add(key);
     if (linked(adj, e.source, e.target)) continue;
     out.push({ source: e.source, target: e.target, score: e.score, key });
-    if (out.length >= max) break;
   }
-  return out;
+  pendingCache = { adj, sem, dismissed, value: out };
+  return Number.isFinite(max) ? out.slice(0, max) : out;
 }
 
 /** Total pending suggestions — uncapped, unlike suggestLinks' display default.
@@ -62,6 +72,11 @@ export function pendingLinkCount(
 export interface LinkSuggestionIO {
   readFile: (path: string) => Promise<{ raw: string }>;
   writeFile: (path: string, content: string) => Promise<unknown>;
+  /** Disk writers use CAS; the reader instead appends to its live draft. */
+  writeFileIfUnchanged?: (path: string, content: string, expectedSha256: string | null) => Promise<unknown>;
+  /** Transform a live draft synchronously; undefined delegates to disk IO. */
+  transformFile?: (path: string, transform: (raw: string) => string) => Promise<unknown> | undefined;
+  vaultRoot?: string;
 }
 
 /** Accept one suggestion: read the source, append the wikilink, write back
@@ -71,28 +86,50 @@ export async function acceptSuggestion(
   s: LinkSuggestion,
   io: LinkSuggestionIO,
 ): Promise<void> {
-  const file = await io.readFile(s.source);
-  const next = appendWikilink(file.raw, s.target);
-  if (next !== file.raw) await io.writeFile(s.source, next);
+  await acceptSourceGroup([s], io);
 }
 
-/** Accept every suggestion in order through acceptSuggestion. Stops at the
- * first failure so the remainder stays listed (and unattempted) rather than
- * racing ahead past a broken one. */
+async function acceptSourceGroup(group: LinkSuggestion[], io: LinkSuggestionIO): Promise<void> {
+  const source = group[0].source;
+  const transform = (raw: string): string => appendWikilinks(raw, group.map((s) => s.target), io.vaultRoot);
+  const draftWrite = io.transformFile?.(source, transform);
+  if (draftWrite) { await draftWrite; return; }
+  for (let attempt = 0; ; attempt++) {
+    const { raw } = await io.readFile(source);
+    const next = transform(raw);
+    if (next === raw) return;
+    try {
+      if (io.writeFileIfUnchanged) await io.writeFileIfUnchanged(source, next, await sha256(raw));
+      else await io.writeFile(source, next);
+      return;
+    } catch (error) {
+      if (attempt >= 2 || !/^write conflict:/i.test(String(error).replace(/^Error:\s*/, ""))) throw error;
+    }
+  }
+}
+
+/** One append per source document, stopping at the first failed document.
+ * A failed group stays wholly pending; completed documents are never retried. */
 export async function acceptAll(
   suggestions: LinkSuggestion[],
   io: LinkSuggestionIO,
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ accepted: LinkSuggestion[]; remaining: LinkSuggestion[]; error: string | null }> {
   const accepted: LinkSuggestion[] = [];
-  for (let i = 0; i < suggestions.length; i++) {
-    const s = suggestions[i];
+  const groups = new Map<string, LinkSuggestion[]>();
+  for (const s of suggestions) {
+    const group = groups.get(s.source);
+    if (group) group.push(s);
+    else groups.set(s.source, [s]);
+  }
+  for (const group of groups.values()) {
     try {
-      await acceptSuggestion(s, io);
-      accepted.push(s);
+      await acceptSourceGroup(group, io);
+      accepted.push(...group);
       onProgress?.(accepted.length, suggestions.length);
     } catch (e) {
-      return { accepted, remaining: suggestions.slice(i), error: String(e) };
+      const done = new Set(accepted.map((s) => s.key));
+      return { accepted, remaining: suggestions.filter((s) => !done.has(s.key)), error: String(e) };
     }
   }
   return { accepted, remaining: [], error: null };
@@ -100,10 +137,45 @@ export async function acceptAll(
 
 /** Append `- [[target]]` under a "## Related" section (created if absent).
  * Returns the original content unchanged if the wikilink is already there. */
-export function appendWikilink(content: string, targetPath: string): string {
-  const name = stem(targetPath);
-  if (content.includes(`[[${name}]]`)) return content;
-  return appendUnderHeading(content, "Related", `- [[${name}]]`);
+export function appendWikilink(content: string, targetPath: string, vaultRoot?: string): string {
+  return appendWikilinks(content, [targetPath], vaultRoot);
+}
+
+/** Scan and insert once even when thousands of targets share one document. */
+function appendWikilinks(content: string, targets: string[], vaultRoot?: string): string {
+  const existing = new Set<string>();
+  for (let i = content.indexOf("[["); i >= 0; i = content.indexOf("[[", i + 2)) {
+    const m = matchWikilinkAt(content, i);
+    if (m) existing.add(wikilinkBase(m.target).replace(/\.md$/i, "").normalize("NFC").toLowerCase());
+  }
+  const lines: string[] = [];
+  for (const path of targets) {
+    const name = stem(path);
+    // Precise paths distinguish two notes sharing a filename. Preserve the
+    // legacy stem-only helper for callers without a known vault root.
+    const target = vaultRoot ? suggestionRelativePath(path, vaultRoot).replace(/\.md$/i, "") : name;
+    if (/[\]\n|#]/.test(target)) throw new Error("Cannot represent this note path as a wikilink");
+    const key = target.normalize("NFC").toLowerCase();
+    if (existing.has(key)) continue;
+    existing.add(key);
+    lines.push(`- [[${target}${vaultRoot ? `|${name}` : ""}]]`);
+  }
+  return lines.length ? appendUnderHeading(content, "Related", lines.join("\n")) : content;
+}
+
+/** UI defense in depth; native confinement and immutable-raw checks still apply. */
+export function suggestionRelativePath(path: string, vaultRoot: string): string {
+  const root = vaultRoot.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normalized = path.replace(/\\/g, "/");
+  if (!root || !normalized.startsWith(`${root}/`)) throw new Error("Link suggestion belongs to another vault");
+  const relative = normalized.slice(root.length + 1);
+  if (!relative || relative.split("/").some((part) => !part || part === "." || part === "..")) {
+    throw new Error("Invalid link suggestion path");
+  }
+  if (/^(raw|sessions|_inbox|ingest-reports|daily|weekly|monthly)\//i.test(relative)) {
+    throw new Error("Imported sources and generated notes are not link suggestions");
+  }
+  return relative;
 }
 
 /** Append `line` under the `## <heading>` section (created at the end if the
@@ -131,23 +203,48 @@ export function appendUnderHeading(
 // --- dismissal persistence ---------------------------------------------------
 
 const KEY = "myco.linkSuggestions.dismissed.v1";
-const MAX_DISMISSED = 500; // bounded so localStorage can't grow unbounded
 
 export function loadDismissed(): Set<string> {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return new Set();
     const parsed = JSON.parse(raw) as unknown;
-    return new Set(Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : []);
+    if (Array.isArray(parsed)) return new Set(parsed.filter((x) => typeof x === "string"));
+    if (!parsed || typeof parsed !== "object" || !("pages" in parsed) || !("pairs" in parsed)) return new Set();
+    const { pages, pairs } = parsed;
+    if (!Array.isArray(pages) || !pages.every((p) => typeof p === "string") || !Array.isArray(pairs)) return new Set();
+    const keys = new Set<string>();
+    for (const pair of pairs) {
+      if (!Array.isArray(pair) || pair.length !== 2) continue;
+      const [a, b] = pair;
+      if (Number.isInteger(a) && Number.isInteger(b) && typeof pages[a] === "string" && typeof pages[b] === "string") keys.add(pairKey(pages[a], pages[b]));
+    }
+    if ("extra" in parsed && Array.isArray(parsed.extra)) for (const key of parsed.extra) if (typeof key === "string") keys.add(key);
+    return keys;
   } catch {
     return new Set();
   }
 }
 
 export function saveDismissed(set: ReadonlySet<string>): void {
-  try {
-    localStorage.setItem(KEY, JSON.stringify([...set].slice(-MAX_DISMISSED)));
-  } catch {
-    /* localStorage unavailable */
+  // Page dictionary keeps a 28k-edge queue compact without forgetting older
+  // decisions. Quota/unavailable errors reach the action's warning surface.
+  const pages: string[] = [];
+  const index = new Map<string, number>();
+  const pairs: [number, number][] = [];
+  const extra: string[] = [];
+  const id = (path: string): number => {
+    const current = index.get(path);
+    if (current !== undefined) return current;
+    const next = pages.length;
+    pages.push(path);
+    index.set(path, next);
+    return next;
+  };
+  for (const key of set) {
+    const parts = key.split("|");
+    if (parts.length === 2) pairs.push([id(parts[0]), id(parts[1])]);
+    else extra.push(key);
   }
+  localStorage.setItem(KEY, JSON.stringify({ pages, pairs, extra }));
 }

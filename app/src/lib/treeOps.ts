@@ -24,6 +24,44 @@ export function flattenVisible(
   return out;
 }
 
+/** A rendered tree row for keyboard moves: `expanded` is null for a file. */
+export interface TreeRow {
+  depth: number;
+  expanded: boolean | null;
+}
+
+/** What an arrow / Home / End key on row `i` does (WAI-ARIA tree pattern):
+ *  focus another row, or open/close this folder. Null leaves the key alone. */
+export function treeKeyMove(
+  rows: TreeRow[],
+  i: number,
+  key: string,
+): { focus: number } | { toggle: number } | null {
+  const row = rows[i];
+  if (!row) return null;
+  const to = (j: number) => (j >= 0 && j < rows.length && j !== i ? { focus: j } : null);
+  switch (key) {
+    case "ArrowDown":
+      return to(i + 1);
+    case "ArrowUp":
+      return to(i - 1);
+    case "Home":
+      return to(0);
+    case "End":
+      return to(rows.length - 1);
+    case "ArrowRight":
+      if (row.expanded === false) return { toggle: i };
+      return row.expanded && rows[i + 1]?.depth > row.depth ? { focus: i + 1 } : null;
+    case "ArrowLeft": {
+      if (row.expanded) return { toggle: i };
+      for (let j = i - 1; j >= 0; j--) if (rows[j].depth < row.depth) return { focus: j };
+      return null;
+    }
+    default:
+      return null;
+  }
+}
+
 /** Inclusive range between anchor and target in `order`, either direction;
  *  `[target]` when the anchor is absent or not in the order. */
 export function rangeBetween(
@@ -62,6 +100,14 @@ export function filterMovable(paths: string[], destDir: string): string[] {
 export function rewritePrefix(path: string, from: string, to: string): string | null {
   if (path === from) return to;
   return path.startsWith(`${from}/`) ? to + path.slice(from.length) : null;
+}
+
+/** The folders between vault `root` and `path`, outermost first — what the
+ *  tree must expand to show the file. Empty outside the vault. */
+export function ancestorDirs(path: string, root: string): string[] {
+  if (!root || !path.startsWith(`${root}/`)) return [];
+  const parts = path.slice(root.length + 1).split("/").slice(0, -1);
+  return parts.map((_, i) => `${root}/${parts.slice(0, i + 1).join("/")}`);
 }
 
 export function syntheticGroup(id: string, name: string, paths: string[]): DirNode {

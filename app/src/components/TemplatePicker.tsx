@@ -18,26 +18,27 @@ import {
   templateFiles,
 } from "../lib/templates";
 
-/** Pick a template, prompt for a title, create and open. No-op without a vault. */
+/** Pick a template, prompt for a title, create and open. Returns the opened
+ *  path, or null (a dialog cancelled / no vault / the create failed). */
 export async function newNoteFromTemplate(
   t: Strings,
   dir?: string,
-): Promise<void> {
-  if (!useVaultStore.getState().currentVault) return;
+): Promise<string | null> {
+  if (!useVaultStore.getState().currentVault) return null;
   const templatePath = await pickDialog({
     title: t.tpl_pick_title ?? "Choose a template",
     message: t.tpl_pick_msg,
     body: <TemplatePickerBody t={t} />,
   });
-  if (!templatePath) return;
+  if (!templatePath) return null;
   const raw = await promptText({
     title: t.sb_new_note ?? "New note",
     message: t.sb_new_note_msg ?? "Note title (.md is added automatically)",
     placeholder: t.sb_new_note_ph ?? "untitled",
   });
-  if (!raw) return;
+  if (!raw) return null;
   try {
-    await createNoteFromTemplate(templatePath, raw, dir);
+    return await createNoteFromTemplate(templatePath, raw, dir);
   } catch (e) {
     await confirmAction({
       title: t.sb_new_note ?? "New note",
@@ -45,6 +46,7 @@ export async function newNoteFromTemplate(
         t.tpl_note_error ?? "Could not create the note from the template: {err}"
       ).replace("{err}", String(e)),
     });
+    return null;
   }
 }
 

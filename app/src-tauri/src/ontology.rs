@@ -5,19 +5,33 @@
 //! (`vector_index::centroid_edges`), each with a similarity distribution used
 //! to decide whether a new item belongs (`admit`). It persists to
 //! `<vault>/.myco/ontology.json`, same atomic tmp+rename pattern as
-//! `distill::config_save`, and is invalidated on an embedding-model change
-//! (`load`'s model check) the same way the vector index itself is.
+//! `distill::config_save`. Semantic reuse requires the complete declared
+//! embedding representation and a digest of every build input.
 
 use std::path::Path;
 
 use crate::distill::GatePreset;
-use crate::embeddings::{cosine, normalize};
+use crate::embeddings::{
+    checked_cosine, checked_vector_norm, combine_window_vectors, normalize_output, EmbeddingSpace,
+};
 use crate::vector_index::VectorStore;
+
+#[cfg(test)]
+#[path = "ontology_numeric_tests.rs"]
+mod numeric_tests;
+
+#[cfg(test)]
+#[path = "ontology_provenance_tests.rs"]
+mod provenance_tests;
+
+#[cfg(test)]
+#[path = "ontology_anchor_tests.rs"]
+mod anchor_tests;
 
 /// One topic cluster. `members` is ordered by cosine-to-`centroid` descending
 /// — the ontology cache holds no per-member vectors (only the cluster
-/// centroid), so this build-time ordering doubles as both the medoid pick
-/// (`members[0]`, whose stem becomes `label`) and the "most representative
+/// centroid). The geometric mean's medoid initially supplies `label`; a map
+/// anchor preserves that label while reranking the "most representative
 /// pages" list `admit` hands back as `nearest_pages`.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Cluster {
@@ -39,12 +53,58 @@ pub struct Cluster {
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Ontology {
     pub model: String,
+    /// Missing on legacy or unlabelled geometry; never inferred during cache reuse.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding: Option<EmbeddingSpace>,
+    /// Digest of the complete index, title dictionary, and map-anchor inputs.
+    #[serde(default)]
+    pub source_signature: String,
     pub built_at: i64,
     pub wiki_pages: usize,
     pub clusters: Vec<Cluster>,
     /// Lowercase stems + frontmatter titles, for whole-word matching against
     /// incoming item text.
     pub entities: Vec<String>,
+}
+
+impl Ontology {
+    /// Validate all admission geometry without requiring unit centroids.
+    pub fn validate_geometry(&self, expected_dim: Option<usize>) -> Result<(), String> {
+        if let Some(space) = &self.embedding {
+            space.validate()?;
+            if self.model != space.model {
+                return Err("ontology model disagrees with its embedding representation".into());
+            }
+            if expected_dim.is_some_and(|dim| dim != space.dim) {
+                return Err("ontology embedding representation width is incompatible".into());
+            }
+        }
+        let dim = expected_dim
+            .or_else(|| self.embedding.as_ref().map(|space| space.dim))
+            .or_else(|| self.clusters.first().map(|c| c.centroid.len()));
+        for (index, cluster) in self.clusters.iter().enumerate() {
+            checked_vector_norm(&cluster.centroid, dim)
+                .map_err(|error| format!("invalid ontology cluster {index}: {error}"))?;
+            let stats = [
+                cluster.sim_mean,
+                cluster.sim_std,
+                cluster.p5,
+                cluster.p25,
+                cluster.p40,
+                cluster.override_widen,
+            ];
+            if stats.iter().any(|value| !value.is_finite())
+                || cluster.sim_std < 0.0
+                || cluster.p5 > cluster.p25
+                || cluster.p25 > cluster.p40
+            {
+                return Err(format!(
+                    "invalid ontology cluster {index} similarity statistics"
+                ));
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -108,21 +168,13 @@ pub(crate) fn stem_of(page: &str) -> String {
 
 /// Mean of the given vectors, renormalized to unit length — same idiom as
 /// `VectorStore::page_centroids`, applied one level up (pages -> cluster).
-fn mean_renorm(vecs: &[&Vec<f32>]) -> Vec<f32> {
-    let Some(dim) = vecs.first().map(|v| v.len()) else {
-        return Vec::new();
-    };
-    let mut out = vec![0f32; dim];
-    for v in vecs {
-        for (i, x) in v.iter().enumerate().take(dim) {
-            out[i] += x;
-        }
-    }
-    for x in out.iter_mut() {
-        *x /= vecs.len() as f32;
-    }
-    normalize(&mut out);
-    out
+fn mean_renorm(vecs: &[&Vec<f32>]) -> Result<Vec<f32>, String> {
+    let vectors: Vec<Vec<f32>> = vecs.iter().map(|vector| (*vector).clone()).collect();
+    let mut mean = combine_window_vectors(&vectors, &vec![1; vectors.len()])?;
+    // The window combiner preserves a single input exactly; a centroid's
+    // contract requires unit output even for one valid nonunit member.
+    normalize_output(&mut mean, vectors.first().map(Vec::len))?;
+    Ok(mean)
 }
 
 /// Nearest-rank percentile of an ASCENDING-sorted slice, `p` in `[0, 100]`.
@@ -138,29 +190,28 @@ fn percentile(sorted_ascending: &[f32], p: f32) -> f32 {
     sorted_ascending[idx.min(last)]
 }
 
-/// Build one cluster from its member page names. `force_label` overrides the
-/// medoid-stem label for the synthetic "field" cluster.
-fn assemble_cluster(
-    id: u32,
-    member_names: Vec<String>,
+/// Recompute ranking and admission statistics around the selected centroid.
+/// Cluster identity, reference geometry and lifecycle settings stay unchanged.
+fn calibrate_members(
+    cluster: &mut Cluster,
     cent_map: &std::collections::HashMap<&str, &Vec<f32>>,
-    force_label: Option<&str>,
-) -> Cluster {
-    let vecs: Vec<&Vec<f32>> = member_names
+) -> Result<(), String> {
+    if cluster.members.is_empty() {
+        return Err("ontology cluster has no members".into());
+    }
+    checked_vector_norm(&cluster.centroid, None)?;
+    let mut scored: Vec<(String, f32)> = cluster
+        .members
         .iter()
-        .filter_map(|m| cent_map.get(m.as_str()).copied())
-        .collect();
-    let centroid = mean_renorm(&vecs);
-    let mut scored: Vec<(String, f32)> = member_names
-        .iter()
-        .filter_map(|m| {
-            cent_map
-                .get(m.as_str())
-                .map(|v| (m.clone(), cosine(v, &centroid)))
+        .map(|member| {
+            let vector = cent_map
+                .get(member.as_str())
+                .copied()
+                .ok_or_else(|| "ontology cluster member has no centroid".to_string())?;
+            checked_cosine(vector, &cluster.centroid).map(|similarity| (member.clone(), similarity))
         })
-        .collect();
-    // Descending similarity to the cluster's own centroid; ties broken by page
-    // name so the order (and therefore the medoid pick) is deterministic.
+        .collect::<Result<_, _>>()?;
+    // Descending similarity to the selected reference; ties break by page name.
     scored.sort_by(|a, b| {
         b.1.partial_cmp(&a.1)
             .unwrap_or(std::cmp::Ordering::Equal)
@@ -168,27 +219,59 @@ fn assemble_cluster(
     });
     let members: Vec<String> = scored.iter().map(|(m, _)| m.clone()).collect();
     let mut sims: Vec<f32> = scored.iter().map(|(_, s)| *s).collect();
-    let n = sims.len().max(1) as f32;
-    let sim_mean = sims.iter().sum::<f32>() / n;
-    let variance = sims.iter().map(|s| (s - sim_mean).powi(2)).sum::<f32>() / n;
+    let n = sims.len() as f64;
+    let sim_mean = sims.iter().map(|s| f64::from(*s)).sum::<f64>() / n;
+    let variance = sims
+        .iter()
+        .map(|s| (f64::from(*s) - sim_mean).powi(2))
+        .sum::<f64>()
+        / n;
     sims.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let label = match force_label {
-        Some(l) => l.to_string(),
-        None => stem_of(members.first().map(String::as_str).unwrap_or("")),
-    };
-    Cluster {
+    cluster.members = members;
+    cluster.sim_mean = sim_mean as f32;
+    cluster.sim_std = variance.sqrt() as f32;
+    cluster.p5 = percentile(&sims, 5.0);
+    cluster.p25 = percentile(&sims, 25.0);
+    cluster.p40 = percentile(&sims, 40.0);
+    Ok(())
+}
+
+/// Build one cluster from its member page names. `force_label` overrides the
+/// medoid-stem label for the synthetic "field" cluster.
+fn assemble_cluster(
+    id: u32,
+    member_names: Vec<String>,
+    cent_map: &std::collections::HashMap<&str, &Vec<f32>>,
+    force_label: Option<&str>,
+) -> Result<Cluster, String> {
+    let vecs: Vec<&Vec<f32>> = member_names
+        .iter()
+        .map(|member| {
+            cent_map
+                .get(member.as_str())
+                .copied()
+                .ok_or_else(|| "ontology cluster member has no centroid".to_string())
+        })
+        .collect::<Result<_, _>>()?;
+    let mut cluster = Cluster {
         id,
-        label,
-        members,
-        centroid,
-        sim_mean,
-        sim_std: variance.sqrt(),
-        p5: percentile(&sims, 5.0),
-        p25: percentile(&sims, 25.0),
-        p40: percentile(&sims, 40.0),
+        label: String::new(),
+        members: member_names,
+        centroid: mean_renorm(&vecs)?,
+        sim_mean: 0.0,
+        sim_std: 0.0,
+        p5: 0.0,
+        p25: 0.0,
+        p40: 0.0,
         last_touched: 0, // filled by `stamp_last_touched`, which needs a vault root
         override_widen: 0.0,
-    }
+    };
+    calibrate_members(&mut cluster, cent_map)?;
+    cluster.label = match force_label {
+        Some(l) => l.to_string(),
+        None => stem_of(cluster.members.first().map(String::as_str).unwrap_or("")),
+    };
+    Ok(cluster)
 }
 
 /// Cluster the wiki's semantic graph and compute per-cluster admission stats.
@@ -214,20 +297,31 @@ fn assemble_cluster(
 /// majority within one pass.
 ///
 /// `map_anchors` (Phase B, Task 4) is `(cluster label, page centroid)` for
-/// every `wiki/maps/` page the caller found on disk — once a cluster has a
-/// human-approved topic map, that page's own centroid replaces the cluster's
-/// geometric mean as the `admit` reference point (see the anchor-substitution
-/// loop below). Callers with no maps yet (including every test below) pass
-/// `&[]`.
+/// a settled `type: map`/`status: active` page selected by the caller. This
+/// metadata does not attest to independent human approval. A matching page's
+/// centroid replaces the cluster's geometric mean as the `admit` reference,
+/// including its member ranking and similarity distribution. Callers with no
+/// selected maps pass `&[]`.
+/// Returns an error if any source, centroid, or map-anchor geometry is invalid.
 pub fn build(
     store: &VectorStore,
     wiki_titles: &[(String, String)],
     map_anchors: &[(String, Vec<f32>)],
-) -> Ontology {
-    let cents = store.page_centroids();
+) -> Result<Ontology, String> {
+    let source_signature = source_signature(store, wiki_titles, map_anchors)?;
+    let embedding = if store.model.trim().is_empty() || store.signature.trim().is_empty() {
+        None
+    } else {
+        Some(store.embedding_space()?)
+    };
+    let cents = store.page_centroids()?;
+    for (index, (_, vector)) in cents.iter().enumerate() {
+        checked_vector_norm(vector, Some(store.dim))
+            .map_err(|error| format!("invalid ontology page centroid {index}: {error}"))?;
+    }
     let cent_map: std::collections::HashMap<&str, &Vec<f32>> =
         cents.iter().map(|(p, v)| (p.as_str(), v)).collect();
-    let edges = store.centroid_edges(CLUSTER_KNN_K);
+    let edges = store.centroid_edges(CLUSTER_KNN_K)?;
 
     // Node set = pages that survive `centroid_edges`' machine-written filter,
     // reusing that filter here (rather than re-implementing it) so the
@@ -311,37 +405,29 @@ pub fn build(
         .into_iter()
         .enumerate()
         .map(|(id, members)| assemble_cluster(id as u32, members, &cent_map, None))
-        .collect();
+        .collect::<Result<_, _>>()?;
     if !small.is_empty() {
         clusters.push(assemble_cluster(
             FIELD_CLUSTER_ID,
             small,
             &cent_map,
             Some("field"),
-        ));
+        )?);
     }
 
-    // Human-approved topic-map centroid > mean-of-members: a human confirmed
-    // what this cluster is about by approving its map, which is a better
-    // `admit` reference point than an unsupervised average of its members
-    // (design spec, "topic maps"). Matched by ANY current member's stem, not
-    // just `c.label` — `label` is the medoid stem and can drift to a
-    // different member on a later rebuild (Phase B, Task 4 fix round 1); the
-    // anchor's `cluster:` value was recorded against whichever member was
-    // the medoid AT DRAFT TIME, which is by definition still one of this
-    // cluster's members in the common drift case. Only clusters an anchor
-    // actually names (by this widened match) are touched; every other
-    // cluster keeps its computed centroid. Residual case, left as-is by
-    // design: if the map's own page later migrates out of this cluster
-    // entirely (none of its current members match), the anchor silently
-    // stops applying — the map genuinely no longer describes this cluster,
-    // so falling back to the geometric mean is correct, not a bug.
+    // Caller-selected settled map geometry replaces the mean reference; its
+    // metadata alone is not independent human approval. Match any current
+    // member's stem because the original medoid label may have drifted.
+    // Preserve that label and cluster identity, but rank members and calibrate
+    // every admission statistic around the actual selected reference. An
+    // unmatched anchor leaves the cluster's mean geometry and statistics intact.
     for c in &mut clusters {
         let anchor = map_anchors
             .iter()
             .find(|(label, _)| c.members.iter().any(|m| stem_of(m) == *label));
         if let Some((_, vector)) = anchor {
             c.centroid = vector.clone();
+            calibrate_members(c, &cent_map)?;
         }
     }
 
@@ -357,8 +443,10 @@ pub fn build(
         }
     }
 
-    Ontology {
+    let ontology = Ontology {
         model: store.model.clone(),
+        embedding,
+        source_signature,
         built_at: now_secs(),
         // The full wiki page count, not `nodes.len()` (pages that survived
         // `centroid_edges`' filter) — `distill::run`'s staleness check
@@ -368,17 +456,80 @@ pub fn build(
         wiki_pages: wiki_titles.len(),
         clusters,
         entities: entities.into_iter().collect(),
-    }
+    };
+    ontology.validate_geometry(Some(store.dim))?;
+    Ok(ontology)
 }
 
-/// Read the cached ontology, or `None` if there is none yet or it was built
+/// Bind every geometry and dictionary input to the derived cache generation.
+fn source_signature(
+    store: &VectorStore,
+    wiki_titles: &[(String, String)],
+    map_anchors: &[(String, Vec<f32>)],
+) -> Result<String, String> {
+    use sha2::{Digest, Sha256};
+
+    store.validate_geometry()?;
+    for (index, (_, vector)) in map_anchors.iter().enumerate() {
+        checked_vector_norm(vector, Some(store.dim))
+            .map_err(|error| format!("invalid ontology map anchor {index}: {error}"))?;
+    }
+    // Ordered inputs matter: duplicate map keys use the first matching anchor.
+    // The policy version must change when ontology assembly semantics change.
+    let bytes = serde_json::to_vec(&(
+        "ontology-source-v2",
+        LABEL_PROP_SWEEPS,
+        CLUSTER_KNN_K,
+        store,
+        wiki_titles,
+        map_anchors,
+    ))
+    .map_err(|error| format!("serialize ontology build inputs: {error}"))?;
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+/// Read authoritative derived geometry for exactly these labelled build inputs.
+/// Missing legacy provenance is stale. Existing unreadable or corrupt caches fail
+/// explicitly, and neither failure nor staleness changes the cache on disk.
+pub fn load_for_store(
+    root: &Path,
+    store: &VectorStore,
+    wiki_titles: &[(String, String)],
+    map_anchors: &[(String, Vec<f32>)],
+) -> Result<Option<Ontology>, String> {
+    let expected = store.embedding_space()?;
+    let expected_source = source_signature(store, wiki_titles, map_anchors)?;
+    let path = crate::vault_dir::dir(root).join("ontology.json");
+    let Some(bytes) = crate::index_publication::read_checked(&path)? else {
+        return Ok(None);
+    };
+    let ontology: Ontology =
+        serde_json::from_slice(&bytes).map_err(|error| format!("parse ontology cache: {error}"))?;
+    ontology.validate_geometry(None)?;
+    if ontology.embedding.as_ref() != Some(&expected)
+        || ontology.source_signature != expected_source
+    {
+        return Ok(None);
+    }
+    ontology.validate_geometry(Some(expected.dim))?;
+    Ok(Some(ontology))
+}
+
+/// Read model-matched metadata for legacy display/tests. This does not establish
+/// semantic cache authority; production admission uses `load_for_store`.
+/// Returns `None` if there is none yet or it was built
 /// against a different embedding model (the same invalidation rule as the
 /// vector index itself: a model change means incompatible vector geometry).
+/// Invalid numeric caches are logged and excluded without rewriting the file.
 pub fn load(root: &Path, model: &str) -> Option<Ontology> {
     let path = crate::vault_dir::dir(root).join("ontology.json");
     let raw = std::fs::read_to_string(path).ok()?;
     let o: Ontology = serde_json::from_str(&raw).ok()?;
     if o.model != model {
+        return None;
+    }
+    if let Err(error) = o.validate_geometry(None) {
+        eprintln!("myco: refusing invalid ontology cache: {error}");
         return None;
     }
     Some(o)
@@ -387,6 +538,7 @@ pub fn load(root: &Path, model: &str) -> Option<Ontology> {
 /// Atomic write: stage to a temp file in the same dir, then rename over
 /// target — same pattern as `distill::config_save`.
 pub fn save(root: &Path, o: &Ontology) -> Result<(), String> {
+    o.validate_geometry(None)?;
     let dir = crate::vault_dir::dir(root);
     std::fs::create_dir_all(&dir)
         .map_err(|e| format!("create {} dir: {e}", crate::vault_dir::DIR_NAME))?;
@@ -470,6 +622,14 @@ fn matched_entities(o: &Ontology, item_text_lower: &str) -> Vec<String> {
         .collect()
 }
 
+fn finite_threshold(value: f64) -> Result<f32, String> {
+    let threshold = value as f32;
+    if !threshold.is_finite() {
+        return Err("ontology admission threshold is not finite".into());
+    }
+    Ok(threshold)
+}
+
 /// Strict/Loose ask for p10/p1 thresholds, but only p5/p25/p40 are persisted
 /// per cluster (the calibration follow-up in Task 1's spec needs exactly
 /// those three). Approximate the others by extending the local slope between
@@ -478,25 +638,30 @@ fn matched_entities(o: &Ontology, item_text_lower: &str) -> Vec<String> {
 /// ponytail: linear extrapolation, not a measured percentile — upgrade path is
 /// storing the full member-similarity distribution (or all five percentiles)
 /// per cluster if Strict/Loose ever need to be exact rather than approximate.
-fn threshold_at(c: &Cluster, target_pct: f32) -> f32 {
-    let anchors = [(5.0f32, c.p5), (25.0, c.p25), (40.0, c.p40)];
+fn threshold_at(c: &Cluster, target_pct: f32) -> Result<f32, String> {
+    let target_pct = f64::from(target_pct);
+    let anchors = [
+        (5.0f64, f64::from(c.p5)),
+        (25.0, f64::from(c.p25)),
+        (40.0, f64::from(c.p40)),
+    ];
     if target_pct <= anchors[0].0 {
         let slope = (anchors[1].1 - anchors[0].1) / (anchors[1].0 - anchors[0].0);
-        return anchors[0].1 + slope * (target_pct - anchors[0].0);
+        return finite_threshold(anchors[0].1 + slope * (target_pct - anchors[0].0));
     }
     if target_pct >= anchors[2].0 {
         let slope = (anchors[2].1 - anchors[1].1) / (anchors[2].0 - anchors[1].0);
-        return anchors[2].1 + slope * (target_pct - anchors[2].0);
+        return finite_threshold(anchors[2].1 + slope * (target_pct - anchors[2].0));
     }
     for w in anchors.windows(2) {
         let (x0, y0) = w[0];
         let (x1, y1) = w[1];
         if target_pct >= x0 && target_pct <= x1 {
             let t = (target_pct - x0) / (x1 - x0);
-            return y0 + t * (y1 - y0);
+            return finite_threshold(y0 + t * (y1 - y0));
         }
     }
-    c.p25 // unreachable given the anchor list above
+    finite_threshold(f64::from(c.p25)) // unreachable given the anchor list above
 }
 
 /// Names the threshold that actually decided `natural_tier` — the `s_knn`-only
@@ -561,30 +726,40 @@ fn describe(
 /// can grant Summary/Quarantine/Reject but never Full. When both the entity
 /// floor and a profile match would fire, the entity floor's reason wins
 /// (arbitrary but stable tie-break — the tier is Summary either way).
+/// Invalid geometry or nonfinite thresholds return an error, never a tier.
 pub fn admit(
     o: &Ontology,
     item_vec: &[f32],
     item_text: &str,
     preset: &GatePreset,
     profile_vecs: &[Vec<f32>],
-) -> Verdict {
+) -> Result<Verdict, String> {
+    o.validate_geometry(None)?;
+    let expected_dim = o.clusters.first().map(|cluster| cluster.centroid.len());
+    checked_vector_norm(item_vec, expected_dim)?;
+    for (index, vector) in profile_vecs.iter().enumerate() {
+        checked_vector_norm(vector, Some(item_vec.len()))
+            .map_err(|error| format!("invalid ontology profile vector {index}: {error}"))?;
+    }
     let item_text_lower = item_text.to_lowercase();
     let entity_hits = matched_entities(o, &item_text_lower);
 
     let nearest = o
         .clusters
         .iter()
-        .map(|c| (c, cosine(item_vec, &c.centroid)))
+        .map(|c| checked_cosine(item_vec, &c.centroid).map(|similarity| (c, similarity)))
+        .collect::<Result<Vec<_>, _>>()?
+        .into_iter()
         .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let Some((cluster, s_knn)) = nearest else {
-        return Verdict {
+        return Ok(Verdict {
             tier: Tier::Reject,
             s_knn: 0.0,
             nearest_cluster: String::new(),
             nearest_pages: Vec::new(),
             entity_hits,
             reason: "no ontology yet — vault has not been distilled".into(),
-        };
+        });
     };
 
     let (full_pct, quar_pct) = match preset {
@@ -592,9 +767,13 @@ pub fn admit(
         GatePreset::Normal => (25.0, 5.0),
         GatePreset::Loose => (10.0, 1.0),
     };
-    let t_full = threshold_at(cluster, full_pct) - cluster.override_widen;
-    let t_quar = threshold_at(cluster, quar_pct) - cluster.override_widen;
-    let t_summary = (t_full + t_quar) / 2.0;
+    let t_full = finite_threshold(
+        f64::from(threshold_at(cluster, full_pct)?) - f64::from(cluster.override_widen),
+    )?;
+    let t_quar = finite_threshold(
+        f64::from(threshold_at(cluster, quar_pct)?) - f64::from(cluster.override_widen),
+    )?;
+    let t_summary = finite_threshold((f64::from(t_full) + f64::from(t_quar)) / 2.0)?;
     let is_field = cluster.id == FIELD_CLUSTER_ID;
 
     let natural_tier = if s_knn >= t_full && !is_field {
@@ -610,10 +789,9 @@ pub fn admit(
         entity_hits.len() >= 2 && matches!(natural_tier, Tier::Reject | Tier::Quarantine);
     // f32::MIN, not 0.0: an empty `profile_vecs` (no profile.md interests)
     // must never accidentally clear T_PROFILE via a fold's start value.
-    let profile_sim = profile_vecs
-        .iter()
-        .map(|v| cosine(item_vec, v))
-        .fold(f32::MIN, f32::max);
+    let profile_sim = profile_vecs.iter().try_fold(f32::MIN, |best, vector| {
+        checked_cosine(item_vec, vector).map(|similarity| best.max(similarity))
+    })?;
     let profile_lifted = !entity_lifted
         && matches!(natural_tier, Tier::Reject | Tier::Quarantine)
         && profile_sim >= T_PROFILE;
@@ -637,14 +815,14 @@ pub fn admit(
         quar_pct,
         entity_hits.len(),
     );
-    Verdict {
+    Ok(Verdict {
         tier,
         s_knn,
         nearest_cluster: cluster.label.clone(),
         nearest_pages,
         entity_hits,
         reason,
-    }
+    })
 }
 
 #[cfg(test)]
@@ -688,7 +866,7 @@ mod tests {
         s
     }
 
-    fn six_pages() -> VectorStore {
+    pub(super) fn six_pages() -> VectorStore {
         store_with(&[
             ("wiki/a.md", unit(vec![1.0, 0.05, 0.0])),
             ("wiki/b.md", unit(vec![1.0, -0.02, 0.03])),
@@ -703,7 +881,7 @@ mod tests {
     fn label_propagation_finds_two_blobs() {
         // 6 pages: 3 near +x axis, 3 near +y axis -> exactly 2 clusters
         let s = six_pages();
-        let o = build(&s, &[], &[]);
+        let o = build(&s, &[], &[]).unwrap();
         assert_eq!(o.clusters.len(), 2);
         assert!(o.clusters.iter().all(|c| c.members.len() == 3));
     }
@@ -718,12 +896,13 @@ mod tests {
                 ("b".into(), "Beta".into()),
             ],
             &[],
-        );
+        )
+        .unwrap();
         let p = GatePreset::Normal;
         // In-cluster item -> Full; the reason cites the threshold that
         // actually decided it (t_full == the winning cluster's p25, since
         // GatePreset::Normal picks that anchor exactly).
-        let vf = admit(&o, &unit(vec![1.0, 0.01, 0.0]), "", &p, &[]);
+        let vf = admit(&o, &unit(vec![1.0, 0.01, 0.0]), "", &p, &[]).unwrap();
         assert!(matches!(vf.tier, Tier::Full));
         let full_cluster = o
             .clusters
@@ -737,7 +916,7 @@ mod tests {
         );
         // Orthogonal item -> Reject, and the reason names the nearest cluster,
         // and cites t_quar (== the cluster's p5) — the threshold it failed.
-        let v = admit(&o, &unit(vec![0.0, 0.0, 1.0]), "", &p, &[]);
+        let v = admit(&o, &unit(vec![0.0, 0.0, 1.0]), "", &p, &[]).unwrap();
         assert!(matches!(v.tier, Tier::Reject));
         assert!(v.reason.contains(&v.nearest_cluster));
         let reject_cluster = o
@@ -757,7 +936,8 @@ mod tests {
             "discussing Alpha Topic and Beta today",
             &p,
             &[],
-        );
+        )
+        .unwrap();
         assert!(!matches!(v2.tier, Tier::Reject) && !matches!(v2.tier, Tier::Quarantine));
         assert_eq!(v2.entity_hits.len(), 2);
         // The lift is called out explicitly rather than reported as if s_knn
@@ -771,15 +951,15 @@ mod tests {
         // case, but with a synthetic profile-interest vector planted right
         // next to the (otherwise orthogonal, rejected) item.
         let s = six_pages();
-        let o = build(&s, &[], &[]);
+        let o = build(&s, &[], &[]).unwrap();
         let p = GatePreset::Normal;
         let item = unit(vec![0.0, 0.0, 1.0]);
         let profile_vecs = vec![unit(vec![0.0, 0.01, 1.0])];
 
-        let baseline = admit(&o, &item, "", &p, &[]);
+        let baseline = admit(&o, &item, "", &p, &[]).unwrap();
         assert!(matches!(baseline.tier, Tier::Reject));
 
-        let lifted = admit(&o, &item, "", &p, &profile_vecs);
+        let lifted = admit(&o, &item, "", &p, &profile_vecs).unwrap();
         assert!(matches!(lifted.tier, Tier::Summary));
         assert!(
             lifted.reason.contains("profile"),
@@ -794,12 +974,12 @@ mod tests {
         // exactly like the pre-identity-layer signature — same tier, same
         // reason — never accidentally clearing T_PROFILE.
         let s = six_pages();
-        let o = build(&s, &[], &[]);
+        let o = build(&s, &[], &[]).unwrap();
         let p = GatePreset::Normal;
         let item = unit(vec![0.0, 0.0, 1.0]);
 
-        let without = admit(&o, &item, "", &p, &[]);
-        let with_empty = admit(&o, &item, "", &p, &Vec::new());
+        let without = admit(&o, &item, "", &p, &[]).unwrap();
+        let with_empty = admit(&o, &item, "", &p, &Vec::new()).unwrap();
         assert_eq!(without.tier, with_empty.tier);
         assert_eq!(without.reason, with_empty.reason);
         assert!(matches!(without.tier, Tier::Reject));
@@ -820,7 +1000,8 @@ mod tests {
                 ("b".into(), "Beta".into()),
             ],
             &[],
-        );
+        )
+        .unwrap();
         let p = GatePreset::Normal;
         let item = unit(vec![0.0, 0.0, 1.0]);
         let profile_vecs = vec![unit(vec![0.0, 0.01, 1.0])];
@@ -831,7 +1012,8 @@ mod tests {
             "discussing Alpha Topic and Beta today",
             &p,
             &profile_vecs,
-        );
+        )
+        .unwrap();
         assert!(matches!(v.tier, Tier::Summary));
         assert_eq!(v.entity_hits.len(), 2);
         assert!(v.reason.contains("entity floor"), "reason: {}", v.reason);
@@ -860,6 +1042,8 @@ mod tests {
         };
         let o = Ontology {
             model: "m".into(),
+            embedding: None,
+            source_signature: String::new(),
             built_at: 0,
             wiki_pages: 1,
             clusters: vec![cluster],
@@ -869,11 +1053,11 @@ mod tests {
                                     // A unit vector at cosine `cos` from the centroid [1, 0].
         let at = |cos: f32| vec![cos, (1.0 - cos * cos).sqrt()];
 
-        let full = admit(&o, &at(0.90), "", &p, &[]);
+        let full = admit(&o, &at(0.90), "", &p, &[]).unwrap();
         assert!(matches!(full.tier, Tier::Full));
         assert!(full.reason.contains("0.50"), "reason: {}", full.reason);
 
-        let summary = admit(&o, &at(0.35), "", &p, &[]);
+        let summary = admit(&o, &at(0.35), "", &p, &[]).unwrap();
         assert!(matches!(summary.tier, Tier::Summary));
         assert!(
             summary.reason.contains("midpoint"),
@@ -881,7 +1065,7 @@ mod tests {
             summary.reason
         );
 
-        let quarantine = admit(&o, &at(0.15), "", &p, &[]);
+        let quarantine = admit(&o, &at(0.15), "", &p, &[]).unwrap();
         assert!(matches!(quarantine.tier, Tier::Quarantine));
         assert!(
             quarantine.reason.contains("0.10"),
@@ -889,7 +1073,7 @@ mod tests {
             quarantine.reason
         );
 
-        let reject = admit(&o, &at(0.05), "", &p, &[]);
+        let reject = admit(&o, &at(0.05), "", &p, &[]).unwrap();
         assert!(matches!(reject.tier, Tier::Reject));
         assert!(reject.reason.contains("0.10"), "reason: {}", reject.reason);
     }
@@ -897,14 +1081,14 @@ mod tests {
     #[test]
     fn map_anchor_replaces_cluster_centroid() {
         let s = six_pages();
-        let plain = build(&s, &[], &[]);
+        let plain = build(&s, &[], &[]).unwrap();
         let target_label = plain.clusters[0].label.clone();
         let other_centroid_before = plain.clusters[1].centroid.clone();
         // Deliberately far from the natural mean, so a passing assertion can
         // only mean the anchor was actually substituted, not coincidence.
         let anchor = unit(vec![0.1, 0.2, 0.97]);
 
-        let o = build(&s, &[], &[(target_label.clone(), anchor.clone())]);
+        let o = build(&s, &[], &[(target_label.clone(), anchor.clone())]).unwrap();
         let target = o.clusters.iter().find(|c| c.label == target_label).unwrap();
         assert_eq!(target.centroid, anchor);
         // The other cluster names no anchor — its centroid is untouched.
@@ -917,7 +1101,7 @@ mod tests {
         // Drift case: the anchor was recorded under a member that is NOT
         // (any longer) this cluster's medoid/label, but is still a member.
         let s = six_pages();
-        let plain = build(&s, &[], &[]);
+        let plain = build(&s, &[], &[]).unwrap();
         let target = &plain.clusters[0];
         let target_label = target.label.clone();
         let drifted_member = target
@@ -928,7 +1112,7 @@ mod tests {
         let anchor_key = stem_of(drifted_member);
         let anchor = unit(vec![0.1, 0.2, 0.97]);
 
-        let o = build(&s, &[], &[(anchor_key, anchor.clone())]);
+        let o = build(&s, &[], &[(anchor_key, anchor.clone())]).unwrap();
         let c = o.clusters.iter().find(|c| c.label == target_label).unwrap();
         assert_eq!(
             c.centroid, anchor,
@@ -941,6 +1125,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let o = Ontology {
             model: "m1".into(),
+            embedding: None,
+            source_signature: String::new(),
             built_at: 0,
             wiki_pages: 0,
             clusters: Vec::new(),
@@ -957,6 +1143,8 @@ mod tests {
         std::fs::write(dir.path().join("a.md"), "a").unwrap();
         let mut o = Ontology {
             model: "m".into(),
+            embedding: None,
+            source_signature: String::new(),
             built_at: 0,
             wiki_pages: 1,
             entities: Vec::new(),

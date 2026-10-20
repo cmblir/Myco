@@ -1,0 +1,11 @@
+---
+fixture_kind: synthetic_native_activity_development
+title: "Synthetic loom adapter attribution"
+created: "2026-10-04T09:00:00Z"
+last_updated: "2026-10-04T09:00:00Z"
+turn_metadata: [{"message_id":"D3A","original_role":"user","timestamp":"2026-10-03T10:00:00Z","phase":null},{"message_id":"D3B","original_role":"assistant","timestamp":"2026-10-04T08:00:00Z","phase":null}]
+---
+**User:**
+The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result.
+**Assistant:**
+I cannot independently confirm that repair. This message contains no later repair result.

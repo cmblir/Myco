@@ -12,6 +12,7 @@
 
 import type { MycoSettings } from "./ipc";
 import { OVERVIEW_THEMES } from "./overviewThemes";
+import { TEXT_SIZES } from "./textSize";
 import {
   loadGraphSettings,
   saveGraphSettings,
@@ -62,9 +63,11 @@ const UI_KEYS = [
   "lang",
   "theme",
   "density",
+  "textSize",
   "accent",
   "showCitations",
   "mascotEnabled",
+  "mascotRoam",
   "overviewTheme",
   "sidebarCollapsed",
   "splitRatio",
@@ -77,11 +80,12 @@ const UI_KEYS = [
  *  persisted. Enum fields are validated by value. */
 const ENUM_VALUES: Record<string, readonly string[]> = {
   // Mirrors i18n.ts `Lang`, uiStore's `Theme`/`Density`, and
-  // overviewThemes.ts `OverviewThemeKey` (imported, not restated, so a new
-  // theme cannot go missing here).
+  // overviewThemes.ts `OverviewThemeKey` and textSize.ts `TextSize` (both
+  // imported, not restated, so a new value cannot go missing here).
   lang: ["en", "ko", "ja"],
   theme: ["light", "dark", "system"],
   density: ["compact", "comfortable", "spacious"],
+  textSize: TEXT_SIZES,
   overviewTheme: OVERVIEW_THEMES,
 };
 

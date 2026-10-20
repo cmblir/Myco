@@ -1,11 +1,69 @@
 import { describe, expect, it } from "vitest";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { useSettingsStore } from "../stores/settingsStore";
+import type { MycoSettings } from "./ipc";
 import {
+  BUILTIN_CHAT_MODEL,
+  BUILTIN_FAST_CHAT_MODEL,
   BUILTIN_INGEST_MODEL,
   BUILTIN_MODEL,
   CLI_DEFAULT,
   PROVIDERS,
+  RECOMMENDED_MODEL,
+  isRecommendedModel,
+  isBuiltinChatModel,
   providerCanIngest,
+  useEnabledProviders,
 } from "./providers";
+
+describe("local provider preparation", () => {
+  function enabledNames(): string {
+    function PickerProviders() {
+      return createElement("span", null, useEnabledProviders().map((provider) => provider.id).join(","));
+    }
+    return renderToStaticMarkup(createElement(PickerProviders));
+  }
+
+  it("keeps local choices available before settings load without offering an external account", () => {
+    const previous = useSettingsStore.getState().settings;
+    try {
+      useSettingsStore.setState({ settings: null });
+      expect(enabledNames()).toBe("<span>builtin-local</span>");
+    } finally {
+      useSettingsStore.setState({ settings: previous });
+    }
+  });
+
+  it("keeps local preparation available when all legacy connection flags are false", () => {
+    const previous = useSettingsStore.getState().settings;
+    try {
+      useSettingsStore.setState({ settings: { providers: Object.fromEntries(PROVIDERS.map((provider) => [provider.flag, false])) } as MycoSettings });
+      expect(enabledNames()).toBe("<span>builtin-local</span>");
+    } finally {
+      useSettingsStore.setState({ settings: previous });
+    }
+  });
+});
+
+describe("built-in provider selection", () => {
+  it("defaults a provider-only choice to quote-only while keeping Qwen explicitly selectable", () => {
+    const catalog = PROVIDERS.find((p) => p.id === "builtin-local")?.catalog;
+    // ModelSelect persists the first catalog model when changing providers.
+    // Choosing offline retrieval must not opt into an optional generator.
+    expect(catalog?.[0]).toBe(BUILTIN_MODEL);
+    expect(catalog).toContain(BUILTIN_CHAT_MODEL);
+    expect(catalog).toContain(BUILTIN_FAST_CHAT_MODEL);
+  });
+
+  it("recognizes only pinned generators, separate from quote-only roles", () => {
+    expect(isBuiltinChatModel(BUILTIN_CHAT_MODEL)).toBe(true);
+    expect(isBuiltinChatModel(BUILTIN_FAST_CHAT_MODEL)).toBe(true);
+    for (const model of [BUILTIN_MODEL, BUILTIN_INGEST_MODEL, "unknown", ""]) {
+      expect(isBuiltinChatModel(model)).toBe(false);
+    }
+  });
+});
 
 // Regression guard for the Model-tab bug where a connected CLI provider's
 // dropdown showed only the "(default)" sentinel with nothing else to pick
@@ -105,5 +163,44 @@ describe("providerCanIngest", () => {
     // both, or "offline ingest" reads as "offline retrieval".
     expect(BUILTIN_INGEST_MODEL).toBe("extractive-ingest");
     expect(BUILTIN_INGEST_MODEL).not.toBe(BUILTIN_MODEL);
+  });
+});
+
+// Settings > Model's "Use the recommended setting": the app's out-of-box pick
+// per task (Rust settings.rs default_query_* / default_ingest_*).
+describe("isRecommendedModel", () => {
+  it("names the native local defaults: 4B answers and 2B compilation", () => {
+    expect(RECOMMENDED_MODEL.query).toEqual({
+      provider: "builtin-local",
+      model: BUILTIN_CHAT_MODEL,
+      effort: CLI_DEFAULT,
+    });
+    expect(RECOMMENDED_MODEL.ingest).toEqual({
+      provider: "builtin-local",
+      model: BUILTIN_FAST_CHAT_MODEL,
+      effort: CLI_DEFAULT,
+    });
+  });
+
+  it("is true only when provider, model and effort all match", () => {
+    expect(isRecommendedModel("query", RECOMMENDED_MODEL.query)).toBe(true);
+    expect(isRecommendedModel("ingest", RECOMMENDED_MODEL.ingest)).toBe(true);
+    // The other task's pick is not this task's recommendation.
+    expect(isRecommendedModel("query", RECOMMENDED_MODEL.ingest)).toBe(false);
+    expect(
+      isRecommendedModel("query", { ...RECOMMENDED_MODEL.query, effort: "high" }),
+    ).toBe(false);
+    expect(
+      isRecommendedModel("query", {
+        ...RECOMMENDED_MODEL.query,
+        model: "claude-sonnet-4-6",
+      }),
+    ).toBe(false);
+    expect(
+      isRecommendedModel("ingest", {
+        ...RECOMMENDED_MODEL.ingest,
+        provider: "codex-cli",
+      }),
+    ).toBe(false);
   });
 });

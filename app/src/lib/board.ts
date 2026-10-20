@@ -554,8 +554,8 @@ export async function loadBoard(vaultPath: string, name: string): Promise<BoardD
   return emptyBoard();
 }
 
-export async function saveBoard(name: string, doc: BoardDoc): Promise<void> {
-  await ipc.saveDashboard(name, JSON.stringify(doc, null, 2));
+export async function saveBoard(name: string, doc: BoardDoc, vaultPath?: string): Promise<void> {
+  await ipc.saveDashboard(name, JSON.stringify(doc, null, 2), vaultPath);
 }
 
 // --- overview layout ---------------------------------------------------------
@@ -571,14 +571,10 @@ export async function saveBoard(name: string, doc: BoardDoc): Promise<void> {
 // (boardRel) and the same ipc write path (saveDashboard), so this is one more
 // file in the folder the board already owns.
 //
-// The rail STAYS a rail — but which blocks are in it is now data. The default
-// has to be identical to the fixed stack that shipped before (a vault that
-// never edited must see no change), and the rail's 248px measure is what makes
-// MorningBand's two-line rows correct. Membership-as-data still gives the
-// freedom that was asked for: any block can leave the rail, any can join it.
-
-/** Which of AppPage's slots a block sits in. */
-export type OverviewZone = "main" | "rail";
+// Home is one centred column (spec 2026-10-02, decision 1): every block sits
+// in the main zone, and a stored document that put blocks in the old right
+// rail is healed into the column. The zone field stays in the document format
+// so files read the same in every build; it is always "main".
 
 /** Every block the Overview can place, in default order. */
 export const OVERVIEW_BLOCKS = [
@@ -587,8 +583,6 @@ export const OVERVIEW_BLOCKS = [
   "links",
   "recent",
   "board",
-  "since",
-  "suspect",
   "contradictions",
   "reunions",
 ] as const;
@@ -596,18 +590,15 @@ export type OverviewBlockId = (typeof OVERVIEW_BLOCKS)[number];
 
 export interface OverviewItem {
   id: OverviewBlockId;
-  zone: OverviewZone;
-  /** Columns of BOARD_COLS the block spans in the main grid. Kept while the
-   *  block visits the rail (which is one column wide) so moving it back
-   *  restores the width the user chose. */
+  /** Always the main column; kept so the file format is the same. */
+  zone: "main";
+  /** Columns of BOARD_COLS the block spans in the main grid. */
   span: number;
 }
 
 export interface OverviewLayout {
   version: 1;
-  /** Flat and ordered: the array IS the order, and each item names its zone.
-   *  One list rather than one per zone so "move one step" can walk a block out
-   *  of the rail into the main column with no special case. */
+  /** Flat and ordered: the array IS the order. */
   items: OverviewItem[];
 }
 
@@ -616,23 +607,31 @@ export const OVERVIEW_SPANS = [4, 6, BOARD_COLS] as const;
 /** `.myco/dashboards/overview-layout.json` — boardRel gives the path. */
 export const OVERVIEW_LAYOUT = "overview-layout";
 
-const RAIL_BY_DEFAULT: ReadonlySet<string> = new Set([
-  "since",
-  "suspect",
-  "contradictions",
-  "reunions",
-]);
+/** The boards in a dashboards-folder listing: the default first, never the
+ *  Overview's layout, which shares the folder but is not a board — picked,
+ *  autosaved or deleted as one, it would lose the user's arrangement. */
+export function boardNames(listed: string[]): string[] {
+  return [...new Set([DEFAULT_BOARD, ...listed])].filter((n) => n !== OVERVIEW_LAYOUT);
+}
 
-/** Today's arrangement, exactly: five blocks stacked full-width in the main
- *  column, the four report panels stacked in the right rail. */
+/** What New board does with a typed name. A board that exists opens: saving
+ *  an empty board over it would wipe its widgets. */
+export function newBoardAction(name: string, boards: string[]): "create" | "open" | "refuse" {
+  if (name === OVERVIEW_LAYOUT || /[/\\]|\.\./.test(name)) return "refuse";
+  return boards.includes(name) ? "open" : "create";
+}
+
+/** The remembered active board, or the default when there is none or it is
+ *  the layout file (a pick from before boardNames hid it). */
+export function storedBoard(stored: string | null): string {
+  return stored && stored !== OVERVIEW_LAYOUT ? stored : DEFAULT_BOARD;
+}
+
+/** Every block stacked full-width in the one column. */
 export function defaultOverviewLayout(): OverviewLayout {
   return {
     version: 1,
-    items: OVERVIEW_BLOCKS.map((id) => ({
-      id,
-      zone: RAIL_BY_DEFAULT.has(id) ? "rail" : "main",
-      span: BOARD_COLS,
-    })),
+    items: OVERVIEW_BLOCKS.map((id) => ({ id, zone: "main", span: BOARD_COLS })),
   };
 }
 
@@ -651,8 +650,10 @@ function clampSpan(span: unknown): number {
 /** A stored document healed back into something renderable. A hand-edited
  *  file, a save from a newer build, or a block this version dropped must
  *  degrade to a sane page — never to a crash or a block that renders nowhere.
- *  Unknown ids are dropped, duplicates collapse, spans clamp to the grid, and
- *  a block the file never mentioned is appended at its default position. */
+ *  Unknown ids are dropped (the since/suspect panels are Home's notices now),
+ *  duplicates collapse, spans clamp to the grid, every block joins the one
+ *  column, and a block the file never mentioned is appended at its default
+ *  position. */
 export function sanitizeOverviewLayout(value: unknown): OverviewLayout {
   const raw = (value as OverviewLayout | null)?.items;
   const items: OverviewItem[] = [];
@@ -664,7 +665,7 @@ export function sanitizeOverviewLayout(value: unknown): OverviewLayout {
       seen.add(it.id);
       items.push({
         id: it.id,
-        zone: it.zone === "rail" ? "rail" : "main",
+        zone: "main",
         span: clampSpan(it.span),
       });
     }
@@ -676,17 +677,7 @@ export function sanitizeOverviewLayout(value: unknown): OverviewLayout {
   return { version: 1, items };
 }
 
-/** The blocks in one zone, in order. */
-export function zoneItems(
-  layout: OverviewLayout,
-  zone: OverviewZone,
-): OverviewItem[] {
-  return layout.items.filter((i) => i.zone === zone);
-}
-
-/** One step earlier (-1) or later (+1) in the flat order, adopting the zone of
- *  the block it swaps past — which is how a keyboard walks a block out of the
- *  rail without a separate "change zone" key. */
+/** One step earlier (-1) or later (+1) in the order. */
 export function moveOverviewItem(
   layout: OverviewLayout,
   id: string,
@@ -697,11 +688,11 @@ export function moveOverviewItem(
   if (i < 0 || j < 0 || j >= layout.items.length) return layout;
   const items = [...layout.items];
   const [item] = items.splice(i, 1);
-  items.splice(j, 0, { ...item, zone: layout.items[j].zone });
+  items.splice(j, 0, item);
   return { ...layout, items };
 }
 
-/** Drop onto another block: take its place, and its zone. */
+/** Drop onto another block: take its place. */
 export function moveOverviewItemBefore(
   layout: OverviewLayout,
   id: string,
@@ -717,29 +708,8 @@ export function moveOverviewItemBefore(
     ...layout,
     items: [
       ...rest.slice(0, at),
-      { ...item, zone: target.zone },
+      item,
       ...rest.slice(at),
-    ],
-  };
-}
-
-/** Drop onto a zone's trailing strip — the only way back into a rail the user
- *  emptied. */
-export function moveOverviewItemToZone(
-  layout: OverviewLayout,
-  id: string,
-  zone: OverviewZone,
-): OverviewLayout {
-  const item = layout.items.find((x) => x.id === id);
-  if (!item || item.zone === zone) return layout;
-  const rest = layout.items.filter((x) => x.id !== id);
-  const last = rest.reduce((m, x, k) => (x.zone === zone ? k : m), -1);
-  return {
-    ...layout,
-    items: [
-      ...rest.slice(0, last + 1),
-      { ...item, zone },
-      ...rest.slice(last + 1),
     ],
   };
 }
@@ -757,19 +727,14 @@ export function setOverviewSpan(
   };
 }
 
-/** 1-based position within the block's own zone, for the aria-live line. */
+/** 1-based position in the column, for the aria-live line. */
 export function overviewPosition(
   layout: OverviewLayout,
   id: string,
-): { index: number; total: number; zone: OverviewZone } | null {
-  const item = layout.items.find((x) => x.id === id);
-  if (!item) return null;
-  const peers = zoneItems(layout, item.zone);
-  return {
-    index: peers.findIndex((x) => x.id === id) + 1,
-    total: peers.length,
-    zone: item.zone,
-  };
+): { index: number; total: number } | null {
+  const index = layout.items.findIndex((x) => x.id === id);
+  if (index < 0) return null;
+  return { index: index + 1, total: layout.items.length };
 }
 
 export async function loadOverviewLayout(
@@ -788,6 +753,8 @@ export async function loadOverviewLayout(
 
 export async function saveOverviewLayout(
   layout: OverviewLayout,
+  vaultPath: string,
 ): Promise<void> {
-  await ipc.saveDashboard(OVERVIEW_LAYOUT, JSON.stringify(layout, null, 2));
+  if (!vaultPath) throw new Error("A vault path is required to save the overview layout");
+  await ipc.saveDashboard(OVERVIEW_LAYOUT, JSON.stringify(layout, null, 2), vaultPath);
 }

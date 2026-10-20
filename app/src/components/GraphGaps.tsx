@@ -6,13 +6,16 @@
 // It is a shared <Rail> — the same part the reader's rail and the graph's
 // legend are built from — so its buckets are RailGroups and its rows RailRows.
 
-import type { JSX } from "react";
 import { useState } from "react";
-import { Button } from "./ui";
+import type { Dispatch, JSX, SetStateAction } from "react";
+import { Button, Sheet, useMediaQuery } from "./ui";
 import Rail, { RailGroup, RailRow } from "./Rail";
+import { RailFold } from "./GraphRailToggle";
+import { displayName, listedName } from "../lib/displayName";
 import { stem } from "../lib/graphData";
 import type { ClusterBridge, GapReport } from "../lib/graphGaps";
 import type { Strings } from "../lib/i18n";
+import type { NodeMeta } from "../lib/ipc";
 
 const GHOST = "ghost:";
 const MAX_ROWS = 8;
@@ -27,7 +30,8 @@ export interface GapGroup {
   actions: GapAction[];
 }
 
-export function displayName(id: string): string {
+/** A gap row's page stem (a ghost's is its unresolved link text). */
+export function gapStem(id: string): string {
   return id.startsWith(GHOST) ? id.slice(GHOST.length) : stem(id);
 }
 
@@ -60,10 +64,25 @@ export default function GraphGaps({
   selected,
   onSelect,
   onAction,
+  meta,
+  onTidy,
+  onFold,
+  closed,
+  setClosed,
 }: {
   t: Strings;
   groups: GapGroup[];
   total: number;
+  /** Adjacency meta, for the readable title of an opaque session page. */
+  meta?: Record<string, NodeMeta>;
+  /** Open the Tidy sheet (정리) from the rail's head. */
+  onTidy?: () => void;
+  /** Fold the rail to its edge tab (the head's chevron). */
+  onFold?: () => void;
+  /** Collapsed groups by key. The page holds them: a fold unmounts the rail
+   * and they must come back with it. */
+  closed: Record<string, boolean>;
+  setClosed: Dispatch<SetStateAction<Record<string, boolean>>>;
   /** Cluster pairs that read as semantically close but are structurally
    * unlinked. Only computed under the "무엇이 뭉쳐 있나" question. */
   bridges?: ClusterBridge[];
@@ -74,7 +93,11 @@ export default function GraphGaps({
   onSelect: (id: string) => void;
   onAction: (action: GapAction, id: string) => void;
 }): JSX.Element {
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
+  // A finger (UX S53): three buttons beside a name clipped the third and hid
+  // the name at 216px, so each row carries one ⋯ that opens its actions in
+  // the shared sheet. A mouse keeps the three.
+  const touch = useMediaQuery("(any-pointer: coarse)");
+  const [rowMenu, setRowMenu] = useState<{ id: string; name: string; actions: GapAction[] } | null>(null);
   const toggle = (key: string): void =>
     setClosed((c) => ({ ...c, [key]: !c[key] }));
   // Short labels here, full ones in the button title: three full-sentence
@@ -91,7 +114,20 @@ export default function GraphGaps({
   };
 
   return (
-    <Rail title={t.gr_gaps_title} count={total}>
+    <Rail
+      title={t.gr_gaps_title}
+      count={total}
+      action={
+        <>
+          {onTidy ? (
+            <Button variant="quiet" className="u-rail__headbtn" title={t.tidy_btn_title} onClick={onTidy}>
+              {t.tidy_btn}
+            </Button>
+          ) : null}
+          {onFold ? <RailFold t={t} rail="gaps" onFold={onFold} /> : null}
+        </>
+      }
+    >
       {bridges.length > 0 ? (
         <RailGroup
           label={t.gr_gap_bridges}
@@ -116,7 +152,7 @@ export default function GraphGaps({
                 ) : undefined
               }
             >
-              {displayName(b.aHub)} ↔ {displayName(b.bHub)}
+              {displayName(gapStem(b.aHub))} ↔ {displayName(gapStem(b.bHub))}
             </RailRow>
           ))}
         </RailGroup>
@@ -138,10 +174,25 @@ export default function GraphGaps({
                 title={id}
                 active={selected === id}
                 onClick={() => onSelect(id)}
-                actions={g.actions.map((a) => (
+                actions={touch ? (
+                  <Button
+                    variant="quiet"
+                    tabIndex={-1}
+                    aria-label={t.sb_row_menu.replace("{name}", listedName(gapStem(id), meta?.[id]?.title))}
+                    aria-haspopup="dialog"
+                    onClick={() =>
+                      setRowMenu({ id, name: listedName(gapStem(id), meta?.[id]?.title), actions: g.actions })
+                    }
+                  >
+                    ⋯
+                  </Button>
+                ) : g.actions.map((a) => (
                   <Button
                     key={a}
                     variant="quiet"
+                    // One Tab stop per row (UX S44): the keyboard takes the
+                    // name, and the inspector Enter opens has these exits.
+                    tabIndex={-1}
                     title={title[a]}
                     onClick={() => onAction(a, id)}
                   >
@@ -149,17 +200,35 @@ export default function GraphGaps({
                   </Button>
                 ))}
               >
-                {displayName(id)}
+                {listedName(gapStem(id), meta?.[id]?.title)}
               </RailRow>
             ))}
             {g.ids.length > MAX_ROWS ? (
-              <p>
-                +{g.ids.length - MAX_ROWS} {t.gr_gap_more}
-              </p>
+              <p>{t.gr_more.replace("{n}", String(g.ids.length - MAX_ROWS))}</p>
             ) : null}
           </RailGroup>
         ))
       )}
+      {rowMenu ? (
+        <Sheet title={rowMenu.name} closeLabel={t.ui_close} onClose={() => setRowMenu(null)}>
+          <ul className="myco-menu" role="menu">
+            {rowMenu.actions.map((a) => (
+              <li key={a} role="none">
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    setRowMenu(null);
+                    onAction(a, rowMenu.id);
+                  }}
+                >
+                  {title[a]}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Sheet>
+      ) : null}
     </Rail>
   );
 }

@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { isComposingKey } from "./ime";
+import { describe, expect, it, vi } from "vitest";
+import { afterComposition, isComposingKey } from "./ime";
 
 // The app ships ko/ja locales, so every Enter handler on a text input meets an
 // IME commit before it ever meets a real submit. These cases are the two
@@ -38,5 +38,44 @@ describe("isComposingKey", () => {
   it("accepts a raw KeyboardEvent as well as a React synthetic event", () => {
     const raw = { key: "Enter", isComposing: true, keyCode: 229 } as KeyboardEvent;
     expect(isComposingKey(raw)).toBe(true);
+  });
+});
+
+// A button pressed while a Korean syllable is still composing must not read
+// the field before the IME commits that syllable into it.
+describe("afterComposition", () => {
+  const settle = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+  it("runs at once when nothing is composing", () => {
+    const run = vi.fn();
+    afterComposition(new EventTarget(), false, run);
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("waits for compositionend, then runs once", async () => {
+    const field = new EventTarget();
+    const run = vi.fn();
+    afterComposition(field, true, run);
+    await settle();
+    expect(run).not.toHaveBeenCalled();
+    field.dispatchEvent(new Event("compositionend"));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+    field.dispatchEvent(new Event("compositionend"));
+    await settle();
+    expect(run).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs only the last of several presses made during one composition", async () => {
+    // Two presses must not write the line twice once the syllable commits.
+    const field = new EventTarget();
+    const first = vi.fn();
+    const last = vi.fn();
+    afterComposition(field, true, first);
+    afterComposition(field, true, last);
+    field.dispatchEvent(new Event("compositionend"));
+    await settle();
+    expect(first).not.toHaveBeenCalled();
+    expect(last).toHaveBeenCalledTimes(1);
   });
 });

@@ -306,10 +306,14 @@ pub fn page_authorship(root: &Path, rel: &str) -> Result<Option<PageAuthorship>,
 }
 
 /// rel -> was EVER committed by the agent author, from one full-history walk
-/// (`git log --format=%x00%ae --name-only`). The NUL prefix marks author rows
-/// so they can never be mistaken for a path; quotepath is off so non-ASCII
-/// page names match the file tree's rels. Only rels currently under wiki/ are
-/// returned — renamed-away and deleted paths drop out via the existence check.
+/// (`git log -M --format=%x00%ae --name-status`). The NUL prefix marks author
+/// rows so they can never be mistaken for a path; quotepath is off so non-ASCII
+/// page names match the file tree's rels. The walk runs newest first and
+/// follows each rename back, so an older row counts for the path that file
+/// has now. A pure rename (R100) is not counted as authorship: distill stages
+/// all of wiki/ as the agent, and that sweeps in moves the person made (S15).
+/// Only rels currently under wiki/ are returned — deleted paths drop out via
+/// the existence check.
 pub fn agent_touched_index(root: &Path) -> Result<std::collections::HashMap<String, bool>, String> {
     let mut map = std::collections::HashMap::new();
     if !root.join(".git").exists() {
@@ -321,19 +325,38 @@ pub fn agent_touched_index(root: &Path) -> Result<std::collections::HashMap<Stri
             "-c",
             "core.quotepath=off",
             "log",
+            "-M",
             "--format=%x00%ae",
-            "--name-only",
+            "--name-status",
         ],
     )?;
     if !out.status.success() {
         return Ok(map); // empty repo (no commits yet) — same call shape as commit_for_message
     }
     let mut by_agent = false;
+    // A path in older commits -> the path that file has now.
+    let mut renamed = std::collections::HashMap::<String, String>::new();
     for line in String::from_utf8_lossy(&out.stdout).lines() {
         if let Some(mail) = line.strip_prefix('\0') {
             by_agent = mail == AGENT_EMAIL;
-        } else if line.starts_with("wiki/") && root.join(line).exists() {
-            *map.entry(line.to_string()).or_insert(false) |= by_agent;
+            continue;
+        }
+        // "<status>\t<path>", or "R<score>\t<old>\t<new>" for a rename.
+        let mut cols = line.split('\t');
+        let (Some(status), Some(path)) = (cols.next(), cols.next()) else {
+            continue;
+        };
+        let now_of = |p: &str| renamed.get(p).cloned().unwrap_or_else(|| p.to_string());
+        let (now, authored) = match cols.next() {
+            Some(new) => {
+                let now = now_of(new);
+                renamed.insert(path.to_string(), now.clone());
+                (now, status != "R100")
+            }
+            None => (now_of(path), true),
+        };
+        if authored && now.starts_with("wiki/") && root.join(&now).exists() {
+            *map.entry(now).or_insert(false) |= by_agent;
         }
     }
     Ok(map)
@@ -666,6 +689,37 @@ mod tests {
         // No repo: empty, not an error.
         let empty = tempfile::tempdir().unwrap();
         assert!(agent_touched_index(empty.path()).unwrap().is_empty());
+    }
+
+    // UX backlog S15: a move the person made, swept into a distill commit (it
+    // stages all of wiki/ as the agent), is a pure rename — not evidence the
+    // agent wrote the note. The note keeps the authorship of its old path.
+    #[test]
+    fn agent_touched_index_follows_a_rename_to_its_authorship() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki/projects")).unwrap();
+        std::fs::write(root.join("wiki/my-plan.md"), "every word mine\n").unwrap();
+        init(root).unwrap();
+        std::fs::write(root.join("wiki/agent.md"), "distilled\n").unwrap();
+        assert!(commit_paths(root, &["wiki"], "distill: run a", CommitIdentity::Agent).unwrap());
+        // The person moves both (the folder crumb's Move); distill commits it.
+        std::fs::create_dir_all(root.join("wiki/moved")).unwrap();
+        std::fs::rename(
+            root.join("wiki/my-plan.md"),
+            root.join("wiki/projects/my-plan.md"),
+        )
+        .unwrap();
+        std::fs::rename(root.join("wiki/agent.md"), root.join("wiki/moved/agent.md")).unwrap();
+        assert!(commit_paths(root, &["wiki"], "distill: run b", CommitIdentity::Agent).unwrap());
+
+        let idx = agent_touched_index(root).unwrap();
+        assert_eq!(idx.get("wiki/projects/my-plan.md"), Some(&false), "{idx:?}");
+        assert_eq!(idx.get("wiki/moved/agent.md"), Some(&true), "{idx:?}");
+        assert!(
+            !idx.contains_key("wiki/my-plan.md"),
+            "renamed-away path drops out"
+        );
     }
 
     #[test]

@@ -1,3 +1,4 @@
+import { forwardRef } from "react";
 import type { ButtonHTMLAttributes, JSX } from "react";
 
 /**
@@ -10,19 +11,21 @@ export type IconButtonProps = Omit<
   "aria-label" | "aria-labelledby"
 > & { "aria-label": string };
 
-/** A 32×32 square icon button, same height as {@link Button}. */
-export function IconButton({
-  className,
-  type = "button",
-  ...rest
-}: IconButtonProps): JSX.Element {
-  return (
-    <button
-      type={type}
-      className={["u-iconbtn", className ?? ""].filter(Boolean).join(" ")}
-      {...rest}
-    />
-  );
-}
+/**
+ * A 32×32 square icon button, same height as {@link Button}. Forwards its ref
+ * so a page can hand focus back to it when the panel it opens closes.
+ */
+export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(
+  function IconButton({ className, type = "button", ...rest }, ref): JSX.Element {
+    return (
+      <button
+        ref={ref}
+        type={type}
+        className={["u-iconbtn", className ?? ""].filter(Boolean).join(" ")}
+        {...rest}
+      />
+    );
+  },
+);
 
 export default IconButton;

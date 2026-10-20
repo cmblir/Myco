@@ -8,6 +8,8 @@ import { useVaultStore } from "../../stores/vaultStore";
 import { ipc } from "../../lib/ipc";
 import type { ProjectInfo } from "../../lib/ipc";
 import { SettingsCard } from "../../components/SettingsCard";
+import { SettingsTidy } from "./Tidy";
+import { SettingsStorage } from "./Storage";
 
 export function SettingsAccount({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -98,10 +100,12 @@ export function SettingsAccount({ t }: { t: Strings }): JSX.Element {
                 "Make this an independent Obsidian vault")}
           </button>
           {vaultError ? (
-            <span style={{ color: "#dc2626", fontSize: 12 }}>{vaultError}</span>
+            <span style={{ color: "var(--danger)", fontSize: 12 }}>{vaultError}</span>
           ) : null}
         </div>
       </div>
+      <SettingsStorage t={t} />
+      <SettingsTidy t={t} />
     </div>
   );
 }

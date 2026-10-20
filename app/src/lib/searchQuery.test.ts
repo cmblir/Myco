@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasOperators, hitPassesFilters, parseSearchQuery } from "./searchQuery";
+import { hasOperators, hitPassesFilters, operatorSuggestions, parseSearchQuery } from "./searchQuery";
 
 describe("parseSearchQuery", () => {
   it("extracts quoted phrases, path:, tag:, and leftover terms", () => {
@@ -52,5 +52,40 @@ describe("hitPassesFilters", () => {
     expect(hitPassesFilters("/v/wiki/other.md", "/v", p, tags, meta)).toBe(false);
     // No meta at all (older backend, plain note) fails closed on a facet query.
     expect(hitPassesFilters("/v/sessions/a.md", "/v", p, tags, meta)).toBe(false);
+  });
+});
+
+// UX backlog S23: a chip writes `tag:` / `path:` / `type:` into the box, and
+// the value being typed after it lists what the vault holds.
+describe("operatorSuggestions", () => {
+  const sources = {
+    tags: { "/v/a.md": ["ml", "rust"], "/v/b.md": ["ml"] },
+    meta: { "/v/a.md": { type: "concept" }, "/v/b.md": { type: "source" }, "/v/c.md": { type: "concept" } },
+    folders: ["daily", "wiki", "wiki/concepts"],
+  };
+
+  it("lists the vault's tags, most used first, for a bare tag:", () => {
+    expect(operatorSuggestions("tag:", sources)).toEqual({ op: "tag", head: "tag:", values: ["ml", "rust"] });
+  });
+
+  it("narrows by the value typed so far and keeps the rest of the query", () => {
+    expect(operatorSuggestions("attention tag:ru", sources)).toEqual({
+      op: "tag",
+      head: "attention tag:",
+      values: ["rust"],
+    });
+  });
+
+  it("offers folders with a trailing slash and the note types", () => {
+    expect(operatorSuggestions("path:wi", sources)?.values).toEqual(["wiki/", "wiki/concepts/"]);
+    expect(operatorSuggestions("type:", sources)?.values).toEqual(["concept", "source"]);
+  });
+
+  it("is null once a space ends the value, for plain text, or when nothing matches", () => {
+    expect(operatorSuggestions("tag:ml ", sources)).toBeNull();
+    expect(operatorSuggestions("attention", sources)).toBeNull();
+    expect(operatorSuggestions("tag:zz", sources)).toBeNull();
+    // status: and confidence: are typed, not offered.
+    expect(operatorSuggestions("status:", sources)).toBeNull();
   });
 });

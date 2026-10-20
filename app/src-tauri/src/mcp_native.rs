@@ -1,8 +1,7 @@
 // Native in-process MCP server (rmcp), replacing the Python subprocess so the
 // server works on any machine with ZERO external runtime — no system Python, no
-// venv, no pip. It runs inside the app's own tokio runtime and re-resolves the
-// active vault per call (via the app-data marker), so switching projects in the
-// UI is seen by the very next tool call with no restart.
+// venv, no pip. Each HTTP session is bound to one native vault opening;
+// switching or reopening a vault requires the client to initialize again.
 //
 // rmcp 2.2 dropped the legacy dual-endpoint SSE transport, so this serves
 // Streamable HTTP at `/mcp`; clients register with `--transport http`.
@@ -32,11 +31,13 @@ use rmcp::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager as _;
 use tokio_util::sync::CancellationToken;
 
 use crate::importers::secrets_scan;
+use crate::importers::secrets_scan::raw_source_guard;
 use crate::retrieval::{Scope, TierWeights};
 use crate::{commands, registry, settings, vault};
 
@@ -279,17 +280,38 @@ fn fail(msg: impl Into<String>) -> Result<CallToolResult, McpError> {
     json_result(json!({ "ok": false, "error": msg.into() }))
 }
 
-/// Resolve the vault root for a tool call: the named project's root, or the
-/// active vault when `project` is empty.
-fn resolve_root(project: &str) -> Result<PathBuf, String> {
-    let active = settings::active_vault().map(PathBuf::from);
-    if project.is_empty() {
-        return active.ok_or_else(|| "no active vault open".to_string());
-    }
-    let start = active.ok_or("no active vault to locate the project registry")?;
-    let reg = registry::Registry::discover(&start)
-        .ok_or("no project registry found (standalone vault)")?;
-    reg.resolve_project_root(project)
+/// Unknown future tools take the guarded mutation route by default.
+fn tool_mutates(name: &str) -> bool {
+    !matches!(
+        name,
+        "list_projects"
+            | "get_instructions"
+            | "stats"
+            | "list_pages"
+            | "read_page"
+            | "search"
+            | "folder_tree"
+            | "recent_log"
+            | "list_raw_sources"
+            | "list_inbox"
+            | "read_inbox_source"
+            | "trust_report"
+            | "lint_citations"
+            | "preview_page_update"
+            | "contradictions"
+            | "resolve_cross_links"
+            | "translation_report"
+            | "list_tasks"
+            | "contradicts"
+            | "propose_links"
+            | "check_page"
+            | "recall"
+            | "neighbourhood"
+            | "changed_since"
+            | "session_summary_path"
+            | "distill_status"
+            | "distill_report"
+    )
 }
 
 fn wiki_dir(root: &Path) -> PathBuf {
@@ -298,8 +320,60 @@ fn wiki_dir(root: &Path) -> PathBuf {
 fn raw_dir(root: &Path) -> PathBuf {
     root.join("raw")
 }
-fn inbox_dir(root: &Path) -> PathBuf {
-    root.join("_inbox")
+
+/// Preserve the lexical namespace and reject every symbolic-link component,
+/// including links that resolve to another directory inside this vault.
+fn confined_subtree_path(root: &Path, namespace: &str, rel: &str) -> Result<PathBuf, String> {
+    let base = root.join(namespace);
+    let target =
+        safe_join(&base, rel).ok_or_else(|| format!("path escapes {namespace}/: {rel}"))?;
+    let target = vault::confine_delete_path(root, &target.to_string_lossy())?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| "cannot resolve vault root")?;
+    if !target.starts_with(canonical_root.join(namespace)) {
+        return Err(format!("path escapes {namespace}/: {rel}"));
+    }
+    Ok(target)
+}
+
+fn confined_vault_path(root: &Path, rel: &str) -> Result<PathBuf, String> {
+    let target = safe_join(root, rel).ok_or_else(|| format!("path escapes the vault: {rel}"))?;
+    vault::confine_delete_path(root, &target.to_string_lossy())
+}
+
+fn text_sha256(text: &str) -> String {
+    format!("{:x}", Sha256::digest(text.as_bytes()))
+}
+
+/// Ancillary logs and import ledgers must not provide a second route into raw/.
+fn validate_mcp_state_paths(root: &Path) -> Result<(), String> {
+    for rel in [
+        crate::inflow_log::LOG_REL,
+        crate::judge::NOOP_LOG_REL,
+        ".myco/ledger.json",
+        ".myco/.gitignore",
+        ".myco/wikify-pending.json",
+        ".myco/wikify-pending.json.tmp",
+    ] {
+        let path = confined_vault_path(root, rel)?;
+        #[cfg(unix)]
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => {
+                use std::os::unix::fs::MetadataExt;
+                if metadata.nlink() > 1 {
+                    return Err(format!(
+                        "refused: writable app state has a hard-link alias: {rel}"
+                    ));
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("inspect writable app state: {error}")),
+        }
+        #[cfg(not(unix))]
+        let _ = path;
+    }
+    Ok(())
 }
 
 /// Lexically resolve `rel` under `base`, rejecting any `..`/absolute escape.
@@ -325,12 +399,22 @@ fn task_page_path(root: &Path, page: &str) -> Result<PathBuf, String> {
         .next()
         .and_then(|c| c.as_os_str().to_str())
         .unwrap_or("");
-    if matches!(first, "raw" | "_inbox" | "sessions") {
+    if matches!(first, "raw" | "_inbox" | "sessions" | ".myco") {
         return Err(format!("tasks cannot be edited under {first}/"));
     }
-    let Some(target) = safe_join(root, page) else {
-        return Err(format!("path escapes the vault: {page}"));
-    };
+    let target = confined_vault_path(root, page)?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| "cannot resolve vault root")?;
+    let first = target
+        .strip_prefix(&canonical_root)
+        .ok()
+        .and_then(|relative| relative.components().next())
+        .and_then(|component| component.as_os_str().to_str())
+        .unwrap_or("");
+    if matches!(first, "raw" | "_inbox" | "sessions" | ".myco") {
+        return Err(format!("tasks cannot be edited under {first}/"));
+    }
     if !target.is_file() {
         return Err(format!("page not found: {page}"));
     }
@@ -341,9 +425,7 @@ fn task_page_path(root: &Path, page: &str) -> Result<PathBuf, String> {
 /// not-found text names the next call to make instead of the host path the
 /// filesystem error would have carried.
 fn wiki_page_path(root: &Path, filename: &str) -> Result<PathBuf, String> {
-    let Some(abs) = safe_join(&wiki_dir(root), filename) else {
-        return Err(format!("path escapes wiki/: {filename}"));
-    };
+    let abs = confined_subtree_path(root, "wiki", filename)?;
     if !abs.is_file() {
         return Err(format!(
             "page not found: {filename} — call list_pages or search to find the right filename"
@@ -363,11 +445,10 @@ fn list_wiki_pages(
     limit: usize,
 ) -> Result<Value, String> {
     let wiki = wiki_dir(root);
-    let scope = if folder.is_empty() {
-        wiki.clone()
-    } else {
-        safe_join(&wiki, folder).ok_or_else(|| format!("folder escapes wiki/: {folder}"))?
-    };
+    if safe_join(&wiki, folder).is_none() {
+        return Err(format!("folder escapes wiki/: {folder}"));
+    }
+    let scope = confined_subtree_path(root, "wiki", folder)?;
     let mut pages = Vec::new();
     for abs in collect_md(&scope) {
         let Ok(fc) = vault::read_file(&abs.to_string_lossy()) else {
@@ -394,14 +475,17 @@ fn list_wiki_pages(
 /// (`.md`-normalized, deduplicated) and word count.
 fn read_wiki_page(root: &Path, filename: &str) -> Result<Value, String> {
     let abs = wiki_page_path(root, filename)?;
-    let fc = vault::read_file(&abs.to_string_lossy())?;
+    let text =
+        std::fs::read_to_string(&abs).map_err(|error| format!("read page failed: {error}"))?;
+    let (frontmatter, content) = parse_draft(&text);
     Ok(json!({
         "ok": true,
         "filename": filename,
-        "frontmatter": fc.frontmatter,
-        "content": fc.content,
-        "links": extract_links(&fc.content),
-        "word_count": fc.content.split_whitespace().count(),
+        "frontmatter": frontmatter,
+        "content": content,
+        "links": extract_links(&content),
+        "word_count": content.split_whitespace().count(),
+        "sha256": text_sha256(&text),
     }))
 }
 
@@ -427,7 +511,9 @@ fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
 /// paths. Missing dir → empty. Reuses the vault file walker.
 pub(crate) fn collect_md(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
-    if !dir.is_dir() {
+    if !std::fs::symlink_metadata(dir)
+        .is_ok_and(|metadata| metadata.is_dir() && !metadata.file_type().is_symlink())
+    {
         return out;
     }
     if let Ok(nodes) = vault::list_files(&dir.to_string_lossy()) {
@@ -445,7 +531,13 @@ pub(crate) fn collect_md(dir: &Path) -> Vec<PathBuf> {
 }
 
 pub(crate) fn rel_to(base: &Path, abs: &Path) -> String {
+    let canonical_base = base.canonicalize().ok();
     abs.strip_prefix(base)
+        .or_else(|error| {
+            canonical_base
+                .as_deref()
+                .map_or(Err(error), |base| abs.strip_prefix(base))
+        })
         .unwrap_or(abs)
         .to_string_lossy()
         .to_string()
@@ -741,22 +833,40 @@ fn find_git_root(start: &Path) -> Option<PathBuf> {
 }
 
 /// Every file under `dir`, recursively (absolute paths, sorted). Empty if absent.
-fn walk_all(dir: &Path) -> Vec<PathBuf> {
+fn walk_all(dir: &Path) -> Result<Vec<PathBuf>, String> {
     let mut out = Vec::new();
-    fn rec(d: &Path, out: &mut Vec<PathBuf>) {
-        let Ok(rd) = std::fs::read_dir(d) else { return };
-        let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
-        entries.sort();
-        for p in entries {
-            if p.is_dir() {
-                rec(&p, out);
-            } else if p.is_file() {
+    fn rec(d: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
+        let metadata = match std::fs::symlink_metadata(d) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("inspect export directory: {error}")),
+        };
+        if metadata.file_type().is_symlink() {
+            return Err("export directory contains a symbolic link".into());
+        }
+        let rd = std::fs::read_dir(d).map_err(|error| format!("read export directory: {error}"))?;
+        let mut entries: Vec<_> = rd
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("read export entry: {error}"))?;
+        entries.sort_by_key(|entry| entry.path());
+        for entry in entries {
+            let p = entry.path();
+            let kind = entry
+                .file_type()
+                .map_err(|error| format!("inspect export entry: {error}"))?;
+            if kind.is_symlink() {
+                return Err("export source contains a symbolic link".into());
+            }
+            if kind.is_dir() {
+                rec(&p, out)?;
+            } else if kind.is_file() {
                 out.push(p);
             }
         }
+        Ok(())
     }
-    rec(dir, &mut out);
-    out
+    rec(dir, &mut out)?;
+    Ok(out)
 }
 
 // ─── server ──────────────────────────────────────────────────────────────────
@@ -765,7 +875,12 @@ fn walk_all(dir: &Path) -> Vec<PathBuf> {
 pub struct McpServer {
     /// The app, for the managed retrieval state: `search` runs the same
     /// embedder and indexes the Ask page does.
-    app: tauri::AppHandle,
+    app: Option<tauri::AppHandle>,
+    origin: Result<commands::AgentVaultSession, String>,
+    /// Only the guarded router clone may bypass a second transition lock.
+    origin_validated: bool,
+    #[cfg(test)]
+    test_vault: Option<std::sync::Arc<commands::VaultRoot>>,
     // Read by the hand-written call_tool below and by the #[tool_handler]
     // macro's generated list_tools.
     tool_router: ToolRouter<McpServer>,
@@ -810,7 +925,7 @@ struct SearchArgs {
     top_k: Option<usize>,
     /// Indexed tier to rank: "wiki" (default: notes, maps and the
     /// daily/weekly/monthly digests), "sessions" (transcripts only), or
-    /// "all". raw/ is never indexed.
+    /// "all" (also normalized imported conversation sources in raw/conversations/).
     #[serde(default)]
     scope: Option<String>,
     /// Search across ALL projects instead of just one (hits grouped per project).
@@ -851,7 +966,7 @@ struct PreviewArgs {
 struct CreatePageArgs {
     /// Page title (used to derive the slug).
     title: String,
-    /// One of concept/entity/technique/source-summary/analysis, or a custom type.
+    /// A supported page type, e.g. concept/entity/technique/source-summary/analysis.
     page_type: String,
     /// Body markdown (without frontmatter). Include inline [^src-*] citations.
     #[serde(default)]
@@ -875,6 +990,9 @@ struct UpdatePageArgs {
     filename: String,
     /// The full new content (frontmatter + body).
     content: String,
+    /// Exact original bytes' SHA-256 returned by read_page or preview_page_update.
+    #[serde(default)]
+    expected_sha256: Option<String>,
     #[serde(default)]
     project: String,
 }
@@ -1002,12 +1120,23 @@ struct WritePageArgs {
     /// "create" (default; must not exist) or "update" (must exist).
     #[serde(default)]
     mode: String,
+    /// Exact lowercase SHA256 previously read for update; create requires absence.
+    #[serde(default)]
+    expected_sha256: Option<String>,
     /// Write despite blocking problems. Secrets are never forceable.
     #[serde(default)]
     force: bool,
     /// Also `git_commit` the page with a generated message.
     #[serde(default)]
     commit: bool,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SessionSummaryPathArgs {
+    /// Stable session identity: source:conversation_id.
+    key: String,
     #[serde(default)]
     project: String,
 }
@@ -1104,6 +1233,18 @@ struct WikifyPendingArgs {
     /// Keys (`<source>:<conversation_id>`) whose pages are written — checked off.
     #[serde(default)]
     done: Vec<String>,
+    /// Read this pending key in bounded chunks before completing it.
+    #[serde(default)]
+    read_key: String,
+    /// Exact source_revision returned by the queue; required for reads.
+    #[serde(default)]
+    source_revision: String,
+    /// UTF-8 byte offset (use the previous next_offset), default 0.
+    #[serde(default)]
+    offset: usize,
+    /// Bytes per read (4-65536), default 16384.
+    #[serde(default)]
+    read_limit: Option<usize>,
     #[serde(default)]
     project: String,
 }
@@ -1126,8 +1267,73 @@ struct SetupProfileArgs {
 #[tool_router]
 impl McpServer {
     pub fn new(app: tauri::AppHandle) -> Self {
+        let origin = app
+            .try_state::<commands::VaultRoot>()
+            .ok_or_else(|| "native vault state unavailable".to_string())
+            .and_then(|state| state.snapshot());
         Self {
-            app,
+            app: Some(app),
+            origin,
+            origin_validated: false,
+            #[cfg(test)]
+            test_vault: None,
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    fn resolve_root(&self, project: &str) -> Result<PathBuf, String> {
+        if !self.origin_validated {
+            self.with_bound_origin(|_| Ok(()))?;
+        }
+        let origin = self.origin.as_ref().map_err(Clone::clone)?;
+        let root = PathBuf::from(&origin.vault_path);
+        let target = if project.is_empty() {
+            root
+        } else {
+            let reg = registry::Registry::discover(&root)
+                .ok_or("no project registry found (standalone vault)")?;
+            reg.resolve_project_root(project)?
+        };
+        validate_mcp_state_paths(&target)?;
+        for namespace in ["wiki", "raw", "_inbox", "sessions"] {
+            confined_subtree_path(&target, namespace, "")?;
+        }
+        Ok(target)
+    }
+
+    fn with_bound_origin<T>(
+        &self,
+        dispatch: impl FnOnce(&Path) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let origin = self.origin.as_ref().map_err(Clone::clone)?;
+        #[cfg(test)]
+        if let Some(state) = &self.test_vault {
+            return state.with_origin(origin, dispatch);
+        }
+        let app = self.app.as_ref().ok_or("native vault state unavailable")?;
+        let state = app
+            .try_state::<commands::VaultRoot>()
+            .ok_or("native vault state unavailable")?;
+        state.with_origin(origin, dispatch)
+    }
+
+    #[cfg(test)]
+    fn for_test_root(root: PathBuf) -> Self {
+        let state = std::sync::Arc::new(commands::VaultRoot::default());
+        let generation = state.begin_open().unwrap();
+        state
+            .finish_open(generation, root.canonicalize().unwrap(), || ())
+            .unwrap();
+        Self::for_test_vault(state)
+    }
+
+    #[cfg(test)]
+    fn for_test_vault(state: std::sync::Arc<commands::VaultRoot>) -> Self {
+        Self {
+            app: None,
+            origin: state.snapshot(),
+            origin_validated: false,
+            test_vault: Some(state),
             tool_router: Self::tool_router(),
         }
     }
@@ -1136,8 +1342,9 @@ impl McpServer {
     /// other tools, or pass "" for the active one.
     #[tool(description = "List all myco projects and the active project slug")]
     async fn list_projects(&self) -> Result<CallToolResult, McpError> {
-        let Some(active) = settings::active_vault().map(PathBuf::from) else {
-            return fail("no active vault open");
+        let active = match self.resolve_root("") {
+            Ok(root) => root,
+            Err(error) => return fail(error),
         };
         let projects: Vec<Value> = match registry::Registry::discover(&active) {
             Some(reg) => reg
@@ -1166,11 +1373,14 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let path = root.join("CLAUDE.md");
+        let path = match confined_vault_path(&root, "CLAUDE.md") {
+            Ok(path) => path,
+            Err(error) => return fail(error),
+        };
         match std::fs::read_to_string(&path) {
             Ok(content) => json_result(json!({
                 "ok": true, "found": true, "path": path.to_string_lossy(), "content": content,
@@ -1188,7 +1398,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1203,7 +1413,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ListPagesArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1221,7 +1431,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ReadPageArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1233,7 +1443,7 @@ impl McpServer {
 
     /// Hybrid retrieval — the same dense + BM25 fusion the app's Ask page runs.
     #[tool(
-        description = "Rank vault pages for a question or keywords with the app's hybrid retrieval (local embeddings + BM25, fused by reciprocal rank, then weighted by tier: note 1.0 > map 0.9 > digest/rollup 0.8 > session 0.6) — paraphrases match, not only exact words. scope: wiki (default: notes, maps, daily/weekly/monthly digests) | sessions (transcripts only) | all (raw/ is never indexed). Each hit carries rank, tier, score_bm25 and score_vec (dense cosine). The order is rank-fused and NOT a confidence: judge relevance by score_vec (on the eval corpus, real answers scored >= 0.54 and off-topic hits <= 0.49). When the embedding index is absent or stale the result is BM25-only and `note` says so."
+        description = "Rank vault pages with the app's local embeddings + BM25 reciprocal-rank fusion. scope: wiki (default: notes, maps and digests; note prior 1.0, map 0.9, digest 0.8) | sessions (transcripts only; flat prior) | all (also normalized imported raw/conversations/ sources; flat prior). General raw files and JSONL originals are excluded. Each hit carries rank, tier, score_bm25 and score_vec (dense cosine). Rank is ordering, not confidence. Prefer recall for cited answers: it accepts cosine >=0.42 or distinctive/complete lexical evidence and exposes rejected near-misses. An absent or stale embedding index falls back to BM25 with an explanatory note."
     )]
     async fn search(
         &self,
@@ -1246,20 +1456,24 @@ impl McpServer {
         };
         let mut roots: Vec<(String, PathBuf)> = Vec::new();
         if a.all_projects {
-            let active = match settings::active_vault().map(PathBuf::from) {
-                Some(r) => r,
-                None => return fail("no active vault open"),
+            let active = match self.resolve_root("") {
+                Ok(root) => root,
+                Err(error) => return fail(error),
             };
             match registry::Registry::discover(&active) {
                 Some(reg) => {
                     for p in reg.project_infos() {
-                        roots.push((p.slug, PathBuf::from(p.root)));
+                        let root = match self.resolve_root(&p.slug) {
+                            Ok(root) => root,
+                            Err(error) => return fail(error),
+                        };
+                        roots.push((p.slug, root));
                     }
                 }
                 None => roots.push((String::new(), active)),
             }
         } else {
-            match resolve_root(&a.project) {
+            match self.resolve_root(&a.project) {
                 Ok(r) => roots.push((a.project.clone(), r)),
                 Err(e) => return fail(e),
             }
@@ -1293,11 +1507,15 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        match vault::list_files(&wiki_dir(&root).to_string_lossy()) {
+        let wiki = match confined_subtree_path(&root, "wiki", "") {
+            Ok(path) => path,
+            Err(error) => return fail(error),
+        };
+        match vault::list_files(&wiki.to_string_lossy()) {
             Ok(tree) => json_result(json!({ "ok": true, "tree": tree })),
             Err(e) => fail(e),
         }
@@ -1309,13 +1527,20 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<RecentLogArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
         let n = a.n.unwrap_or(20).clamp(1, 500);
-        let log = wiki_dir(&root).join("log.md");
-        let text = std::fs::read_to_string(&log).unwrap_or_default();
+        let log = match confined_subtree_path(&root, "wiki", "log.md") {
+            Ok(path) => path,
+            Err(error) => return fail(error),
+        };
+        let text = match std::fs::read_to_string(&log) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+            Err(error) => return fail(format!("read wiki log failed: {error}")),
+        };
         // Header lines look like: "## [2026-06-22] ingest | Title".
         let mut entries: Vec<&str> = text
             .lines()
@@ -1333,7 +1558,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1352,16 +1577,22 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let inbox = inbox_dir(&root);
+        let inbox = match confined_subtree_path(&root, "_inbox", "") {
+            Ok(path) => path,
+            Err(error) => return fail(error),
+        };
         let mut files = Vec::new();
         if let Ok(rd) = std::fs::read_dir(&inbox) {
             for e in rd.flatten() {
                 let name = e.file_name().to_string_lossy().to_string();
                 if name.starts_with('.') {
+                    continue;
+                }
+                if !e.file_type().is_ok_and(|kind| kind.is_file()) {
                     continue;
                 }
                 let size = e.metadata().map(|m| m.len()).unwrap_or(0);
@@ -1377,16 +1608,17 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<InboxSourceArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let Some(abs) = safe_join(&inbox_dir(&root), &a.filename) else {
-            return fail(format!("path escapes _inbox/: {}", a.filename));
+        let abs = match confined_subtree_path(&root, "_inbox", &a.filename) {
+            Ok(path) => path,
+            Err(error) => return fail(error),
         };
         match std::fs::read_to_string(&abs) {
             Ok(content) => json_result(json!({
-                "ok": true, "filename": a.filename, "content": content,
+                "ok": true, "filename": a.filename, "sha256": text_sha256(&content), "content": content,
             })),
             Err(e) => fail(e.to_string()),
         }
@@ -1399,7 +1631,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1454,7 +1686,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1491,7 +1723,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<PreviewArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1499,15 +1731,22 @@ impl McpServer {
             Ok(p) => p,
             Err(e) => return fail(e),
         };
-        let old = std::fs::read_to_string(&abs).unwrap_or_default();
+        let old = match std::fs::read_to_string(&abs) {
+            Ok(text) => text,
+            Err(error) => return fail(format!("read page failed: {error}")),
+        };
         if old == a.content {
-            return json_result(json!({ "ok": true, "changed": false, "diff": "" }));
+            return json_result(
+                json!({ "ok": true, "changed": false, "diff": "", "sha256": text_sha256(&old) }),
+            );
         }
         let diff = similar::TextDiff::from_lines(&old, &a.content)
             .unified_diff()
             .header(&format!("a/{}", a.filename), &format!("b/{}", a.filename))
             .to_string();
-        json_result(json!({ "ok": true, "changed": true, "diff": diff }))
+        json_result(
+            json!({ "ok": true, "changed": true, "diff": diff, "sha256": text_sha256(&old) }),
+        )
     }
 
     /// Structural contradiction scan — disputed pages + active→superseded links.
@@ -1516,7 +1755,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1530,7 +1769,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ReadPageArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1541,21 +1780,14 @@ impl McpServer {
         let Some((_, body)) = read_parts(&abs) else {
             return fail("could not read page");
         };
-        let projs = settings::active_vault()
-            .map(PathBuf::from)
-            .and_then(|p| registry::Registry::discover(&p))
+        let projs = registry::Registry::discover(&root)
             .map(|r| r.project_infos())
             .unwrap_or_default();
         let mut links = Vec::new();
         for (slug, page) in cross_links(&body) {
             let tproj = projs.iter().find(|p| p.slug == slug);
             let exists = tproj
-                .map(|p| {
-                    Path::new(&p.root)
-                        .join("wiki")
-                        .join(format!("{page}.md"))
-                        .is_file()
-                })
+                .map(|p| wiki_page_path(Path::new(&p.root), &format!("{page}.md")).is_ok())
                 .unwrap_or(false);
             links.push(json!({
                 "project": slug, "page": page,
@@ -1572,7 +1804,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1612,7 +1844,7 @@ impl McpServer {
 
     /// Create a new wiki page with proper myco frontmatter.
     #[tool(
-        description = "DEPRECATED — prefer write_page, which checks the draft first. Create a wiki page with myco frontmatter (title/type/tags/sources) derived from the arguments; no lint, no citation check."
+        description = "DEPRECATED — prefer write_page. Compatibility alias: create a wiki page with generated frontmatter through the same confinement, lint, citation and secrets checks as write_page; never overwrites."
     )]
     async fn create_page(
         &self,
@@ -1621,17 +1853,16 @@ impl McpServer {
         if a.title.trim().is_empty() {
             return fail("title required");
         }
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
         let wiki = wiki_dir(&root);
-        let _ = std::fs::create_dir_all(&wiki);
         let slug = make_slug(&a.title);
-        let Some(base) = safe_join(&wiki, &a.folder) else {
-            return fail(format!("folder escapes wiki/: {}", a.folder));
+        let base = match confined_subtree_path(&root, "wiki", &a.folder) {
+            Ok(path) => path,
+            Err(error) => return fail(error),
         };
-        let _ = std::fs::create_dir_all(&base);
         let mut target = base.join(format!("{slug}.md"));
         let mut n = 2;
         while target.exists() {
@@ -1641,8 +1872,8 @@ impl McpServer {
         let today = registry::today_utc();
         let mut parts: Vec<String> = vec![
             "---".into(),
-            format!("title: \"{}\"", a.title),
-            format!("type: {}", a.page_type),
+            format!("title: {}", json!(a.title)),
+            format!("type: {}", json!(a.page_type)),
             format!("created: {today}"),
             format!("last_updated: {today}"),
             format!("source_count: {}", a.sources.len()),
@@ -1656,7 +1887,7 @@ impl McpServer {
             parts.push(
                 a.tags
                     .iter()
-                    .map(|t| format!("  - {t}"))
+                    .map(|t| format!("  - {}", json!(t)))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
@@ -1666,7 +1897,7 @@ impl McpServer {
             parts.push(
                 a.sources
                     .iter()
-                    .map(|s| format!("  - {s}"))
+                    .map(|s| format!("  - {}", json!(s)))
                     .collect::<Vec<_>>()
                     .join("\n"),
             );
@@ -1681,11 +1912,21 @@ impl McpServer {
             a.content.clone()
         };
         let full = format!("{}\n{}\n", parts.join("\n"), body);
-        if let Err(e) = vault::write_file(&target.to_string_lossy(), &full) {
-            return fail(e);
+        match write_page_at(
+            &root,
+            &rel_to(&root, &target),
+            &full,
+            "create",
+            false,
+            settings::load().pii_quarantine_enabled,
+            None,
+        ) {
+            Ok(out) if out["ok"] == json!(true) => {}
+            Ok(out) => return json_result(out),
+            Err(error) => return fail(error),
         }
         if let Some(u) = crate::INDEX_UPDATER.get() {
-            u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
+            u.mark_dirty(&root, rel_to(&root, &target).replace('\\', "/"));
         }
         crate::inflow_log::record(&root, "mcp", "create_page");
         json_result(json!({
@@ -1695,13 +1936,13 @@ impl McpServer {
 
     /// Overwrite a wiki page's content (caller keeps the frontmatter block).
     #[tool(
-        description = "DEPRECATED — prefer write_page (mode=update), which checks the draft first. Overwrite a wiki page's full content by filename, unchecked."
+        description = "DEPRECATED — prefer write_page (mode=update). Compatibility alias using the same confinement, lint, citation, secrets and compare-and-swap checks. expected_sha256 from read_page or preview_page_update is required; a missing or stale revision writes nothing."
     )]
     async fn update_page(
         &self,
         Parameters(a): Parameters<UpdatePageArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1709,11 +1950,21 @@ impl McpServer {
             Ok(p) => p,
             Err(e) => return fail(e),
         };
-        if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
-            return fail(e);
+        match write_page_at(
+            &root,
+            &rel_to(&root, &target),
+            &a.content,
+            "update",
+            false,
+            settings::load().pii_quarantine_enabled,
+            a.expected_sha256.as_deref(),
+        ) {
+            Ok(out) if out["ok"] == json!(true) => {}
+            Ok(out) => return json_result(out),
+            Err(error) => return fail(error),
         }
         if let Some(u) = crate::INDEX_UPDATER.get() {
-            u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
+            u.mark_dirty(&root, rel_to(&root, &target).replace('\\', "/"));
         }
         crate::inflow_log::record(&root, "mcp", "update_page");
         json_result(json!({ "ok": true, "filename": rel_to(&wiki_dir(&root), &target) }))
@@ -1727,7 +1978,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ListTasksArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.vault_project) {
+        let root = match self.resolve_root(&a.vault_project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1763,7 +2014,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<SetTaskStatusArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.vault_project) {
+        let root = match self.resolve_root(&a.vault_project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1784,11 +2035,15 @@ impl McpServer {
                 Ok(v) => v,
                 Err(e) => return fail(e),
             };
-        if let Err(e) = vault::write_file(&target.to_string_lossy(), &next) {
+        if let Err(e) = vault::write_file_if_unchanged(
+            &target.to_string_lossy(),
+            &next,
+            Some(&text_sha256(&content)),
+        ) {
             return fail(e);
         }
         if let Some(u) = crate::INDEX_UPDATER.get() {
-            u.mark_dirty(a.page.replace('\\', "/"));
+            u.mark_dirty(&root, a.page.replace('\\', "/"));
         }
         let mut out = json!({ "ok": true, "page": a.page, "line": a.line, "status": a.status });
         if recurring && status == crate::tasks::TaskStatus::Done {
@@ -1808,7 +2063,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<AddTaskArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.vault_project) {
+        let root = match self.resolve_root(&a.vault_project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1831,11 +2086,15 @@ impl McpServer {
             format!("- [ ] {text} 📅 {due}")
         };
         let next = crate::tasks::append_task_line(&content, &line);
-        if let Err(e) = vault::write_file(&target.to_string_lossy(), &next) {
+        if let Err(e) = vault::write_file_if_unchanged(
+            &target.to_string_lossy(),
+            &next,
+            Some(&text_sha256(&content)),
+        ) {
             return fail(e);
         }
         if let Some(u) = crate::INDEX_UPDATER.get() {
-            u.mark_dirty(a.page.replace('\\', "/"));
+            u.mark_dirty(&root, a.page.replace('\\', "/"));
         }
         json_result(json!({ "ok": true, "page": a.page, "line": next.trim_end().lines().count() }))
     }
@@ -1846,7 +2105,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<AddRawArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1858,18 +2117,20 @@ impl McpServer {
                 Ok(w) => w,
                 Err(e) => return fail(e),
             };
-        let raw = raw_dir(&root);
-        let _ = std::fs::create_dir_all(&raw);
-        let Some(target) = safe_join(&raw, &a.filename) else {
-            return fail(format!("path escapes raw/: {}", a.filename));
+        let target = match confined_subtree_path(&root, "raw", &a.filename) {
+            Ok(path) => path,
+            Err(error) => return fail(error),
         };
         if target.exists() {
             return fail(format!("raw/ file exists (immutable): {}", a.filename));
         }
         if let Some(p) = target.parent() {
-            let _ = std::fs::create_dir_all(p);
+            if let Err(error) = std::fs::create_dir_all(p) {
+                return fail(format!("create raw parent failed: {error}"));
+            }
         }
-        if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
+        if let Err(e) = vault::write_file_if_unchanged(&target.to_string_lossy(), &a.content, None)
+        {
             return fail(e);
         }
         let stem = target
@@ -1893,22 +2154,21 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<CreateFolderArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
         let wiki = wiki_dir(&root);
-        let _ = std::fs::create_dir_all(&wiki);
-        let base = if a.parent.is_empty() {
-            wiki.clone()
-        } else {
-            match safe_join(&wiki, &a.parent) {
-                Some(p) => p,
-                None => return fail(format!("parent escapes wiki/: {}", a.parent)),
-            }
+        let base = match confined_subtree_path(&root, "wiki", &a.parent) {
+            Ok(path) => path,
+            Err(error) => return fail(error),
         };
         let Some(target) = safe_join(&base, &a.name) else {
             return fail(format!("name escapes parent: {}", a.name));
+        };
+        let target = match vault::confine_delete_path(&root, &target.to_string_lossy()) {
+            Ok(path) => path,
+            Err(error) => return fail(error),
         };
         if let Err(e) = std::fs::create_dir_all(&target) {
             return fail(format!("mkdir failed: {e}"));
@@ -1925,7 +2185,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<InboxSourceArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -1957,20 +2217,25 @@ impl McpServer {
         if !["Added", "Changed", "Fixed", "Removed"].contains(&sec.as_str()) {
             return fail(format!("invalid section: {}", a.section));
         }
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let _ = std::fs::create_dir_all(&root);
-        let path = root.join("CHANGELOG.md");
-        if !path.exists() {
-            let seed = "# Changelog\n\nAll notable changes to this wiki are recorded here \
-                        (Keep a Changelog format).\n\n## [Unreleased]\n";
-            if let Err(e) = vault::write_file(&path.to_string_lossy(), seed) {
-                return fail(e);
-            }
-        }
-        let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+        let path = match confined_vault_path(&root, "CHANGELOG.md") {
+            Ok(path) => path,
+            Err(error) => return fail(error),
+        };
+        let original = match std::fs::read_to_string(&path) {
+            Ok(text) => Some(text),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return fail(format!("read changelog failed: {error}")),
+        };
+        let expected = original.as_deref().map(text_sha256);
+        let mut text = original.unwrap_or_else(|| {
+            "# Changelog\n\nAll notable changes to this wiki are recorded here \
+            (Keep a Changelog format).\n\n## [Unreleased]\n"
+                .into()
+        });
         if !text.contains("## [Unreleased]") {
             text = format!("{}\n\n## [Unreleased]\n", text.trim_end());
         }
@@ -1995,7 +2260,9 @@ impl McpServer {
             }
         }
         let joined = format!("{}\n", lines.join("\n").trim_end());
-        if let Err(e) = vault::write_file(&path.to_string_lossy(), &joined) {
+        if let Err(e) =
+            vault::write_file_if_unchanged(&path.to_string_lossy(), &joined, expected.as_deref())
+        {
             return fail(e);
         }
         json_result(json!({ "ok": true, "changelog": rel_to(&root, &path), "section": sec }))
@@ -2007,10 +2274,13 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
+        if let Err(error) = confined_vault_path(&root, ".obsidian/app.json") {
+            return fail(error);
+        }
         match vault::scaffold_obsidian_vault(&root) {
             Ok(obs) => json_result(json!({
                 "ok": true, "obsidian_dir": rel_to(&root, Path::new(&obs)), "open_as": root.to_string_lossy(),
@@ -2026,7 +2296,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2035,49 +2305,74 @@ impl McpServer {
         }
         // Backups live beside the registry's projects/ dir when there is one,
         // else under the vault itself.
-        let backups = settings::active_vault()
-            .map(PathBuf::from)
-            .and_then(|p| registry::Registry::discover(&p))
-            .map(|r| r.projects_dir.join(".backups"))
-            .unwrap_or_else(|| root.join(".backups"));
-        let _ = std::fs::create_dir_all(&backups);
+        let backup_root = registry::Registry::discover(&root)
+            .map(|registry| registry.projects_dir)
+            .unwrap_or_else(|| root.clone());
+        let backups = match confined_vault_path(&backup_root, ".backups") {
+            Ok(path) => path,
+            Err(error) => return fail(error),
+        };
+        let mut sources = Vec::new();
+        for sub in ["wiki", "raw", "ingest-reports", "reflect-reports"] {
+            let subtree = match confined_vault_path(&root, sub).and_then(|path| walk_all(&path)) {
+                Ok(paths) => paths,
+                Err(error) => return fail(error),
+            };
+            sources.extend(subtree);
+        }
+        for fname in ["CLAUDE.md", "CHANGELOG.md", ".settings.json"] {
+            let path = match confined_vault_path(&root, fname) {
+                Ok(path) => path,
+                Err(error) => return fail(error),
+            };
+            if path.is_file() {
+                sources.push(path);
+            }
+        }
+        if let Err(error) = std::fs::create_dir_all(&backups) {
+            return fail(format!("create backup directory: {error}"));
+        }
         let base = root
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_else(|| "vault".into());
         let mut dest = backups.join(format!("{base}.zip"));
         let mut n = 2;
-        while dest.exists() {
-            dest = backups.join(format!("{base}-{n}.zip"));
-            n += 1;
-        }
-        let file = match std::fs::File::create(&dest) {
-            Ok(f) => f,
-            Err(e) => return fail(format!("create zip: {e}")),
+        let file = loop {
+            if let Err(error) = vault::confine_delete_path(&backup_root, &dest.to_string_lossy()) {
+                return fail(error);
+            }
+            match std::fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&dest)
+            {
+                Ok(file) => break file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                    dest = backups.join(format!("{base}-{n}.zip"));
+                    n += 1;
+                }
+                Err(error) => return fail(format!("create zip: {error}")),
+            }
         };
         let mut zw = zip::ZipWriter::new(file);
         let opts = zip::write::SimpleFileOptions::default()
             .compression_method(zip::CompressionMethod::Deflated);
         let mut count = 0usize;
-        for sub in ["wiki", "raw", "ingest-reports", "reflect-reports"] {
-            for f in walk_all(&root.join(sub)) {
-                let arc = rel_to(&root, &f);
-                if zw.start_file(arc, opts).is_ok() {
-                    if let Ok(bytes) = std::fs::read(&f) {
-                        let _ = zw.write_all(&bytes);
-                        count += 1;
-                    }
-                }
+        for path in sources {
+            let arc = rel_to(&root, &path);
+            let result = std::fs::read(&path)
+                .map_err(|error| format!("read export source: {error}"))
+                .and_then(|bytes| {
+                    zw.start_file(arc, opts)
+                        .map_err(|error| format!("write zip entry: {error}"))?;
+                    zw.write_all(&bytes)
+                        .map_err(|error| format!("write zip content: {error}"))
+                });
+            if let Err(error) = result {
+                return fail(error);
             }
-        }
-        for fname in ["CLAUDE.md", "CHANGELOG.md", ".settings.json"] {
-            let f = root.join(fname);
-            if f.is_file() && zw.start_file(fname, opts).is_ok() {
-                if let Ok(bytes) = std::fs::read(&f) {
-                    let _ = zw.write_all(&bytes);
-                    count += 1;
-                }
-            }
+            count += 1;
         }
         if let Err(e) = zw.finish() {
             return fail(format!("finish zip: {e}"));
@@ -2096,7 +2391,7 @@ impl McpServer {
         if a.message.trim().is_empty() {
             return fail("message required");
         }
-        let vault = match resolve_root(&a.project) {
+        let vault = match self.resolve_root(&a.project) {
             Ok(r) => r.canonicalize().unwrap_or(r),
             Err(e) => return fail(e),
         };
@@ -2108,6 +2403,9 @@ impl McpServer {
             .unwrap_or_else(|| vault.clone());
         if !repo_root.join(".git").is_dir() {
             return fail("repository is not a git repo");
+        }
+        if let Err(error) = confined_vault_path(&repo_root, ".git") {
+            return fail(error);
         }
         // A whole-repo (legacy) vault keeps wiki/raw at the root; a project vault
         // lives under projects/<slug>/ and also carries its own metadata files.
@@ -2136,6 +2434,11 @@ impl McpServer {
                 .output()
         };
         for p in &paths {
+            if let Err(error) =
+                vault::confine_delete_path(&repo_root, &repo_root.join(p).to_string_lossy())
+            {
+                return fail(error);
+            }
             if !repo_root.join(p).exists() {
                 continue;
             }
@@ -2202,7 +2505,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ContradictsArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2223,7 +2526,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProposeLinksArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2277,16 +2580,21 @@ impl McpServer {
 
     /// One writer for wiki pages: check, then create or update.
     #[tool(
-        description = "Write one page, checked. path is vault-relative (wiki/foo.md); raw/ is immutable and .myco/ is app state, so both refuse. mode=create must not exist, mode=update must. Runs check_page first and refuses on blocking problems — force=true overrides the lint, but a secret NEVER writes. commit=true also git-commits the page. Replaces create_page (which invents the frontmatter for you) and update_page (which does no checking); both still work."
+        description = "Write one page, checked. path is vault-relative (wiki/foo.md); raw/ is immutable and .myco/ is app state, so both refuse. mode=create atomically requires absence; mode=update must exist and requires expected_sha256 from read_page or preview_page_update. A missing or stale revision always refuses, even with force=true. Runs check_page first and refuses on blocking problems — force=true overrides the lint, but a secret NEVER writes. commit=true also git-commits the page. Deprecated create_page and update_page remain compatibility aliases using the same checks."
     )]
     async fn write_page(
         &self,
         Parameters(a): Parameters<WritePageArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
+        if a.commit {
+            if let Err(error) = confined_vault_path(&root, ".git") {
+                return fail(error);
+            }
+        }
         let mode = if a.mode.trim().is_empty() {
             "create"
         } else {
@@ -2299,11 +2607,16 @@ impl McpServer {
             mode,
             a.force,
             settings::load().pii_quarantine_enabled,
+            a.expected_sha256.as_deref(),
         ) {
             Ok(mut out) => {
-                if let Some(rel) = out["path"].as_str().map(str::to_string) {
+                if let Some(rel) = out["path"]
+                    .as_str()
+                    .filter(|_| out["ok"] == json!(true))
+                    .map(str::to_string)
+                {
                     if let Some(u) = crate::INDEX_UPDATER.get() {
-                        u.mark_dirty(rel.replace('\\', "/"));
+                        u.mark_dirty(&root, rel.replace('\\', "/"));
                     }
                     crate::inflow_log::record(&root, "mcp", "write_page");
                     if a.commit {
@@ -2334,7 +2647,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<IngestArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2361,7 +2674,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<RecallArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2379,16 +2692,10 @@ impl McpServer {
             Ok(f) => f,
             Err(e) => return fail(e),
         };
-        // Same split as the Ask page: `semantic_search` treats a skipped dense
-        // arm as "no answer" (there is no cosine to judge relevance by), and so
-        // does this — with the reason attached, since an agent has no UI to
-        // read the empty result in.
+        // Ask's grounding split also accepts complete lexical evidence when
+        // dense search is unavailable. Preserve that fallback with its reason.
         let note = found.dense_skipped;
-        let ask = commands::ask_response(if note.is_some() {
-            Vec::new()
-        } else {
-            found.hits
-        });
+        let ask = commands::ask_response(found.hits);
         let mut out = recall_result(&ask, &a.query, limit);
         if let Some(n) = note {
             out["note"] = json!(n);
@@ -2404,7 +2711,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<NeighbourhoodArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2427,7 +2734,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ChangedSinceArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2448,6 +2755,27 @@ impl McpServer {
     // ─── import / wikify / ledger / distill / profile ─────────────────────────
     // Ported from the retired Python server onto the app's own modules.
 
+    /// Find the current canonical summary without reading transcript bodies.
+    #[tool(
+        description = "Read-only session identity lookup. Give key=source:conversation_id and a project slug (or empty for the active vault). Returns {ok:true, summaryPath: vault-relative Markdown path or null}. Only bounded wiki frontmatter is inspected; duplicate identities, symlinks and scan-budget failures refuse instead of guessing. No source bodies or mutations."
+    )]
+    async fn session_summary_path(
+        &self,
+        Parameters(a): Parameters<SessionSummaryPathArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match self.resolve_root(&a.project) {
+            Ok(root) => root,
+            Err(error) => return fail(error),
+        };
+        match tauri::async_runtime::spawn_blocking(move || session_summary_path_at(&root, &a.key))
+            .await
+        {
+            Ok(Ok(path)) => json_result(json!({ "ok": true, "summaryPath": path })),
+            Ok(Err(error)) => fail(error),
+            Err(error) => fail(format!("join failed: {error}")),
+        }
+    }
+
     /// One transcript the caller already holds → `raw/conversations/`.
     #[tool(
         description = "Import one conversation transcript into raw/conversations/<source>/ — dedup by <source>:<conversation_id> AND by body (a re-export under a new id is refused), secrets/PII-scanned like add_raw_source, then queued for wikify_pending. Changed content under a known id lands as a new .rN revision (raw/ is immutable)."
@@ -2456,7 +2784,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ImportConversationArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2469,7 +2797,15 @@ impl McpServer {
             &a.created,
             settings::load().pii_quarantine_enabled,
         ) {
-            Ok(out) => json_result(out),
+            Ok(out) => {
+                if out["status"] == "imported" || out["status"] == "reimported_update" {
+                    use tauri::Emitter;
+                    if let Some(app) = &self.app {
+                        let _ = app.emit("myco://session-imported", json!({"pending": true}));
+                    }
+                }
+                json_result(out)
+            }
             Err(e) => fail(e),
         }
     }
@@ -2477,13 +2813,13 @@ impl McpServer {
     /// One coding-session file → the app's own importer (parsers, dedup
     /// ledger, secret quarantine, month buckets).
     #[tool(
-        description = "Import a coding-session .jsonl (Claude Code project session or Codex rollout) through the app's own parsers and dedup ledger. dest: sessions (default — the searchable archive; the app's harvest queue promotes a session into the wiki) | _inbox (the next ingest pass turns it into pages). A conversation holding a secret is quarantined, never written."
+        description = "Import a coding-session .jsonl (Claude Code project session or Codex rollout) through the app's own parsers and dedup ledger. dest: sessions (default searchable archive) | _inbox. Explicit imports enter the app's revision-verified wiki queue, repairing a missing queue entry without rewriting raw sources. Already pending or completed revisions are a no-op. A conversation holding a secret is quarantined, never written."
     )]
     async fn import_session(
         &self,
         Parameters(a): Parameters<ImportSessionArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2501,35 +2837,61 @@ impl McpServer {
             Err(e) => return fail(e),
         };
         let outcome = match tauri::async_runtime::spawn_blocking(move || {
-            commands::run_import(&root, &[path], dest, |_| {})
+            import_session_at(&root, &path, dest)
         })
         .await
         {
-            Ok(o) => o,
+            Ok(Ok(o)) => o,
+            Ok(Err(e)) => return fail(e),
             Err(e) => return fail(format!("join failed: {e}")),
         };
+        if outcome.failed.is_empty() && outcome.quarantined.is_empty() {
+            use tauri::Emitter;
+            if let Some(app) = &self.app {
+                let _ = app.emit("myco://session-imported", json!({"pending": true}));
+            }
+        }
         json_result(import_outcome_json(dest, &outcome))
     }
 
     /// The import queue: transcripts no wiki page cites yet.
     #[tool(
-        description = "Imported-but-not-yet-wikified transcripts (from import_conversation), oldest first, each with a 2,400-char excerpt; write pages citing its src_slug, then call again with done=[key,...] to check them off. Empty = the import queue is fully wikified."
+        description = "Imported conversations awaiting wiki promotion. List bounded excerpts, then read_key + source_revision + offset to read each full revision in chunks (next_offset continues). done=[key] only completes after all source bytes were read and a valid wiki page cites the exact raw_path inline and in its footnote definition. Completion records a revision receipt."
     )]
     async fn wikify_pending(
         &self,
         Parameters(a): Parameters<WikifyPendingArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
+        let read = if a.read_key.is_empty() {
+            None
+        } else {
+            match read_pending_at(
+                &root,
+                &a.read_key,
+                &a.source_revision,
+                a.offset,
+                a.read_limit.unwrap_or(16384),
+            ) {
+                Ok(read) => Some(read),
+                Err(e) => return fail(e),
+            }
+        };
         match wikify_pending_at(&root, a.limit.unwrap_or(3), &a.done) {
-            Ok(out) => json_result(out),
+            Ok(mut out) => {
+                if let Some(read) = read {
+                    out["read"] = read;
+                }
+                json_result(out)
+            }
             Err(e) => fail(e),
         }
     }
 
-    /// The dedup ledger's counters.
+    /// The dedup ledger's counters (may upgrade a legacy body index on load).
     #[tool(
         description = "Import dedup ledger: conversations recorded per source, session files stamped, distinct bodies indexed (`absorbed` of them backfilled once from the sessions already on disk) and duplicates refused, plus the wikify queue"
     )]
@@ -2537,7 +2899,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2552,7 +2914,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2567,7 +2929,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<ProjectArg>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2584,7 +2946,7 @@ impl McpServer {
         &self,
         Parameters(a): Parameters<SetupProfileArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let root = match resolve_root(&a.project) {
+        let root = match self.resolve_root(&a.project) {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
@@ -2766,8 +3128,9 @@ fn resource_list(root: &Path) -> Vec<Resource> {
             .with_description("Page/source counts, link total and the type breakdown, as JSON.")
             .with_mime_type("application/json"),
     ];
-    let wiki = wiki_dir(root);
-    let wiki = wiki.canonicalize().unwrap_or(wiki);
+    let Ok(wiki) = confined_subtree_path(root, "wiki", "") else {
+        return out;
+    };
     let mut pages = collect_md(&wiki);
     pages.sort();
     for abs in pages.into_iter().take(RESOURCE_PAGE_LIMIT) {
@@ -2791,7 +3154,7 @@ fn resource_list(root: &Path) -> Vec<Resource> {
 fn resource_read(root: &Path, uri: &str) -> Result<ResourceContents, String> {
     match uri {
         INSTRUCTIONS_URI => {
-            let path = root.join("CLAUDE.md");
+            let path = confined_vault_path(root, "CLAUDE.md")?;
             let text =
                 std::fs::read_to_string(&path).map_err(|e| format!("{INSTRUCTIONS_URI}: {e}"))?;
             Ok(ResourceContents::text(text, uri).with_mime_type("text/markdown"))
@@ -2850,8 +3213,8 @@ const INSTRUCTIONS: &str = "myco is a self-maintaining LLM wiki backed by an Obs
     To WRITE, draft the page, `check_page` it, fix every blocking problem, then `write_page` \
     (mode=create or update; force is for lint, never for a secret). `propose_links` suggests \
     [[wikilinks]] and never writes; `contradicts` checks one page against the wiki's \
-    superseded/disputed state. create_page and update_page still work but are deprecated — \
-    they do no checking. \
+    superseded/disputed state. Every update requires expected_sha256 from read_page or \
+    preview_page_update. Deprecated create_page and update_page use the same checks. \
     \
     To bring a source IN, use `ingest`: it runs the vault's own judgement first and writes \
     nothing for junk or a body the vault already has. Then drain the queue: list_inbox -> \
@@ -2862,7 +3225,9 @@ const INSTRUCTIONS: &str = "myco is a self-maintaining LLM wiki backed by an Obs
     `weekly_digest`. \
     \
     Never modify files under any raw/ directory; raw is immutable, it is not writable by any \
-    tool and not readable as a resource.";
+    tool and not readable as a resource. This HTTP session is pinned to one native vault \
+    opening. After a vault switch, close, reopen or failed open, initialize a new session; \
+    old sessions never retarget the newly active vault.";
 
 /// What `initialize` answers: this server by name and app version (the
 /// macro's default names the rmcp crate), tools only, and the brief above.
@@ -2900,8 +3265,12 @@ impl ServerHandler for McpServer {
         _request: Option<PaginatedRequestParams>,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ListResourcesResult, McpError> {
-        let root = resolve_root("").map_err(|e| McpError::invalid_params(e, None))?;
-        Ok(ListResourcesResult::with_all_items(resource_list(&root)))
+        self.with_bound_origin(|root| {
+            validate_mcp_state_paths(root)?;
+            confined_subtree_path(root, "wiki", "")?;
+            Ok(ListResourcesResult::with_all_items(resource_list(root)))
+        })
+        .map_err(|error| McpError::invalid_params(error, None))
     }
 
     async fn list_resource_templates(
@@ -2924,10 +3293,11 @@ impl ServerHandler for McpServer {
         request: ReadResourceRequestParams,
         _context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<ReadResourceResult, McpError> {
-        let root = resolve_root("").map_err(|e| McpError::invalid_params(e, None))?;
-        let contents = resource_read(&root, &request.uri)
-            .map_err(|e| McpError::resource_not_found(e, None))?;
-        Ok(ReadResourceResult::new(vec![contents]))
+        self.with_bound_origin(|root| {
+            let contents = resource_read(root, &request.uri)?;
+            Ok(ReadResourceResult::new(vec![contents]))
+        })
+        .map_err(|error| McpError::resource_not_found(error, None))
     }
 
     async fn call_tool(
@@ -2936,8 +3306,37 @@ impl ServerHandler for McpServer {
         context: rmcp::service::RequestContext<rmcp::RoleServer>,
     ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
         record_tool_call(&request.name);
+        if tool_mutates(&request.name) {
+            let server = self.clone();
+            let runtime = tokio::runtime::Handle::current();
+            return match tokio::task::spawn_blocking(move || {
+                server.with_bound_origin(|_| {
+                    // No handler may reacquire VaultRoot while the transition
+                    // lock is held. Only this private dispatch clone skips it.
+                    let mut dispatch = server.clone();
+                    dispatch.origin_validated = true;
+                    let tcc = rmcp::handler::server::tool::ToolCallContext::new(
+                        &dispatch, request, context,
+                    );
+                    Ok(runtime.block_on(dispatch.tool_router.call(tcc)))
+                })
+            })
+            .await
+            {
+                Ok(Ok(result)) => result,
+                Ok(Err(error)) => fail(error),
+                Err(error) => fail(format!("MCP guarded dispatch failed: {error}")),
+            };
+        }
+        if let Err(error) = self.with_bound_origin(|_| Ok(())) {
+            return fail(error);
+        }
         let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
-        self.tool_router.call(tcc).await
+        let result = self.tool_router.call(tcc).await;
+        if let Err(error) = self.with_bound_origin(|_| Ok(())) {
+            return fail(error);
+        }
+        result
     }
 }
 
@@ -2984,55 +3383,44 @@ pub async fn serve(app: tauri::AppHandle, ct: CancellationToken) -> Result<(), S
     Ok(())
 }
 
-/// Scan-before-write gate for the raw/ entry path (Q4 item 13):
-/// secrets always refuse; PII refuses when quarantine mode is on, otherwise
-/// `Ok(Some(warning))` — the write proceeds and the warning is attached as
-/// `pii_warning`. Refusal strings kept in sync with automation/autoingest.py
-/// (quarantine move).
-pub(crate) fn raw_source_guard(
-    content: &str,
-    pii_quarantine: bool,
-) -> Result<Option<String>, String> {
-    let secrets = secrets_scan::scan(content);
-    if !secrets.is_empty() {
-        return Err(format!(
-            "refused: possible secrets ({}) — redact and re-add. Nothing was written.",
-            secrets.join(", ")
-        ));
-    }
-    let pii = secrets_scan::scan_pii(content);
-    if pii.is_empty() {
-        return Ok(None);
-    }
-    if pii_quarantine {
-        return Err(format!(
-            "refused: possible PII ({}) — redact and re-add. Nothing was written.",
-            pii.join(", ")
-        ));
-    }
-    Ok(Some(format!(
-        "possible PII detected: {} — raw/ is immutable and committed to git; \
-         redact and re-add if unintended.",
-        pii.join(", ")
-    )))
-}
-
 /// Archive one `_inbox/` source: copy it into a fresh `raw/<slug>[-n].md`,
 /// then move the original into `_inbox/.archived/`. The copy is a raw/ write
 /// like any other, so it passes `raw_source_guard` first — `_inbox/` is where
 /// the clipper and autoingest drop untrusted text — and a refusal leaves the
 /// inbox file exactly where it was.
 fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Value, String> {
-    let Some(src) = safe_join(&inbox_dir(root), filename) else {
-        return Err(format!("path escapes _inbox/: {filename}"));
-    };
+    #[cfg(test)]
+    {
+        archive_inbox_checked(root, filename, pii_quarantine, || {})
+    }
+    #[cfg(not(test))]
+    {
+        archive_inbox_checked(root, filename, pii_quarantine)
+    }
+}
+
+fn archive_inbox_checked(
+    root: &Path,
+    filename: &str,
+    pii_quarantine: bool,
+    #[cfg(test)] after_raw_copy: impl FnOnce(),
+) -> Result<Value, String> {
+    let src = confined_subtree_path(root, "_inbox", filename)?;
     if !src.is_file() {
         return Err(format!("not found in inbox: {filename}"));
     }
-    let content = std::fs::read_to_string(&src).unwrap_or_default();
+    let content =
+        std::fs::read_to_string(&src).map_err(|e| format!("read inbox source failed: {e}"))?;
     let pii_warning = raw_source_guard(&content, pii_quarantine)?;
-    let raw = raw_dir(root);
-    let _ = std::fs::create_dir_all(&raw);
+    let raw = confined_subtree_path(root, "raw", "")?;
+    let archive = src
+        .parent()
+        .ok_or("inbox source has no parent")?
+        .join(".archived");
+    // Refuse an already-invalid archive before copying raw bytes. The shared
+    // archive helper repeats this check while holding the mutation lock.
+    vault::confine_delete_path(root, &archive.to_string_lossy())?;
+    std::fs::create_dir_all(&raw).map_err(|error| format!("create raw directory: {error}"))?;
     let stem = src
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -3040,32 +3428,27 @@ fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Va
     let slug = make_slug(&stem);
     let mut raw_path = raw.join(format!("{slug}.md"));
     let mut n = 2;
-    while raw_path.exists() {
-        raw_path = raw.join(format!("{slug}-{n}.md"));
-        n += 1;
+    loop {
+        vault::confine_delete_path(root, &raw_path.to_string_lossy())?;
+        match vault::write_file_if_unchanged(&raw_path.to_string_lossy(), &content, None) {
+            Ok(()) => break,
+            Err(error) if error.starts_with("write conflict:") => {
+                raw_path = raw.join(format!("{slug}-{n}.md"));
+                n += 1;
+            }
+            Err(error) => return Err(error),
+        }
     }
-    vault::write_file(&raw_path.to_string_lossy(), &content)?;
-    // Move the original out of the inbox so it is not re-ingested.
-    let archive = src
-        .parent()
-        .map(|p| p.join(".archived"))
-        .unwrap_or_default();
-    let _ = std::fs::create_dir_all(&archive);
-    let ext = src
-        .extension()
-        .map(|s| s.to_string_lossy().to_string())
-        .unwrap_or_default();
-    let mut dest = archive.join(src.file_name().unwrap_or_default());
-    let mut m = 2;
-    while dest.exists() {
-        dest = archive.join(if ext.is_empty() {
-            format!("{stem}-{m}")
-        } else {
-            format!("{stem}-{m}.{ext}")
-        });
-        m += 1;
-    }
-    std::fs::rename(&src, &dest).map_err(|e| format!("archive move failed: {e}"))?;
+    #[cfg(test)]
+    after_raw_copy();
+    // Raw absence-CAS releases the writer lock before the archive helper takes
+    // it for its fresh confinement, captured-copy SHA check and suffix move.
+    let dest = vault::archive_inbox_source_checked_at(
+        root,
+        &src.to_string_lossy(),
+        Some(&text_sha256(&content)),
+    )?;
+    let dest = Path::new(&dest);
     let raw_stem = raw_path
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -3320,7 +3703,7 @@ fn problem_line(body: &str, msg: &str) -> usize {
 /// runs over the whole wiki); the scan is `secrets_scan`, with
 /// `raw_source_guard`'s policy — a secret always blocks, PII blocks only in
 /// quarantine mode and otherwise warns.
-fn check_page_text(text: &str, pii_quarantine: bool) -> Value {
+pub(crate) fn check_page_text(text: &str, pii_quarantine: bool) -> Value {
     let (fm, body) = parse_draft(text);
     let mut problems: Vec<Value> = lint_page(&fm, &body)
         .into_iter()
@@ -3368,9 +3751,13 @@ fn write_page_at(
     mode: &str,
     force: bool,
     pii_quarantine: bool,
+    expected_sha256: Option<&str>,
 ) -> Result<Value, String> {
     if !matches!(mode, "create" | "update") {
         return Err(format!("unknown mode: {mode} — use create or update"));
+    }
+    if mode == "create" && expected_sha256.is_some() {
+        return Err("create requires absence; expected_sha256 is only valid for update".into());
     }
     let rel = path.trim().replace('\\', "/");
     let first = rel.split('/').next().unwrap_or("");
@@ -3387,6 +3774,21 @@ fn write_page_at(
     let Some(target) = safe_join(root, &rel) else {
         return Err(format!("path escapes the vault: {path}"));
     };
+    let target = vault::confine_delete_path(root, &target.to_string_lossy())?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|_| "cannot resolve vault root")?;
+    let namespace = target
+        .strip_prefix(&canonical_root)
+        .ok()
+        .and_then(|relative| relative.components().next())
+        .and_then(|component| component.as_os_str().to_str())
+        .unwrap_or("");
+    if WRITE_FORBIDDEN.contains(&namespace) {
+        return Err(format!(
+            "refused: {namespace}/ is not writable. Nothing was written."
+        ));
+    }
     if !rel.ends_with(".md") {
         return Err(format!("not a markdown page: {path}"));
     }
@@ -3394,6 +3796,9 @@ fn write_page_at(
         ("create", true) => return Err(format!("already exists (use mode=update): {rel}")),
         ("update", false) => return Err(format!("page not found (use mode=create): {rel}")),
         _ => {}
+    }
+    if mode == "update" && expected_sha256.is_none() {
+        return Err("update requires expected_sha256 from read_page or preview_page_update; nothing was written".into());
     }
     let check = check_page_text(text, pii_quarantine);
     let has_secret = check["problems"]
@@ -3414,7 +3819,7 @@ fn write_page_at(
     if let Some(parent) = target.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
     }
-    vault::write_file(&target.to_string_lossy(), text)?;
+    vault::write_file_if_unchanged(&target.to_string_lossy(), text, expected_sha256)?;
     let mut out = json!({
         "ok": true, "path": rel, "mode": mode, "bytes": text.len(),
     });
@@ -3451,7 +3856,7 @@ fn ingest_at(
         }
     };
     let size = source.len() as u64;
-    let ledger = crate::importers::ledger::Ledger::load(root);
+    let ledger = crate::importers::ledger::Ledger::load(root)?;
     let verdict = crate::judge::judge_against(&source, size, &ledger);
     let name = ingest_name(title, &source, from.as_deref());
     if verdict.verdict == "drop" {
@@ -3595,9 +4000,9 @@ fn recall_result(ask: &commands::AskSearch, query: &str, limit: usize) -> Value 
 fn neighbourhood_at(root: &Path, page: &str, hops: usize) -> Result<Value, String> {
     let canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     // A bare filename resolves under wiki/, the way read_page takes one.
-    let abs = match safe_join(&canon, page).filter(|p| p.is_file()) {
-        Some(p) => p,
-        None => wiki_page_path(&canon, page)?,
+    let abs = match safe_join(&canon, page) {
+        Some(path) if path.is_file() => confined_vault_path(&canon, page)?,
+        _ => wiki_page_path(&canon, page)?,
     };
     let abs = abs.canonicalize().unwrap_or(abs);
     let adj = crate::index::build_link_graph(&canon.to_string_lossy())?;
@@ -3744,6 +4149,64 @@ fn sanitize_id(s: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
+/// A metadata refresh is grounded in the current immutable revision, never in
+/// a mutable summary's user-authored fields or an unverified ledger hint.
+fn previous_conversation_at(
+    root: &Path,
+    key: &str,
+    pending: &crate::importers::wikify::Pending,
+    unchanged_body: Option<&str>,
+) -> Result<Option<Value>, String> {
+    let revision = pending
+        .pending
+        .iter()
+        .find(|item| item.key == key)
+        .map(|item| (&item.raw_path, &item.source_revision))
+        .or_else(|| {
+            pending
+                .receipts
+                .iter()
+                .rev()
+                .find(|receipt| receipt.key == key)
+                .map(|receipt| (&receipt.raw_path, &receipt.source_revision))
+        });
+    let Some((raw_path, expected_revision)) = revision else {
+        return Ok(None);
+    };
+    let source = crate::vault::confine_delete_path(root, &root.join(raw_path).to_string_lossy())
+        .map_err(|_| "previous source path is unsafe")?;
+    let confined = crate::importers::wikify::source_path(root, raw_path)?;
+    if source != confined || !source.is_file() {
+        return Err("previous source path is invalid".into());
+    }
+    let text =
+        std::fs::read_to_string(source).map_err(|_| "cannot read previous source revision")?;
+    if crate::importers::wikify::source_revision(&text) != *expected_revision {
+        return Err("previous source revision changed; reload the import queue".into());
+    }
+    let (metadata, body) = parse_draft(&text);
+    let source = metadata
+        .get("source")
+        .and_then(Value::as_str)
+        .ok_or("previous source identity is invalid")?;
+    let id = metadata
+        .get("conversation_id")
+        .and_then(Value::as_str)
+        .ok_or("previous source identity is invalid")?;
+    if format!("{source}:{id}") != key {
+        return Err("previous source identity does not match the session".into());
+    }
+    // The coding-session importer has its own title/date serialization. Only
+    // MCP conversation metadata is refreshed through this plain-text protocol.
+    if metadata.get("via").and_then(Value::as_str) != Some("mcp") {
+        return Ok(None);
+    }
+    if unchanged_body.is_some_and(|expected| body.trim() != expected) {
+        return Err("previous source body does not match the import ledger".into());
+    }
+    Ok(Some(metadata))
+}
+
 /// `import_conversation` body: dedup (key+fingerprint, then body) against the
 /// import ledger → the raw/ guard → `raw/conversations/<source>/<id>[.rN].md`
 /// → ledger + wikify queue. `Err` is the structured refusal (nothing written).
@@ -3756,8 +4219,11 @@ fn import_conversation_at(
     created: &str,
     pii_quarantine: bool,
 ) -> Result<Value, String> {
+    let _import_guard = crate::importers::wikify::import_lock()?;
     use crate::importers::ledger::{body_hash, fingerprint, Ledger};
     use crate::importers::wikify::{Pending, PendingItem};
+    // Refuse corrupt queue state before touching immutable raw sources.
+    let mut pending = Pending::try_load(root)?;
     let source = source.trim().to_lowercase();
     if !is_source_slug(&source) {
         return Err(format!(
@@ -3768,18 +4234,46 @@ fn import_conversation_at(
     if text.is_empty() {
         return Err("raw_text is empty".to_string());
     }
-    let mut conv_id = sanitize_id(conversation_id);
-    if conv_id.is_empty() {
-        conv_id = fingerprint(text)[..12].to_string();
-    }
-    let key = format!("{source}:{conv_id}");
+    let original_id = if conversation_id.trim().is_empty() {
+        fingerprint(text)[..12].to_string()
+    } else {
+        conversation_id.trim().to_string()
+    };
+    let safe_id = sanitize_id(&original_id);
+    let conv_id = if safe_id == original_id && safe_id.len() <= 180 {
+        safe_id
+    } else {
+        format!(
+            "{}-{}",
+            safe_id.chars().take(120).collect::<String>(),
+            fingerprint(&original_id)
+        )
+    };
+    let key = format!("{source}:{original_id}");
     let fp = fingerprint(text);
-    let mut ledger = Ledger::load(root);
-    if ledger.seen(&key, &fp) {
+    let mut ledger = Ledger::load(root)?;
+    let unchanged = ledger.seen(&key, &fp);
+    let previous = if ledger.entry(&key).is_some() {
+        previous_conversation_at(root, &key, &pending, unchanged.then_some(text))?
+    } else {
+        None
+    };
+    let previous_title = previous
+        .as_ref()
+        .and_then(|metadata| metadata.get("title"))
+        .and_then(Value::as_str);
+    let safe_title = if title.trim().is_empty() {
+        previous_title.unwrap_or(&conv_id).to_string()
+    } else {
+        crate::profile::sanitize_line(title)
+    };
+    if unchanged
+        && (title.trim().is_empty() || previous_title.map_or(true, |old| old == safe_title))
+    {
         return Ok(json!({ "ok": true, "status": "skipped_duplicate", "key": key }));
     }
     let hash = body_hash(text);
-    if ledger.seen_body(&hash, &key) {
+    if !unchanged && ledger.seen_body(&hash, &key) {
         ledger.note_duplicates(1);
         ledger.save(root)?;
         return Ok(json!({
@@ -3796,51 +4290,63 @@ fn import_conversation_at(
         rel = format!("conversations/{source}/{conv_id}.r{rev}.md");
     }
     let today = registry::today_utc();
-    let safe_title = if title.trim().is_empty() {
-        conv_id.clone()
-    } else {
-        crate::profile::sanitize_line(title)
-    };
-    let day = if created.trim().is_empty() {
+    let previous_day = unchanged
+        .then(|| {
+            previous
+                .as_ref()
+                .and_then(|metadata| metadata.get("created"))
+                .and_then(Value::as_str)
+        })
+        .flatten();
+    let day = if let Some(day) = previous_day {
+        day.to_string()
+    } else if created.trim().is_empty() {
         today.clone()
     } else {
-        created.trim().to_string()
+        let day = created.trim();
+        if day.len() != 10 || crate::importers::parse_iso8601(&format!("{day}T00:00:00Z")).is_none()
+        {
+            return Err("created must be a valid YYYY-MM-DD date".into());
+        }
+        day.to_string()
     };
     let content = format!(
-        "---\ntitle: \"{}\"\nsource: {source}\nconversation_id: {conv_id}\ncreated: {day}\nimported: {today}\nvia: mcp\n---\n\n{text}\n",
-        safe_title.replace('"', "\\\"")
+        "---\ntitle: {}\nsource: {source}\nconversation_id: {}\ncreated: {day}\nimported: {today}\nvia: mcp\n---\n\n{text}\n",
+        serde_json::to_string(&safe_title).map_err(|e| e.to_string())?, serde_json::to_string(&original_id).map_err(|e| e.to_string())?
     );
     let pii_warning = raw_source_guard(&content, pii_quarantine)?;
     let Some(target) = safe_join(&raw, &rel) else {
         return Err(format!("path escapes raw/: {rel}"));
     };
-    if let Some(p) = target.parent() {
-        std::fs::create_dir_all(p).map_err(|e| format!("create raw/conversations: {e}"))?;
-    }
-    vault::write_file(&target.to_string_lossy(), &content)?;
+    crate::importers::wikify::append_raw(root, &rel_to(root, &target), &content)?;
     ledger.record(key.clone(), fp);
     ledger.record_body(hash, &key);
-    ledger.save(root)?;
     let stem = target
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
-    let mut pending = Pending::load(root);
+    // Revision suffixes use dots in filenames, while the citation grammar
+    // accepts only word characters and hyphens in [^src-*] labels.
+    let src_slug = format!("src-{}", stem.replace('.', "-"));
     pending.push(PendingItem {
         key: key.clone(),
         raw_path: rel_to(root, &target),
-        src_slug: format!("src-{stem}"),
+        src_slug: src_slug.clone(),
         title: safe_title,
         imported: today,
+        source_revision: crate::importers::wikify::source_revision(&content),
+        read_ranges: Vec::new(),
     });
     pending.save(root)?;
+    ledger.save(root)?;
     crate::inflow_log::record(root, "mcp", "import_conversation");
     let mut out = json!({
         "ok": true,
         "status": if prior || rev > 0 { "reimported_update" } else { "imported" },
         "key": key,
         "raw_path": rel_to(root, &target),
-        "src_slug": format!("src-{stem}"),
+        "src_slug": src_slug,
+        "source_revision": crate::importers::wikify::source_revision(&content),
         "pending_total": pending.pending.len(),
         "next": "call wikify_pending to turn imported transcripts into wiki pages",
     });
@@ -3876,6 +4382,264 @@ fn session_file(path: &str) -> Result<PathBuf, String> {
     Ok(expanded)
 }
 
+/// Explicit MCP imports queue the admitted immutable revision. The external
+/// source is read once by the importer, never reread for queue publication.
+fn import_session_at(
+    root: &Path,
+    path: &Path,
+    dest: &str,
+) -> Result<commands::ImportOutcome, String> {
+    Ok(commands::run_import_admitted(
+        root,
+        &[path.to_path_buf()],
+        dest,
+    ))
+}
+
+#[cfg(test)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PendingSourceMetadata {
+    key: String,
+    title: String,
+    raw_path: String,
+    source_revision: String,
+    src_slug: String,
+    summary_path: Option<String>,
+}
+
+#[cfg(test)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct PendingSources {
+    pending_total: usize,
+    items: Vec<PendingSourceMetadata>,
+}
+
+fn valid_session_key(key: &str) -> bool {
+    key.len() <= 4096
+        && !key.chars().any(char::is_control)
+        && key.split_once(':').is_some_and(|(source, id)| {
+            is_source_slug(source) && !id.trim().is_empty() && id == id.trim()
+        })
+}
+
+/// Read only complete, bounded frontmatter; a truncated catalog fails closed
+/// rather than claiming that no existing canonical summary was found.
+fn summary_key(root: &Path, rel: &str, remaining: &mut usize) -> Result<Option<String>, String> {
+    use std::io::Read;
+    let relative = Path::new(rel);
+    if !rel.starts_with("wiki/") || relative.extension().and_then(|e| e.to_str()) != Some("md") {
+        return Err("invalid session summary path".into());
+    }
+    let mut path = root.to_path_buf();
+    for component in relative.components() {
+        let std::path::Component::Normal(name) = component else {
+            return Err("invalid session summary path".into());
+        };
+        path.push(name);
+        match std::fs::symlink_metadata(&path) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err("session summary path contains a symlink".into())
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(_) => return Err("cannot inspect session summary path".into()),
+            _ => {}
+        }
+    }
+    let mut bytes = Vec::new();
+    std::fs::File::open(path)
+        .map_err(|_| "cannot read session summary metadata")?
+        .take(8193)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "cannot read session summary metadata")?;
+    *remaining = remaining
+        .checked_sub(bytes.len())
+        .ok_or("session summary catalog exceeds its byte budget")?;
+    if !bytes.starts_with(b"---\n") && !bytes.starts_with(b"---\r\n") {
+        return Ok(None);
+    }
+    let valid = match std::str::from_utf8(&bytes) {
+        Ok(text) => text,
+        Err(error) if error.error_len().is_none() => {
+            std::str::from_utf8(&bytes[..error.valid_up_to()])
+                .map_err(|_| "invalid summary metadata encoding")?
+        }
+        Err(_) => return Err("invalid summary metadata encoding".into()),
+    };
+    let mut end = 0;
+    let mut closed = false;
+    for (index, line) in valid.split_inclusive('\n').enumerate() {
+        end += line.len();
+        if index > 0 && line.trim_end_matches(['\r', '\n']) == "---" {
+            closed = true;
+            break;
+        }
+    }
+    if !closed {
+        if bytes.len() > 8192 {
+            return Err("session summary frontmatter exceeds its read budget".into());
+        }
+        return Ok(None);
+    }
+    let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse::<gray_matter::Pod>(&valid[..end])
+        .map_err(|_| "invalid session summary frontmatter")?;
+    let metadata = parsed.data.map(vault::pod_to_json).unwrap_or(Value::Null);
+    Ok(metadata
+        .get("session_key")
+        .and_then(Value::as_str)
+        .map(str::to_string))
+}
+
+pub(crate) fn summary_path_from_pending(
+    root: &Path,
+    key: &str,
+    pending: &crate::importers::wikify::Pending,
+) -> Result<Option<String>, String> {
+    if !valid_session_key(key) {
+        return Err("invalid session key".into());
+    }
+    let mut remaining = 8 * 1024 * 1024;
+    let mut found = None;
+    // A receipt may contain several topic pages. Only explicit session identity
+    // makes one of them safe to reuse as a generated session summary.
+    for receipt in pending
+        .receipts
+        .iter()
+        .rev()
+        .filter(|receipt| receipt.key == key)
+    {
+        for rel in &receipt.wiki_paths {
+            if summary_key(root, rel, &mut remaining)?.as_deref() == Some(key) {
+                if found.as_ref().is_some_and(|existing| existing != rel) {
+                    return Err("more than one summary has this session identity".into());
+                }
+                found = Some(rel.clone());
+            }
+        }
+    }
+    let wiki = root.join("wiki");
+    if !wiki.exists() {
+        return Ok(found);
+    }
+    if std::fs::symlink_metadata(&wiki)
+        .map_err(|_| "cannot inspect wiki catalog")?
+        .file_type()
+        .is_symlink()
+    {
+        return Err("wiki catalog contains a symlink".into());
+    }
+    let mut directories = vec![wiki];
+    let mut count = 0usize;
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(directory).map_err(|_| "cannot read wiki catalog")? {
+            let entry = entry.map_err(|_| "cannot read wiki catalog entry")?;
+            count += 1;
+            if count > 8192 {
+                return Err("session summary catalog exceeds its entry budget".into());
+            }
+            let kind = entry
+                .file_type()
+                .map_err(|_| "cannot inspect wiki catalog entry")?;
+            if kind.is_symlink() {
+                return Err("wiki catalog contains a symlink".into());
+            }
+            let path = entry.path();
+            if kind.is_dir() {
+                directories.push(path);
+            } else if kind.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
+                let rel = rel_to(root, &path);
+                if summary_key(root, &rel, &mut remaining)?.as_deref() == Some(key) {
+                    if found.as_ref().is_some_and(|existing| existing != &rel) {
+                        return Err("more than one summary has this session identity".into());
+                    }
+                    found = Some(rel);
+                }
+            }
+        }
+    }
+    Ok(found)
+}
+
+/// Existing session-summary identity without reading transcript bodies.
+pub(crate) fn session_summary_path_at(root: &Path, key: &str) -> Result<Option<String>, String> {
+    let _guard = crate::importers::wikify::import_lock()?;
+    let root = root
+        .canonicalize()
+        .map_err(|_| "cannot resolve vault root")?;
+    let pending = crate::importers::wikify::Pending::try_load(&root)?;
+    summary_path_from_pending(&root, key, &pending)
+}
+
+/// A scheduler-facing queue view. It performs no preview read or completion;
+/// the existing full-source and exact-citation guards remain authoritative.
+#[cfg(test)] // Legacy queue regressions; production uses native compiler jobs.
+pub(crate) fn list_wikify_pending_at(root: &Path, limit: usize) -> Result<PendingSources, String> {
+    let _guard = crate::importers::wikify::import_lock()?;
+    let root = root
+        .canonicalize()
+        .map_err(|_| "cannot resolve vault root")?;
+    let pending = crate::importers::wikify::Pending::try_load(&root)?;
+    let mut items = Vec::new();
+    for item in pending.pending.iter().take(limit.clamp(1, 3)) {
+        if !valid_session_key(&item.key)
+            || item.source_revision.len() != 64
+            || !item
+                .source_revision
+                .bytes()
+                .all(|byte| byte.is_ascii_hexdigit())
+        {
+            return Err(
+                "pending source identity or revision is invalid; reload the import queue".into(),
+            );
+        }
+        let source_slug = item
+            .key
+            .split_once(':')
+            .ok_or("invalid pending session key")?
+            .0;
+        if !item
+            .raw_path
+            .starts_with(&format!("raw/conversations/{source_slug}/"))
+            || Path::new(&item.raw_path)
+                .extension()
+                .and_then(|ext| ext.to_str())
+                != Some("md")
+        {
+            return Err("pending source path does not match its session source".into());
+        }
+        let mut candidate = root.to_path_buf();
+        for component in Path::new(&item.raw_path).components() {
+            let std::path::Component::Normal(name) = component else {
+                return Err("invalid pending source path".into());
+            };
+            candidate.push(name);
+            if std::fs::symlink_metadata(&candidate)
+                .is_ok_and(|metadata| metadata.file_type().is_symlink())
+            {
+                return Err("pending source path contains a symlink".into());
+            }
+        }
+        let source = crate::importers::wikify::source_path(&root, &item.raw_path)?;
+        if !source.is_file() {
+            return Err("pending imported source is not a file".into());
+        }
+        items.push(PendingSourceMetadata {
+            key: item.key.clone(),
+            title: item.title.clone(),
+            raw_path: item.raw_path.clone(),
+            source_revision: item.source_revision.clone(),
+            src_slug: item.src_slug.clone(),
+            summary_path: summary_path_from_pending(&root, &item.key, &pending)?,
+        });
+    }
+    Ok(PendingSources {
+        pending_total: pending.pending.len(),
+        items,
+    })
+}
+
 /// The app's `ImportOutcome` as a tool result: `ok` is false only when the
 /// file itself could not be read or parsed (`failed`), never for skips.
 fn import_outcome_json(dest: &str, outcome: &commands::ImportOutcome) -> Value {
@@ -3886,19 +4650,199 @@ fn import_outcome_json(dest: &str, outcome: &commands::ImportOutcome) -> Value {
         out["error"] = json!(f.error);
     }
     out["next"] = json!(if dest == commands::DEST_SESSIONS {
-        "the transcript is searchable (search scope=sessions); the app's harvest queue promotes it into _inbox/ for the wiki"
+        "the transcript is searchable (search scope=sessions); new and changed explicit imports are queued for revision-verified wiki organization"
     } else {
         "the next ingest pass turns each _inbox/ doc into wiki pages"
     });
     out
 }
 
-/// `wikify_pending` body: check `done` off, then the oldest `limit` items
-/// with an excerpt of each transcript.
+fn read_pending_at(
+    root: &Path,
+    key: &str,
+    revision: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<Value, String> {
+    use crate::importers::wikify::{read_range, Pending};
+    let _guard = crate::importers::wikify::import_lock()?;
+    let mut pending = Pending::try_load(root)?;
+    let item = pending
+        .pending
+        .iter()
+        .find(|p| p.key == key)
+        .ok_or("conversation is not pending")?;
+    if item.source_revision.is_empty() || item.source_revision != revision {
+        return Err("source revision missing or changed; reload the pending queue".into());
+    }
+    let (text, next, total) = read_range(root, &item.raw_path, offset, limit)?;
+    pending.record_read(key, revision, offset, next)?;
+    let complete = pending
+        .pending
+        .iter()
+        .find(|p| p.key == key)
+        .is_some_and(|p| Pending::read_complete(p, total));
+    pending.save(root)?;
+    Ok(
+        json!({"key": key, "source_revision": revision, "text": text, "offset": offset,
+        "next_offset": next, "total_bytes": total, "read_complete": complete}),
+    )
+}
+
+/// A real inline reference and its definition must name this exact revision;
+/// another source with the same stem, or a fenced example, cannot complete it.
+pub(crate) fn cites_pending_revision(text: &str, raw_path: &str) -> bool {
+    let (_, body) = parse_draft(text);
+    let mut fence = false;
+    let visible = body
+        .lines()
+        .filter(|line| {
+            if line.trim_start().starts_with("```") || line.trim_start().starts_with("~~~") {
+                fence = !fence;
+                return false;
+            }
+            !fence
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let refs = footnote_refs(&visible);
+    visible.lines().any(|line| {
+        let Some(rest) = line.trim_start().strip_prefix("[^") else {
+            return false;
+        };
+        let Some((label, definition)) = rest.split_once("]:") else {
+            return false;
+        };
+        let path = definition
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .trim_matches(['`', '<', '>']);
+        refs.contains(label) && path == raw_path
+    })
+}
+
+fn verified_wikify_receipt(
+    root: &Path,
+    item: &crate::importers::wikify::PendingItem,
+    wiki_paths: &[String],
+    require_read: bool,
+) -> Result<crate::importers::wikify::Receipt, String> {
+    use crate::importers::wikify::{source_revision, Pending, Receipt};
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("vault root: {e}"))?;
+    let source_path = crate::importers::wikify::source_path(&root, &item.raw_path)?;
+    let bytes =
+        std::fs::read_to_string(source_path).map_err(|e| format!("read source revision: {e}"))?;
+    if source_revision(&bytes) != item.source_revision {
+        return Err("source revision changed; import the current source before completing".into());
+    }
+    if require_read && !Pending::read_complete(item, bytes.len()) {
+        return Err(
+            "full source revision has not been read; continue with read_key and next_offset".into(),
+        );
+    }
+    let mut verified = Vec::new();
+    for rel in wiki_paths {
+        if !rel.starts_with("wiki/") {
+            continue;
+        }
+        let path = confined_vault_path(&root, rel)
+            .map_err(|error| format!("receipt page escapes wiki/ or is unsafe: {error}"))?;
+        if !path.starts_with(root.join("wiki")) {
+            return Err("receipt page escapes wiki/".into());
+        }
+        let text =
+            std::fs::read_to_string(path).map_err(|e| format!("read receipt wiki page: {e}"))?;
+        if check_page_text(&text, false)["ok"] == true
+            && cites_pending_revision(&text, &item.raw_path)
+        {
+            verified.push(rel.clone());
+        }
+    }
+    if verified.is_empty() {
+        return Err("no valid wiki page cites the exact pending raw revision inline and in its footnote definition".into());
+    }
+    Ok(Receipt {
+        key: item.key.clone(),
+        raw_path: item.raw_path.clone(),
+        source_revision: item.source_revision.clone(),
+        wiki_paths: verified,
+        completed: registry::today_utc(),
+    })
+}
+
+/// App completion: source_revision is the SHA256 of the full source the app
+/// actually read. MCP completion additionally uses recorded paginated reads.
+#[cfg(test)] // A legacy reminder cannot authorize production compilation.
+pub(crate) fn complete_wikify_source_at(
+    root: &Path,
+    raw_path: &str,
+    source_revision: &str,
+    wiki_paths: &[String],
+) -> Result<Value, String> {
+    let _guard = crate::importers::wikify::import_lock()?;
+    let mut pending = crate::importers::wikify::Pending::try_load(root)?;
+    let item = pending
+        .pending
+        .iter()
+        .find(|p| p.raw_path == raw_path)
+        .ok_or("source is not pending")?;
+    if item.source_revision != source_revision {
+        return Err("read source revision does not match the current pending revision".into());
+    }
+    let receipt = verified_wikify_receipt(root, item, wiki_paths, false)?;
+    let out = json!({"ok": true, "receipt": receipt});
+    pending.complete(receipt)?;
+    pending.save(root)?;
+    Ok(out)
+}
+
+/// Verify completions, then return bounded previews (previews do not count as
+/// reading a source for completion).
 fn wikify_pending_at(root: &Path, limit: usize, done: &[String]) -> Result<Value, String> {
-    let mut pending = crate::importers::wikify::Pending::load(root);
+    let _guard = crate::importers::wikify::import_lock()?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("vault root: {e}"))?;
+    let root = canonical_root.as_path();
+    let mut pending = crate::importers::wikify::Pending::try_load(root)?;
+    // Old queues predate revision metadata; upgrade the identity without
+    // inventing read coverage or a completion receipt.
+    let mut upgraded = false;
+    for item in &mut pending.pending {
+        if item.source_revision.is_empty() {
+            let path = crate::importers::wikify::source_path(root, &item.raw_path)?;
+            let text =
+                std::fs::read_to_string(path).map_err(|e| format!("read legacy source: {e}"))?;
+            item.source_revision = crate::importers::wikify::source_revision(&text);
+            upgraded = true;
+        }
+    }
     if !done.is_empty() {
-        pending.done(done);
+        let wiki_paths: Vec<_> = collect_md(&root.join("wiki"))
+            .iter()
+            .map(|p| rel_to(root, p))
+            .collect();
+        // Verify the entire batch before removing anything.
+        let receipts = done
+            .iter()
+            .map(|key| {
+                let item = pending
+                    .pending
+                    .iter()
+                    .find(|p| &p.key == key)
+                    .ok_or("conversation is not pending")?;
+                verified_wikify_receipt(root, item, &wiki_paths, true)
+            })
+            .collect::<Result<Vec<_>, String>>()?;
+        for receipt in receipts {
+            pending.complete(receipt)?;
+        }
+        upgraded = true;
+    }
+    if upgraded {
         pending.save(root)?;
     }
     let items: Vec<Value> = pending
@@ -3908,22 +4852,24 @@ fn wikify_pending_at(root: &Path, limit: usize, done: &[String]) -> Result<Value
         .map(|p| {
             // The queue file is ours, but a vault-relative path from disk is
             // still confined before it is read.
-            let excerpt = safe_join(root, &p.raw_path)
-                .and_then(|abs| std::fs::read_to_string(abs).ok())
-                .map(|t| t.chars().take(2400).collect::<String>())
+            let preview = crate::importers::wikify::read_range(root, &p.raw_path, 0, 9600);
+            let error = preview.as_ref().err().cloned();
+            let excerpt = preview.as_ref().ok().map(|(text, _, _)| text.chars().take(2400).collect::<String>())
                 .unwrap_or_default();
             json!({
                 "key": p.key, "raw_path": p.raw_path, "src_slug": p.src_slug,
                 "title": p.title, "excerpt": excerpt,
+                "source_revision": p.source_revision, "read_ranges": p.read_ranges,
+                "total_bytes": preview.as_ref().ok().map(|(_, _, total)| total), "read_error": error,
             })
         })
         .collect();
     let instructions = if items.is_empty() {
         "Nothing pending — the import queue is fully wikified."
     } else {
-        "For each item: read the full raw file if the excerpt is not enough, create or update \
-         wiki pages with inline [^src-*] citations to its src_slug, update wiki/index.md, \
-         git_commit, then call wikify_pending(done=[key])."
+        "For each item: read_key with its source_revision, continue from next_offset until read_complete=true. \
+         Create or update valid wiki pages with inline [^src-*] references and definitions naming the exact raw_path. \
+         Then call done=[key]. An excerpt is a preview, not proof that the full source was read."
     };
     Ok(json!({
         "ok": true,
@@ -3936,19 +4882,28 @@ fn wikify_pending_at(root: &Path, limit: usize, done: &[String]) -> Result<Value
 
 /// `ledger_status` body.
 fn ledger_status_at(root: &Path) -> Value {
-    let ledger = crate::importers::ledger::Ledger::load(root);
-    let pending = crate::importers::wikify::Pending::load(root);
+    let (ledger, ledger_error) = match crate::importers::ledger::Ledger::load(root) {
+        Ok(ledger) => (Some(ledger), None),
+        Err(error) => (None, Some(error)),
+    };
+    let (pending_count, wikified_total, queue_error) =
+        match crate::importers::wikify::Pending::try_load(root) {
+            Ok(pending) => (Some(pending.pending.len()), Some(pending.done_count), None),
+            Err(error) => (None, None, Some(error)),
+        };
     json!({
-        "ok": true,
-        "conversations_recorded": ledger.conversations(),
-        "per_source": ledger.per_source(),
-        "session_files_stamped": ledger.files_stamped(),
-        "bodies_indexed": ledger.bodies_indexed(),
-        "absorbed": ledger.absorbed(),
-        "body_index_version": ledger.body_index_version(),
-        "duplicates": ledger.duplicates(),
-        "wikify_pending": pending.pending.len(),
-        "wikified_total": pending.done_count,
+        "ok": ledger_error.is_none() && queue_error.is_none(),
+        "conversations_recorded": ledger.as_ref().map(|value| value.conversations()),
+        "per_source": ledger.as_ref().map(|value| value.per_source()),
+        "session_files_stamped": ledger.as_ref().map(|value| value.files_stamped()),
+        "bodies_indexed": ledger.as_ref().map(|value| value.bodies_indexed()),
+        "absorbed": ledger.as_ref().map(|value| value.absorbed()),
+        "body_index_version": ledger.as_ref().map(|value| value.body_index_version()),
+        "duplicates": ledger.as_ref().map(|value| value.duplicates()),
+        "wikify_pending": pending_count,
+        "wikified_total": wikified_total,
+        "queue_error": queue_error,
+        "ledger_error": ledger_error,
         "ledger_path": ".myco/ledger.json",
         "pending_path": ".myco/wikify-pending.json",
     })
@@ -3958,9 +4913,18 @@ fn ledger_status_at(root: &Path) -> Value {
 /// check the Distill tab runs on it.
 fn distill_status_at(root: &Path) -> Value {
     let status = crate::distill::status(root);
-    let cfg = crate::distill::config_load(root);
-    let trigger_exceeded = cfg.enabled && status.backlog >= cfg.count_trigger;
     let mut out = serde_json::to_value(&status).unwrap_or(Value::Null);
+    let cfg = match crate::distill::config_load_checked(root) {
+        Ok(config) => config,
+        Err(error) => {
+            out["ok"] = json!(false);
+            out["error"] = json!(error);
+            out["trigger_exceeded"] = json!(false);
+            out["hint"] = json!("restore the distillation configuration before running");
+            return out;
+        }
+    };
+    let trigger_exceeded = cfg.enabled && status.backlog >= cfg.count_trigger;
     out["ok"] = json!(true);
     out["trigger_exceeded"] = json!(trigger_exceeded);
     out["hint"] = if trigger_exceeded {
@@ -3981,7 +4945,14 @@ fn setup_profile_at(
     style: &str,
 ) -> Result<Value, String> {
     use crate::profile;
-    let existing = profile::load(root);
+    let path = confined_vault_path(root, profile::FILE_NAME)?;
+    let original = match std::fs::read_to_string(&path) {
+        Ok(text) => Some(text),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("read profile failed: {error}")),
+    };
+    let expected = original.as_deref().map(text_sha256);
+    let existing = original.as_deref().map(profile::parse);
     if role.trim().is_empty() && goals.is_empty() && interests.is_empty() && style.trim().is_empty()
     {
         let questions: Vec<Value> = profile::INTERVIEW
@@ -4003,7 +4974,11 @@ fn setup_profile_at(
     if !style.trim().is_empty() {
         merged.style = style.to_string();
     }
-    profile::save(root, &merged)?;
+    vault::write_file_if_unchanged(
+        &path.to_string_lossy(),
+        &profile::serialize(&merged),
+        expected.as_deref(),
+    )?;
     let mut out = json!({ "ok": true, "path": profile::FILE_NAME, "profile": merged });
     // Warn, not block: profile.md is mutable, so a redact-and-resave fixes it
     // (unlike raw/, where the guard refuses before writing).
@@ -4030,10 +5005,16 @@ impl McpServer {
         root: &Path,
         text: &str,
     ) -> Result<Vec<crate::pipeline::CandidatePage>, String> {
-        let cache = self.app.state::<crate::vector_index::VectorCache>();
-        let store = cache.get(&crate::vector_index::VectorStore::path_for(
-            &root.to_string_lossy(),
-        )?);
+        let app = self
+            .app
+            .as_ref()
+            .ok_or("desktop retrieval state unavailable")?;
+        let cache = app.state::<crate::vector_index::VectorCache>();
+        let store = cache
+            .get_async(crate::vector_index::VectorStore::path_for(
+                &root.to_string_lossy(),
+            )?)
+            .await?;
         if store.records.is_empty() {
             return Err("no embedding index for this vault yet — tag overlap only".into());
         }
@@ -4047,9 +5028,10 @@ impl McpServer {
         if chunks.is_empty() {
             return Ok(Vec::new());
         }
-        let llm = self.app.state::<commands::LocalLlmState>();
-        let vecs = commands::embed_texts(
-            self.app.clone(),
+        let count = chunks.len();
+        let llm = app.state::<commands::LocalLlmState>();
+        let embedded = commands::embed_texts_checked(
+            app.clone(),
             llm,
             &provider,
             &model,
@@ -4058,12 +5040,16 @@ impl McpServer {
         )
         .await
         .map_err(|e| format!("embedding failed, tag overlap only: {e}"))?;
-        let per_chunk: Vec<Vec<crate::vector_index::Hit>> = vecs
+        embedded.validate(&store.embedding_space()?, count)?;
+        let per_chunk: Vec<Vec<crate::vector_index::Hit>> = embedded
+            .vectors
             .iter()
             .map(|v| {
-                crate::pipeline::dense_chunk_matches(&store.search(v, crate::pipeline::FUSE_POOL))
+                store
+                    .search(v, crate::pipeline::FUSE_POOL)
+                    .map(|hits| crate::pipeline::dense_chunk_matches(&hits))
             })
-            .collect();
+            .collect::<Result<_, _>>()?;
         Ok(crate::pipeline::rank_candidates(&per_chunk, 40))
     }
 
@@ -4076,11 +5062,20 @@ impl McpServer {
         k: usize,
         scope: Scope,
     ) -> Result<commands::HybridSearch, String> {
-        let llm = self.app.state::<commands::LocalLlmState>();
-        let cache = self.app.state::<crate::vector_index::VectorCache>();
-        let bm25_cache = self.app.state::<crate::retrieval::Bm25Cache>();
+        let app = self
+            .app
+            .as_ref()
+            .ok_or("desktop retrieval state unavailable")?;
+        let llm = app.state::<commands::LocalLlmState>();
+        let cache = app.state::<crate::vector_index::VectorCache>();
+        let bm25_cache = app.state::<crate::retrieval::Bm25Cache>();
+        let weights = if matches!(scope, Scope::Sessions | Scope::All) {
+            TierWeights::FLAT
+        } else {
+            TierWeights::default()
+        };
         commands::hybrid_search(
-            &self.app,
+            app,
             &llm,
             &cache,
             &bm25_cache,
@@ -4091,7 +5086,8 @@ impl McpServer {
             crate::local_llm::BUILTIN_EMBED_MODEL,
             None,
             scope,
-            &TierWeights::default(),
+            None,
+            &weights,
         )
         .await
     }
@@ -4120,10 +5116,28 @@ fn search_row(root: &Path, rank: usize, h: &commands::HybridHit) -> Value {
 }
 
 #[cfg(test)]
+#[path = "mcp_native_transport_tests.rs"]
+mod transport_tests;
+
+#[cfg(test)]
+#[path = "mcp_native_archive_mutation_tests.rs"]
+mod archive_mutation_tests;
+
+#[cfg(test)]
 mod tests {
     use super::raw_source_guard;
     use super::record_tool_call_at;
     use super::suspect_scan;
+    use super::text_sha256;
+
+    #[test]
+    fn implicit_ledger_and_queue_updates_take_the_guarded_mutation_route() {
+        assert!(super::tool_mutates("ledger_status"));
+        assert!(super::tool_mutates("wikify_pending"));
+        assert!(super::tool_mutates("future_tool"));
+        assert!(!super::tool_mutates("read_page"));
+        assert!(!super::tool_mutates("recall"));
+    }
     use super::{
         answer_with_citations_text, arg_num, ingest_backlog_text, resource_list, resource_read,
         weekly_digest_text, INSTRUCTIONS_URI, STATS_URI, WIKI_URI_TEMPLATE,
@@ -4133,12 +5147,15 @@ mod tests {
     };
     use super::{best_quote, changed_since_at, neighbourhood_at, parse_since, recall_result};
     use super::{check_page_text, ingest_at, ingest_name, problem_line, write_page_at};
+    use super::{complete_wikify_source_at, read_pending_at};
     use super::{contradiction_scan, link_span, propose_from};
     use super::{
-        distill_status_at, import_conversation_at, import_outcome_json, ledger_status_at,
-        session_file, setup_profile_at, wikify_pending_at,
+        distill_status_at, import_conversation_at, import_outcome_json, import_session_at,
+        ledger_status_at, list_wikify_pending_at, session_file, session_summary_path_at,
+        setup_profile_at, wikify_pending_at,
     };
     use super::{McpServer, ResourceContents};
+    use crate::commands;
     use crate::commands::HybridHit;
     use crate::retrieval::{Bm25Index, TierWeights};
     use std::path::Path;
@@ -4311,6 +5328,67 @@ mod tests {
         assert!(root.join("_inbox/.archived/My Clip.md").is_file());
     }
 
+    #[test]
+    fn archive_inbox_keeps_existing_raw_and_uses_the_next_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("raw/shared-clip.md"), "immutable original\n");
+        write(&root.join("_inbox/Shared Clip.md"), "new source\n");
+        let out = archive_inbox(root, "Shared Clip.md", true).unwrap();
+        assert_eq!(out["raw_path"], "raw/shared-clip-2.md");
+        assert_eq!(
+            std::fs::read_to_string(root.join("raw/shared-clip.md")).unwrap(),
+            "immutable original\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("raw/shared-clip-2.md")).unwrap(),
+            "new source\n"
+        );
+        assert!(root.join("_inbox/.archived/Shared Clip.md").is_file());
+    }
+
+    #[test]
+    fn concurrent_archives_with_the_same_slug_keep_both_originals() {
+        use std::sync::{Arc, Barrier};
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let inputs = [
+            ("Shared Clip.md", "source one\n"),
+            ("Shared_Clip.md", "source two\n"),
+        ];
+        for (filename, content) in inputs {
+            write(&root.join("_inbox").join(filename), content);
+        }
+        let barrier = Arc::new(Barrier::new(2));
+        let workers: Vec<_> = inputs
+            .into_iter()
+            .map(|(filename, content)| {
+                let root = root.to_path_buf();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let result = archive_inbox(&root, filename, true).unwrap();
+                    (result, content)
+                })
+            })
+            .collect();
+        let outputs: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_ne!(outputs[0].0["raw_path"], outputs[1].0["raw_path"]);
+        for (result, content) in outputs {
+            assert_eq!(
+                std::fs::read_to_string(root.join(result["raw_path"].as_str().unwrap())).unwrap(),
+                content
+            );
+        }
+        for (filename, _) in inputs {
+            assert!(root.join("_inbox/.archived").join(filename).is_file());
+            assert!(!root.join("_inbox").join(filename).exists());
+        }
+    }
+
     /// A three-page vault (two wiki notes, one session log) plus its BM25
     /// index. The dense arm needs the bundled embedder, so these tests drive
     /// `rank_hybrid` — the exact ranking glue the `search` tool runs — with
@@ -4356,8 +5434,10 @@ mod tests {
             10,
             None,
             scope.parse().unwrap(),
+            None,
             &TierWeights::default(),
         )
+        .expect("valid synthetic hybrid ranking")
     }
 
     fn pages(hits: &[HybridHit]) -> Vec<&str> {
@@ -4442,17 +5522,19 @@ mod tests {
             ("wiki/c-note.md", [0.0, 0.0, 0.0, 1.0]),
         ];
         for (rel, v) in pages {
-            write(
-                &dir.path().join(rel),
-                &format!(
-                    "# {rel}
-
-body of {rel}
-"
-                ),
-            );
+            let text = format!("# {rel}\n\nbody of {rel}\n");
+            write(&dir.path().join(rel), &text);
             let stem = Path::new(rel).file_stem().unwrap().to_str().unwrap();
-            store.upsert_page(rel, stem, vec![(1, v.to_vec())]);
+            store
+                .upsert_page(
+                    rel,
+                    stem,
+                    crate::embeddings::chunk_page(&text)
+                        .iter()
+                        .map(|chunk| (crate::embeddings::content_hash(chunk), v.to_vec()))
+                        .collect(),
+                )
+                .unwrap();
         }
         (dir, store)
     }
@@ -4471,8 +5553,10 @@ body of {rel}
             10,
             None,
             "all".parse().unwrap(),
+            None,
             weights,
         )
+        .expect("valid synthetic hybrid ranking")
     }
 
     // The mockup's "2위 → 6위" claim on a four-page fixture: the transcript
@@ -4533,8 +5617,10 @@ body of {rel}
             10,
             None,
             "sessions".parse().unwrap(),
+            None,
             &TierWeights::default(),
-        );
+        )
+        .expect("valid synthetic hybrid ranking");
         assert_eq!(
             pages(&only_sessions),
             vec!["sessions/2026-08/s-transcript.md"]
@@ -4548,12 +5634,110 @@ body of {rel}
             10,
             None,
             "wiki".parse().unwrap(),
+            None,
             &TierWeights::default(),
-        );
+        )
+        .expect("valid synthetic hybrid ranking");
         assert_eq!(
             pages(&wiki),
             vec!["wiki/a-note.md", "wiki/b-note.md", "wiki/c-note.md"]
         );
+    }
+
+    // "Ask this note": a path set narrows BOTH arms to those pages, on top of
+    // the scope, so no passage from outside the note and its neighbours
+    // reaches the answer.
+    #[test]
+    fn a_path_filter_keeps_only_those_pages_on_both_arms() {
+        let (dir, store) = tiered_vault();
+        let only = vec!["wiki/b-note.md".to_string(), "wiki/c-note.md".to_string()];
+        let dense = crate::commands::rank_hybrid(
+            dir.path(),
+            &store,
+            Some(&[0.9, 0.8, 0.7, 0.6]),
+            &Bm25Index::new(),
+            "anything",
+            10,
+            None,
+            "all".parse().unwrap(),
+            Some(&only),
+            &TierWeights::default(),
+        )
+        .expect("valid synthetic hybrid ranking");
+        assert_eq!(pages(&dense), vec!["wiki/b-note.md", "wiki/c-note.md"]);
+
+        let (dir, bm25) = indexed_vault();
+        let only = vec!["wiki/compute-budget.md".to_string()];
+        let lexical = crate::commands::rank_hybrid(
+            dir.path(),
+            &crate::vector_index::VectorStore::default(),
+            None,
+            &bm25,
+            "scaling laws compute",
+            10,
+            None,
+            "all".parse().unwrap(),
+            Some(&only),
+            &TierWeights::default(),
+        )
+        .expect("valid synthetic hybrid ranking");
+        // Two chunks of the one page (the per-page cap), nothing else.
+        assert!(!lexical.is_empty());
+        assert!(
+            lexical.iter().all(|h| h.page == "wiki/compute-budget.md"),
+            "{:?}",
+            pages(&lexical)
+        );
+
+        // An empty set means "nothing", not "no filter".
+        let none = crate::commands::rank_hybrid(
+            dir.path(),
+            &crate::vector_index::VectorStore::default(),
+            None,
+            &bm25,
+            "scaling laws",
+            10,
+            None,
+            "all".parse().unwrap(),
+            Some(&[]),
+            &TierWeights::default(),
+        )
+        .expect("valid synthetic hybrid ranking");
+        assert!(none.is_empty(), "{:?}", pages(&none));
+    }
+
+    // macOS hands Hangul file names over in NFD; the index may hold the other
+    // form. The filter compares both sides in NFC.
+    #[test]
+    fn a_path_filter_matches_across_unicode_forms() {
+        let dir = tempfile::tempdir().unwrap();
+        let rel = "wiki/한글.md";
+        write(&dir.path().join(rel), "# 한글\n\nattention heads\n");
+        let mut bm25 = Bm25Index::new();
+        bm25.upsert_page(
+            rel,
+            "한글",
+            &crate::embeddings::chunk_page("# 한글\n\nattention heads\n"),
+        );
+        let nfd: String = {
+            use unicode_normalization::UnicodeNormalization;
+            rel.nfd().collect()
+        };
+        assert_ne!(nfd, rel);
+        let hits = crate::commands::rank_hybrid(
+            dir.path(),
+            &crate::vector_index::VectorStore::default(),
+            None,
+            &bm25,
+            "attention heads",
+            10,
+            None,
+            "all".parse().unwrap(),
+            Some(&[nfd]),
+            &TierWeights::default(),
+        )
+        .expect("valid synthetic hybrid ranking");
+        assert_eq!(pages(&hits), vec![rel]);
     }
 
     #[test]
@@ -4650,6 +5834,39 @@ body of {rel}
             info.capabilities.resources.is_some(),
             "resources capability"
         );
+    }
+
+    #[test]
+    fn search_description_states_the_current_relevance_floor() {
+        // The description once quoted a retired model's 0.54/0.49 ranges; an
+        // agent reading it judged hits by numbers no longer true.
+        let tools = McpServer::tool_router().list_all();
+        let search = tools.iter().find(|t| t.name == "search").unwrap();
+        let d = search.description.as_deref().unwrap();
+        let floor = crate::retrieval::RELEVANCE_FLOOR.to_string();
+        assert!(d.contains(&floor), "states the {floor} floor: {d}");
+        assert!(!d.contains("0.54") && !d.contains("0.49"), "{d}");
+    }
+
+    #[test]
+    fn session_summary_path_mcp_tool_exposes_only_identity_lookup_arguments() {
+        let tools = McpServer::tool_router().list_all();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name == "session_summary_path")
+            .unwrap();
+        assert!(tool.description.as_deref().unwrap().contains("Read-only"));
+        let properties = tool.input_schema["properties"].as_object().unwrap();
+        assert_eq!(properties.len(), 2);
+        assert!(properties.contains_key("key"));
+        assert!(properties.contains_key("project"));
+        assert_eq!(tool.input_schema["required"], serde_json::json!(["key"]));
+        let writer = tools.iter().find(|tool| tool.name == "write_page").unwrap();
+        assert!(writer.input_schema["properties"]
+            .get("expected_sha256")
+            .is_some());
+        let required = writer.input_schema["required"].as_array().unwrap();
+        assert!(!required.contains(&serde_json::json!("expected_sha256")));
     }
 
     #[test]
@@ -5121,8 +6338,16 @@ body of {rel}
     fn write_page_creates_then_updates_and_refuses_the_wrong_mode() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        let out =
-            write_page_at(root, "wiki/scaling.md", CLEAN_PAGE, "create", false, true).unwrap();
+        let out = write_page_at(
+            root,
+            "wiki/scaling.md",
+            CLEAN_PAGE,
+            "create",
+            false,
+            true,
+            None,
+        )
+        .unwrap();
         assert_eq!(out["ok"], true, "{out}");
         assert_eq!(out["path"], "wiki/scaling.md");
         assert_eq!(out["mode"], "create");
@@ -5131,27 +6356,231 @@ body of {rel}
             CLEAN_PAGE
         );
         // create on an existing page refuses, and does not overwrite it.
-        let err =
-            write_page_at(root, "wiki/scaling.md", "clobbered", "create", true, true).unwrap_err();
+        let err = write_page_at(
+            root,
+            "wiki/scaling.md",
+            "clobbered",
+            "create",
+            true,
+            true,
+            None,
+        )
+        .unwrap_err();
         assert!(err.starts_with("already exists (use mode=update)"), "{err}");
         assert!(std::fs::read_to_string(root.join("wiki/scaling.md"))
             .unwrap()
             .contains("power law"));
         // update on a missing page refuses too.
-        let err =
-            write_page_at(root, "wiki/nope.md", CLEAN_PAGE, "update", false, true).unwrap_err();
+        let err = write_page_at(
+            root,
+            "wiki/nope.md",
+            CLEAN_PAGE,
+            "update",
+            false,
+            true,
+            None,
+        )
+        .unwrap_err();
         assert!(err.starts_with("page not found (use mode=create)"), "{err}");
         // update on the real one writes.
         let next = CLEAN_PAGE.replace("power law", "smooth power law");
-        let out = write_page_at(root, "wiki/scaling.md", &next, "update", false, true).unwrap();
+        let out = write_page_at(
+            root,
+            "wiki/scaling.md",
+            &next,
+            "update",
+            false,
+            true,
+            Some(&text_sha256(CLEAN_PAGE)),
+        )
+        .unwrap();
         assert_eq!(out["ok"], true);
         assert_eq!(out["mode"], "update");
         assert!(std::fs::read_to_string(root.join("wiki/scaling.md"))
             .unwrap()
             .contains("smooth power law"));
-        let err =
-            write_page_at(root, "wiki/x.md", CLEAN_PAGE, "sideways", false, true).unwrap_err();
+        let err = write_page_at(root, "wiki/x.md", CLEAN_PAGE, "sideways", false, true, None)
+            .unwrap_err();
         assert!(err.starts_with("unknown mode: sideways"), "{err}");
+    }
+
+    #[test]
+    fn write_page_revision_guard_preserves_newer_annotations_even_when_forced() {
+        use sha2::{Digest, Sha256};
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let path = root.join("wiki/scaling.md");
+        write(&path, CLEAN_PAGE);
+        let expected = format!("{:x}", Sha256::digest(CLEAN_PAGE.as_bytes()));
+        let edited = format!("{CLEAN_PAGE}\nSynthetic human annotation.\n");
+        crate::vault::write_file(path.to_str().unwrap(), &edited).unwrap();
+        for force in [false, true] {
+            let error = write_page_at(
+                root,
+                "wiki/scaling.md",
+                CLEAN_PAGE,
+                "update",
+                force,
+                false,
+                Some(&expected),
+            )
+            .unwrap_err();
+            assert!(error.starts_with("write conflict:"), "{error}");
+            assert_eq!(std::fs::read_to_string(&path).unwrap(), edited);
+        }
+        let current = format!("{:x}", Sha256::digest(edited.as_bytes()));
+        let next = format!("{edited}\nSynthetic generated update.\n");
+        let result = write_page_at(
+            root,
+            "wiki/scaling.md",
+            &next,
+            "update",
+            false,
+            false,
+            Some(&current),
+        )
+        .unwrap();
+        assert_eq!(result["ok"], true);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), next);
+    }
+
+    #[test]
+    fn write_page_revision_guard_rejects_malformed_hashes_and_create_hashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("wiki/scaling.md"), CLEAN_PAGE);
+        for hash in ["", "1234", &"g".repeat(64), &"A".repeat(64)] {
+            let error = write_page_at(
+                root,
+                "wiki/scaling.md",
+                "Synthetic stale text",
+                "update",
+                true,
+                false,
+                Some(hash),
+            )
+            .unwrap_err();
+            assert_eq!(error, "invalid expected SHA256");
+        }
+        assert_eq!(
+            std::fs::read_to_string(root.join("wiki/scaling.md")).unwrap(),
+            CLEAN_PAGE
+        );
+        let error = write_page_at(
+            root,
+            "wiki/new.md",
+            CLEAN_PAGE,
+            "create",
+            false,
+            false,
+            Some(&"a".repeat(64)),
+        )
+        .unwrap_err();
+        assert!(error.contains("create requires absence"), "{error}");
+        assert!(!root.join("wiki/new.md").exists());
+    }
+
+    #[test]
+    fn write_page_atomic_create_has_one_winner_for_simultaneous_creators() {
+        use std::sync::{Arc, Barrier};
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_path_buf();
+        std::fs::create_dir(root.join("wiki")).unwrap();
+        let barrier = Arc::new(Barrier::new(8));
+        let text = Arc::new(format!(
+            "{CLEAN_PAGE}\n{}",
+            "Ordinary synthetic source prose. ".repeat(4096)
+        ));
+        let writers: Vec<_> = (0..8)
+            .map(|_| {
+                let root = root.clone();
+                let barrier = barrier.clone();
+                let text = text.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    match write_page_at(
+                        &root,
+                        "wiki/shared.md",
+                        &text,
+                        "create",
+                        false,
+                        false,
+                        None,
+                    ) {
+                        Ok(result) => {
+                            assert_eq!(result["ok"], true);
+                            true
+                        }
+                        Err(error) => {
+                            assert!(
+                                error.starts_with("write conflict:")
+                                    || error.starts_with("already exists"),
+                                "{error}"
+                            );
+                            false
+                        }
+                    }
+                })
+            })
+            .collect();
+        let winners = writers
+            .into_iter()
+            .map(|writer| writer.join().unwrap())
+            .filter(|winner| *winner)
+            .count();
+        assert_eq!(winners, 1);
+        assert_eq!(
+            std::fs::read_to_string(root.join("wiki/shared.md")).unwrap(),
+            *text
+        );
+    }
+
+    #[test]
+    fn write_page_revision_guard_does_not_allow_normalized_raw_or_app_state_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for path in ["wiki/../raw/synthetic.md", "wiki/../.myco/synthetic.md"] {
+            let error =
+                write_page_at(root, path, CLEAN_PAGE, "create", true, false, None).unwrap_err();
+            assert!(error.contains("not writable"), "{error}");
+        }
+        assert!(!root.join("raw").exists());
+        assert!(!root.join(".myco").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn write_page_revision_guard_refuses_symlink_targets() {
+        let dir = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir(root.join("wiki")).unwrap();
+        let original = outside.path().join("synthetic.md");
+        write(&original, CLEAN_PAGE);
+        std::os::unix::fs::symlink(&original, root.join("wiki/linked.md")).unwrap();
+        assert!(write_page_at(
+            root,
+            "wiki/linked.md",
+            CLEAN_PAGE,
+            "update",
+            true,
+            false,
+            None
+        )
+        .is_err());
+        assert_eq!(std::fs::read_to_string(original).unwrap(), CLEAN_PAGE);
+        std::os::unix::fs::symlink(outside.path(), root.join("wiki/linked-dir")).unwrap();
+        assert!(write_page_at(
+            root,
+            "wiki/linked-dir/new.md",
+            CLEAN_PAGE,
+            "create",
+            true,
+            false,
+            None
+        )
+        .is_err());
+        assert!(!outside.path().join("new.md").exists());
     }
 
     #[test]
@@ -5159,17 +6588,28 @@ body of {rel}
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         for path in ["raw/note.md", "raw/papers/x.md"] {
-            let err = write_page_at(root, path, CLEAN_PAGE, "create", true, false).unwrap_err();
+            let err =
+                write_page_at(root, path, CLEAN_PAGE, "create", true, false, None).unwrap_err();
             assert!(err.contains("raw/ is immutable"), "{err}");
             assert!(err.ends_with("Nothing was written."), "{err}");
         }
         assert!(!root.join("raw").exists(), "raw/ was not even created");
-        let err = write_page_at(root, ".myco/x.md", CLEAN_PAGE, "create", true, false).unwrap_err();
-        assert!(err.contains("app state, not pages"), "{err}");
         let err =
-            write_page_at(root, "../outside.md", CLEAN_PAGE, "create", true, false).unwrap_err();
+            write_page_at(root, ".myco/x.md", CLEAN_PAGE, "create", true, false, None).unwrap_err();
+        assert!(err.contains("app state, not pages"), "{err}");
+        let err = write_page_at(
+            root,
+            "../outside.md",
+            CLEAN_PAGE,
+            "create",
+            true,
+            false,
+            None,
+        )
+        .unwrap_err();
         assert!(err.starts_with("path escapes the vault"), "{err}");
-        let err = write_page_at(root, "wiki/x.txt", CLEAN_PAGE, "create", true, false).unwrap_err();
+        let err =
+            write_page_at(root, "wiki/x.txt", CLEAN_PAGE, "create", true, false, None).unwrap_err();
         assert!(err.starts_with("not a markdown page"), "{err}");
     }
 
@@ -5178,7 +6618,7 @@ body of {rel}
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         let dangling = "---\ntype: concept\n---\nA claim.[^src-missing]\n";
-        let out = write_page_at(root, "wiki/d.md", dangling, "create", false, false).unwrap();
+        let out = write_page_at(root, "wiki/d.md", dangling, "create", false, false, None).unwrap();
         assert_eq!(out["ok"], false);
         assert!(
             out["error"].as_str().unwrap().contains("force=true"),
@@ -5186,13 +6626,13 @@ body of {rel}
         );
         assert!(!root.join("wiki/d.md").exists(), "nothing written");
         // force writes it, and says so.
-        let out = write_page_at(root, "wiki/d.md", dangling, "create", true, false).unwrap();
+        let out = write_page_at(root, "wiki/d.md", dangling, "create", true, false, None).unwrap();
         assert_eq!(out["ok"], true);
         assert_eq!(out["forced"], true);
         assert!(root.join("wiki/d.md").is_file());
         // A secret is never forceable: the page would be committed to git.
         let leak = "---\ntype: concept\n---\nkey: sk-abcdefghijklmnopqrstuvwxyz012345\n";
-        let out = write_page_at(root, "wiki/leak.md", leak, "create", true, false).unwrap();
+        let out = write_page_at(root, "wiki/leak.md", leak, "create", true, false, None).unwrap();
         assert_eq!(out["ok"], false);
         assert!(
             out["error"]
@@ -5204,12 +6644,12 @@ body of {rel}
         assert!(!root.join("wiki/leak.md").exists());
         // PII in warn mode writes, with the warning attached.
         let pii = "---\ntype: concept\n---\nreach me at someone@example.com\n";
-        let out = write_page_at(root, "wiki/p.md", pii, "create", false, false).unwrap();
+        let out = write_page_at(root, "wiki/p.md", pii, "create", false, false, None).unwrap();
         assert_eq!(out["ok"], true);
         assert_eq!(out["problems"][0]["rule"], "pii");
         assert!(root.join("wiki/p.md").is_file());
         // …and refuses in quarantine mode.
-        let out = write_page_at(root, "wiki/p2.md", pii, "create", false, true).unwrap();
+        let out = write_page_at(root, "wiki/p2.md", pii, "create", false, true, None).unwrap();
         assert_eq!(out["ok"], false);
         assert!(!root.join("wiki/p2.md").exists());
     }
@@ -5373,9 +6813,16 @@ body of {rel}
         assert_eq!(first["prior"], 1.0);
         assert!(first["score_final"].as_f64().unwrap() > 0.0);
         assert_eq!(first["rank_change"], 0);
-        // Lexical-only hits carry no cosine; they pass the floor, as Ask does.
+        // Complete lexical evidence passes without a cosine. A page matching
+        // only the generic term "compute" stays in Ask's near misses.
         assert!(first["similarity"].is_null());
-        assert!(out["below_floor"].as_array().unwrap().is_empty());
+        assert_eq!(out["count"], 1);
+        assert_eq!(out["below_floor"][0]["page"], "wiki/compute-budget.md");
+        assert!(out["below_floor"][0]["similarity"].is_null());
+        assert_eq!(
+            out["below_floor"].as_array().unwrap().len(),
+            ask.below_floor.len()
+        );
         assert!(
             first["quote"]
                 .as_str()
@@ -5399,8 +6846,10 @@ body of {rel}
             10,
             None,
             "wiki".parse().unwrap(),
+            None,
             &TierWeights::default(),
-        );
+        )
+        .expect("valid synthetic hybrid ranking");
         let ask = crate::commands::ask_response(hits);
         let out = recall_result(&ask, "anything", 8);
         let answered: Vec<&str> = out["hits"]
@@ -5600,7 +7049,7 @@ body of {rel}
         let body = std::fs::read_to_string(&raw).unwrap();
         assert!(body.contains("source: chatgpt") && body.contains("Assistant: hello"));
         assert!(body.contains("title: \"Greeting\""), "{body}");
-        let ledger = crate::importers::ledger::Ledger::load(root);
+        let ledger = crate::importers::ledger::Ledger::load(root).unwrap();
         assert!(ledger.seen(
             "chatgpt:abc123",
             &crate::importers::ledger::fingerprint("User: hi\nAssistant: hello")
@@ -5629,6 +7078,226 @@ body of {rel}
             std::fs::read_to_string(root.join("raw/conversations/claude/c1.md")).unwrap();
         assert!(original.contains("same text"));
         assert!(root.join("raw/conversations/claude/c1.r1.md").is_file());
+    }
+
+    #[test]
+    fn import_conversation_title_change_appends_metadata_revision_and_retry_is_idempotent() {
+        let dir = import_vault();
+        let root = dir.path();
+        let first = import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "Original session name",
+            "stable",
+            "2026-10-03",
+            false,
+        )
+        .unwrap();
+        let old_path = first["raw_path"].as_str().unwrap();
+        let old_content = std::fs::read_to_string(root.join(old_path)).unwrap();
+        read_pending_at(
+            root,
+            "codex:stable",
+            first["source_revision"].as_str().unwrap(),
+            0,
+            16,
+        )
+        .unwrap();
+        let changed = import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "Revised session name",
+            "stable",
+            "2026-10-08",
+            false,
+        )
+        .unwrap();
+        assert_eq!(changed["status"], "reimported_update");
+        assert_ne!(changed["raw_path"], first["raw_path"]);
+        assert_ne!(changed["source_revision"], first["source_revision"]);
+        assert_eq!(
+            std::fs::read_to_string(root.join(old_path)).unwrap(),
+            old_content
+        );
+        let current =
+            std::fs::read_to_string(root.join(changed["raw_path"].as_str().unwrap())).unwrap();
+        let (metadata, body) = super::parse_draft(&current);
+        assert_eq!(metadata["title"], "Revised session name");
+        assert_eq!(metadata["created"], "2026-10-03");
+        assert_eq!(body.trim(), "A synthetic unchanged discussion.");
+        let pending = crate::importers::wikify::Pending::try_load(root).unwrap();
+        assert_eq!(pending.pending.len(), 1);
+        assert!(
+            pending.pending[0].read_ranges.is_empty(),
+            "new exact source bytes require fresh coverage"
+        );
+        assert_eq!(pending.pending[0].key, "codex:stable");
+        assert_eq!(pending.pending[0].title, "Revised session name");
+        let retry = import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "Revised session name",
+            "stable",
+            "2026-10-09",
+            false,
+        )
+        .unwrap();
+        assert_eq!(retry["status"], "skipped_duplicate");
+        assert_eq!(collect_md(&root.join("raw/conversations")).len(), 2);
+    }
+
+    #[test]
+    fn import_conversation_title_change_preserves_receipt_summary_annotations_and_omitted_names() {
+        let dir = import_vault();
+        let root = dir.path();
+        let first = import_conversation_at(
+            root,
+            "A synthetic completed discussion.",
+            "codex",
+            "Original name",
+            "stable",
+            "2026-10-03",
+            false,
+        )
+        .unwrap();
+        let page = "---\ntype: source-summary\nsession_key: \"codex:stable\"\ntitle: \"Source: Original name\"\nsession_generated_title: \"Source: Original name\"\n---\nSynthetic generated summary.[^src-stable]\n\n## My annotation\nKeep this synthetic personal annotation.\n\n[^src-stable]: raw/conversations/codex/stable.md\n";
+        write(&root.join("wiki/kept-summary.md"), page);
+        complete_wikify_source_at(
+            root,
+            first["raw_path"].as_str().unwrap(),
+            first["source_revision"].as_str().unwrap(),
+            &["wiki/kept-summary.md".into()],
+        )
+        .unwrap();
+        let changed = import_conversation_at(
+            root,
+            "A synthetic completed discussion.",
+            "codex",
+            "Revised name",
+            "stable",
+            "",
+            false,
+        )
+        .unwrap();
+        assert_eq!(changed["status"], "reimported_update");
+        let pending = list_wikify_pending_at(root, 3).unwrap();
+        assert_eq!(
+            pending.items[0].summary_path.as_deref(),
+            Some("wiki/kept-summary.md")
+        );
+        assert_eq!(
+            std::fs::read_to_string(root.join("wiki/kept-summary.md")).unwrap(),
+            page
+        );
+        let receipts = crate::importers::wikify::Pending::try_load(root)
+            .unwrap()
+            .receipts;
+        assert_eq!(receipts.len(), 1);
+        assert_eq!(
+            receipts[0].source_revision,
+            first["source_revision"].as_str().unwrap()
+        );
+        let omitted = import_conversation_at(
+            root,
+            "A synthetic completed discussion.",
+            "codex",
+            "",
+            "stable",
+            "2026-10-09",
+            false,
+        )
+        .unwrap();
+        assert_eq!(omitted["status"], "skipped_duplicate");
+        assert_eq!(collect_md(&root.join("raw/conversations")).len(), 2);
+    }
+
+    #[test]
+    fn import_conversation_title_change_still_refuses_secrets_and_stale_source_identity() {
+        let dir = import_vault();
+        let root = dir.path();
+        import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "Original name",
+            "stable",
+            "",
+            false,
+        )
+        .unwrap();
+        assert!(import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "sk-abcdefghijklmnopqrstuvwxyz012345",
+            "stable",
+            "",
+            false
+        )
+        .is_err());
+        assert_eq!(collect_md(&root.join("raw/conversations")).len(), 1);
+        let mut pending = crate::importers::wikify::Pending::try_load(root).unwrap();
+        pending.pending[0].source_revision = "a".repeat(64);
+        pending.save(root).unwrap();
+        assert!(import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "Another name",
+            "stable",
+            "",
+            false
+        )
+        .is_err());
+        assert_eq!(collect_md(&root.join("raw/conversations")).len(), 1);
+    }
+
+    #[test]
+    fn import_conversation_title_same_name_or_date_only_updates_never_churn_raw() {
+        let dir = import_vault();
+        let root = dir.path();
+        let title = "Synthetic \\ quoted \"session\" name";
+        import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            title,
+            "stable",
+            "2026-10-03",
+            false,
+        )
+        .unwrap();
+        let same = import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            title,
+            "stable",
+            "2026-10-08",
+            false,
+        )
+        .unwrap();
+        assert_eq!(same["status"], "skipped_duplicate");
+        let omitted = import_conversation_at(
+            root,
+            "A synthetic unchanged discussion.",
+            "codex",
+            "",
+            "stable",
+            "2026-10-09",
+            false,
+        )
+        .unwrap();
+        assert_eq!(omitted["status"], "skipped_duplicate");
+        let raw = collect_md(&root.join("raw/conversations"));
+        assert_eq!(raw.len(), 1);
+        assert_eq!(
+            super::parse_draft(&std::fs::read_to_string(&raw[0]).unwrap()).0["title"],
+            title
+        );
     }
 
     #[test]
@@ -5767,6 +7436,349 @@ body of {rel}
     }
 
     #[test]
+    fn explicit_mcp_session_imports_queue_only_the_latest_immutable_revision() {
+        let dir = import_vault();
+        let root = dir.path();
+        let path = root.join("synthetic-session.jsonl");
+        let first = serde_json::json!({"type":"user","sessionId":"stable","uuid":"m1",
+            "timestamp":"2026-10-03T12:00:00Z","message":{"role":"user", "content":long_turn("Explain synthetic scheduler ownership.")}}).to_string();
+        write(&path, &first);
+        assert_eq!(
+            import_session_at(root, &path, "sessions").unwrap().imported,
+            1
+        );
+        let pending = list_wikify_pending_at(root, 3).unwrap();
+        assert_eq!(pending.pending_total, 1);
+        assert_eq!(pending.items[0].key, "claude-code:stable");
+        let original_path = pending.items[0].raw_path.clone();
+        let original = std::fs::read_to_string(root.join(&original_path)).unwrap();
+        let original_revision = pending.items[0].source_revision.clone();
+        read_pending_at(root, "claude-code:stable", &original_revision, 0, 32).unwrap();
+        assert_eq!(
+            import_session_at(root, &path, "sessions").unwrap().imported,
+            0
+        );
+        assert_eq!(list_wikify_pending_at(root, 3).unwrap().pending_total, 1);
+        assert!(!crate::importers::wikify::Pending::try_load(root)
+            .unwrap()
+            .pending[0]
+            .read_ranges
+            .is_empty());
+        write(
+            &path,
+            &format!(
+                "{first}\n{}",
+                serde_json::json!({"type":"assistant","sessionId":"stable","uuid":"m2",
+            "timestamp":"2026-10-04T12:00:00Z","message":{"role":"assistant", "content":"The synthetic scheduler now keeps its request ownership."}})
+            ),
+        );
+        assert_eq!(
+            import_session_at(root, &path, "sessions").unwrap().imported,
+            1
+        );
+        let updated = list_wikify_pending_at(root, 3).unwrap();
+        assert_eq!(updated.pending_total, 1);
+        assert_ne!(updated.items[0].source_revision, original_revision);
+        assert_ne!(updated.items[0].raw_path, original_path);
+        assert_eq!(
+            std::fs::read_to_string(root.join(original_path)).unwrap(),
+            original
+        );
+        assert_eq!(collect_md(&root.join("sessions")).len(), 1);
+        assert_eq!(collect_md(&root.join("raw/conversations")).len(), 2);
+    }
+
+    #[test]
+    fn explicit_session_retry_repairs_a_missing_queue_without_rewriting_raw_or_repeating_receipts()
+    {
+        let dir = import_vault();
+        let root = dir.path();
+        let path = root.join("synthetic-session.jsonl");
+        write(
+            &path,
+            &serde_json::json!({"type":"user","sessionId":"stable","message":{"role":"user",
+            "content":long_turn("Recover a synthetic interrupted queue save.")}})
+            .to_string(),
+        );
+        assert_eq!(
+            commands::run_import(root, std::slice::from_ref(&path), "sessions", |_| {}).imported,
+            1
+        );
+        assert_eq!(list_wikify_pending_at(root, 3).unwrap().pending_total, 0);
+        assert_eq!(
+            import_session_at(root, &path, "sessions").unwrap().imported,
+            0
+        );
+        let item = list_wikify_pending_at(root, 3).unwrap().items.remove(0);
+        let raw_before = std::fs::read_to_string(root.join(&item.raw_path)).unwrap();
+        write(&root.join("wiki/session.md"), &format!("---\ntype: source-summary\nsession_key: \"claude-code:stable\"\n---\nSynthetic queue recovery.[^src-stable]\n\n[^src-stable]: {}\n", item.raw_path));
+        complete_wikify_source_at(
+            root,
+            &item.raw_path,
+            &item.source_revision,
+            &["wiki/session.md".into()],
+        )
+        .unwrap();
+        assert_eq!(
+            import_session_at(root, &path, "sessions").unwrap().imported,
+            0
+        );
+        assert_eq!(list_wikify_pending_at(root, 3).unwrap().pending_total, 0);
+        assert_eq!(
+            std::fs::read_to_string(root.join(item.raw_path)).unwrap(),
+            raw_before
+        );
+        assert_eq!(
+            crate::importers::wikify::Pending::try_load(root)
+                .unwrap()
+                .receipts
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn unattended_session_import_remains_archive_only() {
+        let dir = import_vault();
+        let path = dir.path().join("synthetic-session.jsonl");
+        write(
+            &path,
+            &serde_json::json!({"type":"user","sessionId":"stable","message":{"role":"user",
+            "content":long_turn("Keep an unattended synthetic archive.")}})
+            .to_string(),
+        );
+        assert_eq!(
+            commands::run_import(dir.path(), &[path], "sessions", |_| {}).imported,
+            1
+        );
+        assert_eq!(
+            list_wikify_pending_at(dir.path(), 3).unwrap().pending_total,
+            0
+        );
+    }
+
+    #[test]
+    fn pending_metadata_lists_latest_identity_without_transcript_previews() {
+        let dir = import_vault();
+        let root = dir.path();
+        import_conversation_at(
+            root,
+            "Synthetic old body.",
+            "codex",
+            "Old name",
+            "stable",
+            "2026-10-03",
+            false,
+        )
+        .unwrap();
+        let updated = import_conversation_at(
+            root,
+            "Synthetic private body marker.",
+            "codex",
+            "Updated name",
+            "stable",
+            "2026-10-04",
+            false,
+        )
+        .unwrap();
+        write(
+            &root.join("wiki/legacy-session.md"),
+            "---\ntype: source-summary\nsession_key: \"codex:stable\"\n---\nSynthetic summary.\n",
+        );
+        for id in ["b", "c", "d"] {
+            import_conversation_at(
+                root,
+                &format!("Synthetic distinct {id}."),
+                "codex",
+                "Other",
+                id,
+                "",
+                false,
+            )
+            .unwrap();
+        }
+        let view = serde_json::to_value(list_wikify_pending_at(root, 99).unwrap()).unwrap();
+        assert_eq!(view["pendingTotal"], 4);
+        assert_eq!(view["items"].as_array().unwrap().len(), 3);
+        let item = &view["items"][0];
+        assert_eq!(item["key"], "codex:stable");
+        assert_eq!(item["title"], "Updated name");
+        assert_eq!(item["sourceRevision"], updated["source_revision"]);
+        assert_eq!(item["summaryPath"], "wiki/legacy-session.md");
+        assert!(item.get("excerpt").is_none());
+        assert!(!view.to_string().contains("Synthetic private body marker"));
+        assert_eq!(list_wikify_pending_at(root, 0).unwrap().items.len(), 1);
+    }
+
+    #[test]
+    fn summary_identity_lookup_does_not_reuse_a_receipts_unrelated_topic_page() {
+        let dir = import_vault();
+        let root = dir.path();
+        write(
+            &root.join("wiki/topic.md"),
+            "---\ntype: concept\n---\nA synthetic topic.\n",
+        );
+        write(&root.join("wiki/renamed-summary.md"), "---\ntype: source-summary\nsession_key: \"codex:stable\"\n---\nSynthetic session summary.\n");
+        let mut pending = crate::importers::wikify::Pending::default();
+        pending.receipts.push(crate::importers::wikify::Receipt {
+            key: "codex:stable".into(),
+            raw_path: "raw/conversations/codex/old.md".into(),
+            source_revision: "a".repeat(64),
+            wiki_paths: vec!["wiki/topic.md".into()],
+            completed: "2026-10-03".into(),
+        });
+        pending.save(root).unwrap();
+        assert_eq!(
+            session_summary_path_at(root, "codex:stable")
+                .unwrap()
+                .as_deref(),
+            Some("wiki/renamed-summary.md")
+        );
+        assert_eq!(
+            session_summary_path_at(root, "codex:missing").unwrap(),
+            None
+        );
+        write(&root.join("wiki/duplicate-summary.md"), "---\ntype: source-summary\nsession_key: \"codex:stable\"\n---\nAnother synthetic summary.\n");
+        assert!(session_summary_path_at(root, "codex:stable")
+            .unwrap_err()
+            .contains("more than one"));
+    }
+
+    #[test]
+    fn summary_identity_lookup_refuses_duplicates_even_with_a_matching_receipt() {
+        let dir = import_vault();
+        let root = dir.path();
+        let summary = "---\ntype: source-summary\nsession_key: \"codex:synthetic\"\n---\nSynthetic source body.\n";
+        write(&root.join("wiki/original-summary.md"), summary);
+        write(&root.join("wiki/new-summary.md"), summary);
+        let mut pending = crate::importers::wikify::Pending::default();
+        pending.receipts.push(crate::importers::wikify::Receipt {
+            key: "codex:synthetic".into(),
+            raw_path: "raw/conversations/codex/synthetic.md".into(),
+            source_revision: "a".repeat(64),
+            wiki_paths: vec!["wiki/original-summary.md".into()],
+            completed: "2026-10-03".into(),
+        });
+        pending.save(root).unwrap();
+        assert!(session_summary_path_at(root, "codex:synthetic")
+            .unwrap_err()
+            .contains("more than one"));
+    }
+
+    #[test]
+    fn pending_metadata_refuses_corrupt_queue_and_invalid_source_identity() {
+        let dir = import_vault();
+        let root = dir.path();
+        import_conversation_at(
+            root,
+            "Synthetic source.",
+            "codex",
+            "Name",
+            "stable",
+            "",
+            false,
+        )
+        .unwrap();
+        let mut pending = crate::importers::wikify::Pending::try_load(root).unwrap();
+        pending.pending[0].source_revision = "invalid".into();
+        pending.save(root).unwrap();
+        assert!(list_wikify_pending_at(root, 3)
+            .unwrap_err()
+            .contains("identity or revision"));
+        write(&crate::importers::wikify::Pending::path(root), "not json");
+        assert!(list_wikify_pending_at(root, 3)
+            .unwrap_err()
+            .contains("invalid wikify queue"));
+        assert!(session_summary_path_at(root, "codex:stable")
+            .unwrap_err()
+            .contains("invalid wikify queue"));
+    }
+
+    #[test]
+    fn summary_identity_lookup_refuses_truncated_metadata_instead_of_claiming_absence() {
+        let dir = import_vault();
+        write(
+            &dir.path().join("wiki/oversized-header.md"),
+            &format!(
+                "---\nfiller: {}\nsession_key: \"codex:stable\"\n---\nSynthetic summary.\n",
+                "x".repeat(8192)
+            ),
+        );
+        assert!(session_summary_path_at(dir.path(), "codex:stable")
+            .unwrap_err()
+            .contains("frontmatter exceeds"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn summary_and_pending_metadata_refuse_symlink_aliases() {
+        let dir = import_vault();
+        let root = dir.path();
+        let outside = tempfile::tempdir().unwrap();
+        write(
+            &outside.path().join("summary.md"),
+            "---\nsession_key: \"codex:stable\"\n---\nSynthetic summary.\n",
+        );
+        std::os::unix::fs::symlink(
+            outside.path().join("summary.md"),
+            root.join("wiki/alias.md"),
+        )
+        .unwrap();
+        assert!(session_summary_path_at(root, "codex:stable")
+            .unwrap_err()
+            .contains("symlink"));
+        std::fs::remove_file(root.join("wiki/alias.md")).unwrap();
+        let imported = import_conversation_at(
+            root,
+            "Synthetic source.",
+            "codex",
+            "Name",
+            "stable",
+            "",
+            false,
+        )
+        .unwrap();
+        let raw = root.join(imported["raw_path"].as_str().unwrap());
+        std::fs::remove_file(&raw).unwrap();
+        write(&outside.path().join("source.md"), "Synthetic source.");
+        std::os::unix::fs::symlink(outside.path().join("source.md"), raw).unwrap();
+        assert!(list_wikify_pending_at(root, 3)
+            .unwrap_err()
+            .contains("symlink"));
+    }
+
+    #[test]
+    fn session_summary_footer_requires_the_exact_raw_path_first() {
+        let dir = import_vault();
+        let root = dir.path();
+        let imported = import_conversation_at(
+            root,
+            "A synthetic session decision.",
+            "codex",
+            "Name",
+            "stable",
+            "",
+            false,
+        )
+        .unwrap();
+        let raw = imported["raw_path"].as_str().unwrap();
+        let revision = imported["source_revision"].as_str().unwrap();
+        let page = root.join("wiki/summary.md");
+        write(&page, &format!("---\ntype: source-summary\nsession_key: \"codex:stable\"\n---\nA session decision.[^src-stable]\n\n[^src-stable]: [[source-stable]] · {raw}\n"));
+        assert!(
+            complete_wikify_source_at(root, raw, revision, &["wiki/summary.md".into()]).is_err()
+        );
+        write(&page, &format!("---\ntype: source-summary\nsession_key: \"codex:stable\"\n---\nA session decision.[^src-stable]\n\n[^src-stable]: {raw} · [[source-stable]]\n"));
+        complete_wikify_source_at(root, raw, revision, &["wiki/summary.md".into()]).unwrap();
+        assert_eq!(
+            session_summary_path_at(root, "codex:stable")
+                .unwrap()
+                .as_deref(),
+            Some("wiki/summary.md")
+        );
+    }
+
+    #[test]
     fn wikify_pending_lists_oldest_first_then_checks_off() {
         let dir = import_vault();
         let root = dir.path();
@@ -5779,16 +7791,394 @@ body of {rel}
         assert_eq!(first["key"], "chatgpt:a");
         assert_eq!(first["raw_path"], "raw/conversations/chatgpt/a.md");
         assert!(first["excerpt"].as_str().unwrap().contains("alpha talk"));
+        assert!(
+            wikify_pending_at(root, 3, &["chatgpt:a".to_string()]).is_err(),
+            "a bare done key cannot discard work"
+        );
+        let revision = first["source_revision"].as_str().unwrap();
+        let read = read_pending_at(root, "chatgpt:a", revision, 0, 65536).unwrap();
+        assert_eq!(read["read_complete"], true);
+        write(&root.join("wiki/a.md"), "---\ntype: source-summary\n---\nAlpha talk.[^src-a]\n\n[^src-a]: raw/conversations/chatgpt/a.md\n");
         let after = wikify_pending_at(root, 3, &["chatgpt:a".to_string()]).unwrap();
         assert_eq!(after["pending_total"], 1);
         assert_eq!(after["wikified_total"], 1);
         assert_eq!(after["items"][0]["key"], "chatgpt:b");
+        let revision = after["items"][0]["source_revision"].as_str().unwrap();
+        read_pending_at(root, "chatgpt:b", revision, 0, 65536).unwrap();
+        write(&root.join("wiki/b.md"), "---\ntype: source-summary\n---\nBeta talk.[^src-b]\n\n[^src-b]: raw/conversations/chatgpt/b.md\n");
         let done = wikify_pending_at(root, 3, &["chatgpt:b".to_string()]).unwrap();
         assert_eq!(done["items"].as_array().unwrap().len(), 0);
         assert!(done["instructions"]
             .as_str()
             .unwrap()
             .starts_with("Nothing pending"));
+    }
+
+    #[test]
+    fn wikify_receipts_refuse_partial_reads_stale_revisions_and_stem_collisions() {
+        let dir = import_vault();
+        let root = dir.path();
+        let imported = import_conversation_at(
+            root,
+            "A useful conversation about timer ordering.",
+            "chatgpt",
+            "",
+            "same",
+            "",
+            false,
+        )
+        .unwrap();
+        let revision = imported["source_revision"].as_str().unwrap();
+        read_pending_at(root, "chatgpt:same", revision, 0, 8).unwrap();
+        write(&root.join("wiki/result.md"), "---\ntype: source-summary\n---\nTimer ordering.[^src-same]\n\n[^src-same]: raw/conversations/chatgpt/same.md\n");
+        assert!(wikify_pending_at(root, 3, &["chatgpt:same".into()])
+            .unwrap_err()
+            .contains("not been read"));
+        read_pending_at(root, "chatgpt:same", revision, 0, 65536).unwrap();
+        write(&root.join("wiki/result.md"), "---\ntype: source-summary\n---\nTimer ordering.[^src-same]\n\n[^src-same]: raw/conversations/claude/same.md\n");
+        assert!(wikify_pending_at(root, 3, &["chatgpt:same".into()])
+            .unwrap_err()
+            .contains("exact pending"));
+        let updated = import_conversation_at(
+            root,
+            "The conversation continued with a different decision.",
+            "chatgpt",
+            "",
+            "same",
+            "",
+            false,
+        )
+        .unwrap();
+        assert!(read_pending_at(root, "chatgpt:same", revision, 0, 65536).is_err());
+        assert!(complete_wikify_source_at(
+            root,
+            "raw/conversations/chatgpt/same.r1.md",
+            revision,
+            &["wiki/result.md".into()]
+        )
+        .is_err());
+        let current = updated["source_revision"].as_str().unwrap();
+        let slug = updated["src_slug"].as_str().unwrap();
+        assert_eq!(slug, "src-same-r1");
+        write(&root.join("wiki/result.md"), &format!("---\ntype: source-summary\n---\nA different decision.[^{slug}]\n\n[^{slug}]: raw/conversations/chatgpt/same.r1.md\n"));
+        complete_wikify_source_at(
+            root,
+            "raw/conversations/chatgpt/same.r1.md",
+            current,
+            &["wiki/result.md".into()],
+        )
+        .unwrap();
+        let q = crate::importers::wikify::Pending::try_load(root).unwrap();
+        assert!(q.pending.is_empty());
+        assert_eq!(q.receipts.len(), 1);
+        assert_eq!(q.receipts[0].source_revision, current);
+    }
+
+    #[test]
+    fn resumed_sessions_keep_the_existing_month_path_and_immutable_originals() {
+        let dir = import_vault();
+        let root = dir.path();
+        let legacy_record = serde_json::json!({"type":"user","uuid":"old-m1","sessionId":"stable","timestamp":"2020-01-03T12:00:00Z", "message":{"role":"user","content":long_turn("The earlier synthetic design research.")}}).to_string();
+        let legacy = crate::importers::detect_and_parse("legacy.jsonl", &legacy_record)
+            .unwrap()
+            .remove(0)
+            .to_inbox_doc();
+        write(
+            &root.join("sessions/2020-01/claude-code-stable.md"),
+            &legacy,
+        );
+        let mut ledger = crate::importers::ledger::Ledger::load(root).unwrap();
+        ledger.record(
+            "claude-code:stable".into(),
+            crate::importers::ledger::fingerprint(&legacy),
+        );
+        ledger.save(root).unwrap();
+        let session = root.join("input.jsonl");
+        let prompt = long_turn("a person researching a useful question");
+        let record = serde_json::json!({"type":"user","uuid":"m1","sessionId":"stable","timestamp":"2026-10-03T12:00:00Z", "message":{"role":"user","content":prompt}}).to_string();
+        write(&session, &record);
+        assert_eq!(
+            commands::run_import(root, std::slice::from_ref(&session), "sessions", |_| {}).imported,
+            1
+        );
+        let original = collect_md(&root.join("raw/conversations"));
+        assert_eq!(
+            original.len(),
+            2,
+            "retain the proven legacy and current sources"
+        );
+        let source_before: Vec<_> = original
+            .iter()
+            .map(|path| (path.clone(), std::fs::read_to_string(path).unwrap()))
+            .collect();
+        assert!(source_before.iter().any(|(_, bytes)| bytes == &legacy));
+        write(
+            &session,
+            &format!(
+                "{record}\n{}",
+                serde_json::json!({"type":"assistant","uuid":"m2","sessionId":"stable", "timestamp":"2026-11-03T12:00:00Z", "message":{"role":"assistant","content":"A later decision."}})
+            ),
+        );
+        assert_eq!(
+            commands::run_import(root, &[session], "sessions", |_| {}).imported,
+            1
+        );
+        assert_eq!(collect_md(&root.join("sessions")).len(), 1);
+        let projection =
+            std::fs::read_to_string(root.join("sessions/2020-01/claude-code-stable.md")).unwrap();
+        assert!(projection.contains("A later decision.") && projection.contains("last_activity:"));
+        for (path, bytes) in source_before {
+            assert_eq!(std::fs::read_to_string(path).unwrap(), bytes);
+        }
+        assert_eq!(collect_md(&root.join("raw/conversations")).len(), 3);
+    }
+
+    #[test]
+    fn a_resumed_legacy_archive_reenters_active_sessions_without_rewriting_the_archive() {
+        let dir = import_vault();
+        let root = dir.path();
+        let archived = root.join("sessions/archive/2020-01/codex-stable.md");
+        let legacy_record = format!(
+            "{}\n{}",
+            serde_json::json!({"type":"session_meta","timestamp":"2020-01-03T12:00:00Z","payload":{"id":"stable"}}),
+            serde_json::json!({"type":"response_item","timestamp":"2020-01-03T12:00:01Z","payload":{"type":"message","role":"user","id":"old-m1","content":[{"type":"input_text","text":long_turn("The earlier archived synthetic decision.")}]}})
+        );
+        let legacy = crate::importers::detect_and_parse("legacy.jsonl", &legacy_record)
+            .unwrap()
+            .remove(0)
+            .to_inbox_doc();
+        write(&archived, &legacy);
+        let mut ledger = crate::importers::ledger::Ledger::load(root).unwrap();
+        ledger.record(
+            "codex:stable".into(),
+            crate::importers::ledger::fingerprint(&legacy),
+        );
+        ledger.save(root).unwrap();
+        let session = root.join("rollout-stable.jsonl");
+        let prompt = long_turn("A resumed synthetic session with a later decision.");
+        write(
+            &session,
+            &format!(
+                "{}\n{}",
+                serde_json::json!({"type":"session_meta","timestamp":"2026-10-03T12:00:00Z","payload":{"id":"stable"}}),
+                serde_json::json!({"type":"response_item","timestamp":"2026-10-03T12:00:01Z","payload":{"type":"message","role":"user","id":"m1","content":[{"type":"input_text","text":prompt}]}})
+            ),
+        );
+        let outcome = commands::run_import(root, &[session], "sessions", |_| {});
+        assert_eq!(
+            outcome.imported,
+            1,
+            "{}",
+            serde_json::to_string(&outcome).unwrap()
+        );
+        assert!(root.join("sessions/2020-01/codex-stable.md").is_file());
+        assert_eq!(std::fs::read_to_string(archived).unwrap(), legacy);
+        let previous_raw = root.join(format!(
+            "raw/conversations/codex/codex-stable-{}.md",
+            crate::importers::ledger::fingerprint(&legacy)
+        ));
+        assert_eq!(std::fs::read_to_string(previous_raw).unwrap(), legacy);
+        assert_eq!(
+            crate::importers::ledger::Ledger::load(root)
+                .unwrap()
+                .location("sessions", "codex:stable"),
+            Some("sessions/2020-01/codex-stable.md")
+        );
+    }
+
+    #[test]
+    fn queued_conversations_enter_the_actual_full_tier_drain_at_the_latest_revision() {
+        crate::settings::test_support::with_isolated_data("mcp-wikify-full-tier", |_| {
+            let dir = import_vault();
+            let root = dir.path();
+            write(
+                &root.join("raw/ordinary.md"),
+                "Ordinary raw evidence is not queued.",
+            );
+            import_conversation_at(
+                root,
+                "The first synthetic conversation.",
+                "chatgpt",
+                "",
+                "stable",
+                "",
+                false,
+            )
+            .unwrap();
+            let updated = import_conversation_at(
+                root,
+                "A revised synthetic conversation with a later decision.",
+                "chatgpt",
+                "",
+                "stable",
+                "",
+                false,
+            )
+            .unwrap();
+            let current = "raw/conversations/chatgpt/stable.r1.md";
+            assert!(root.join("raw/conversations/chatgpt/stable.md").is_file());
+            assert_eq!(
+                crate::distill::full_tier_items(root).unwrap(),
+                vec![current]
+            );
+            write(&root.join("wiki/result.md"), &format!("---\ntype: source-summary\n---\nA later decision.[^src-stable-r1]\n\n[^src-stable-r1]: {current}\n"));
+            complete_wikify_source_at(
+                root,
+                current,
+                updated["source_revision"].as_str().unwrap(),
+                &["wiki/result.md".into()],
+            )
+            .unwrap();
+            assert!(crate::distill::full_tier_items(root).unwrap().is_empty());
+            assert!(root.join("raw/ordinary.md").is_file());
+            assert!(root.join(current).is_file());
+        });
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn import_projection_refuses_symlink_ancestors_and_other_semantic_folders() {
+        for parent_alias in [true, false] {
+            let dir = import_vault();
+            let root = dir.path();
+            let outside = tempfile::tempdir().unwrap();
+            let protected = root.join("wiki/protected.md");
+            write(&protected, "Protected synthetic wiki content.");
+            if parent_alias {
+                std::os::unix::fs::symlink(outside.path(), root.join("sessions")).unwrap();
+            } else {
+                std::fs::create_dir_all(root.join("sessions/2020-01")).unwrap();
+                std::os::unix::fs::symlink(
+                    &protected,
+                    root.join("sessions/2020-01/claude-code-stable.md"),
+                )
+                .unwrap();
+            }
+            let session = root.join("source.jsonl");
+            write(&session, &serde_json::json!({"type":"user","uuid":"m1","sessionId":"stable","timestamp":"2026-10-03T12:00:00Z","message":{"role":"user","content":long_turn("A synthetic human session requiring import.")}}).to_string());
+            let result = commands::run_import(root, &[session], "sessions", |_| {});
+            assert_eq!(result.imported, 0);
+            assert_eq!(result.failed.len(), 1);
+            assert!(std::fs::read_dir(outside.path()).unwrap().next().is_none());
+            assert_eq!(
+                std::fs::read_to_string(&protected).unwrap(),
+                "Protected synthetic wiki content."
+            );
+            assert!(collect_md(&root.join("raw/conversations")).is_empty());
+        }
+    }
+
+    #[test]
+    fn corrupt_wikify_queue_is_an_error_instead_of_an_empty_success() {
+        let dir = import_vault();
+        let root = dir.path();
+        let path = crate::importers::wikify::Pending::path(root);
+        write(&path, "{not valid json");
+        let status = ledger_status_at(root);
+        assert_eq!(status["ok"], false);
+        assert!(status["wikify_pending"].is_null());
+        assert!(status["queue_error"]
+            .as_str()
+            .unwrap()
+            .contains("invalid wikify queue"));
+        assert!(wikify_pending_at(root, 3, &[]).is_err());
+        assert!(import_conversation_at(
+            root,
+            "A valid synthetic record.",
+            "chatgpt",
+            "",
+            "new",
+            "",
+            false
+        )
+        .is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "{not valid json");
+        assert!(collect_md(&root.join("raw/conversations")).is_empty());
+    }
+
+    #[test]
+    fn unsafe_vendor_ids_remain_distinct_and_created_is_a_real_date() {
+        let dir = import_vault();
+        let root = dir.path();
+        let first = import_conversation_at(
+            root,
+            "First distinct synthetic record.",
+            "chatgpt",
+            "",
+            "session/one",
+            "2026-10-03",
+            false,
+        )
+        .unwrap();
+        let second = import_conversation_at(
+            root,
+            "Second distinct synthetic record.",
+            "chatgpt",
+            "",
+            "session?one",
+            "2026-10-03",
+            false,
+        )
+        .unwrap();
+        assert_eq!(first["key"], "chatgpt:session/one");
+        assert_eq!(second["key"], "chatgpt:session?one");
+        assert_ne!(first["raw_path"], second["raw_path"]);
+        let original =
+            std::fs::read_to_string(root.join(first["raw_path"].as_str().unwrap())).unwrap();
+        assert!(original.contains("conversation_id: \"session/one\""));
+        assert!(import_conversation_at(
+            root,
+            "Invalid dated synthetic record.",
+            "chatgpt",
+            "",
+            "bad-date",
+            "2026-02-30",
+            false
+        )
+        .unwrap_err()
+        .contains("valid YYYY-MM-DD"));
+        assert_eq!(
+            crate::importers::wikify::Pending::try_load(root)
+                .unwrap()
+                .pending
+                .len(),
+            2
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn wikify_receipt_refuses_a_wiki_alias_to_a_non_wiki_page() {
+        let dir = import_vault();
+        let root = dir.path();
+        let imported = import_conversation_at(
+            root,
+            "A synthetic source requiring promotion.",
+            "chatgpt",
+            "",
+            "alias-test",
+            "",
+            false,
+        )
+        .unwrap();
+        write(&root.join("notes/result.md"), "---\ntype: source-summary\n---\nA promoted claim.[^src-alias]\n\n[^src-alias]: raw/conversations/chatgpt/alias-test.md\n");
+        std::os::unix::fs::symlink(root.join("notes/result.md"), root.join("wiki/alias.md"))
+            .unwrap();
+        assert!(complete_wikify_source_at(
+            root,
+            imported["raw_path"].as_str().unwrap(),
+            imported["source_revision"].as_str().unwrap(),
+            &["wiki/alias.md".into()]
+        )
+        .unwrap_err()
+        .contains("escapes wiki/"));
+        assert_eq!(
+            crate::importers::wikify::Pending::try_load(root)
+                .unwrap()
+                .pending
+                .len(),
+            1
+        );
     }
 
     #[test]
@@ -5812,6 +8202,21 @@ body of {rel}
         assert_eq!(s["bodies_indexed"], 0);
         assert_eq!(s["wikify_pending"], 0);
         assert_eq!(s["ledger_path"], ".myco/ledger.json");
+    }
+
+    #[test]
+    fn ledger_status_preserves_corruption_and_does_not_report_zero_counts() {
+        let dir = import_vault();
+        std::fs::create_dir_all(dir.path().join(".myco")).unwrap();
+        let path = dir.path().join(".myco/ledger.json");
+        let original = b"{broken synthetic ledger";
+        std::fs::write(&path, original).unwrap();
+        let status = ledger_status_at(dir.path());
+        assert_eq!(status["ok"], false);
+        assert!(status["ledger_error"].is_string());
+        assert!(status["conversations_recorded"].is_null());
+        assert!(status["bodies_indexed"].is_null());
+        assert_eq!(std::fs::read(path).unwrap(), original);
     }
 
     // ─── distill_status / distill_report ──────────────────────────────────────
@@ -5850,7 +8255,7 @@ body of {rel}
         let r = crate::distill::report(dir.path());
         assert_eq!(
             r.unscored_by_folder,
-            [("_inbox", 0), ("raw", 0), ("sessions", 0)]
+            [("_inbox", 0), ("sessions", 0)]
                 .into_iter()
                 .map(|(k, v)| (k.to_string(), v))
                 .collect()
@@ -5945,16 +8350,128 @@ body of {rel}
     }
 
     #[test]
-    fn distill_status_backlog_excludes_already_scored_files() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        write(&root.join("_inbox/seen.md"), "already scored\n");
-        write(
-            &root.join(".myco/distill-state.json"),
-            r#"{"model":"","scored":{"_inbox/seen.md":{"hash":1,"tier":"full","at":0}}}"#,
+    fn distill_status_corrupt_config_does_not_authorize_a_default_trigger() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path();
+        let config = root.join(".myco/distill.json");
+        write(&config, "{corrupt config");
+        write(&root.join("_inbox/new.md"), "synthetic pending source");
+        let before = std::fs::read(&config).unwrap();
+        let status = distill_status_at(root);
+        assert_eq!(status["ok"], false);
+        assert_eq!(status["trigger_exceeded"], false);
+        assert!(status["error"]
+            .as_str()
+            .is_some_and(|error| !error.is_empty()));
+        assert_eq!(std::fs::read(config).unwrap(), before);
+        assert_eq!(
+            std::fs::read(root.join("_inbox/new.md")).unwrap(),
+            b"synthetic pending source"
         );
-        assert_eq!(distill_status_at(root)["backlog"], 0);
-        assert_eq!(crate::distill::report(root).unscored_by_folder["_inbox"], 0);
+    }
+
+    #[test]
+    fn distill_status_backlog_excludes_already_scored_files() {
+        crate::settings::test_support::with_isolated_data("mcp-current-distill-score", |_| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let content = "already scored\n";
+            write(&root.join("_inbox/seen.md"), content);
+            let topic = "synthetic indexed wiki topic\n";
+            write(&root.join("wiki/topic.md"), topic);
+            let mut store = crate::vector_index::VectorStore::default();
+            store.ensure_signature("synthetic-local:encoder", "synthetic-policy-a");
+            store
+                .upsert_page(
+                    "wiki/topic.md",
+                    "topic",
+                    crate::embeddings::chunk_page(topic)
+                        .iter()
+                        .map(|chunk| (crate::embeddings::content_hash(chunk), vec![1.0, 0.0]))
+                        .collect(),
+                )
+                .unwrap();
+            let index_path = crate::vector_index::VectorStore::path_for(
+                &root.canonicalize().unwrap().to_string_lossy(),
+            )
+            .unwrap();
+            store.save(&index_path).unwrap();
+            let space = store.embedding_space().unwrap();
+            let ontology =
+                crate::ontology::build(&store, &crate::commands::wiki_titles(root), &[]).unwrap();
+            crate::ontology::save(root, &ontology).unwrap();
+            let decision = crate::distill::test_current_decision_signature(root)
+                .unwrap()
+                .unwrap();
+            let source_sha256 = {
+                use sha2::{Digest, Sha256};
+                format!("{:x}", Sha256::digest(content.as_bytes()))
+            };
+            write(
+            &root.join(".myco/distill-state.json"),
+            &serde_json::json!({"model":store.model,"embedding":space,"scored":{"_inbox/seen.md":{"hash":crate::embeddings::content_hash(content),"tier":"full","at":0,"embedding":space,"source_sha256":source_sha256,"decision_signature":decision}}}).to_string(),
+        );
+            assert_eq!(distill_status_at(root)["backlog"], 0);
+            assert_eq!(crate::distill::report(root).unscored_by_folder["_inbox"], 0);
+        });
+    }
+
+    #[test]
+    fn distill_status_backlog_does_not_bless_an_unstamped_legacy_score() {
+        crate::settings::test_support::with_isolated_data("mcp-legacy-distill-score", |_| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            write(&root.join("_inbox/seen.md"), "already scored\n");
+            write(
+                &root.join(".myco/distill-state.json"),
+                r#"{"model":"","scored":{"_inbox/seen.md":{"hash":1,"tier":"full","at":0}}}"#,
+            );
+            assert_eq!(distill_status_at(root)["backlog"], 1);
+            assert_eq!(crate::distill::report(root).unscored_by_folder["_inbox"], 1);
+        });
+    }
+
+    #[test]
+    fn distill_status_representation_alone_cannot_bless_a_legacy_decision() {
+        crate::settings::test_support::with_isolated_data("mcp-legacy-distill-decision", |_| {
+            let directory = tempfile::tempdir().unwrap();
+            let root = directory.path();
+            let content = "already scored\n";
+            write(&root.join("_inbox/seen.md"), content);
+            let topic = "synthetic indexed wiki topic\n";
+            write(&root.join("wiki/topic.md"), topic);
+            let mut store = crate::vector_index::VectorStore::default();
+            store.ensure_signature("synthetic-local:encoder", "synthetic-policy-a");
+            store
+                .upsert_page(
+                    "wiki/topic.md",
+                    "topic",
+                    crate::embeddings::chunk_page(topic)
+                        .iter()
+                        .map(|chunk| (crate::embeddings::content_hash(chunk), vec![1.0, 0.0]))
+                        .collect(),
+                )
+                .unwrap();
+            let index_path = crate::vector_index::VectorStore::path_for(
+                &root.canonicalize().unwrap().to_string_lossy(),
+            )
+            .unwrap();
+            store.save(&index_path).unwrap();
+            let space = store.embedding_space().unwrap();
+            let ontology =
+                crate::ontology::build(&store, &crate::commands::wiki_titles(root), &[]).unwrap();
+            crate::ontology::save(root, &ontology).unwrap();
+            let state = root.join(".myco/distill-state.json");
+            let old = serde_json::json!({"model":store.model,"embedding":space,"scored":{"_inbox/seen.md":{"hash":crate::embeddings::content_hash(content),"tier":"full","at":0,"embedding":space}}}).to_string();
+            write(&state, &old);
+            assert_eq!(distill_status_at(root)["backlog"], 1);
+            assert_eq!(crate::distill::report(root).unscored_by_folder["_inbox"], 1);
+            assert_eq!(std::fs::read(state).unwrap(), old.as_bytes());
+            assert_eq!(
+                std::fs::read(root.join("_inbox/seen.md")).unwrap(),
+                content.as_bytes()
+            );
+        });
     }
 
     #[test]

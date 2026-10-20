@@ -12,6 +12,7 @@ import { create } from "zustand";
 // Type-only, so no runtime dependency: RunOutcome is declared beside the other
 // store the Topbar's shared run pill reads (see harvestStore).
 import type { RunOutcome } from "./harvestStore";
+import type { WorkflowReceipt, WorkflowStatus } from "../lib/workflowOutcome";
 
 export type DistillRunStep =
   | "run"
@@ -28,6 +29,9 @@ interface DistillRunState {
   step: DistillRunStep | null;
   /** How the last chain ended; null when there has never been one. */
   outcome: RunOutcome;
+  /** Detailed completion truth; a native core report alone is not success. */
+  workflowStatus: WorkflowStatus | null;
+  receipt: WorkflowReceipt | null;
   /** false after a chain finishes until the user visits Feedback — drives the
    * Topbar done/failed pill, same contract as ingestStore.seen. */
   seen: boolean;
@@ -38,6 +42,8 @@ export const useDistillRunStore = create<DistillRunState>((set) => ({
   running: false,
   step: null,
   outcome: null,
+  workflowStatus: null,
+  receipt: null,
   // Nothing to report until a chain actually ends, so the pill starts silent.
   seen: true,
   markSeen: () => set({ seen: true }),

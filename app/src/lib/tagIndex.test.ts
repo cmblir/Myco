@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { tagCandidates } from "./tagIndex";
+import { tagCandidates, tagCounts } from "./tagIndex";
 
 const tags = {
   "/v/a.md": ["ml", "Rust", "ml"],
@@ -30,5 +30,15 @@ describe("tagCandidates", () => {
 
   it("is empty for an empty index", () => {
     expect(tagCandidates({})).toEqual([]);
+  });
+});
+
+describe("tagCounts", () => {
+  it("gives how often each tag is used, most used first", () => {
+    expect(tagCounts(tags, 2)).toEqual([
+      ["ml", 3],
+      ["Rust", 2],
+    ]);
+    expect(tagCounts({})).toEqual([]);
   });
 });

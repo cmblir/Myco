@@ -33,10 +33,8 @@ async function settingsText(lang) {
     timeout: 60_000,
   });
   await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-  // Settings is pinned in .side-tools, outside the scrolling .side-nav.
-  await page.locator(".side-tools .nav-item", { hasText: /Settings|설정|設定/ })
-    .first()
-    .click();
+  // Settings is the gear on the sidebar's head row, outside the scrolling .side-nav.
+  await page.locator(".side-head .side-gear").click();
   await page.waitForTimeout(800);
   // Settings is tabbed and opens on Model — the account panel is its own tab.
   await page

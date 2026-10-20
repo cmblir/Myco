@@ -7,17 +7,18 @@
 // anchor projected through the live camera — so it sits IN the scene as a world,
 // not as a fixed HUD sprite.
 //
-// Gated four ways: the `mascotCameo` graph setting, the global `mascotEnabled`
-// opt-out, prefers-reduced-motion (no surprise motion), and a live 3D-layout
-// check (`active` is cleared by the parent for 2D / multiverse / light skins).
+// Gated by the `mascotCameo` graph setting, the global `mascotEnabled` opt-out,
+// live reduced-motion / window visibility, and a live 3D-layout check (`active`
+// is cleared by the parent for 2D / multiverse / light skins).
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { JSX } from "react";
 import { useUIStore } from "../stores/uiStore";
 import type { Strings } from "../lib/i18n";
 import planetMovUrl from "../assets/mascot/planet.mov";
 import planetWebmUrl from "../assets/mascot/planet.webm";
 import planetPosterUrl from "../assets/mascot/planet.poster.png";
+import { prefersReducedMotion, subscribeReducedMotion } from "./NotchMascot";
 
 // Same engine sniff as MascotClip: WKWebView (Tauri) / Safari need the HEVC .mov
 // for its alpha; Chromium the VP9 .webm (a wrong <source> fallback paints the
@@ -36,6 +37,17 @@ const FIRST_MAX = 45_000;
 const GAP_MIN = 140_000;
 const GAP_MAX = 300_000;
 const HOLD_MS = 13_000;
+// Preserve the former 60 Hz pace without speeding up on high-refresh displays.
+const DRIFT_PER_MS = (0.0035 * 60) / 1000;
+
+function subscribeVisibility(onChange: () => void): () => void {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
+}
+
+function documentVisible(): boolean {
+  return typeof document === "undefined" || document.visibilityState !== "hidden";
+}
 
 // Planet world radius as a fraction of the framed distance, and the video-frame
 // height needed to render a planet of that radius (the planet fills ~half the
@@ -81,7 +93,8 @@ export default function MascotCameo({
   t,
 }: {
   /** Parent gate: mascotCameo setting AND a 3D dark cosmos (not 2D / multiverse
-   *  / light skin). The component adds mascotEnabled + reduced-motion. */
+   *  / light skin) AND no inspector open. The component adds mascotEnabled +
+   *  reduced-motion. */
   active: boolean;
   sceneRef: React.RefObject<MascotScene | null>;
   t: Strings;
@@ -92,6 +105,7 @@ export default function MascotCameo({
   const [leaving, setLeaving] = useState(false);
   const tipIdx = useRef(0);
   const holdTimer = useRef<number | null>(null);
+  const leaveTimer = useRef<number | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const bubbleRef = useRef<HTMLDivElement | null>(null);
@@ -100,44 +114,60 @@ export default function MascotCameo({
   const worldR = useRef(40);
   const rafRef = useRef<number | null>(null);
   const driftRef = useRef(0);
+  const lastFrameAt = useRef<number | null>(null);
 
-  const reduced =
-    typeof window !== "undefined" &&
-    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const canRun = active && mascotEnabled && !reduced;
+  const reduced = useSyncExternalStore(
+    subscribeReducedMotion, prefersReducedMotion, () => false,
+  );
+  const documentIsVisible = useSyncExternalStore(
+    subscribeVisibility, documentVisible, documentVisible,
+  );
+  const canRun = active && mascotEnabled && !reduced && documentIsVisible;
 
-  const stopRaf = (): void => {
+  const stopRaf = useCallback((): void => {
     if (rafRef.current != null) cancelAnimationFrame(rafRef.current);
     rafRef.current = null;
-  };
+    lastFrameAt.current = null;
+  }, []);
 
   const dismiss = useCallback(() => {
+    if (leaveTimer.current !== null) return;
     if (holdTimer.current != null) {
       window.clearTimeout(holdTimer.current);
       holdTimer.current = null;
     }
     setLeaving(true);
-    window.setTimeout(() => {
+    leaveTimer.current = window.setTimeout(() => {
+      leaveTimer.current = null;
       stopRaf();
       setVisible(false);
       setLeaving(false);
     }, 520);
-  }, []);
+  }, [stopRaf]);
 
   // Per-frame: drift the world anchor, re-project it through the live camera,
   // and place + size the planet (and its tip) accordingly. Uses direct DOM style
   // writes (not React state) so orbiting stays smooth.
-  const frame = useCallback(() => {
+  const frame = useCallback((now: number) => {
+    if (!documentVisible()) {
+      stopRaf();
+      return;
+    }
     rafRef.current = requestAnimationFrame(frame);
     const scene = sceneRef.current;
     const root = rootRef.current;
     if (!scene || !root) return;
     // Bail out to a dismiss if the layout left 3D under us.
     if (!scene.is3D()) {
+      stopRaf();
       dismiss();
       return;
     }
-    driftRef.current += 0.0035;
+    const elapsed = lastFrameAt.current === null
+      ? 0
+      : Math.min(50, Math.max(0, now - lastFrameAt.current));
+    lastFrameAt.current = now;
+    driftRef.current += elapsed * DRIFT_PER_MS;
     const a = anchor.current;
     const drifted = {
       x: a.x + Math.sin(driftRef.current) * worldR.current * 0.5,
@@ -164,14 +194,18 @@ export default function MascotCameo({
     // Bubble sits to the LEFT of the planet, its right edge clearing the planet.
     const b = bubbleRef.current;
     if (b) b.style.right = `${frameW * 0.42 + 8}px`;
-  }, [sceneRef, dismiss]);
+  }, [sceneRef, dismiss, stopRaf]);
 
   const show = useCallback(() => {
+    if (!canRun) return;
     const scene = sceneRef.current;
     if (!scene || !scene.is3D()) return;
     anchor.current = scene.mascotSpawnPoint();
     worldR.current = Math.max(20, scene.getFramedDist() * WORLD_FRAC);
     driftRef.current = 0;
+    if (holdTimer.current !== null) window.clearTimeout(holdTimer.current);
+    if (leaveTimer.current !== null) window.clearTimeout(leaveTimer.current);
+    leaveTimer.current = null;
     const list = tips(t);
     setTip(list[tipIdx.current % list.length]);
     tipIdx.current += 1;
@@ -180,13 +214,14 @@ export default function MascotCameo({
     holdTimer.current = window.setTimeout(dismiss, HOLD_MS);
     stopRaf();
     rafRef.current = requestAnimationFrame(frame);
-  }, [sceneRef, t, dismiss, frame]);
+  }, [canRun, sceneRef, t, dismiss, frame, stopRaf]);
 
   // Appearance scheduler — one self-rescheduling chain so each gap is randomised.
   useEffect(() => {
     if (!canRun) {
       stopRaf();
       setVisible(false);
+      setLeaving(false);
       return;
     }
     let killed = false;
@@ -207,9 +242,16 @@ export default function MascotCameo({
       killed = true;
       window.clearTimeout(timer);
       if (holdTimer.current != null) window.clearTimeout(holdTimer.current);
+      if (leaveTimer.current != null) window.clearTimeout(leaveTimer.current);
+      holdTimer.current = null;
+      leaveTimer.current = null;
       stopRaf();
+      setVisible(false);
+      setLeaving(false);
+      const preview = window as unknown as { __mascotCameo?: () => void };
+      if (preview.__mascotCameo === show) delete preview.__mascotCameo;
     };
-  }, [canRun, show]);
+  }, [canRun, show, stopRaf]);
 
   if (!visible) return null;
 

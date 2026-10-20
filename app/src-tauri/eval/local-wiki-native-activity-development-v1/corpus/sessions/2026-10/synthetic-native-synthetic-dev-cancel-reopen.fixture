@@ -1,0 +1,13 @@
+---
+fixture_kind: synthetic_native_activity_development
+title: "Synthetic lantern connector reopening"
+created: "2026-10-04T09:00:00Z"
+last_updated: "2026-10-04T09:00:00Z"
+turn_metadata: [{"message_id":"D4A","original_role":"assistant","timestamp":"2026-10-01T10:00:00Z","phase":null},{"message_id":"D4B","original_role":"user","timestamp":"2026-10-02T10:00:00Z","phase":null},{"message_id":"D4C","original_role":"user","timestamp":"2026-10-03T10:00:00Z","phase":null}]
+---
+**Assistant:**
+I completed a synthetic lantern connector change; this is my report, not an independent verification.
+**User:**
+I cancelled the synthetic lantern connector rollout because the preview was blank.
+**User:**
+I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out.

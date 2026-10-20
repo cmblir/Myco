@@ -466,7 +466,7 @@ function InstalledList({
               style={{ gap: 6, flexShrink: 0, alignItems: "center" }}
             >
               {error === m.name ? (
-                <span style={{ color: "#dc2626", fontSize: 11.5 }}>
+                <span style={{ color: "var(--danger)", fontSize: 11.5 }}>
                   {t.ol_delete_failed ?? "Couldn't remove the model."}
                 </span>
               ) : (
@@ -477,7 +477,7 @@ function InstalledList({
               <button
                 type="button"
                 className="btn"
-                style={{ padding: "2px 8px", fontSize: 12, color: "#dc2626" }}
+                style={{ padding: "2px 8px", fontSize: 12, color: "var(--danger)" }}
                 disabled={deleting === m.name}
                 onClick={() => void remove(m.name)}
               >
@@ -577,7 +577,7 @@ function PullProgress({
           />
         </div>
       ) : (
-        <div style={{ color: "#dc2626", fontSize: 12.5 }}>{pull.error}</div>
+        <div style={{ color: "var(--danger)", fontSize: 12.5 }}>{pull.error}</div>
       )}
       {pull.total > 0 ? (
         <div className="muted" style={{ fontSize: 11, marginTop: 4 }}>

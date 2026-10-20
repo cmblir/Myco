@@ -137,6 +137,23 @@ describe("buildResurfaceRows", () => {
     expect(onIgnore).toHaveBeenCalledWith("wiki/garden-notes.md");
   });
 
+  it("offers inserting a link to the pick when a note is open", () => {
+    const onInsert = vi.fn();
+    const [row] = rsRows({ insertLabel: "커서 위치에 링크 넣기", onInsert });
+    const actions = (
+      row.trailing as ReactElement<{ children: ActionButton[] }>
+    ).props.children;
+    // An icon button after 열기, named by its label.
+    const labels = actions.map((b) =>
+      typeof b.props.children === "string"
+        ? b.props.children
+        : (b.props as { "aria-label"?: string })["aria-label"],
+    );
+    expect(labels).toEqual(["열기", "커서 위치에 링크 넣기", "일주일 뒤", "무시"]);
+    actions[1].props.onClick();
+    expect(onInsert).toHaveBeenCalledWith("wiki/garden-notes.md");
+  });
+
   it("appends the floor-note footer row only when text is passed", () => {
     const withNote = rsRows({ note: "raise the bar · now 0.70" });
     expect(withNote.at(-1)?.key).toBe("rs-note");

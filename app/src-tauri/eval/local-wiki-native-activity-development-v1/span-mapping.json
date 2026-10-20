@@ -1,0 +1,306 @@
+{
+  "version": 1,
+  "id": "local-wiki-native-activity-development-v1-span-mapping",
+  "syntheticOnly": true,
+  "nativeParserExecuted": false,
+  "nativeAuthorityEstablished": false,
+  "sourceArtifact": {
+    "path": "../local-wiki-development-meaning-v1.json",
+    "bytes": 20012,
+    "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+  },
+  "nativeBindingRecipe": {
+    "sourceDocumentId": "S-SHA256(vault-relative container path)[:32]",
+    "nativeTurnId": "T-SHA256(original turn id as turn_metadata.message_id)[:32]",
+    "nativeSpanId": "Q-SHA256(path + \":\" + nativeBodyStart + \":\" + nativeBodyEnd)[:32]",
+    "nativeSpanScope": "base bind_original_page admission; later windows may reissue IDs",
+    "idValidation": "predicted_from_current_source_not_executed_native_parser",
+    "readSource": "src/activity_recall/claim_sources.rs: original_turns and bind_original_page",
+    "offsetEncoding": "UTF-8 bytes, half-open [start,end)",
+    "passagePreservation": "Exact original turn text remains a contiguous subrange. Original separators are retained between turns; inserted role headers interrupt whole-document contiguity. Remove inserted headers and frontmatter to reconstruct source.original.",
+    "nativeBodyDifference": "For non-final turns, original inter-turn separator bytes belong to the native body and are included in its SHA256. Do not substitute the original passage SHA for the full native body SHA."
+  },
+  "containers": [
+    {
+      "caseId": "synthetic-dev-plan-negation",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-plan-negation.md",
+      "containerArtifactPath": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-plan-negation.md",
+      "containerSha256": "ac6b29c3e38db5c7912befa56abd3394b3d070e75df1d045692eeeaf8f2cde74",
+      "containerBytes": 588,
+      "originalSourceSha256": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+      "originalSourceBytes": 182,
+      "expectedSourceDocumentId": "S-4a707d3cec3e12fcb4b4f9b3ef6e2fbb",
+      "idValidation": "predicted_from_current_source_not_executed_native_parser",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "turns": [
+        {
+          "ordinal": 0,
+          "originalTurnId": "D1A",
+          "originalSpanId": "D1A",
+          "originalStart": 0,
+          "originalEnd": 67,
+          "originalPassageSha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+          "speaker": "user",
+          "turnTimestamp": "2026-10-01T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 381,
+          "nativeBodyStart": 391,
+          "containerPassageStart": 391,
+          "containerPassageEnd": 458,
+          "expectedNativeTurnId": "T-e42fdebe45b5edcd7be0b4660430015a",
+          "nativeBodyEnd": 459,
+          "nativeBodySha256": "d4a17e264dca992da7b874e0da69c1519bb942d1209f642d1c413a114de85084",
+          "expectedNativeSpanId": "Q-ef7b333c667bc0bc13ac7a1bc6fe4fad"
+        },
+        {
+          "ordinal": 1,
+          "originalTurnId": "D1B",
+          "originalSpanId": "D1B",
+          "originalStart": 68,
+          "originalEnd": 182,
+          "originalPassageSha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+          "speaker": "assistant",
+          "turnTimestamp": "2026-10-02T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 459,
+          "nativeBodyStart": 474,
+          "containerPassageStart": 474,
+          "containerPassageEnd": 588,
+          "expectedNativeTurnId": "T-33a356d92413fcf25bd3b90ac9de08c1",
+          "nativeBodyEnd": 588,
+          "nativeBodySha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+          "expectedNativeSpanId": "Q-e79af4ddbdd4da78d8b7c01c8ccf5aeb"
+        }
+      ],
+      "originalInterTurnSeparators": [
+        {
+          "afterTurnId": "D1A",
+          "originalStart": 67,
+          "originalEnd": 68,
+          "text": "\n",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        }
+      ]
+    },
+    {
+      "caseId": "synthetic-dev-decision-cause",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-decision-cause.md",
+      "containerArtifactPath": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-decision-cause.md",
+      "containerSha256": "7e2c73668138e4e213ebfda6cfbba963272b9f1b441182065bccfc7c027d5077",
+      "containerBytes": 648,
+      "originalSourceSha256": "0dfc6298461b218f1181292be547070fd917b9955f09f83e6b1dd491a34222e8",
+      "originalSourceBytes": 247,
+      "expectedSourceDocumentId": "S-6fc59e7ea14cd82cf2aa0d429c444dc8",
+      "idValidation": "predicted_from_current_source_not_executed_native_parser",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "turns": [
+        {
+          "ordinal": 0,
+          "originalTurnId": "D2A",
+          "originalSpanId": "D2A",
+          "originalStart": 0,
+          "originalEnd": 118,
+          "originalPassageSha256": "46ef50f205ee7e24b3dafb31ffa212c37039e41da085675e3f750399b87cb37a",
+          "speaker": "assistant",
+          "turnTimestamp": "2026-10-02T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 376,
+          "nativeBodyStart": 391,
+          "containerPassageStart": 391,
+          "containerPassageEnd": 509,
+          "expectedNativeTurnId": "T-34875eea087774ea10aae20322432ed3",
+          "nativeBodyEnd": 510,
+          "nativeBodySha256": "37ffdc7dde9e3b117483413400a34a03b2a1c82ca17331758718ea519d495b2a",
+          "expectedNativeSpanId": "Q-826997efad5cfef21d25c383f52300ac"
+        },
+        {
+          "ordinal": 1,
+          "originalTurnId": "D2B",
+          "originalSpanId": "D2B",
+          "originalStart": 119,
+          "originalEnd": 247,
+          "originalPassageSha256": "2b0f32f53a5a2a6ae1d03b187df06b8f60ac8404420b4af341badf401e625e10",
+          "speaker": "user",
+          "turnTimestamp": "2026-10-03T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 510,
+          "nativeBodyStart": 520,
+          "containerPassageStart": 520,
+          "containerPassageEnd": 648,
+          "expectedNativeTurnId": "T-f96f0c70cad2089b9b3325cd957637dd",
+          "nativeBodyEnd": 648,
+          "nativeBodySha256": "2b0f32f53a5a2a6ae1d03b187df06b8f60ac8404420b4af341badf401e625e10",
+          "expectedNativeSpanId": "Q-75c2eb151a2c81d7a671de31aa0c0f49"
+        }
+      ],
+      "originalInterTurnSeparators": [
+        {
+          "afterTurnId": "D2A",
+          "originalStart": 118,
+          "originalEnd": 119,
+          "text": "\n",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        }
+      ]
+    },
+    {
+      "caseId": "synthetic-dev-actor-event-date",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-actor-event-date.md",
+      "containerArtifactPath": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-actor-event-date.md",
+      "containerSha256": "7985e794a530d5700da9a976cc883639526749ae9c25f9cf467a2e08e66a78cb",
+      "containerBytes": 630,
+      "originalSourceSha256": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+      "originalSourceBytes": 226,
+      "expectedSourceDocumentId": "S-35a300be29fd761265f11bf4734d9d31",
+      "idValidation": "predicted_from_current_source_not_executed_native_parser",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "turns": [
+        {
+          "ordinal": 0,
+          "originalTurnId": "D3A",
+          "originalSpanId": "D3A",
+          "originalStart": 0,
+          "originalEnd": 136,
+          "originalPassageSha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+          "speaker": "user",
+          "turnTimestamp": "2026-10-03T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 379,
+          "nativeBodyStart": 389,
+          "containerPassageStart": 389,
+          "containerPassageEnd": 525,
+          "expectedNativeTurnId": "T-7bbc52e49ad7a1a508d8b1367d6645b2",
+          "nativeBodyEnd": 526,
+          "nativeBodySha256": "e01749bd7a59b9e3bedd5d500d8d40c734bf708cc02c62ea8d74490f15297979",
+          "expectedNativeSpanId": "Q-20678f96339038f97f5fd6294160bd4f"
+        },
+        {
+          "ordinal": 1,
+          "originalTurnId": "D3B",
+          "originalSpanId": "D3B",
+          "originalStart": 137,
+          "originalEnd": 226,
+          "originalPassageSha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+          "speaker": "assistant",
+          "turnTimestamp": "2026-10-04T08:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 526,
+          "nativeBodyStart": 541,
+          "containerPassageStart": 541,
+          "containerPassageEnd": 630,
+          "expectedNativeTurnId": "T-9d10688a30ff89a454da25e7b0a52011",
+          "nativeBodyEnd": 630,
+          "nativeBodySha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+          "expectedNativeSpanId": "Q-a2b84e2510a9909dc4660b27a93b7a84"
+        }
+      ],
+      "originalInterTurnSeparators": [
+        {
+          "afterTurnId": "D3A",
+          "originalStart": 136,
+          "originalEnd": 137,
+          "text": "\n",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        }
+      ]
+    },
+    {
+      "caseId": "synthetic-dev-cancel-reopen",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-cancel-reopen.md",
+      "containerArtifactPath": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-cancel-reopen.md",
+      "containerSha256": "d2147665263602c1a8d05b0d10169247c43f17d9fc4e93d85418d411e4cbcf30",
+      "containerBytes": 804,
+      "originalSourceSha256": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+      "originalSourceBytes": 295,
+      "expectedSourceDocumentId": "S-7eaccdd9091ac940787a99a264a54458",
+      "idValidation": "predicted_from_current_source_not_executed_native_parser",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "turns": [
+        {
+          "ordinal": 0,
+          "originalTurnId": "D4A",
+          "originalSpanId": "D4A",
+          "originalStart": 0,
+          "originalEnd": 101,
+          "originalPassageSha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+          "speaker": "assistant",
+          "turnTimestamp": "2026-10-01T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 474,
+          "nativeBodyStart": 489,
+          "containerPassageStart": 489,
+          "containerPassageEnd": 590,
+          "expectedNativeTurnId": "T-5ca768c070b9ea9583b09c3e17506c64",
+          "nativeBodyEnd": 591,
+          "nativeBodySha256": "582d93e402ff85d61a3a4a19aa82444e1b7717e94b750e9302413351092e0d54",
+          "expectedNativeSpanId": "Q-4069bdffdb6204e790ab6f623c1385f6"
+        },
+        {
+          "ordinal": 1,
+          "originalTurnId": "D4B",
+          "originalSpanId": "D4B",
+          "originalStart": 102,
+          "originalEnd": 184,
+          "originalPassageSha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+          "speaker": "user",
+          "turnTimestamp": "2026-10-02T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 591,
+          "nativeBodyStart": 601,
+          "containerPassageStart": 601,
+          "containerPassageEnd": 683,
+          "expectedNativeTurnId": "T-98dcf5ac222dfe7375e5eed68c795bf0",
+          "nativeBodyEnd": 684,
+          "nativeBodySha256": "a402ae96b5a9c5e9a33ed7ae9b7b7e713108179a55122bfc394d6624123ea7f5",
+          "expectedNativeSpanId": "Q-625a250f642b76bc9db24c1aa0a6f5be"
+        },
+        {
+          "ordinal": 2,
+          "originalTurnId": "D4C",
+          "originalSpanId": "D4C",
+          "originalStart": 185,
+          "originalEnd": 295,
+          "originalPassageSha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+          "speaker": "user",
+          "turnTimestamp": "2026-10-03T10:00:00Z",
+          "sourcePhase": null,
+          "containerHeaderStart": 684,
+          "nativeBodyStart": 694,
+          "containerPassageStart": 694,
+          "containerPassageEnd": 804,
+          "expectedNativeTurnId": "T-18e7e52afc72dffa5a19f090ed7aa743",
+          "nativeBodyEnd": 804,
+          "nativeBodySha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+          "expectedNativeSpanId": "Q-0b14a4f8657c4e38fe4c455589a6621a"
+        }
+      ],
+      "originalInterTurnSeparators": [
+        {
+          "afterTurnId": "D4A",
+          "originalStart": 101,
+          "originalEnd": 102,
+          "text": "\n",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        },
+        {
+          "afterTurnId": "D4B",
+          "originalStart": 184,
+          "originalEnd": 185,
+          "text": "\n",
+          "sha256": "01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b"
+        }
+      ]
+    }
+  ],
+  "deterministicChecks": {
+    "containerFilesReadBack": 4,
+    "originalTurnsCompared": 9,
+    "unchangedOriginalPassageBytes": true,
+    "unchangedOriginalTurnMetadata": true,
+    "reconstructedOriginalDocumentSha256Matches": true,
+    "fullContainerSha256Matches": true,
+    "nativeBodySha256Matches": true,
+    "nativePredictedIdsExecuted": false
+  },
+  "scope": "Derivative synthetic native IO fixtures; passage integrity is checked in Python, not native parser, inference, independent human or installed-product acceptance."
+}

@@ -42,6 +42,8 @@
   --accent: #181715;
   --accent-soft: #ebe9e3;
   --accent-ink: #ffffff;
+  --positive: #217346;
+  --warning: #94631e;
   --danger: #dc2626;
 
   --c-overview: #1f6feb;
@@ -81,13 +83,16 @@
   --fs-22: 22px;
   --fs-30: 30px;
   --fs-42: 42px;
+  /* Reading text size (UX S22): note and Ask body sizes are the scale step
+     times this. App sets it from Settings → Appearance → Text size. */
+  --read-scale: 1;
 
   --shadow-1: 0 1px 0 rgba(15, 15, 15, 0.05);
   --shadow-2: 0 8px 24px rgba(15, 15, 15, 0.08), 0 1px 0 rgba(15, 15, 15, 0.06);
   --shadow-pop:
     0 12px 40px rgba(15, 15, 15, 0.12), 0 1px 0 rgba(15, 15, 15, 0.08);
 
-  --side-w: 264px;
+  --side-w: 15rem;
   --top-h: 44px;
 }
 
@@ -112,6 +117,8 @@
   --accent: #ededec;
   --accent-soft: #2c2c2c;
   --accent-ink: #181715;
+  --positive: #9dd7b1;
+  --warning: #e6c18e;
   --danger: #f87171;
 
   --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4);
@@ -176,6 +183,7 @@ select {
      content stopped being clipped app-wide. */
   grid-template-columns: var(--side-w) minmax(0, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
   background: var(--bg);
 }
 /* When sidebar is collapsed it gets pulled out of flow (position: absolute)
@@ -186,6 +194,35 @@ select {
 .app.sidebar-collapsed {
   grid-template-columns: minmax(0, 1fr);
 }
+/* UX S28: the first Tab stop. Clipped to a 1px box until keyboard focus
+   rather than parked above the viewport: macOS elastic overscroll pulls the
+   strip above the page into view, and showed the link there. Fixed, so it
+   takes no cell of the grid above. */
+.skip-link {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 8px);
+  left: 8px;
+  z-index: 1000;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font: inherit;
+  font-weight: 600;
+}
+.skip-link:focus-visible {
+  width: auto;
+  height: auto;
+  padding: 8px 14px;
+  overflow: visible;
+  clip-path: none;
+}
 .app.sidebar-collapsed .sidebar {
   transform: translateX(-100%);
   position: absolute;
@@ -193,19 +230,41 @@ select {
 
 /* Sidebar */
 .sidebar {
+  --side-row-h: 2rem;
+  /* The grid column's width, stated: collapsed (position:absolute above) the
+     sidebar would size to its content instead, wrap the status strip into
+     fewer lines, and a reveal done while hidden would scroll against a nav
+     taller than the one shown when it opens again. */
+  width: var(--side-w);
   border-right: 1px solid var(--line);
   background: var(--bg-soft);
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   position: sticky;
   top: 0;
   overflow: hidden;
   font-size: 14px;
 }
 .side-head {
-  padding: 10px 8px 6px;
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.375rem 0.5rem;
   border-bottom: 1px solid var(--line-soft);
+}
+/* Settings, on the head row since UX S43. */
+.side-gear {
+  flex: none;
+  min-width: 2rem;
+  min-height: 2rem;
+  align-items: center;
+  justify-content: center;
+}
+.side-gear.active {
+  background: var(--bg-active);
+  color: var(--ink);
 }
 .brand {
   display: flex;
@@ -239,7 +298,7 @@ select {
 }
 
 .side-quick {
-  padding: 8px;
+  padding: 0.375rem 0.5rem;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -287,17 +346,42 @@ select {
   padding: 6px 8px;
 }
 .nav-group {
-  margin-bottom: 12px;
+  margin-bottom: 0.5rem;
 }
 .nav-group-label {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem;
   font-size: 11px;
   font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--ink-4);
-  padding: 6px 8px 4px;
+  padding: 0.25rem 0.375rem;
+}
+/* The Workspace label folds its group (UX S43): a button that keeps the
+   label's look. Folded, the rows go and the label carries their badges. */
+.nav-group-toggle {
+  width: 100%;
+  min-height: 1.5rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.nav-group-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--ink-2);
+}
+.nav-group-toggle .nav-badge {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.nav-group.is-folded > .nav-item {
+  display: none;
 }
 .ngl-add {
   margin-left: auto;
@@ -336,6 +420,26 @@ select {
   color: var(--ink-2);
   width: 100%;
   text-align: left;
+}
+.sidebar .brand,
+.sidebar .qbtn,
+.sidebar .nav-item,
+.sidebar .nav-leaf {
+  min-height: var(--side-row-h);
+}
+.sidebar .nav-item[aria-current="page"] {
+  font-weight: 600;
+}
+.sidebar .ni-text,
+.sidebar .nl-text {
+  min-width: 0;
+}
+.sidebar .ni-caret,
+.sidebar .ni-icon,
+.sidebar .ni-count,
+.sidebar .nav-badge,
+.sidebar .nav-leaf > svg {
+  flex-shrink: 0;
 }
 .nav-item:hover {
   background: var(--bg-hover);
@@ -418,6 +522,12 @@ select {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* "by myco" after a page the agent committed (S15): pushed to the row's end
+   like a folder's count, and never the part that gives way to a long name. */
+.nl-mark {
+  margin-left: auto;
+  white-space: nowrap;
+}
 .t-overview {
   background: var(--c-overview);
 }
@@ -453,14 +563,6 @@ select {
   box-shadow: inset 0 0 0 1px var(--live);
 }
 
-/* Settings lives OUTSIDE the scrolling nav, so a 1121-file vault cannot push
-   it out of reach. `.sidebar` is already a flex column, so any child outside
-   `.side-nav` is pinned by construction. */
-.side-tools {
-  flex: none;
-  padding: 6px 8px;
-  border-top: 1px solid var(--line-soft);
-}
 /* Status strip (Stipe): four glass tiles where the `Vault linked · 59f`
    footer used to be. A tile in trouble carries the amber dot AND border AND
    the reason line below — never colour alone. */
@@ -665,6 +767,8 @@ select {
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
+  overflow: hidden;
   color: var(--ink-3);
   font-size: 14px;
 }
@@ -672,8 +776,50 @@ select {
   color: var(--ink);
   font-weight: 500;
 }
+/* A folder crumb never wraps or shrinks (the bar is one fixed-height row),
+   nor does the icon; only the note's name, the last crumb, gives way, ending
+   in an ellipsis. */
+.breadcrumb > svg,
+.crumb {
+  flex-shrink: 0;
+}
+.crumb {
+  display: inline-flex;
+  gap: 6px;
+  white-space: nowrap;
+}
+.crumb:last-child {
+  min-width: 0;
+  flex-shrink: 1;
+}
+.crumb:last-child b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .crumb-sep {
   color: var(--ink-5);
+}
+/* A page's folder crumb is a button that moves the note (S15). A hairline
+   chip with a chevron at rest, so it reads as a control before the pointer
+   finds it, not as the project name beside it. */
+.crumb-folder {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+  color: inherit;
+  font: inherit;
+  padding: 1px 6px;
+  margin: 0 -2px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.crumb-folder:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
 }
 .topbar-spacer {
   flex: 1;
@@ -747,6 +893,13 @@ select {
 .pill-icon.is-active:hover {
   background: var(--accent, var(--ink));
 }
+/* The phone shell (<=768px) has no room for two panes: they stacked as two
+   383px halves there (UX S42). 769px and up keep the toggle. */
+@media (max-width: 768px) {
+  .split-toggle {
+    display: none;
+  }
+}
 /* Status dot, reused inside pills (ready/offline, run-outcome) and inside the
    model popover's status rows. Defaults to the "off" tone; `.is-ready` (or an
    inline background, for the red/green run-outcome chips) overrides it. */
@@ -813,6 +966,19 @@ select {
   border-bottom: 1px solid var(--line-soft);
 }
 
+/* The phone top bar keeps the drawer button, the place and the search
+   (UX S50): back/forward sat on the OS edge swipe, and the model chip lives
+   in Settings. It no longer scrolls sideways at 375px. After the chip's own
+   rules, which it overrides. */
+@media (max-width: 768px) {
+  .topbar-history,
+  .model-chip-wrap {
+    display: none;
+  }
+  .pill-search .pill-label {
+    display: none;
+  }
+}
 /* Workspace */
 .workspace {
   /* Padding scales with the window instead of costing a fixed 160px: on a
@@ -834,6 +1000,7 @@ select {
   /* Graph page fills the viewport (minus the topbar) and never overflows main,
      so no page scrollbar appears — arrow keys can't scroll it while flying. */
   height: calc(100vh - var(--top-h));
+  height: calc(100dvh - var(--top-h));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -845,6 +1012,7 @@ select {
 .workspace-split {
   display: flex;
   height: calc(100vh - var(--top-h));
+  height: calc(100dvh - var(--top-h));
   overflow: hidden;
 }
 .workspace-pane {
@@ -1031,10 +1199,21 @@ select {
   background: transparent;
   color: var(--ink-3);
 }
+/* A button that rewrites or removes vault content; it confirms in-app first. */
+.btn-danger {
+  color: var(--danger);
+}
 .btn-ghost:hover {
   background: var(--bg-hover);
   color: var(--ink);
   border-color: transparent;
+}
+/* The kit's disabled look (.u-btn:disabled): without it a disabled primary
+   kept its fill and pointer and read as broken when pressed. */
+.btn:disabled,
+.btn-primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* Cards */
@@ -1289,6 +1468,94 @@ select {
   color: var(--ink-4);
   display: flex;
 }
+/* Provenance's per-page row: name, coverage, verdict, chevron. On a phone
+   the coverage and verdict go under the name, which took "transform…" at
+   375px beside them (UX S54). */
+.prov-row {
+  grid-template-columns: 20px 1.4fr 2fr auto auto;
+}
+@media (max-width: 768px) {
+  .prov-row {
+    grid-template-columns: 20px minmax(0, 1fr) auto;
+    row-gap: 6px;
+  }
+  .prov-row > :nth-child(1) {
+    grid-area: 1 / 1;
+  }
+  .prov-row > :nth-child(2) {
+    grid-area: 1 / 2;
+  }
+  .prov-row > :nth-child(3) {
+    grid-area: 2 / 2;
+  }
+  .prov-row > :nth-child(4) {
+    grid-area: 2 / 3;
+  }
+  .prov-row > :nth-child(5) {
+    grid-area: 1 / 3;
+    justify-self: end;
+  }
+}
+/* History's run row: title, WHY, undo, disclosure. On a phone the title has
+   the first line to itself (it folded to one word a line at 375px) and the
+   two buttons share the second (UX S54). */
+.history-run__head {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 16px;
+}
+@media (max-width: 768px) {
+  .history-run__head {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
+  .history-run__title {
+    grid-area: 1 / 1 / 2 / 3;
+  }
+  .history-run__toggle {
+    grid-area: 1 / 3;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .history-run__why {
+    grid-area: 2 / 1;
+  }
+  .history-run__undo {
+    grid-area: 2 / 2;
+  }
+}
+/* The report row: icon and name, open, disclosure; the same two lines on a
+   phone, where the name folded to one word a line. */
+.history-report__head {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+}
+.history-report__title {
+  grid-column: 1 / 3;
+}
+@media (max-width: 768px) {
+  .history-report__head {
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 8px;
+  }
+  .history-report__title {
+    grid-area: 1 / 1;
+  }
+  .history-report__toggle {
+    grid-area: 1 / 2;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .history-report__open {
+    grid-area: 2 / 1;
+    justify-self: start;
+  }
+}
 .list-row .meta {
   color: var(--ink-4);
   font-size: 12.5px;
@@ -1339,7 +1606,7 @@ select {
 }
 
 .prose {
-  font-size: 17px;
+  font-size: calc(var(--fs-17) * var(--read-scale));
   line-height: 1.7;
   color: var(--ink-2);
   max-width: 720px;
@@ -1356,27 +1623,84 @@ select {
   max-width: 100%;
   overflow-x: auto;
 }
+/* GFM tables, one look in the Viewer and in Live's table widget
+   (lib/blocks/table.ts, .live-block-table): a rounded card whose grid is
+   each cell's right and bottom edge (a collapsed border ignores the
+   radius), the header row in the bold weight. Columns size to their
+   content and never squash under ~120px; a cell keeps Korean words whole
+   (keep-all, not .prose's `anywhere`) and breaks only a word wider than
+   the column, so a wide table scrolls sideways in its own box. */
+.prose table,
+.myco-editor.live .live-block-table table {
+  width: fit-content;
+  border-collapse: separate;
+  border-spacing: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.prose th,
+.prose td,
+.myco-editor.live .live-block-table th,
+.myco-editor.live .live-block-table td {
+  min-width: 120px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+.prose tr > :last-child,
+.myco-editor.live .live-block-table tr > :last-child {
+  border-right: 0;
+}
+.prose table > :last-child > tr:last-child > *,
+.myco-editor.live .live-block-table table > :last-child > tr:last-child > * {
+  border-bottom: 0;
+}
+.prose th,
+.myco-editor.live .live-block-table th {
+  font-weight: 600;
+  background: var(--bg-soft);
+}
 .prose h1 {
-  font-size: 30px;
+  font-size: calc(var(--fs-30) * var(--read-scale));
   font-weight: 700;
   margin: 24px 0 8px;
   color: var(--ink);
   letter-spacing: -0.02em;
 }
 .prose h2 {
-  font-size: 22px;
+  font-size: calc(var(--fs-22) * var(--read-scale));
   font-weight: 600;
   margin: 28px 0 8px;
   color: var(--ink);
 }
 .prose h3 {
-  font-size: 17px;
+  font-size: calc(var(--fs-17) * var(--read-scale));
   font-weight: 600;
   margin: 20px 0 6px;
   color: var(--ink);
 }
 .prose p {
   margin: 8px 0;
+}
+/* A task row just added from the composer: lit, then faded, so the eye finds
+   it in a long list. Reduced motion skips it — the row is simply there. */
+.task-row-added {
+  animation: task-row-added 1.5s ease-out;
+}
+@keyframes task-row-added {
+  from {
+    background: var(--bg-active);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-row-added {
+    animation: none;
+  }
 }
 /* Task board (Kanban). Four columns need 916px of content box, which a ~900px
    window never has (a 1100px cap minus the sidebar and gutters leaves ~546px) —
@@ -1408,6 +1732,20 @@ select {
 .task-col.is-over {
   background: var(--bg-hover);
   border-color: var(--ink-3);
+}
+/* The task composer's line: the title takes what is left; on a phone it
+   has the first line to itself, date, details and add the second (UX S54). */
+.task-composer__title {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 768px) {
+  .task-composer__row {
+    flex-wrap: wrap;
+  }
+  .task-composer__title {
+    flex-basis: 100%;
+  }
 }
 .task-col-head {
   display: flex;
@@ -1445,6 +1783,39 @@ select {
 .task-cal-bar.is-dragging,
 .task-cal-item.is-dragging {
   opacity: 0.5;
+}
+/* A finger lifts a card only after holding it still (UX S52); a swipe before
+   that scrolls the page. The held card says so, and no callout or scroll may
+   take the finger from it. */
+.task-card,
+.task-cal-bar,
+.task-cal-item {
+  -webkit-touch-callout: none;
+}
+.task-card.is-held,
+.task-cal-bar.is-held,
+.task-cal-item.is-held {
+  touch-action: none;
+  border-color: var(--ink-3);
+  box-shadow: var(--shadow-2);
+}
+/* The status chip on a phone or touch screen (UX S52): sits in the card's
+   foot, a sibling of the card button (a button cannot hold a button). */
+.task-card-wrap {
+  position: relative;
+}
+.task-card-wrap > .task-card {
+  padding-bottom: 44px;
+}
+.task-status-chip {
+  position: absolute;
+  left: 10px;
+  bottom: 16px;
+  cursor: pointer;
+}
+.task-status-check {
+  display: inline-flex;
+  width: 14px;
 }
 .task-card-title {
   display: block;
@@ -1679,7 +2050,7 @@ select {
   position: fixed;
   top: 64px;
   right: 16px;
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   width: 300px;
   max-width: calc(100vw - 32px);
   /* Under .model-chip-pop (30): the DatePicker portals its month grid to
@@ -1766,6 +2137,11 @@ select {
     max-height: 70vh;
   }
 }
+@media (max-width: 768px) {
+  .task-detail {
+    bottom: calc(8px + var(--tabbar-h, 0px));
+  }
+}
 
 /* DatePicker — themed replacement for <input type="date"> (whose macOS
    popover is a white system panel that ignores the app theme). The popover
@@ -1823,14 +2199,10 @@ select {
   padding-top: 8px;
 }
 
-/* Dashboard ambient layer. Everything animated here is transform or opacity —
-   the two properties the compositor handles off the main thread. The three
-   --vault-* custom properties are set from data in VaultPulse.tsx. */
+/* Home statistics and the 7-day activity strip. */
 .vault-pulse {
   position: relative;
-  /* Establishes the container for cqw below, so particles travel the CARD's
-     width. vw would send them far past the right edge on a wide window, where
-     they would spend most of the cycle clipped and invisible. */
+  /* Figure layout responds to the card width, including saved narrow spans. */
   container-type: inline-size;
   margin-top: 8px;
   padding: 28px 24px 20px;
@@ -1928,56 +2300,6 @@ select {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-}
-
-/* The living background. One canvas behind the figures; the engine that draws
-   it is picked in Settings (lib/overviewThemes.ts). */
-.vp-canvas {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  display: block;
-  opacity: var(--vault-glow, 0.35);
-  pointer-events: none;
-}
-.vp-field {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  opacity: var(--vault-glow, 0.2);
-  will-change: transform;
-}
-.vp-dot {
-  position: absolute;
-  top: 50%;
-  left: 0;
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--ink-3);
-  /* Phase and lane are derived from the index so the field is deterministic:
-     a re-render must not reshuffle it under the user. --lane is computed in
-     JS (VaultPulse.tsx), not `% 7` here: `%` inside calc() is a percentage
-     sign, not modulo, so the old expression was invalid CSS and the whole
-     transform was silently dropped. */
-  transform: translateY(calc(var(--lane) * 14px));
-  animation: vp-drift calc(var(--vault-pulse, 4s) * 4) linear infinite;
-  animation-delay: calc(var(--i) * -0.37s);
-}
-@keyframes vp-drift {
-  from {
-    transform: translate(-4%, calc(var(--lane) * 14px));
-    opacity: 0;
-  }
-  10%,
-  90% {
-    opacity: 1;
-  }
-  to {
-    transform: translate(104cqw, calc(var(--lane) * 14px));
-    opacity: 0;
   }
 }
 
@@ -2102,6 +2424,30 @@ select {
     transition: none;
   }
 }
+/* Today's connections under the recent list (UX S40): note names are
+   underlined links inside the sentence. */
+.day-links {
+  margin: 0.5rem 0 0;
+  padding: 0 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+  line-height: 1.6;
+}
+.day-links__note {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.day-links__when {
+  display: block;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+}
 
 /* Two bands side by side above 720px, stacked below. minmax(0, 1fr) for the
    same reason as the app shell: a bare 1fr floors at its content's width and
@@ -2122,59 +2468,9 @@ select {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* Particles stay rendered but still: a frozen field still says "many links",
-     so hiding it would drop information rather than just motion. */
-  .vp-dot,
   .vp-bar-authored,
   .vp-bar-ingested {
     animation: none;
-  }
-  .vp-dot {
-    /* Without the drift they need placing across the width by hand. */
-    left: calc(var(--i) * 3.4%);
-  }
-}
-
-/* Overview background picker. Live previews, so the grid keeps them small
-   enough that ten running engines stay cheap. */
-.ov-theme-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 132px), 1fr));
-  gap: 10px;
-}
-.ov-theme-sw {
-  padding: 0;
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  background: #0f0f0e;
-  overflow: hidden;
-  cursor: pointer;
-  display: block;
-  text-align: left;
-  transition: border-color var(--dur-quick, 140ms) var(--ease-out, ease);
-}
-.ov-theme-sw canvas {
-  display: block;
-  width: 100%;
-  height: 64px;
-}
-.ov-theme-sw span {
-  display: block;
-  padding: 6px 8px 7px;
-  font-size: 12.5px;
-  color: #a5a099;
-  background: #141412;
-  border-top: 1px solid #232220;
-}
-.ov-theme-sw.is-on {
-  border-color: var(--accent, #2b4a72);
-}
-.ov-theme-sw.is-on span {
-  color: #edeae4;
-}
-@media (prefers-reduced-motion: reduce) {
-  .ov-theme-sw {
-    transition: none;
   }
 }
 
@@ -2339,20 +2635,364 @@ select {
   color: var(--c-source);
   border: 1px solid var(--line-soft);
 }
+.prose mark {
+  background: color-mix(in srgb, var(--warning) 24%, transparent);
+  color: inherit;
+  border-radius: var(--r-sm);
+}
 .prose ol,
 .prose ul {
   padding-left: 22px;
 }
+/* An Ask answer's quoted passage has no .prose around its Viewer, and its
+   links fell back to the browser's blue (UX S29). */
 .prose a,
-.prose .wikilink {
+.prose .wikilink,
+.ask-body .myco-viewer a {
   color: var(--ink);
   text-decoration: none;
   border-bottom: 1px solid var(--ink-5);
   cursor: pointer;
 }
 .prose a:hover,
-.prose .wikilink:hover {
+.prose .wikilink:hover,
+.ask-body .myco-viewer a:hover {
   border-bottom-color: var(--ink);
+}
+/* Footnote citations (markdown-it-footnote): a raised number linking to the
+   list the renderer appends at the end. line-height 0 keeps the <sup> from
+   pushing its line apart. */
+.prose .footnote-ref {
+  line-height: 0;
+}
+.prose .footnote-ref a,
+.prose .footnote-backref {
+  border-bottom: 0;
+  color: var(--ink-3);
+}
+.prose .footnotes-sep {
+  margin: 28px 0 8px;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+}
+.prose .footnotes {
+  font-size: 14px;
+  color: var(--ink-3);
+}
+/* A to-do's checkbox is its marker, as in Live: no bullet beside it. */
+.prose .task-list-item {
+  list-style: none;
+}
+.prose .task-list-item input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0 0.45em 0 0;
+  vertical-align: -2px;
+  accent-color: var(--ink);
+}
+/* Live in the reader's Read mode: a click ticks the file. */
+.prose .task-list-item input[type="checkbox"]:not(:disabled) {
+  cursor: pointer;
+}
+/* An image's `|300` width (lib/blocks/image.ts) never outgrows the column,
+   and keeps its aspect when the column is narrower. */
+.prose img {
+  max-width: 100%;
+  height: auto;
+}
+/* ```toc (lib/blocks/toc.ts): the page outline as in-page links, indented by
+   level. Live draws the same element, so these rules serve both. */
+.md-toc ul {
+  list-style: none;
+  margin: 8px 0;
+  padding-left: 0;
+  font-size: 14px;
+}
+.md-toc .md-toc-2 {
+  padding-left: 1.25em;
+}
+.md-toc .md-toc-3 {
+  padding-left: 2.5em;
+}
+.md-toc .md-toc-4,
+.md-toc .md-toc-5,
+.md-toc .md-toc-6 {
+  padding-left: 3.75em;
+}
+/* A TOC on a page with no headings yet says so (both views). */
+.md-toc.is-empty {
+  padding: 4px 0;
+  font-size: 14px;
+  color: var(--ink-4);
+}
+/* Note embeds (lib/blocks/embed.ts): the section under a header that links
+   to it, set off by a bar. Live draws the same element. An embed inside an
+   embedded section keeps an empty body: only its header shows. */
+.md-embed {
+  margin: 8px 0;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid var(--line-strong);
+}
+.md-embed-head {
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+.md-embed-body:empty {
+  display: none;
+}
+.md-embed-body.is-loading,
+.md-embed-body.is-missing {
+  font-size: 14px;
+  color: var(--ink-4);
+}
+/* Query blocks (lib/blocks/query.ts): the query as written, over its pages —
+   links, a table, or the dashboard's bars. Live draws the same element, its
+   bake button in the head. */
+.md-query {
+  margin: 8px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+/* Not filled yet, or inside an embedded section (never filled). */
+.md-query:empty {
+  display: none;
+}
+.md-query-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.md-query-head code {
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+.md-query-bake {
+  flex: none;
+  min-height: 28px;
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.md-query-bake:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.md-query-body ul,
+.md-query-body table {
+  margin: 6px 0 0;
+}
+.md-query-body table {
+  font-size: 14px;
+}
+.md-query-body .dash-hbars {
+  margin-top: 8px;
+}
+.md-query-body.is-loading,
+.md-query-body.is-empty,
+.md-query-body.is-error {
+  margin-top: 4px;
+  font-size: 14px;
+  color: var(--ink-4);
+}
+.md-query-body.is-error {
+  color: var(--danger);
+}
+/* ```chart (lib/blocks/chart.ts): the dashboard's marks (DashCharts) in a
+   card. Live draws the same element; a chart it cannot read is a message. */
+.md-chart {
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+}
+.md-chart-title {
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+/* A note's values run to any length, not the dashboard's small counts. Each
+   bar row is a grid of its own, so an `auto` value column would size every
+   row apart and the tracks would differ; --num-w (chart.ts) is the widest
+   value's, the same in every row. No subgrid: it needs Safari 16. */
+.md-chart .dash-hbar {
+  grid-template-columns: minmax(70px, auto) 1fr calc(var(--num-w, 4ch) + 0.5ch);
+}
+.md-chart .dash-hbar__num {
+  white-space: nowrap;
+}
+/* Not the dashboard's flex fill: a note has no card height to fill. */
+.md-chart .dash-line {
+  flex: none;
+  height: 160px;
+}
+/* A line chart's scale, its high over its low, in a column left of the
+   plot; the axis sits under the plot only, so a label stays under its point. */
+.md-chart .dash-lines {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 6px;
+}
+.md-chart .dash-lines__scale {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 11px;
+  color: var(--ink-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.md-chart .dash-lines .dash-weeks__axis {
+  grid-column: 2;
+}
+.md-chart .dash-donut svg {
+  display: block;
+  width: 160px;
+  height: 160px;
+  margin: 0 auto 6px;
+}
+.md-chart .dash-donut .dash-legend {
+  justify-content: center;
+}
+.md-chart.is-error {
+  font-size: 14px;
+  color: var(--ink-4);
+}
+/* ```mermaid (lib/blocks/mermaid.ts): the source as code until mermaid has
+   drawn it, then the diagram, centred and never wider than the column. One
+   mermaid cannot read shows mermaid's message above its source. Live draws
+   the same element. */
+.md-mermaid {
+  margin: 8px 0;
+}
+.md-mermaid.is-drawn > pre {
+  display: none;
+}
+.md-mermaid-out svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+/* Mono: mermaid points at the column it could not read with a `^`. */
+.md-mermaid.is-error > .md-mermaid-out {
+  margin-bottom: 6px;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+  color: var(--ink-4);
+}
+/* Math (lib/blocks/math.ts), typeset by KaTeX, whose stylesheet loads with
+   it. A display formula wider than the column scrolls on its own; until
+   KaTeX is in, a formula shows its source. Live draws the same elements. */
+.md-math.is-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.md-math.is-pending {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--ink-3);
+}
+/* A plugin fence whose renderer this build lacks (lib/blocks/pluginCode.ts):
+   its body as code, then a muted line saying why. Live draws the same. */
+.md-plugin-note {
+  margin: 4px 0 8px;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+/* Callouts (lib/blocks/callout.ts): `> [!type]` is a box of its kind — a
+   colour and a glyph, so colour is never the only signal. Live's box
+   (.live-callout) reads the same variables. */
+[data-callout="note"] {
+  --callout-color: var(--c-overview);
+  --callout-icon: "\270E";
+}
+[data-callout="info"] {
+  --callout-color: var(--c-overview);
+  --callout-icon: "\2139\FE0E";
+}
+[data-callout="tip"] {
+  --callout-color: var(--c-analysis);
+  --callout-icon: "\2726";
+}
+[data-callout="important"] {
+  --callout-color: var(--accent);
+  --callout-icon: "\2762";
+}
+[data-callout="success"] {
+  --callout-color: var(--positive);
+  --callout-icon: "\2713";
+}
+[data-callout="warning"] {
+  --callout-color: var(--warning);
+  --callout-icon: "\26A0\FE0E";
+}
+[data-callout="caution"] {
+  --callout-color: var(--danger);
+  --callout-icon: "\2298";
+}
+[data-callout="danger"] {
+  --callout-color: var(--danger);
+  --callout-icon: "\03DF";
+}
+[data-callout="quote"] {
+  --callout-color: var(--ink-4);
+  --callout-icon: "\275D";
+}
+/* `/ask`'s answer (lib/editorRecall.ts answerBlock). */
+[data-callout="question"] {
+  --callout-color: var(--warning);
+  --callout-icon: "\003F";
+}
+.prose .callout {
+  margin: 8px 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--callout-color);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--callout-color) 8%, var(--bg));
+}
+.prose .callout-title {
+  font-weight: 600;
+}
+.prose .callout-title::before {
+  content: var(--callout-icon);
+  display: inline-block;
+  width: 1.4em;
+  font-weight: 400;
+  color: var(--callout-color);
+}
+.prose .callout > :nth-child(2) {
+  margin-top: 4px;
+}
+.prose .callout > :last-child:not(.callout-title) {
+  margin-bottom: 0;
+}
+/* A toggle is a <details>; its chevron takes the glyph's place, as in Live. */
+.prose summary.callout-title {
+  cursor: pointer;
+  list-style: none;
+}
+.prose summary.callout-title::-webkit-details-marker {
+  display: none;
+}
+.prose details.callout > summary::before {
+  content: "\25B8";
+}
+.prose details.callout[open] > summary::before {
+  content: "\25BE";
 }
 .cite-pill {
   display: inline-flex;
@@ -2401,6 +3041,14 @@ select {
   transition:
     border-color var(--dur-quick),
     box-shadow var(--dur-quick);
+}
+/* The provider, model and effort pickers (ModelSelect): side by side they
+   cut "Claude" to "Clau" at 375px; on a phone they stack (UX S54). */
+@media (max-width: 768px) {
+  .model-select__row {
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 .input:focus,
 .textarea:focus,
@@ -2535,6 +3183,19 @@ hr {
   font-size: 17px;
   color: var(--ink);
 }
+/* Chips that write tag: / path: / type: into the box, or open No sources (S23). */
+.cmd-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.cmd-chip {
+  height: 26px;
+  padding: 0 10px;
+  cursor: pointer;
+}
 .cmd-list {
   max-height: 56vh;
   overflow-y: auto;
@@ -2590,6 +3251,65 @@ hr {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* Key legend under the list: keycaps, what they do, and the row count. */
+.cmd-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.cmd-foot > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.cmd-foot__n {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+}
+/* The phone palette (UX S50): the box at the bottom, right over the
+   keyboard (--kb-h, set by CommandBar from visualViewport), the results
+   stacked above it within reach of the thumb. */
+@media (max-width: 768px) {
+  .cmd-overlay {
+    place-items: end center;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: var(--kb-h, 0px);
+  }
+  .cmd-panel {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    max-width: 100%;
+    max-height: calc(100dvh - var(--kb-h, 0px) - env(safe-area-inset-top, 0px));
+    border-bottom: 0;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+  }
+  .cmd-list {
+    order: 1;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+  }
+  .cmd-foot {
+    order: 2;
+  }
+  .cmd-chips {
+    order: 2;
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+  }
+  .cmd-input {
+    order: 3;
+    border-top: 1px solid var(--line);
+    border-bottom: 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 0px));
+  }
 }
 
 .dropzone {
@@ -2769,11 +3489,82 @@ hr {
   color: var(--ink);
   box-shadow: inset 2px 0 0 var(--accent);
 }
+/* A row's ⋯ (UX S49): the visible way to its menu. A mouse sees it on hover
+   or when the row has keyboard focus; a finger always, with a 44px box, and
+   the row's text stops short of it. */
+.tree-row {
+  position: relative;
+}
+.tree-more {
+  position: absolute;
+  right: 2px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--bg-hover);
+  color: var(--ink-3);
+  opacity: 0;
+  pointer-events: none;
+}
+.tree-row:hover .tree-more,
+.tree-row:focus-within .tree-more {
+  opacity: 1;
+  pointer-events: auto;
+}
+.tree-more:hover {
+  color: var(--ink);
+}
+@media (any-pointer: coarse) {
+  .tree-more {
+    right: 0;
+    width: 44px;
+    height: 44px;
+    background: transparent;
+    opacity: 1;
+    pointer-events: auto;
+  }
+  .tree-row > .nav-item,
+  .tree-row > .nav-leaf {
+    padding-right: 44px;
+    /* A held finger opens the menu, not iOS's callout. */
+    -webkit-touch-callout: none;
+  }
+}
 .sb-error {
   margin: 4px 8px;
   font-size: 12.5px;
   color: var(--danger);
   overflow-wrap: anywhere;
+}
+/* The Tags group's chips (S23): a tag opens ⌘K filtered to it. */
+.sb-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 8px 6px 18px;
+}
+.sb-tag {
+  height: 24px;
+  max-width: 100%;
+  padding: 0 8px;
+  gap: 4px;
+  cursor: pointer;
+}
+.sb-tag__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sb-tag__n {
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
 }
 .icon-btn:disabled {
   opacity: 0.4;
@@ -2806,6 +3597,12 @@ hr {
 .myco-menu button:focus-visible {
   background: var(--bg-hover);
 }
+/* A row that does not apply here (the block menu's sheet on touch). */
+.myco-menu button:disabled {
+  background: transparent;
+  color: var(--ink-4);
+  cursor: default;
+}
 .myco-menu__sep {
   height: 1px;
   margin: 4px 0;
@@ -2833,6 +3630,20 @@ hr {
   min-width: 360px;
   max-width: 480px;
   box-shadow: var(--shadow-pop);
+}
+/* A pick dialog (template, move-to folder) rises from the bottom on a phone
+   (UX S50), where the thumb is. */
+@media (max-width: 768px) {
+  .myco-modal__backdrop--pick {
+    align-items: flex-end;
+  }
+  .myco-modal__backdrop--pick .myco-modal {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    padding-bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+  }
 }
 .myco-modal__title {
   font-size: 17px;
@@ -2893,6 +3704,173 @@ hr {
   color: white !important;
 }
 
+/* Tidy sheet (components/TidySheet.tsx). Reuses the modal shell, wider, with
+   a body that scrolls its proposal groups while title and actions stay put. */
+.myco-modal.tidy-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(92vw, 640px);
+  max-width: 640px;
+  max-height: min(88vh, 760px);
+}
+.tidy-sheet__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.tidy-sheet .is-mono {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.tidy-sheet__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--ink-3);
+  font-size: var(--fs-14);
+}
+.tidy-sheet__empty {
+  padding: 20px 0;
+  color: var(--ink-2);
+  font-size: var(--fs-14);
+  text-align: center;
+}
+.tidy-sheet__empty p {
+  margin: 0 0 8px;
+}
+.tidy-sheet__error {
+  color: var(--danger);
+  font-size: var(--fs-14);
+}
+.tidy-sheet__error p {
+  margin: 0 0 4px;
+}
+.tidy-sheet__detail {
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  overflow-wrap: anywhere;
+}
+.tidy-group {
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--r-md);
+}
+.tidy-group__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tidy-group__count {
+  margin-left: auto;
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+}
+.tidy-group__desc {
+  margin: 4px 0 8px;
+  color: var(--ink-3);
+  font-size: var(--fs-12-5);
+}
+.tidy-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tidy-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-12-5);
+}
+.tidy-row__page {
+  flex-basis: 100%;
+  color: var(--ink-4);
+  font-size: var(--fs-11);
+}
+.tidy-row__before {
+  min-width: 0;
+  color: var(--ink-3);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  overflow-wrap: anywhere;
+}
+.tidy-row__arrow {
+  color: var(--ink-4);
+}
+.tidy-row__after {
+  min-width: 0;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.tidy-row__removed {
+  color: var(--danger);
+  font-size: var(--fs-11);
+}
+.tidy-more {
+  margin-top: 6px;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--ink-3);
+  font-size: var(--fs-12-5);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.tidy-more:hover {
+  color: var(--ink);
+}
+.tidy-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.tidy-skipped {
+  color: var(--ink-3);
+  font-size: var(--fs-12-5);
+}
+.tidy-skipped summary {
+  cursor: pointer;
+}
+.tidy-files {
+  max-height: 160px;
+  margin: 6px 0 0;
+  padding-left: 18px;
+  overflow-y: auto;
+  color: var(--ink-3);
+}
+.tidy-files li {
+  overflow-wrap: anywhere;
+}
+.tidy-receipt__head {
+  margin: 4px 0 8px;
+  color: var(--ink);
+  font-size: var(--fs-17);
+  font-weight: 600;
+}
+.tidy-receipt__counts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  font-size: var(--fs-14);
+  list-style: none;
+}
+.tidy-receipt__counts li {
+  display: flex;
+  gap: 8px;
+}
+
 /* First-run onboarding wizard (UX-01). Reuses the modal shell; adds a stepper
    and a centred step body. */
 .onboarding {
@@ -2924,20 +3902,34 @@ hr {
   background: var(--bg-hover);
   color: var(--ink-2);
 }
-.ob-dots {
+/* "1/3" sits beside Skip: where the user is, and the way out, together. */
+.ob-head__end {
   display: flex;
-  gap: 6px;
-  margin: 10px 0 6px;
+  align-items: center;
+  gap: 4px;
 }
-.ob-dot {
-  width: 26px;
-  height: 4px;
-  border-radius: var(--r-pill);
-  background: var(--line-strong);
-  transition: background var(--dur-quick);
+.ob-step {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
 }
-.ob-dot.active {
-  background: var(--ink);
+.ob-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* The step body is centred; what the user types reads from the start. */
+.ob-body .textarea,
+.ob-body .input {
+  text-align: start;
+}
+/* Unavailable for now (no folder yet, the index still building), but kept
+   focusable — see the Next button's aria-disabled. */
+.onboarding .btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
 }
 .ob-body {
   text-align: center;
@@ -2996,10 +3988,49 @@ hr {
 .cm-focused {
   outline: none !important;
 }
+/* The editor fills its column: shrunk to its longest line, a click right of a
+   short line missed it, and a divider or code block drew only that wide. */
+.myco-editor {
+  flex: 1 1 auto;
+  min-width: 0;
+}
 /* A Finder image drag hovering the editor (native onDragDropEvent, see Editor.tsx). */
 .myco-editor.is-drop-target .cm-editor {
   outline: 2px dashed var(--accent);
   outline-offset: -2px;
+}
+/* An empty note's start chips, under its `/` hint (UX S24). */
+.start-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  /* CodeMirror's own line padding, so the row lines up with the text. */
+  padding-inline: 6px 2px;
+}
+.start-chips__label {
+  color: var(--ink-3);
+  font-size: 12.5px;
+}
+.start-chip {
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.start-chip:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.start-chip:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 /* The blink caret is a separate element whose colour comes from border-left;
    the CM default is black, so force it to the theme ink for both themes. */
@@ -3014,23 +4045,44 @@ hr {
 }
 
 /* Live preview */
+/* Notion's page rhythm (lib/editorLive.ts liveSpecs): the file's blank line
+   is the paragraph gap, drawn short unless the caret is on it; a heading
+   carries its space above as padding (CM measures padding into the line,
+   never margin), and the note's first content line none. */
+.myco-editor.live .live-gap {
+  height: 0.75em;
+  line-height: 0.75em;
+  padding-top: 0;
+  padding-bottom: 0;
+}
 .myco-editor.live .live-h1 {
-  font-size: 30px;
+  padding-top: 1.2em;
+  font-size: calc(var(--fs-30) * var(--read-scale));
   font-weight: 700;
+  line-height: 1.3;
   letter-spacing: -0.02em;
 }
 .myco-editor.live .live-h2 {
-  font-size: 22px;
+  padding-top: 1em;
+  font-size: calc(var(--fs-22) * var(--read-scale));
   font-weight: 600;
+  line-height: 1.3;
 }
 .myco-editor.live .live-h3 {
-  font-size: 17px;
+  padding-top: 0.8em;
+  font-size: calc(var(--fs-17) * var(--read-scale));
   font-weight: 600;
+  line-height: 1.3;
 }
 .myco-editor.live .live-h4,
 .myco-editor.live .live-h5,
 .myco-editor.live .live-h6 {
   font-weight: 600;
+}
+/* Before the code card's rules, so a fence as the first line keeps its
+   2px: only a heading's space above goes. */
+.myco-editor.live .live-first {
+  padding-top: 0;
 }
 .myco-editor.live .live-strong {
   font-weight: 700;
@@ -3040,6 +4092,11 @@ hr {
 }
 .myco-editor.live .live-strike {
   text-decoration: line-through;
+}
+/* `==highlight==`: the same tint as Preview's <mark>, in both themes. */
+.myco-editor.live .live-highlight {
+  background: color-mix(in srgb, var(--warning) 24%, transparent);
+  border-radius: var(--r-sm);
 }
 .myco-editor.live .live-code,
 .myco-editor.live .live-code-inline {
@@ -3052,21 +4109,75 @@ hr {
   border-radius: var(--r-sm);
   color: var(--c-source);
 }
+/* A closed fence is one card: every line has the soft ground and 12px
+   sides, the first and last lines the corners. With no caret on them the
+   backticks hide: the info word floats as a chip at the top right of the
+   opening line (an empty strut keeps that line's height, or the float alone
+   would collapse it to nothing) and the closing line is the card's bottom
+   padding. A caret on a fence line shows it as source. */
+.myco-editor.live .live-code {
+  padding: 2px 12px;
+}
+.myco-editor.live .live-code-first {
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
+}
+.myco-editor.live .live-code-last {
+  border-radius: 0 0 var(--r-sm) var(--r-sm);
+}
+.myco-editor.live .live-code-first.live-code-last {
+  border-radius: var(--r-sm);
+}
+.myco-editor.live .live-code-first::after {
+  content: "";
+  display: inline-block;
+}
+.myco-editor.live .live-fence-end {
+  height: 0.5em;
+  line-height: 0.5em;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+.myco-editor.live .live-lang {
+  float: right;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
 .myco-editor.live .live-quote {
   border-left: 3px solid var(--line-strong);
   padding-left: 12px;
   color: var(--ink-3);
 }
+/* Stands in for `- ` (marker and space): Notion's 1.5em marker box and the
+   space, so bullets, numbers and to-do boxes start their text in line. */
 .myco-editor.live .live-bullet {
   display: inline-block;
-  width: 1ch;
+  width: 1.5em;
+  margin-right: 0.25em;
   text-align: center;
   color: var(--ink-4);
 }
+/* An ordered number stays text, right-aligned in the marker box. */
+.myco-editor.live .live-num {
+  display: inline-block;
+  min-width: 1.5em;
+  text-align: right;
+}
+/* A nested item's indent: the file's spaces in a box 1.5em per level (the
+   width is the span's own style, from liveSpecs). */
+.myco-editor.live .live-indent {
+  display: inline-block;
+}
+/* Stands in for `[ ] ` — a to-do's `- ` is hidden, so this is its only
+   glyph — centred in the marker box (14px wide, so 0.75em - 7px each side)
+   with the space after it. */
 .myco-editor.live .live-task {
   width: 14px;
   height: 14px;
-  margin: 0 2px;
+  margin: 0 calc(1em - 7px) 0 calc(0.75em - 7px);
   vertical-align: -2px;
   accent-color: var(--ink);
   cursor: pointer;
@@ -3075,16 +4186,938 @@ hr {
   outline: 2px solid var(--ink);
   outline-offset: 2px;
 }
-.myco-editor.live .live-link,
+/* A plain click follows a drawn link (UX S55). */
+.myco-editor.live :is(.live-wikilink, .live-link, .live-fnref) {
+  cursor: pointer;
+}
 .myco-editor.live .live-wikilink {
   text-decoration: underline;
   text-decoration-color: var(--ink-5);
   text-underline-offset: 2px;
 }
+/* A markdown link reads as text a shade lighter; the underline comes on hover. */
+.myco-editor.live .live-link {
+  color: var(--ink-2);
+  text-underline-offset: 2px;
+}
+.myco-editor.live .live-link:hover {
+  text-decoration: underline;
+}
+/* `[^id]` keeps its text (the id is the citation), drawn as a small raised
+   chip; a definition line and an HTML comment read as asides. */
+.myco-editor.live .live-fnref {
+  font-size: 0.75em;
+  vertical-align: 0.3em;
+  line-height: 1;
+  padding: 0 0.3em;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--ink-3);
+}
+.myco-editor.live .live-fndef {
+  font-size: 14px;
+  color: var(--ink-4);
+}
+/* A reference off the caret reads as its raised number (UX S31). A
+   definition reads `1.`, under "Sources". */
+.myco-editor.live .live-fnum {
+  margin-left: 0.1em;
+  padding: 0 0.35em;
+  font-size: 0.72em;
+  vertical-align: 0.45em;
+  line-height: 1;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.myco-editor.live .live-fnum:hover {
+  background: var(--line);
+}
+.myco-editor.live .live-fnum-def {
+  display: inline-block;
+  min-width: 1.6em;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.myco-editor.live .live-sources::before {
+  content: attr(data-label);
+  display: block;
+  margin: 1.2em 0 0.4em;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.myco-editor.live .live-comment {
+  color: var(--ink-4);
+  font-style: italic;
+}
+.myco-editor.live .live-hr {
+  display: inline-block;
+  width: 100%;
+  margin: 1em 0;
+  vertical-align: middle;
+  border-top: 1px solid var(--line);
+}
+/* An empty heading shows what it is, like Notion's "Heading 2". A line
+   attribute + ::after, so no DOM lands next to an IME composition. */
+.myco-editor.live .live-empty::after {
+  content: attr(data-placeholder);
+  color: var(--ink-5);
+  pointer-events: none;
+}
+/* The caret's empty line holds CM's <br>, under which an inline ::after
+   wraps to a second line: there the invitation overlays the line instead. */
+.myco-editor.live .live-empty-caret {
+  position: relative;
+}
+.myco-editor.live .live-empty-caret::after {
+  position: absolute;
+  top: 0;
+}
 .myco-editor.live .live-fm {
   display: block;
   padding: 4px 0;
   font-size: 12.5px;
+  color: var(--ink-4);
+}
+/* Block widgets (lib/blocks/live.ts): a press selects the block whole, so
+   the box reads as one thing, never as text to put a caret in. Rendered
+   HTML inside (a table) carries newlines between its tags: .cm-content's
+   pre-wrap would draw them.
+   No margin (an embed's own .md-embed one included): CM measures a
+   widget's border box, so a margin leaves every line below it off in the
+   height map and a click there lands lower. A child's margin collapsing
+   through the box (the TOC list's) counts too: flow-root keeps it inside. */
+.myco-editor.live .cm-block-widget {
+  display: flow-root;
+  margin: 0;
+  border-radius: var(--r-sm);
+  cursor: default;
+  white-space: normal;
+}
+.myco-editor.live .cm-block-widget a {
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--ink-5);
+  cursor: pointer;
+}
+.myco-editor.live .cm-block-widget a:hover {
+  border-bottom-color: var(--ink);
+}
+.myco-editor.live .cm-block-widget:hover {
+  background: var(--bg-soft);
+}
+/* Selected whole (a click, an arrow onto it): the focus-visible ring, as
+   Notion marks a selected block — drawn inside the box, since the scroller
+   clips anything past the text column's edges. The native selection paints
+   nothing in it: the ring says it all. */
+.myco-editor.live .cm-block-widget.is-selected {
+  background: var(--bg-soft);
+  outline: 2px solid var(--ink);
+  outline-offset: -2px;
+}
+.myco-editor.live .cm-block-widget.is-selected ::selection {
+  background: transparent;
+}
+/* A block in a quote draws the quote's bar (a callout's box stands in for
+   it there). */
+.myco-editor.live .cm-block-widget.in-quote {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 12px;
+}
+.myco-editor.live .live-callout .cm-block-widget.in-quote {
+  border-left: 0;
+  padding-left: 0;
+}
+/* A mount that threw shows the source it could not draw. */
+.myco-editor.live .cm-block-widget.is-error {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  white-space: pre-wrap;
+  color: var(--ink-4);
+}
+.myco-editor.live .live-block-image img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-sm);
+}
+/* A missing image file: its path, so the block stays there to click. */
+.myco-editor.live .live-block-broken {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--ink-4);
+}
+.myco-editor.live .md-toc a {
+  color: var(--ink-2);
+}
+/* `$…$` with the caret on it: its TeX, set apart from the prose around it
+   as inline code is (lib/blocks/math.ts). */
+.myco-editor.live .live-math-src {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--c-source);
+}
+/* A diagram's source before mermaid has drawn it: Preview's code card
+   (.prose pre), which the widget is not inside. */
+.myco-editor.live .md-mermaid > pre {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+/* A plugin fence drawn as code (lib/blocks/pluginCode.ts): the soft card
+   Live's own fences get, wrapping as the editor's lines do. */
+.myco-editor.live .live-block-plugin-code pre {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  white-space: pre-wrap;
+}
+/* A fenced block (lib/blocks/fencePanel.ts): its result always, a toolbar
+   at its top-right on hover or while it is selected whole, and its panel
+   inline under it — never a modal, never the fence. Every control is at
+   least 28px tall. */
+.myco-editor.live .cm-block-widget.fb {
+  position: relative;
+}
+.myco-editor.live .fb-bar {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  pointer-events: none;
+}
+.myco-editor.live .cm-block-widget.fb:hover > .fb-bar,
+.myco-editor.live .cm-block-widget.fb.is-selected > .fb-bar {
+  opacity: 1;
+  pointer-events: auto;
+}
+.myco-editor.live .cm-block-widget.fb.is-editing > .fb-bar {
+  display: none;
+}
+.myco-editor.live .fb-btn {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  box-shadow: var(--shadow-1);
+  color: var(--ink-2);
+  font: inherit;
+  font-size: var(--fs-12-5);
+  cursor: pointer;
+}
+.myco-editor.live .fb-btn:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+/* Open, the panel marks the block: no ring or hover tint around it. */
+.myco-editor.live .cm-block-widget.fb.is-editing {
+  outline: 0;
+  background: transparent;
+}
+/* A query's bake button, alone in its head, stays right and clear of the
+   toolbar. */
+.myco-editor.live .live-block-query.fb .md-query-head {
+  justify-content: flex-end;
+  padding-right: 8.5rem;
+}
+.myco-editor.live .fb-panel {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-1);
+  color: var(--ink);
+  font-size: var(--fs-14);
+  line-height: 1.4;
+  cursor: auto;
+}
+.myco-editor.live .fb-fields {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.myco-editor.live .fb-fields[hidden] {
+  display: none;
+}
+.myco-editor.live .fb-field {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.myco-editor.live .fb-label {
+  color: var(--ink-3);
+  font-size: var(--fs-12-5);
+  font-weight: 500;
+}
+.myco-editor.live .fb-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+.myco-editor.live .fb-row[hidden] {
+  display: none;
+}
+.myco-editor.live .fb-row > .fb-field {
+  flex: 1 1 8rem;
+}
+.myco-editor.live .fb-input,
+.myco-editor.live .fb-text {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  margin: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-14);
+}
+.myco-editor.live .fb-text,
+.myco-editor.live .fb-input.fb-mono {
+  font-family: var(--font-mono);
+  line-height: 1.5;
+}
+.myco-editor.live .fb-text {
+  resize: vertical;
+  white-space: pre;
+  overflow-x: auto;
+}
+.myco-editor.live .fb-input:focus,
+.myco-editor.live .fb-text:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+/* The kit's segmented control, its buttons 28px tall, the focus ring
+   inside the box that clips them. */
+.myco-editor.live .fb-panel .u-segment {
+  justify-self: start;
+  height: 34px;
+}
+.myco-editor.live .fb-panel .u-segment__btn:focus-visible {
+  outline-offset: -2px;
+}
+/* A query's card spans the column, as the other results do. */
+.myco-editor.live .fb-result.md-query {
+  max-width: none;
+  margin: 0;
+}
+.myco-editor.live .fb-series {
+  display: grid;
+  gap: 6px;
+}
+.myco-editor.live .fb-series-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) 32px;
+  gap: 6px;
+}
+.myco-editor.live .fb-x {
+  width: 32px;
+  padding: 0;
+}
+.myco-editor.live .fb-add {
+  justify-self: start;
+}
+.myco-editor.live .fb-more summary {
+  min-height: 28px;
+  padding: 4px 0;
+  box-sizing: border-box;
+  color: var(--ink-3);
+  font-size: var(--fs-12-5);
+  cursor: pointer;
+}
+.myco-editor.live .fb-more[open] summary {
+  margin-bottom: 6px;
+}
+/* What the result cannot show (a diagram's parse error): under the field. */
+.myco-editor.live .fb-error {
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12-5);
+  white-space: pre-wrap;
+}
+.myco-editor.live .fb-error:empty {
+  display: none;
+}
+.myco-editor.live .fb-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+/* A diagram's code beside it in a wide column, stacked under 720px. */
+.myco-editor.live .live-block-mermaid {
+  container-type: inline-size;
+}
+@container (min-width: 720px) {
+  .myco-editor.live .live-block-mermaid.is-editing > .fb-body {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+  }
+  .myco-editor.live .live-block-mermaid.is-editing .fb-panel {
+    grid-row: 1;
+    grid-column: 1;
+    margin-top: 0;
+  }
+}
+/* A GFM table (lib/blocks/table.ts): a Notion simple table, its cells
+   plain-text fields, drawn as the Viewer draws it (see .prose table). The
+   widget adds nothing to the editor's min-content (width 0, grown to the
+   column by min-width): a wide table scrolls in .tbl-scroll, not the
+   editor sideways. That box reaches 14px above and left of the table —
+   over the gap line and into the margin, its negative margins giving the
+   height back to the box CM measures — so the row and column handles,
+   centred on the table's edges, are never clipped; and 4px below it, so
+   the selection ring (2px, 1px off the table) is not either. No hover
+   tint: the cells are what a press goes to; the selection ring stays off
+   while a cell holds the caret. */
+.myco-editor.live .live-block-table {
+  position: relative;
+  box-sizing: border-box;
+  width: 0;
+  min-width: 100%;
+  padding-bottom: 14px;
+}
+.myco-editor.live .live-block-table:hover,
+.myco-editor.live .live-block-table.is-selected {
+  background: transparent;
+}
+/* Selected whole, the ring is the table's own outline, round with it. */
+.myco-editor.live .live-block-table.is-selected {
+  outline: 0;
+}
+.myco-editor.live .live-block-table.is-selected table {
+  outline: 2px solid var(--ink);
+  outline-offset: 1px;
+}
+.myco-editor.live .live-block-table.is-selected:focus-within table {
+  outline: 0;
+}
+.myco-editor.live .tbl-scroll {
+  overflow-x: auto;
+  margin: -14px 0 -4px -14px;
+  padding: 14px 0 4px 14px;
+}
+/* The editor's scroller clips at the text column's left edge; this strip
+   (its padding, given back by the margin) is where a table's row handles
+   reach. Nothing in the column moves. */
+.myco-editor.live .cm-scroller {
+  margin-left: -16px;
+  padding-left: 16px;
+}
+/* The table and its "+" column bar, a 28px track right of it: as wide as
+   its columns, which .tbl-scroll scrolls when wider than the text column
+   (a cap here squashed every column to its 120px floor). */
+.myco-editor.live .tbl-frame {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(min-content, max-content) 28px;
+  width: max-content;
+}
+/* A block, so its overflow clips the header's corners to the radius. */
+.myco-editor.live .live-block-table table {
+  display: block;
+  overflow: hidden;
+}
+/* A long cell wraps at 320px instead of making its column one long line. */
+.myco-editor.live .live-block-table th,
+.myco-editor.live .live-block-table td {
+  position: relative;
+  max-width: 320px;
+  cursor: text;
+}
+.myco-editor.live .live-block-table th:focus,
+.myco-editor.live .live-block-table td:focus {
+  outline: 0;
+  box-shadow: inset 0 0 0 2px var(--line-strong);
+}
+/* An empty header cell's name (열 1, 열 2, …): CSS only, never written. */
+.myco-editor.live .live-block-table th.is-empty::before {
+  content: attr(data-ph);
+  position: absolute;
+  color: var(--ink-4);
+  font-weight: 400;
+  pointer-events: none;
+}
+/* The bars show on hover and while a cell holds the caret; the strip is
+   the content box, the hit area the whole 28px. The row bar sits under
+   the table, as wide as the table shows (table.ts): half of it in the
+   widget's own 14px under the table, half over the blank gap line below,
+   never over the next line's text; it takes no press while the pointer is
+   away from the table. */
+.myco-editor.live .tbl-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+  background-clip: content-box;
+  color: var(--ink-4);
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+.myco-editor.live .tbl-add-row {
+  position: absolute;
+  top: calc(100% - 14px);
+  left: 0;
+  z-index: 2;
+  height: 28px;
+  pointer-events: none;
+}
+.myco-editor.live .live-block-table:hover .tbl-add,
+.myco-editor.live .live-block-table:focus-within .tbl-add-col {
+  opacity: 1;
+}
+.myco-editor.live .live-block-table:hover .tbl-add-row {
+  pointer-events: auto;
+}
+.myco-editor.live .live-block-table.in-quote .tbl-add-row {
+  left: 12px;
+}
+.myco-editor.live .tbl-add:hover {
+  background-color: var(--bg-hover);
+  color: var(--ink-2);
+}
+/* A row's and a column's menu handle, centred on the table's left and top
+   edge beside the hovered (or caret) cell; ::after widens the hit area
+   to 28px each way. */
+.myco-editor.live .tbl-handle {
+  position: absolute;
+  z-index: 2;
+  translate: -50% -50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-4);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.myco-editor.live .tbl-handle[hidden] {
+  display: none;
+}
+.myco-editor.live .tbl-handle.is-row {
+  left: 0;
+  width: 14px;
+  height: 22px;
+  letter-spacing: -0.3em;
+}
+.myco-editor.live .tbl-handle.is-col {
+  width: 22px;
+  height: 14px;
+}
+.myco-editor.live .tbl-handle::after {
+  content: "";
+  position: absolute;
+  inset: -7px;
+}
+.myco-editor.live .tbl-handle:hover {
+  background: var(--bg-hover);
+  color: var(--ink-2);
+}
+/* The handles' menu: the block menu's card, under its handle. */
+.myco-editor.live .tbl-menu {
+  position: absolute;
+  z-index: 4;
+  width: auto;
+  min-width: 200px;
+  max-height: none;
+}
+.myco-editor.live .tbl-menu .block-menu__item {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.myco-editor.live .tbl-menu .block-menu__item:hover,
+.myco-editor.live .tbl-menu .block-menu__item:focus-visible {
+  background: var(--bg-hover);
+  outline: 0;
+}
+.myco-editor.live .tbl-menu .block-menu__item:disabled {
+  background: transparent;
+  color: var(--ink-5);
+  cursor: default;
+}
+.myco-editor.live .tbl-menu__seg {
+  display: flex;
+  gap: 2px;
+}
+.myco-editor.live .tbl-menu__seg .block-menu__item {
+  justify-content: center;
+}
+.myco-editor.live .tbl-menu__seg .block-menu__item[aria-checked="true"] {
+  background: var(--bg-active);
+  font-weight: 600;
+}
+/* Callouts (lib/blocks/calloutLive.ts): a BlockWrapper box around the
+   quote's lines, in the kind's colours (see .prose .callout). The glyph — a
+   toggle's chevron, where a press folds it — is the title line's ::before in
+   the box's left padding: no DOM beside an IME composition on the title.
+   Padding, never margin: CM measures a wrapper's padding into its lines'
+   heights, but not its margins (every box would shift the caret map). */
+.myco-editor.live .live-callout {
+  padding: 6px 12px 6px 32px;
+  border-left: 3px solid var(--callout-color);
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
+  background: var(--bg-soft);
+  background: color-mix(in srgb, var(--callout-color) 8%, var(--bg));
+}
+/* The box stands in for the quote's bar and muted ink. */
+.myco-editor.live .live-callout .live-quote {
+  border-left: 0;
+  color: var(--ink);
+}
+.myco-editor.live .live-callout-title {
+  position: relative;
+  font-weight: 600;
+}
+.myco-editor.live .live-callout-title::before {
+  content: var(--callout-icon);
+  position: absolute;
+  left: -26px;
+  width: 20px;
+  text-align: center;
+  font-weight: 400;
+  color: var(--callout-color);
+}
+.myco-editor.live .live-callout.is-closed > .live-callout-title::before {
+  content: "\25B8";
+  cursor: pointer;
+}
+.myco-editor.live .live-callout.is-open > .live-callout-title::before {
+  content: "\25BE";
+  cursor: pointer;
+}
+/* An untitled callout reads as its kind, Preview's title. */
+.myco-editor.live .live-callout-title[data-title]::after {
+  content: attr(data-title);
+  color: var(--ink-4);
+  pointer-events: none;
+}
+/* The ⋮⋮ handle (editorBlockHandle.ts), in the margin left of the hovered
+   block's first line; top/left/height come from the view. */
+.myco-editor.live .cm-block-handle {
+  position: absolute;
+  z-index: 3;
+  width: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-4);
+  font-size: 17px;
+  line-height: 1;
+  letter-spacing: -0.35em;
+  cursor: pointer;
+}
+/* `display: flex` above would otherwise override the hidden attribute. */
+.myco-editor.live .cm-block-handle[hidden] {
+  display: none;
+}
+.myco-editor.live .cm-block-handle:hover {
+  background: var(--bg-hover);
+  color: var(--ink-3);
+}
+/* Touch: a finger's width, beside the caret's block (UX S51). */
+@media (any-pointer: coarse) {
+  .myco-editor.live .cm-block-handle {
+    width: 44px;
+    min-height: 44px;
+  }
+}
+/* The block menu (BlockMenu.tsx): Mod-/ opens it in Source too. */
+.block-menu {
+  position: fixed;
+  z-index: 50;
+  width: 248px;
+  max-height: min(420px, 70vh);
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--ink);
+}
+.block-menu__search {
+  margin-bottom: 4px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink);
+  font: inherit;
+}
+.block-menu__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow-y: auto;
+}
+.block-menu__head {
+  padding: 8px 8px 2px;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.block-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+.block-menu__item.is-active {
+  background: var(--bg-active);
+}
+.block-menu__item.is-off {
+  color: var(--ink-5);
+  cursor: default;
+}
+.block-menu__icon {
+  flex: none;
+  width: 2.4em;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.8;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+}
+.block-menu__empty {
+  padding: 8px;
+  color: var(--ink-4);
+}
+/* The keyboard toolbar (EditorToolbar.tsx, UX S51): touch only, one row
+   over the soft keyboard (bottom set inline from visualViewport) and over
+   the phone's bottom bar; scrolls sideways when it outgrows the width. */
+.editor-toolbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 40;
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  padding: 2px max(4px, env(safe-area-inset-right, 0px)) 2px
+    max(4px, env(safe-area-inset-left, 0px));
+  border-top: 1px solid var(--line);
+  background: var(--bg-elev);
+}
+.editor-toolbar__btn {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font: 600 1rem/1 var(--font-sans);
+  cursor: pointer;
+}
+.editor-toolbar__btn:active {
+  background: var(--bg-active);
+}
+.editor-toolbar__btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.editor-toolbar__btn--bold {
+  font-weight: 800;
+}
+.editor-toolbar__btn--italic {
+  font-style: italic;
+}
+.editor-toolbar__btn--wikilink,
+.editor-toolbar__btn--link,
+.editor-toolbar__btn--code {
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+.editor-toolbar__btn--hide {
+  margin-left: auto;
+}
+/* The help button would sit on the bar's last buttons; typing needs no help. */
+body:has(.editor-toolbar) .help-widget__fab {
+  display: none;
+}
+/* "+" on touch: the `/` blocks as two columns of tiles in a sheet. */
+.block-tiles + .block-tiles {
+  margin-top: 8px;
+}
+.block-tiles__head {
+  margin: 0;
+  padding: 8px 4px 4px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-4);
+}
+.block-tiles__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.block-tiles__tile {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 48px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+}
+.block-tiles__tile:active {
+  background: var(--bg-active);
+}
+.block-tiles__tile:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* The `/recall` and `/ask` picker (RecallPicker.tsx): a wider block menu
+   with scope chips, and each hit's excerpt under its `note#Section` — or,
+   for `/ask`, the answer callout's source, read-only. */
+.block-menu.recall-pop {
+  width: 360px;
+}
+.recall-pop__scopes {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+.recall-pop__chip {
+  padding: 2px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.recall-pop__chip[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: var(--bg-active);
+  color: var(--ink);
+}
+.recall-pop__range {
+  margin: 0 0 4px;
+  padding: 0 8px;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.block-menu__item.recall-pop__row {
+  align-items: flex-start;
+  padding-block: 6px;
+}
+.recall-pop__main {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.recall-pop__title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recall-pop__excerpt {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12.5px;
+  color: var(--ink-4);
+  white-space: pre-line;
+}
+.recall-pop__embed {
+  flex: none;
+  padding: 0 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--bg);
+  color: var(--ink-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.8;
+  cursor: pointer;
+}
+.recall-pop__embed:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.recall-pop__near {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 8px;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+.recall-pop__preview {
+  margin: 0;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.recall-pop__foot {
+  margin: 4px 0 0;
+  padding: 6px 8px 0;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
   color: var(--ink-4);
 }
 
@@ -3096,6 +5129,51 @@ hr {
    narrower — 216px still fits a gap row's name plus its three actions. */
 .u-page.graph-page {
   --rail-w: 216px;
+}
+/* Below the two-pane breakpoint the frame (styles/ui.css) drops the right
+   rail under the body as a 22vh strip. Measured at 1024x700 that left the
+   stage a 468x235 letterbox with the legend's group header half under its own
+   footer. The picture is the page: the legend goes under the gaps rail in the
+   left column instead, and the stage keeps the whole height below the bar. */
+@media (max-width: 1240px) and (min-width: 821px) {
+  .u-page.graph-page.u-page--rails2 .u-page__body {
+    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .u-page.graph-page.u-page--rails2 .u-page__main {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+  .u-page.graph-page.u-page--rails2 .u-page__rail--right {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  /* That row is ~200px at 1024x700, and the encoding key pinned under the list
+     (~120px) left the list one half-hidden row. Here the whole rail scrolls,
+     key included. */
+  .u-page.graph-page.u-page--rails2 .u-page__rail--right > .u-rail {
+    max-height: none;
+    overflow-y: auto;
+  }
+  .u-page.graph-page.u-page--rails2 .u-page__rail--right .u-rail__list {
+    flex: none;
+    overflow: visible;
+  }
+  /* The gaps rail folded: the legend keeps the left column and takes its whole
+     height. The frame alone would give it a right column of its own, moving it
+     across the page and the stage 236px left, no wider. Only folding both
+     rails widens the stage in this band. PageGraph sets the class, because
+     "not rails2" also matches a page with no rail at all. */
+  .u-page.graph-page.graph-page--legend-only .u-page__body {
+    grid-template-columns: var(--rail-w) minmax(0, 1fr);
+  }
+  .u-page.graph-page.graph-page--legend-only .u-page__rail--right {
+    grid-column: 1;
+    grid-row: 1;
+  }
+  .u-page.graph-page.graph-page--legend-only .u-page__main {
+    grid-column: 2;
+    grid-row: 1;
+  }
 }
 /* No shell: the page frame (components/AppPage.tsx) is the container. The
    bordered box with its own background and radius, and the eleven-button
@@ -3153,6 +5231,227 @@ hr {
 .graph-canvas.graph-ready {
   opacity: 1;
 }
+/* A Tab stop (UX S44): an inset ring, since the stage clips anything outside. */
+.graph-canvas:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+/* A folded rail (RailTab): a thin tab on the stage's own edge with the rail's
+   icon and count. It floats over the canvas instead of keeping a column, so a
+   fold hands the stage the rail's whole width — also at 1024px, where the
+   legend sits under the gaps rail and a 28px column of its own would have
+   narrowed the stage. Centred, it stays clear of the pick prompt (top-left),
+   the help and drawer toggle (top-right) and the minimap (bottom-right). */
+.graph-railtab {
+  position: absolute;
+  top: 50%;
+  z-index: 6;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 28px;
+  min-height: 44px;
+  padding: 10px 0;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--ink-3);
+  box-shadow: var(--shadow-1);
+  cursor: pointer;
+}
+.graph-railtab--gaps {
+  left: 0;
+  border-left: 0;
+  border-radius: 0 var(--r-md) var(--r-md) 0;
+}
+.graph-railtab--legend {
+  right: 0;
+  border-right: 0;
+  border-radius: var(--r-md) 0 0 var(--r-md);
+}
+.graph-railtab:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.graph-railtab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.graph-railtab__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11);
+  line-height: 1;
+}
+/* The inspector and the help hang off the right edge too: they step in past
+   the legend's tab rather than cover it. Only above 1240px is the tab there. */
+@media (min-width: 1241px) {
+  .graph-canvas-wrap.has-legend-tab .graph-inspector,
+  .graph-canvas-wrap.has-legend-tab .graph-help {
+    right: 40px;
+    max-width: calc(100% - 52px);
+  }
+}
+/* At 821–1240px the legend lives in the left column, under the gaps rail, so
+   its tab waits on the left edge too, under the gaps tab: the pair sits
+   either side of the middle. */
+@media (max-width: 1240px) and (min-width: 821px) {
+  .graph-railtab--gaps {
+    transform: translateY(calc(-100% - 4px));
+  }
+  .graph-railtab--legend {
+    left: 0;
+    right: auto;
+    transform: translateY(4px);
+    border-left: 0;
+    border-right: 1px solid var(--line);
+    border-radius: 0 var(--r-md) var(--r-md) 0;
+  }
+  /* The legend's chevron points at the edge it folds into, as the gaps one does. */
+  .u-rail__head [data-rail-toggle="legend"] svg {
+    transform: scaleX(-1);
+  }
+}
+/* At 820px and under the frame (styles/ui.css) stacks the rails in 0px rows,
+   so a tab would expand a rail that cannot show and hand focus to a clipped
+   chevron. No fold is offered there: neither control, nor the keys (railKey). */
+@media (max-width: 820px) {
+  .graph-page [data-rail-toggle] {
+    display: none;
+  }
+}
+/* An iPad held upright with a finger (769–820px, coarse): the rails stack
+   under the stage, where a fixed-height page squeezed each to its 40px head
+   (and to 17px before). The page scrolls instead, and each rail keeps its head
+   and a few rows (UX S53). A mouse at these widths keeps the desktop page. */
+@media (min-width: 769px) and (max-width: 820px) and (any-pointer: coarse) {
+  .workspace-wide.u-page.graph-page {
+    height: auto;
+    overflow: visible;
+    overflow-x: clip;
+  }
+  .u-page.graph-page .u-page__body {
+    flex: none;
+  }
+  .u-page.graph-page .u-page__main {
+    height: 62vh;
+  }
+  .u-page.graph-page .u-page__rail > .u-rail {
+    min-height: 160px;
+  }
+}
+/* The phone (UX S53): the stage fills the screen between the top bar and the
+   bottom bar. Find, the questions and the size controls fold behind "Graph
+   tools" above it; the rails are the two tabs of one sheet (PageGraph). */
+.graph-phonebar,
+.graph-gesture-hint {
+  display: none;
+}
+@media (max-width: 768px) {
+  .workspace-wide.u-page.graph-page {
+    height: calc(100dvh - var(--top-h) - var(--tabbar-h, 0px));
+    padding: 0;
+  }
+  .u-page.graph-page:not(.is-tools-open) .u-page__head,
+  .u-page.graph-page:not(.is-tools-open) .u-page__bar,
+  .u-page.graph-page:not(.is-tools-open) .u-page__note {
+    display: none;
+  }
+  .u-page.graph-page.is-tools-open .u-page__head,
+  .u-page.graph-page.is-tools-open .u-page__bar,
+  .u-page.graph-page.is-tools-open .u-page__note {
+    padding-inline: 16px;
+  }
+  .u-page.graph-page.is-tools-open .u-page__head {
+    padding-top: 12px;
+  }
+  .u-page.graph-page.is-tools-open .u-page__note {
+    padding-bottom: 10px;
+  }
+  .u-page.graph-page .u-page__body {
+    padding: 0;
+    gap: 0;
+  }
+  .u-page.graph-page .u-page__main {
+    min-height: 0;
+  }
+  .u-page.graph-page .graph-body {
+    flex: 1;
+  }
+  .u-page.graph-page .graph-canvas-wrap {
+    flex: 1;
+    height: auto;
+    min-height: 0;
+  }
+  .graph-phonebar {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    right: 8px;
+    z-index: 6;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    pointer-events: none;
+  }
+  .graph-phonebar__btn {
+    pointer-events: auto;
+    min-height: 44px;
+    padding: 0 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-pill);
+    background: var(--bg-elev);
+    color: var(--ink);
+    font-size: var(--fs-14);
+    box-shadow: var(--shadow-1);
+    cursor: pointer;
+  }
+  .graph-phonebar__btn[aria-expanded="true"] {
+    background: var(--bg-active);
+  }
+  .graph-phonebar__btn:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  /* The sheet's rail drops its own card: the sheet is the card. */
+  .graph-railsheet {
+    margin-top: 8px;
+  }
+  .graph-railsheet .u-rail {
+    border: 0;
+    background: transparent;
+  }
+}
+@media (any-pointer: coarse) {
+  .graph-gesture-hint {
+    position: absolute;
+    left: 50%;
+    bottom: 16px;
+    z-index: 6;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: max-content;
+    max-width: calc(100% - 32px);
+    transform: translateX(-50%);
+    padding: 6px 6px 6px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--r-lg);
+    background: var(--bg-elev);
+    color: var(--ink-2);
+    font-size: var(--fs-14);
+    box-shadow: var(--shadow-pop);
+  }
+  .graph-gesture-hint p {
+    margin: 0;
+  }
+}
+/* Clear of the help button on a phone. */
+@media (max-width: 768px) and (any-pointer: coarse) {
+  .graph-gesture-hint {
+    bottom: 72px;
+  }
+}
 
 /* ============================================================
    Spaceship mode: the graph goes app-fullscreen (covers sidebar, header, and
@@ -3164,6 +5463,7 @@ hr {
   inset: 0;
   z-index: 200;
   height: 100vh;
+  height: 100dvh;
   padding: 0;
   background: #05060d;
 }
@@ -3176,8 +5476,8 @@ hr {
 .u-page.graph-fullscreen .u-page__note,
 .u-page.graph-fullscreen .u-page__rail,
 .graph-fullscreen .graph-drawer,
-.graph-fullscreen .graph-drawer-toggle,
 .graph-fullscreen .graph-help,
+.graph-fullscreen .graph-railtab,
 .graph-fullscreen .graph-inspector {
   display: none; /* the ShipHud is the only panel in immersive mode */
 }
@@ -3228,6 +5528,38 @@ hr {
   border-radius: var(--r-pill);
   backdrop-filter: blur(6px);
   white-space: nowrap;
+}
+/* "이 노트의 이웃" with nothing selected: the question needs a subject, so the
+   stage asks for one (top-left — the scale badge owns top-centre). */
+.graph-pick {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100% - 72px);
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg-elev);
+  color: var(--ink);
+  font-size: 12.5px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.22);
+}
+.graph-pick__find {
+  flex-shrink: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--bg-hover);
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.graph-pick__find:hover {
+  color: var(--ink);
 }
 .graph-scale-badge {
   position: absolute;
@@ -3364,10 +5696,36 @@ hr {
   font-size: 14px;
   color: var(--ink);
 }
+@media (max-width: 768px) {
+  /* Keep the selected note's heading above the phone tools at z-index 6. */
+  .graph-inspector {
+    z-index: 7;
+  }
+}
 .graph-insp__head {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+/* Back to the note a deep link arrived from — a quiet link above the title.
+   flex-shrink 0: its overflow:hidden drops its min-height to 0, so a long
+   inspector squashed it to nothing. */
+.graph-insp__back {
+  flex-shrink: 0;
+  align-self: flex-start;
+  max-width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  font-size: 12.5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-insp__back:hover {
+  text-decoration: underline;
 }
 .graph-insp__title {
   flex: 1;
@@ -3510,6 +5868,33 @@ hr {
 .graph-find:focus {
   outline: none;
   border-color: var(--ink-3);
+}
+/* Toolbar "More": every action but zoom and fit, named (UX S44). */
+.graph-more {
+  position: relative;
+}
+.graph-more__btn {
+  gap: 4px;
+}
+.graph-more__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  white-space: nowrap;
+}
+.graph-more__menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+}
+.graph-more__menu button:disabled {
+  color: var(--ink-3);
+  cursor: default;
+}
+.graph-more__check {
+  width: 1em;
+  flex-shrink: 0;
 }
 /* Gap-analysis panel — left overlay, mirrors the inspector on the right. */
 .graph-gaps {
@@ -3664,7 +6049,23 @@ hr {
    stopped floating over the picture it explains, and its swatches, names,
    counts and collapse are the rail's, not its own. Only the encoding key's
    glyph rows are still its business, and the rail's footer already styles
-   them — so nothing is left here. */
+   them. What is left: the key's first line answers the ACTIVE question, so it
+   reads as the heading of the rows under it. */
+.graph-legend__question {
+  color: var(--ink-2);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+/* 자세히, the key's last row: the graph's counts, folded until asked for. */
+.graph-legend__details > summary {
+  padding-block: 0.4rem;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.graph-legend__details > p {
+  margin: 0 0 4px;
+  line-height: 1.5;
+}
 
 /* Query "thinking" visualization — dark mini-cosmos while the model runs. */
 .thinking-galaxy {
@@ -3678,6 +6079,16 @@ hr {
     #0a0c14;
   border: 1px solid var(--line);
   overflow: hidden;
+}
+.thinking-galaxy__stage {
+  position: relative;
+}
+.thinking-galaxy__mascot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
 }
 .thinking-galaxy__label {
   padding: 6px 10px;
@@ -3693,6 +6104,15 @@ hr {
   justify-content: center;
   padding: 40px;
   text-align: center;
+}
+/* Filters kept nothing: the message and its way out, stacked. */
+.graph-empty--filtered {
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+}
+.graph-empty--filtered p {
+  margin: 0;
 }
 
 /* three.js WebGL canvas + CSS2D label layer fill the graph-canvas container. */
@@ -3854,16 +6274,122 @@ hr {
   }
 }
 
+/* ---- myco in 3D (components/Myco3D.tsx) -------------------------------------
+   The procedural model, turned with the mouse or the arrow keys (spec
+   2026-10-04-myco-3d.md). The canvas fills its box; the preview window
+   (?window=myco3d) gives it the whole window, see-through unless bg=solid. */
+.myco3d {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 160px;
+}
+.myco3d-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+  border-radius: var(--r-md);
+}
+.myco3d-canvas:active {
+  cursor: grabbing;
+}
+.myco3d-canvas:focus-visible {
+  /* Violet reads on both the black and the white skin's ground (3:1+). */
+  outline: 2px solid #7c5cff;
+  /* Inside: the canvas often fills its window, where an outer ring is cut. */
+  outline-offset: -4px;
+}
+.myco3d-note {
+  position: absolute;
+  inset: auto 0 12px;
+  margin: 0;
+  text-align: center;
+  font-size: var(--fs-12-5);
+  color: var(--ink-3);
+}
+/* On the skin's own ground (bg=solid) the theme's ink may not read. */
+.myco3d--solid.myco3d--black .myco3d-note {
+  color: #b6b1c2;
+}
+.myco3d--solid.myco3d--white .myco3d-note {
+  color: #5c5955;
+}
+.myco3d--error {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  margin: 0;
+}
+.myco3d--error .myco3d-note {
+  position: static;
+}
+.myco3d-still {
+  width: min(60%, 240px);
+  height: auto;
+}
+html.myco3d-window,
+html.myco3d-window body {
+  background: transparent;
+  overflow: hidden;
+}
+.myco3d-preview {
+  position: fixed;
+  inset: 0;
+}
+/* Settings › Appearance: the card's turning stage. */
+.myco3d-stage {
+  position: relative;
+  height: 280px;
+  margin-top: 12px;
+}
+/* The stage's default view (components/MycoSpin.tsx, spec
+   2026-10-04-myco-spin.md): the square turntable, centred. Its grey is not
+   matched with a fill around it: engines render the video's grey a few
+   levels apart, so any fill shows a seam. */
+.myco-spin {
+  position: absolute;
+  inset: 0;
+}
+/* Block + auto margins, not grid centring: WebKit resolves a grid item's
+   100% height with aspect-ratio against the wrong box and drops it low. */
+.myco-spin-video {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  margin: 0 auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--r-md);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.myco-spin-video:active {
+  cursor: grabbing;
+}
+.myco-spin-video:focus-visible {
+  /* White reads on the video's grey (3.7:1+); the canvas's violet does not. */
+  outline: 2px solid #fff;
+  outline-offset: -4px;
+}
+
 /* Community names at rest ("terrain names" of the reverse semantic zoom).
    Colour comes inline from the community hue; the fade is CSS so show/hide is
    a cheap class toggle from clusterLabels.ts. */
 .graph-cluster-label {
   font-family: var(--font-sans);
-  font-size: 14px;
+  font-size: var(--fs-12-5);
   font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  max-width: min(15rem, 40vw);
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   opacity: 0;
   transition: opacity 480ms ease;
   text-shadow:
@@ -3876,8 +6402,8 @@ hr {
   opacity: 0.85;
 }
 /* Light theme: the community hues are calibrated for the dark void — darken
-   them for paper and swap the dark halo for a light one so the caps read. */
-:root:not([data-theme="dark"]) .graph-cluster-label {
+   them for paper and swap the dark halo for a light one so the names read. */
+.graph-canvas-wrap[data-graph-theme="light"] .graph-cluster-label {
   filter: brightness(0.45) saturate(1.6);
   text-shadow:
     0 0 4px rgba(255, 255, 255, 0.9),
@@ -3941,12 +6467,24 @@ hr {
   color: var(--ink-3);
 }
 
-/* Right-side drawer */
+/* Right-side drawer — an overlay on the stage, not a sibling column. As a
+   column it took 280px of a 488px stage at 1280x900 (208px of picture left),
+   and with the inspector open too the picture was gone. The stage keeps its
+   size under the panel; the panel is translucent so the cosmos shows through,
+   and it sits above the inspector, which a node click closes it to reveal. */
 .graph-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
   width: 280px;
-  flex: 0 0 280px;
+  max-width: 100%;
   border-left: 1px solid var(--line);
-  background: var(--bg);
+  background: color-mix(in srgb, var(--bg) 90%, transparent);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -3989,28 +6527,6 @@ hr {
   padding: 0;
   font-size: 17px;
   line-height: 1;
-}
-
-.graph-drawer-toggle {
-  position: absolute;
-  top: 56px;
-  right: 12px;
-  width: 28px;
-  height: 28px;
-  border-radius: var(--r-sm);
-  background: var(--bg);
-  border: 1px solid var(--line);
-  color: var(--ink-3);
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2;
-  box-shadow: var(--shadow-1);
-}
-.graph-drawer-toggle:hover {
-  color: var(--ink);
-  background: var(--bg-hover);
 }
 
 .graph-drawer__section {
@@ -4181,6 +6697,16 @@ hr {
   background: var(--ink);
   color: var(--bg);
   border-color: var(--ink);
+}
+/* An active corpus filter on the question bar — a chip that removes itself. */
+.graph-chip--filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
 }
 
 /* One-tap look picker — the primary control. A single column of tappable cards,
@@ -4705,6 +7231,7 @@ hr {
 .activity-icon {
   display: block;
   border-radius: 50%;
+  overflow: hidden;
   flex: none;
 }
 .activity-icon.is-active {
@@ -5226,12 +7753,10 @@ html.tray-window body {
     background 0.14s,
     transform 0.12s;
 }
+/* Hover is the row's alone: the icon's own hover glow and scale were where
+   the square on the round logo showed (owner, 2026-09-29). */
 .tray-row:hover {
   background: rgba(255, 255, 255, 0.07);
-}
-.tray-row:hover .activity-icon {
-  filter: drop-shadow(0 0 9px rgba(167, 139, 250, 0.45)) brightness(1.15);
-  transform: scale(1.08);
 }
 .tray-row:active {
   transform: scale(0.99);
@@ -5240,24 +7765,11 @@ html.tray-window body {
   outline: 2px solid #a78bfa;
   outline-offset: -2px;
 }
-.tray-row .activity-icon {
-  transition:
-    filter 0.25s,
-    transform 0.25s;
-}
 .tray-row.is-static {
   cursor: default;
 }
 .tray-row.is-static:hover {
   background: transparent;
-}
-.tray-row.is-static:hover .activity-icon {
-  transform: none;
-}
-/* A static row's icon keeps its own breathe (MCP live) — un-hover it only
-   when it is not the running one. */
-.tray-row.is-static:hover .activity-icon:not(.is-active) {
-  filter: none;
 }
 .tray-row-l {
   min-width: 0;
@@ -5516,7 +8028,6 @@ html.tray-window body {
   .tray-now,
   .tray-b,
   .tray-row,
-  .tray-row .activity-icon,
   .tray-chev {
     transition: none;
   }
@@ -5627,15 +8138,20 @@ html.tray-window body {
   padding: 40px 24px;
   text-align: center;
 }
-.error-boundary__mascot {
-  /* The clip frame is 16:9 with the character centred; crop to a square around
-     it the way MascotClip does, but with plain CSS — no component, no video, no
-     store read. This screen has to render when the app is broken. */
-  width: 96px;
-  height: 96px;
-  object-fit: cover;
-  object-position: center;
+/* MYCO's worried clip over its still, with plain CSS — no MascotClip, no
+   store read. This screen has to render when the app is broken. The clip is
+   a square frame, so the still and the video stack in one box. */
+.error-boundary__mascot-box {
+  position: relative;
+  width: 112px;
+  height: 112px;
   flex-shrink: 0;
+}
+.error-boundary__mascot {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
   user-select: none;
 }
 .error-boundary__title {
@@ -5651,6 +8167,18 @@ html.tray-window body {
   color: var(--ink-3);
   word-break: break-word;
   white-space: pre-wrap;
+}
+.error-boundary__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+/* The raw message is for a bug report, not the first thing to read. */
+.error-boundary__details summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  color: var(--ink-4);
 }
 
 /* Responsive card row: as many equal columns as fit, wrapping/stacking on
@@ -5693,7 +8221,8 @@ html.tray-window body {
    Responsive topbar. Between full desktop width and the <=768px phone rule the
    flat flex row would overflow and clip the right-most chip, so collapse the
    least-essential controls progressively: at <=1024px the search pill drops its
-   text (icon + kbd only); at <=900px the breadcrumb truncates. The status/model
+   text (icon + kbd only); at <=900px the crumb trail drops the folders between
+   the project and the note's name (the name's tooltip has the path). The status/model
    chips keep their dot + label. Verified at 1280 / 1024 / 900 / 768 / 375.
    ============================================================ */
 @media (max-width: 1024px) {
@@ -5702,14 +8231,8 @@ html.tray-window body {
   }
 }
 @media (max-width: 900px) {
-  .breadcrumb {
-    min-width: 0;
-    overflow: hidden;
-  }
-  .breadcrumb b {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+  .crumb:not(:first-of-type):not(:last-child) {
+    display: none;
   }
 }
 
@@ -5719,6 +8242,65 @@ html.tray-window body {
    it), the inspector/ingest columns stack, and padding tightens so no view
    scrolls horizontally. Verified at 375 / 768 / 1280.
    ============================================================ */
+@media (max-width: 768px), (any-pointer: coarse) {
+  .sidebar {
+    --side-row-h: 2.75rem;
+  }
+  /* Touch targets ≥44px (§6, UX S47): a phone, and an iPad or touch laptop at
+     a desktop width. Rows and toolbar buttons grow; stacked rows must, as
+     overlapping hit boxes would hand a tap on one row's edge to the next. */
+  .nav-item,
+  .nav-leaf,
+  .qbtn,
+  .cmd-row,
+  .nav-group-toggle,
+  .cm-tooltip-autocomplete li[role="option"] {
+    min-height: 44px;
+  }
+  .icon-btn,
+  .ngl-add {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+  /* Small drawn controls keep their size; an invisible ::after grows the hit
+     box to 44px. :where() so any rule that positions one of them wins; the
+     z-index lifts the box over a positioned neighbour's empty padding. */
+  :where(.pill, .btn, .day-links__note, .ask-cite, .live-task) {
+    position: relative;
+  }
+  :where(.pill, .btn, .day-links__note, .ask-cite, .live-task)::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: max(100%, 44px);
+    height: max(100%, 44px);
+    transform: translate(-50%, -50%);
+    z-index: 1;
+  }
+}
+/* WebKit zooms the page into an input under 16px when it gets focus
+   (UX S48). !important: a dozen component rules size their own fields, and
+   none of them may undercut this on a touch screen. */
+@media (any-pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"]),
+  textarea,
+  select {
+    font-size: 1rem !important;
+  }
+}
+/* Key hints mean nothing where nothing hovers: a touch screen (UX S47). */
+@media (hover: none) {
+  .kbd,
+  .qbtn .qkbd,
+  .cmd-foot > :not(.cmd-foot__n),
+  .cmd-foot:not(:has(.cmd-foot__n)) {
+    display: none;
+  }
+}
+
 @media (max-width: 768px) {
   /* minmax(0, 1fr) (not the default 1fr = minmax(auto, 1fr)) lets main shrink
      to the viewport instead of being forced wide by a child's min-content
@@ -5752,6 +8334,10 @@ html.tray-window body {
   .topbar > * {
     flex-shrink: 0;
   }
+  /* Only the place gives way, ending in an ellipsis (its last crumb). */
+  .topbar > .breadcrumb {
+    flex-shrink: 1;
+  }
   .sidebar {
     position: fixed;
     top: 0;
@@ -5760,6 +8346,10 @@ html.tray-window body {
     z-index: 50;
     width: min(82vw, var(--side-w));
     height: 100vh;
+    height: 100dvh;
+    /* Off-canvas over the whole screen: clear the notch and home indicator. */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     transition: transform 200ms ease;
     box-shadow: 6px 0 32px rgba(0, 0, 0, 0.28);
   }
@@ -5822,20 +8412,50 @@ html.tray-window body {
   .stat-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  /* Touch targets ≥44px (§6). Sidebar nav rows and toolbar buttons get a
-     comfortable tap height/width on narrow viewports. */
-  .nav-item,
-  .nav-leaf,
-  .qbtn {
-    min-height: 44px;
+}
+/* The phone bottom bar (UX S50): Home, My notes, Add sources, Ask under the
+   thumb. Fixed over the home indicator; the page ends above it. */
+.phone-tabbar {
+  display: none;
+}
+.phone-tabbar__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 11px;
+  cursor: pointer;
+}
+.phone-tabbar__item[aria-current="page"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+@media (max-width: 768px) {
+  :root {
+    --tabbar-h: calc(3.5rem + env(safe-area-inset-bottom, 0px));
   }
-  .icon-btn,
-  .ngl-add {
-    min-width: 44px;
-    min-height: 44px;
-    align-items: center;
-    justify-content: center;
+  .phone-tabbar {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 30;
+    height: var(--tabbar-h);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    border-top: 1px solid var(--line);
+    background: var(--bg);
+  }
+  main {
+    padding-bottom: var(--tabbar-h);
   }
 }
 
@@ -5867,6 +8487,10 @@ html.tray-window body {
 
 /* Study (Feature 3) — decks, review cards, quiz */
 .deck-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
   transition:
     background var(--dur-quick),
     border-color var(--dur-quick);
@@ -5874,6 +8498,44 @@ html.tray-window body {
 .deck-row:hover {
   background: var(--bg-hover);
   border-color: var(--line-strong);
+}
+.deck-row__open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 16px;
+  border: 0;
+  border-radius: inherit;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.deck-row__name {
+  flex: 1;
+  min-width: 8rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.deck-row__meta {
+  font-size: 12.5px;
+}
+.deck-row__archive {
+  margin-right: 12px;
+  flex-shrink: 0;
+}
+/* Part 2 of the study spec: cards with nothing of the vault behind them. */
+.deck-flag {
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: var(--r-pill);
+  border: 1px solid currentColor;
+  color: var(--warning);
 }
 .study-due-pill {
   font-size: 12.5px;
@@ -5908,6 +8570,19 @@ html.tray-window body {
   align-items: center;
   gap: 5px;
 }
+.study-src-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: var(--ink-2);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.study-src-link:hover {
+  color: var(--ink);
+}
 .study-grades {
   flex-wrap: wrap;
 }
@@ -5915,6 +8590,38 @@ html.tray-window body {
   flex: 1;
   min-width: 88px;
   justify-content: center;
+}
+/* A grade button's second line: when the card comes back after it. */
+.study-grade {
+  flex-direction: column;
+  gap: 2px;
+  min-height: 48px;
+}
+.study-grade__next {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.study-keys {
+  font-size: 12.5px;
+  margin: 0;
+}
+.study-next {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 10px 0 0;
+}
+/* Top of Study: today's review across every deck, Home's same line. */
+.study-today {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding: 16px;
+}
+.study-today__count {
+  font-weight: 600;
 }
 .grade-again:hover {
   border-color: #dc2626;
@@ -5948,11 +8655,111 @@ html.tray-window body {
   background: rgba(220, 38, 38, 0.1);
   color: #dc2626;
 }
+/* Make cards preview (CardPreview): one proposed card per row. */
+.card-preview {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-preview li {
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  padding: 6px 10px 10px;
+}
+.card-preview .u-check {
+  align-items: flex-start;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  padding-top: 6px;
+}
+.card-preview .u-check input {
+  flex-shrink: 0;
+  margin-top: 3px;
+}
+.card-preview__back,
+.card-preview__tags {
+  margin: 4px 0 0 22px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+}
+.card-preview__tags {
+  display: flex;
+  gap: 6px;
+}
+.card-preview__tags span {
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  background: var(--bg-soft);
+}
+/* Word picker (CardPreview, default 9): each word a button; the picked one
+   is the blank. */
+.cloze-pick__sentence {
+  margin: 0 0 10px;
+  font-size: 14px;
+  line-height: 2.1;
+  color: var(--ink);
+}
+.cloze-pick__word {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 1px dashed transparent;
+  border-radius: var(--r-sm);
+  /* The negative margin keeps the words spaced like plain text. */
+  padding: 2px 3px;
+  margin: 0 -3px;
+  cursor: pointer;
+}
+.cloze-pick__word:hover {
+  border-color: var(--line);
+  background: var(--bg-soft);
+}
+.cloze-pick__word:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.cloze-pick__word[aria-pressed="true"] {
+  border-color: var(--accent);
+  border-style: solid;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.cloze-pick__front {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-2);
+}
+.cloze-pick__front span {
+  display: block;
+  font-size: 11px;
+  color: var(--ink-3);
+  margin-bottom: 2px;
+}
 .nav-badge {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  box-sizing: border-box;
   font-size: 11px;
   font-weight: 600;
-  padding: 1px 7px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  padding: 0 6px;
   border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent);
@@ -6282,6 +9089,49 @@ html.tray-window body {
   width: 100%;
 }
 
+/* --- Review suggestions (PageFeedback) ------------------------------------ */
+/* The whole card head is the disclosure button (UX S20). */
+.pf-card__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pf-card__head:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+  border-radius: var(--r-sm);
+}
+.pf-card__name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.pf-card__name .muted {
+  font-size: 12.5px;
+}
+.pf-card__toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  color: var(--ink-2);
+  font-size: 12.5px;
+}
+.pf-card__head:hover .pf-card__toggle {
+  color: var(--ink);
+}
+
 /* --- Views page (Dataview-lite) ------------------------------------------ */
 .views-saved {
   display: flex;
@@ -6584,7 +9434,11 @@ html.tray-window body {
   position: relative;
   overflow: hidden;
   display: grid;
-  grid-template-columns: 22px 1fr auto;
+  /* icon · body, then the action (when there is one) and the × in columns
+     of their own. */
+  grid-template-columns: 22px 1fr;
+  grid-auto-flow: column;
+  grid-auto-columns: auto;
   gap: 10px;
   align-items: center;
   min-width: min(240px, 100%);
@@ -6609,13 +9463,13 @@ html.tray-window body {
     transform: none;
   }
 }
+/* Older toasts step back in size only: faded, the third one sat at 60 %
+   over page content and could not be read. */
 .notice.is-depth-1 {
   transform: scale(0.97);
-  opacity: 0.85;
 }
 .notice.is-depth-2 {
   transform: scale(0.94);
-  opacity: 0.6;
 }
 .notice.is-out {
   animation: notice-out 0.24s var(--ease-out) forwards;
@@ -6705,6 +9559,10 @@ html.tray-window body {
 }
 .notice-action:hover {
   background: var(--bg-hover);
+}
+/* The kit's 32px square, pulled into the padding so a toast stays as short. */
+.notice-close {
+  margin: -6px -6px -6px -4px;
 }
 /* 2px life bar; hovering (or focusing the action) pauses it — the JS timer
    pauses in step (NoticeStack). */
@@ -6801,8 +9659,8 @@ html.tray-window body {
 /* --- Help widget (bottom-right ? FAB + panel) ----------------------------- */
 .help-widget__fab {
   position: fixed;
-  right: 18px;
-  bottom: 18px;
+  right: calc(18px + env(safe-area-inset-right, 0px));
+  bottom: calc(18px + env(safe-area-inset-bottom, 0px));
   z-index: 90; /* under the cmd palette (100) and modals (2000) */
   width: 34px;
   height: 34px;
@@ -6824,6 +9682,24 @@ html.tray-window body {
 .graph-fullscreen .help-widget__fab {
   display: none;
 }
+/* Narrow Ask (UX S32): the ? sat on the pinned composer's send button — a
+   narrow window, or Ask in the second pane, whose corner it is. */
+@media (max-width: 768px) {
+  .app:has(.ask-flow) .help-widget__fab {
+    display: none;
+  }
+}
+.app:has(.workspace-pane--secondary .ask-flow) .help-widget__fab {
+  display: none;
+}
+/* A 44px button where a finger presses it (UX S47/S48); the panel stands
+   above it, off the home indicator. */
+@media (max-width: 768px), (any-pointer: coarse) {
+  .help-widget__fab {
+    width: 44px;
+    height: 44px;
+  }
+}
 .help-widget__panel {
   position: fixed;
   right: 18px;
@@ -6835,13 +9711,38 @@ html.tray-window body {
   background: var(--bg-elev);
   backdrop-filter: blur(8px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
-  padding: 14px;
+  /* The top padding is the head's own, so the sticky head meets the top edge. */
+  padding: 0 14px 14px;
+  /* Never past the window's top (20px clear): the smallest window is 500px. */
+  max-height: calc(100vh - 80px);
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
 }
+/* Above the 44px touch button and the home indicator. */
+@media (max-width: 768px), (any-pointer: coarse) {
+  .help-widget__panel {
+    bottom: calc(70px + env(safe-area-inset-bottom, 0px));
+  }
+}
+/* Above the phone's bottom bar (UX S50). */
+@media (max-width: 768px) {
+  .help-widget__fab {
+    bottom: calc(var(--tabbar-h) + 12px);
+  }
+  .help-widget__panel {
+    bottom: calc(var(--tabbar-h) + 64px);
+  }
+}
+/* Stays in view while the panel scrolls, the close button with it. */
 .help-widget__head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: inherit;
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
+  padding: 14px 0 8px;
 }
 .help-widget__head > div {
   flex: 1;
@@ -6876,6 +9777,15 @@ html.tray-window body {
   gap: 6px;
   font-size: 12.5px;
   color: var(--ink-3);
+}
+/* The Markdown keys: one column, their labels are longer. */
+.help-widget__sc--one {
+  grid-template-columns: 1fr;
+  margin-top: 8px;
+}
+.help-widget__sc-head {
+  font-size: 11px;
+  color: var(--ink-4);
 }
 .help-widget__sc-row kbd {
   font-family: inherit;
@@ -7006,12 +9916,71 @@ html.spotlight-window body {
 .spotlight-error {
   color: #ffb4a2;
 }
+/* An abstention is an answer, not an error: body colour, one weight up,
+   beside MYCO's not-found clip. */
+.spotlight-abstain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 600;
+}
 .spotlight-hint {
   color: #7a7580;
   font-size: 12.5px;
 }
 .spotlight-body .spotlight-hint {
   margin-top: 10px;
+}
+/* Each quoted note's similarity, folded under the answer (UX S14.7). */
+.spotlight-details {
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: #928d96;
+}
+.spotlight-details summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.spotlight-details summary:focus-visible {
+  outline: 2px solid #ece7df;
+  outline-offset: 2px;
+}
+.spotlight-details ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+/* An abstention's ways on (UX S30): write the question into today's note,
+   then open it there; or the Ask page, where the near misses are. */
+.spotlight-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+/* The primary: light on the dark card, as the app's primary is ink on paper. */
+.spotlight-body .spotlight-note {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  background: #ece7df;
+  border-color: #ece7df;
+  color: #0b0b0d;
+}
+.spotlight-body .spotlight-note:hover {
+  background: #ffffff;
+  border-color: #ffffff;
+}
+/* The quiet controls: not the app's light .btn. */
+.spotlight-body .spotlight-open-ask {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #3a3a42;
+  color: #ece7df;
+}
+.spotlight-body .spotlight-open-ask:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #4a4a52;
 }
 .spotlight-body .myco-viewer {
   font-size: 14px;
@@ -7063,15 +10032,36 @@ html.spotlight-window body {
 .voice-saved {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: flex;
+  flex-direction: column;
   font-size: 12.5px;
   color: #c8e6c9;
   border: 1px solid rgba(22, 163, 74, 0.45);
   background: rgba(22, 163, 74, 0.12);
-  border-radius: var(--r-pill);
+  border-radius: var(--r-md);
   padding: 3px 10px;
+}
+/* Where · next on top, what was heard under it (UX S39). */
+.voice-saved__where,
+.voice-saved__heard {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.voice-saved__heard {
+  color: #ece7df;
+}
+/* The receipt's Open, in the card's quiet-button look (.spotlight-open-ask). */
+.spotlight-voice .voice-saved-open {
+  padding: 5px 12px;
+  font-size: 12.5px;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: #3a3a42;
+  color: #ece7df;
+}
+.spotlight-voice .voice-saved-open:hover {
+  background: rgba(255, 255, 255, 0.12);
+  border-color: #4a4a52;
 }
 /* Word-level diff (W3–6 item 6, mockup M3-c). Line tints + word marks per the
    spec recipe; deleted words get line-through. Rendered by DiffView.tsx. */
@@ -7145,8 +10135,7 @@ html.notch-window body {
   align-items: center;
   overflow: hidden;
   /* TRANSPARENT while collapsed: the first headed run showed a full-width
-     black slab with square ends hanging under the cutout. Idle paints only
-     the small rounded tab below (.notch-tab); the black card ground returns
+     black slab with square ends hanging under the cutout. Idle paints nothing; the black card ground returns
      with the open state. */
   background: transparent;
   color: #ece7df;
@@ -7158,30 +10147,39 @@ html.notch-window body {
     sans-serif;
   /* v2: no overshoot — the black shape should feel PUSHED out of the
      cutout, one body with the hardware. Width, height and radius grow
-     together. */
+     together around the hardware cutout. */
   transition:
     width 340ms cubic-bezier(0.32, 0.72, 0, 1),
     min-height 340ms cubic-bezier(0.32, 0.72, 0, 1),
     border-radius 340ms cubic-bezier(0.32, 0.72, 0, 1);
 }
+/* Idle is an invisible input target. Closing unmounts its decoration in the
+   same frame; an animation must not leave a detached character behind. */
+.notch:not(.notch-open) {
+  transition: none;
+}
+.notch:not(.notch-open):not(.notch-pill) {
+  min-height: calc(var(--notch-cutout, 0px) + 14px);
+}
 .notch.notch-open {
   /* Grow FROM the cutout: +16px over the measured notch width, +20px for
      the capture state (approved v2 spec) — not a fixed 300px that ignores
      the hardware it extends. */
-  width: calc(var(--notch-collapsed) + 16px);
+  width: calc(var(--notch-collapsed) + 16px + var(--notch-mascot-w, 0px));
   background: #000;
   border-radius: 0 0 var(--r-notch-open) var(--r-notch-open);
   /* The card's height is content-driven and lands in one frame; the unfurl
-     is what makes opening read as growth instead of a snap. */
-  transform-origin: 50% 0;
+     is what makes opening read as growth instead of a snap. A reveal, not a
+     scaleY: the mascot stands inside the card, and a scale flattened it to
+     30% of its height on every open. */
   animation: notch-unfurl 340ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 @keyframes notch-unfurl {
   from {
-    transform: scaleY(0.3);
+    clip-path: inset(0 0 70% 0 round 0 0 var(--r-notch-open) var(--r-notch-open));
   }
   to {
-    transform: scaleY(1);
+    clip-path: inset(0 round 0 0 var(--r-notch-open) var(--r-notch-open));
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -7196,7 +10194,7 @@ html.notch-window body {
 .notch.notch-open[data-state="recording"],
 .notch.notch-open[data-state="saving"],
 .notch.notch-open[data-state="cancelled"] {
-  width: calc(var(--notch-collapsed) + 20px);
+  width: calc(var(--notch-collapsed) + 20px + var(--notch-mascot-w, 0px));
   border-radius: 0 0 var(--r-notch-wide) var(--r-notch-wide);
 }
 /* With decisions listed the card takes the whole OS window it already lives
@@ -7204,7 +10202,7 @@ html.notch-window body {
    fit in +16px, and widening the window instead would leave the other states
    with dead transparent space to the sides. */
 .notch.notch-open.notch-has-agenda {
-  width: calc(var(--notch-collapsed) + 80px);
+  width: calc(var(--notch-collapsed) + 80px + var(--notch-mascot-w, 0px));
   border-radius: 0 0 var(--r-notch-wide) var(--r-notch-wide);
 }
 /* S10 — no notch on this Mac (safeAreaInsets.top == 0): the same panel as a
@@ -7212,8 +10210,25 @@ html.notch-window body {
 .notch.notch-pill {
   border-radius: var(--r-notch);
   margin-top: 4px;
+}
+.notch.notch-pill.notch-open {
   background: #000;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+/* Dev mock only (?notchMock=1): the Mac's cutout, painted over the panel, so
+   a preview shows exactly what the hardware hides. Fixed to the (notch-
+   centred) preview window, like the hardware, independent of panel state. */
+.notch-hw {
+  position: fixed;
+  z-index: 2;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  width: var(--notch-collapsed);
+  height: var(--notch-cutout, 0px);
+  background: #000;
+  border-radius: 0 0 var(--r-notch) var(--r-notch);
+  pointer-events: none;
 }
 .notch-lip {
   height: 26px;
@@ -7237,34 +10252,6 @@ html.notch-window body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
-/* Collapsed, with decisions waiting: the cap and a count, and nothing else.
-   It has to live inside the ~14px strip that peeks below the hardware cutout
-   (NOTCH_PEEK_PX), so it is shorter than .notch-lip and centred in it — any
-   taller and the number hides behind the physical notch. Drawn only when
-   something is actually waiting; an empty agenda renders no element at all. */
-.notch-mark {
-  height: 14px;
-  flex: none;
-  margin-top: var(--notch-cutout, 0px);
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  /* Its own dark ground, and only as wide as its content: collapsed, the
-     panel itself is transparent, so this sits straight on the wallpaper and a
-     light one would swallow both the cap and the number. */
-  padding: 0 6px;
-  border-radius: var(--r-pill);
-  background: rgba(0, 0, 0, 0.82);
-}
-.notch-mark .notch-cap {
-  width: 8px;
-  height: 8px;
-}
-.notch-mark-n {
-  font: 600 11px/1 var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  color: #cdbdfb;
-}
 /* The mascot cap. Lit purple = something is alive; this is the only saturated
    thing on the surface, so colour alone never carries meaning without the lip
    text beside it. */
@@ -7287,6 +10274,189 @@ html.notch-window body {
 .notch-cap-warn {
   background: radial-gradient(circle at 34% 30%, #f6d5a4, #e0a458 62%, #4a3213);
   box-shadow: 0 0 8px rgba(224, 164, 88, 0.45);
+}
+/* The mascot (components/NotchMascot.tsx) stands in for the cap. Open, its
+   column WIDENS the card (NOTCH_MASCOT_EXTRA_W in notchDriver must match)
+   rather than squeezing the text beside it. */
+.notch.notch-has-mascot {
+  --notch-mascot-w: 62px;
+  position: relative;
+}
+.notch.notch-open.notch-has-mascot {
+  min-height: calc(var(--notch-cutout, 0px) + 72px);
+}
+.notch-has-mascot .notch-lip {
+  justify-content: flex-start;
+  padding-left: calc(12px + var(--notch-mascot-w));
+}
+.notch-has-mascot .notch-body {
+  padding-left: calc(13px + var(--notch-mascot-w));
+}
+.notch-mascot {
+  position: absolute;
+  z-index: 1;
+  left: 10px;
+  top: calc(var(--notch-cutout, 0px) + 8px);
+  width: 56px;
+  height: 56px;
+  cursor: default;
+}
+/* The mascot appears only inside the expanded panel. */
+.notch.notch-open .notch-mascot {
+  transition:
+    left 340ms cubic-bezier(0.32, 0.72, 0, 1),
+    top 340ms cubic-bezier(0.32, 0.72, 0, 1),
+    width 340ms cubic-bezier(0.32, 0.72, 0, 1),
+    height 340ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.notch-mascot-spring,
+.notch-mascot-body,
+.notch-mascot-lids {
+  position: absolute;
+  inset: 0;
+}
+.notch-mascot-spring,
+.notch-mascot-body {
+  /* Squash, hop and breathe from the feet, like a body on a floor. */
+  transform-origin: 50% 95%;
+}
+.notch-mascot-body {
+  rotate: var(--mascot-lean, 0deg);
+  transition: rotate 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.notch-mascot-pose,
+.notch-mascot-fx,
+.notch-mascot-eyes {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* One strip frame at a time. The box is the frame, padded past the pose box
+   (NotchMascot's clipBox), and the mascot's own boxes leave it unclipped. */
+.notch-mascot-clip {
+  position: absolute;
+  overflow: hidden;
+}
+.notch-mascot-clip img {
+  height: 100%;
+  max-width: none;
+  display: block;
+}
+/* The cap's lavender underside, brightened: drag hover, capture, the voice. */
+.notch-mascot-glow {
+  position: absolute;
+  border-radius: 50%;
+  background: radial-gradient(
+    closest-side,
+    rgba(214, 198, 255, 0.9),
+    rgba(167, 139, 250, 0.4) 60%,
+    transparent
+  );
+  mix-blend-mode: screen;
+  opacity: var(--mascot-glow, var(--mascot-glow-base, 0));
+  transition: opacity 240ms linear;
+  pointer-events: none;
+}
+/* Under a clip the glow goes at once; when the clip goes, the rule above
+   fades it back in rather than popping it on at full strength. */
+.notch-mascot-clip ~ .notch-mascot-glow {
+  opacity: 0;
+  transition: none;
+}
+.notch-mascot-eyes {
+  overflow: visible;
+  fill: #f8f6ff;
+}
+.notch-mascot-eyes path {
+  fill: none;
+  stroke: #f8f6ff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* Ambient motion only when motion is welcome; reduced motion gets the still
+   pose, which is the whole of decision 6. */
+@media (prefers-reduced-motion: no-preference) {
+  .notch-mascot-body {
+    animation: notch-mascot-breathe 3.6s ease-in-out infinite alternate;
+  }
+  .notch-mascot[data-loop="bob"] .notch-mascot-body {
+    animation:
+      notch-mascot-breathe 3.6s ease-in-out infinite alternate,
+      notch-mascot-bob 1.4s ease-in-out infinite alternate;
+  }
+  .notch-mascot[data-reaction="dizzy"] .notch-mascot-body {
+    animation: notch-mascot-wobble 500ms ease-in-out 5;
+  }
+  .notch-mascot[data-fx="twinkle"] .notch-mascot-fx {
+    animation: notch-mascot-twinkle 900ms ease-out 1;
+  }
+  .notch-mascot[data-fx="bob"] .notch-mascot-fx {
+    animation: notch-mascot-bob 1.8s ease-in-out infinite alternate;
+  }
+  .notch-mascot-eyes path.notch-mascot-spiral {
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: notch-mascot-spin 900ms linear infinite;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notch.notch-open .notch-mascot,
+  .notch.notch-pill .notch-mascot,
+  .notch-mascot-body,
+  .notch-mascot-glow {
+    transition: none;
+  }
+}
+@keyframes notch-mascot-breathe {
+  from {
+    scale: 1 1;
+  }
+  to {
+    scale: 1.01 1.02;
+  }
+}
+@keyframes notch-mascot-bob {
+  from {
+    translate: 0 0;
+  }
+  to {
+    translate: 0 -5%;
+  }
+}
+@keyframes notch-mascot-wobble {
+  0%,
+  100% {
+    rotate: 0deg;
+  }
+  25% {
+    rotate: -9deg;
+  }
+  75% {
+    rotate: 9deg;
+  }
+}
+@keyframes notch-mascot-twinkle {
+  0% {
+    opacity: 0;
+  }
+  40% {
+    opacity: 1;
+  }
+  60% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@keyframes notch-mascot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 /* Announcement only — the visible copy of this text lives in the body row.
    Clipped rather than display:none, which screen readers skip. */
@@ -7576,6 +10746,90 @@ html.notch-window body {
   }
 }
 
+/* ---- Roam window (components/RoamWindow.tsx) -------------------------------
+   myco out of the notch while work runs (spec 2026-10-02-mascot-roam.md). Its
+   own OS window over the notch screen's visible frame (src-tauri/src/roam.rs):
+   see-through and deaf to the mouse, so only myco, its shadow and bubble paint. The
+   bubble uses lavender ground and dark ink. */
+html.roam-window,
+html.roam-window body {
+  background: transparent;
+}
+html.roam-window body {
+  overflow: hidden;
+}
+.roam {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.roam-shadow,
+.roam-myco,
+.roam-bubble {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.roam-shadow {
+  width: 36px;
+  height: 8px;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(20, 15, 32, 0.3), rgba(20, 15, 32, 0) 72%);
+}
+.roam-myco {
+  width: 64px;
+  height: 64px;
+  /* Squash and stretch from the feet, like the mascot's own spring. */
+  transform-origin: 50% 95%;
+}
+.notch-mascot[data-placement="roam"] {
+  left: 0;
+  top: 0;
+  width: 64px;
+  height: 64px;
+}
+.roam-bubble {
+  margin: 6px 0 0 2px;
+  padding: 2px 7px;
+  border-radius: var(--r-pill);
+  background: #cdbdfb;
+  color: #1a1325;
+  font: 600 var(--fs-12-5)/1.4 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* At a stop by the right edge the bubble sits on myco's left. */
+.roam-bubble-left {
+  margin: 6px 2px 0 0;
+}
+/* Dev preview only (?window=roam&roamMock=1): the viewport stands in for the
+   whole screen, so a painted wallpaper, menu bar and cutout sit around the
+   roam window, which clips at its top edge as the real one does. */
+.roam-mock-desk {
+  position: fixed;
+  inset: 0;
+  background: linear-gradient(160deg, #6f7f99, #b9c4d3 55%, #d9d2c7);
+}
+.roam-mock-bar {
+  position: absolute;
+  inset: 0 0 auto;
+  background: rgba(246, 246, 248, 0.72);
+}
+.roam-mock-cutout {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% 0;
+  height: 100%;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  background: #000;
+}
+.roam-mock-window {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
 /* ---- Chart dashboard (PageDashboard) --------------------------------------
    Marks per the dataviz spec: thin bars, 4px rounded data-ends, 2px gaps,
    values in ink text (never in the series color), recessive tracks. */
@@ -7658,9 +10912,9 @@ html.notch-window body {
    the board's grid, one level up: same vocabulary, no second one.
 
    Nothing here applies until the user arranges something. A zone whose blocks
-   are all full width renders them as plain children (no .ovl-zone, no
-   .ovl-block), because one extra box is a formatting context and the blocks'
-   own collapsing margins are what the fixed stack's rhythm was made of. */
+   are all full width keeps stable element parents with display:contents,
+   because a layout box would change the blocks' collapsing margins. The
+   Home-specific stack rule lives in styles/everyday.css. */
 .ovl-live {
   /* Announcements only — the visible result is the page itself moving. */
   position: absolute;
@@ -7672,14 +10926,6 @@ html.notch-window body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
   border: 0;
-}
-/* The rail's stack, which is the wrapper the four report panels always had. */
-.ovl-rail-stack,
-.ovl-zone--rail {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  min-width: 0;
 }
 .ovl-zone--main {
   display: grid;
@@ -7787,18 +11033,6 @@ html.notch-window body {
 }
 .ovl-block.is-over {
   box-shadow: inset 0 3px 0 0 var(--accent);
-}
-.ovl-end {
-  grid-column: 1 / -1;
-  border: 1.5px dashed var(--line);
-  border-radius: var(--r-md);
-  padding: 14px;
-  text-align: center;
-  color: var(--ink-3);
-  font-size: 12.5px;
-}
-.ovl-zone--rail .ovl-end {
-  padding: 10px;
 }
 .ovl-vacant {
   font-size: 12.5px;
@@ -7957,6 +11191,16 @@ html.notch-window body {
 .props__row > * {
   min-width: 0;
 }
+/* In the phone's note-info sheet the value gets the row's width: the key
+   sits above it, the remove button beside it (UX S54; at 140px for the key
+   the value was ~56px wide). */
+.u-sheet .props__row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  row-gap: 2px;
+}
+.u-sheet .props__key {
+  grid-column: 1 / -1;
+}
 .props__key {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -7994,35 +11238,292 @@ html.notch-window body {
   font-weight: 500;
   letter-spacing: -0.01em;
 }
+/* A daily note's ‹ Yesterday · Tomorrow › sits on the title's line (it wraps
+   under a long title; without :has it simply sits below). */
+.reader-head .page-title:has(+ .reader-daynav) {
+  display: inline-block;
+  margin-right: 0.75rem;
+  vertical-align: middle;
+}
+.reader-daynav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.125rem;
+  margin-bottom: 12px;
+  vertical-align: middle;
+  color: var(--ink-3);
+}
+.reader-daynav .u-btn {
+  min-height: 2.75rem;
+  padding-inline: 0.5rem;
+}
+/* The type badge leads the meta row; save status sits right. */
+.reader-head .typebadge {
+  margin-right: auto;
+}
+/* Authorship lives in the Note info rail (UX S14). The rail is the card, so
+   the pill drops its own chrome and wraps as a rail row. */
+.reader-rail .auth-badge {
+  display: flex;
+  max-width: 100%;
+  padding: 6px 8px;
+  border: 0;
+  background: none;
+  font-size: var(--fs-12-5);
+  white-space: normal;
+}
+.reader-rail .auth-bar {
+  flex-shrink: 0;
+}
+.reader-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.reader-actions > .btn,
+.reader-actions .rd-more > .btn,
+.reader-source-notice .btn {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
+.reader-actions .outline-toggle {
+  margin-left: auto;
+  white-space: nowrap;
+}
+/* A phone (UX S54): the head was 40% of the first screen. The action line
+   is one ⋯ on the meta row's right, and the save state is a dot at the
+   title's end, its words kept for a screen reader only. */
+.reader-save-dot {
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-left: 0.5rem;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: var(--ink-4);
+}
+.reader-save-dot[data-state="pending"],
+.reader-save-dot[data-state="saving"] {
+  background: var(--live);
+}
+.reader-save-dot[data-state="failed"] {
+  background: var(--warn);
+}
+@media (max-width: 768px) {
+  .reader-head {
+    position: relative;
+  }
+  .reader-head .reader-actions {
+    position: absolute;
+    top: calc(40px - 0.5rem);
+    right: 0;
+    margin: 0;
+  }
+  .reader-head .reader-save-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+.reader-read-only {
+  margin: 0.75rem 0 0;
+  font-size: var(--fs-12-5);
+}
+/* "Ask this note" at the end of the note on a phone (owner default 16): the
+   ··· menu at the top is far from where reading ends. Desktop keeps the menu
+   item only. */
+.reader-ask-foot {
+  display: none;
+}
+@media (max-width: 768px) {
+  .reader-ask-foot {
+    display: flex;
+    justify-content: center;
+    padding: 1.5rem 0 0.5rem;
+  }
+  .reader-ask-foot .u-btn {
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 1.25rem;
+  }
+}
+/* S41: under a selection in a raw/ original; centred on it, kept on screen. */
+.raw-quote {
+  position: fixed;
+  z-index: 40;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 0.25rem;
+  padding: 0.25rem;
+  border-radius: var(--r-md);
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  box-shadow: var(--shadow-2);
+}
+.raw-quote .btn {
+  min-height: 2.75rem;
+  white-space: nowrap;
+}
+/* Before the note is read: a title bar and three lines where the header and
+   body will be. It fades in only after 150ms, so a fast read never flashes. */
+.rd-skeleton {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 40px;
+  animation: rd-skel-in 0.2s ease-out 0.15s both;
+}
+.rd-skeleton > span {
+  height: 0.875rem;
+  border-radius: var(--r-sm);
+  background: var(--bg-soft);
+}
+.rd-skeleton > span:nth-child(3) {
+  width: 92%;
+}
+.rd-skeleton > span:last-child {
+  width: 70%;
+}
+.rd-skeleton > .rd-skeleton__title {
+  width: min(60%, 24rem);
+  height: 2.25rem;
+  margin-bottom: 1rem;
+}
+@keyframes rd-skel-in {
+  from {
+    opacity: 0;
+  }
+}
+/* A read that failed: say so, show which file, offer the ways on. */
+.rd-missing {
+  padding-top: 40px;
+}
+.rd-missing .page-title {
+  font-family: var(--font-serif);
+  font-weight: 500;
+}
+.rd-missing__path {
+  margin: 0.25rem 0 1.25rem;
+  font-family: var(--font-mono);
+  font-size: var(--fs-12-5);
+  color: var(--ink-3);
+  overflow-wrap: anywhere;
+}
+.rd-missing .u-btn {
+  min-height: 2.75rem;
+}
+.reader-save-status {
+  flex-shrink: 0;
+  color: var(--ink-2);
+  font-size: var(--fs-12-5);
+}
+.reader-save-status[data-state="failed"] {
+  color: var(--warn);
+}
+.reader-save-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  border: 1px solid var(--warn);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+}
+.reader-save-error p {
+  flex: 1 1 16rem;
+  margin: 0;
+  font-size: var(--fs-14);
+}
+.reader-save-error .btn {
+  min-height: 2.75rem;
+}
+.reader-recovery {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-block: 0.75rem;
+}
+.reader-recovery .btn {
+  min-height: 2.75rem;
+  max-width: 100%;
+  white-space: normal;
+}
+.reader-recovery-source {
+  flex-basis: 100%;
+  min-width: 0;
+}
+.reader-recovery-source summary {
+  cursor: pointer;
+  min-height: 2.75rem;
+  padding-block: 0.625rem;
+}
+.reader-recovery-source pre {
+  max-height: 18rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reader-recovery-message {
+  color: var(--ink-2);
+  margin-block: 0.75rem;
+}
+.reader-source-notice {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.75rem;
+  margin-top: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-size: var(--fs-12-5);
+}
 .myco-editor.live .cm-content {
   font-family: var(--font-sans);
-  font-size: 17px;
-  line-height: 1.75;
+  font-size: calc(var(--fs-17) * var(--read-scale));
+  line-height: 1.6;
 }
 .myco-editor.live .live-code,
 .myco-editor.live .live-code-inline {
   font-family: var(--font-mono);
 }
 
-/* Reader rail: properties · outline · sources & trust · connections, in one
-   sticky column right of the reading text (mockup "Manuscript"). The reading
-   column is capped at 860px — the measured comfortable line — and the rail
-   takes a fixed 288px beside it. Below 900px the two cannot share the width,
-   so the rail and its toggle disappear. */
+/* Note info sits beside the note while the pane holds both bases (22rem +
+   18rem + gap, a ~664px pane: a 1024px window with its sidebar open) and
+   wraps below only under that; the note takes most of any spare width. The
+   old 30rem note basis wrapped the rail off-screen below the note at 1024. */
 .reader-body--rail {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 288px;
-  gap: 24px;
-  align-items: start;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.5rem;
+  align-items: flex-start;
+}
+.reader-body > section:first-child {
+  min-width: 0;
 }
 .reader-body--rail > section:first-child {
-  max-width: 860px;
-  width: 100%;
+  flex: 3 1 22rem;
+  max-width: 53.75rem;
 }
 .reader-rail {
+  flex: 1 1 18rem;
+  min-width: 0;
+  max-width: 100%;
   position: sticky;
   top: 16px;
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
   display: grid;
   gap: 10px;
@@ -8185,6 +11686,45 @@ html.notch-window body {
 .rail-conn__name:hover {
   color: var(--ink);
 }
+.rail-conn__group + .rail-conn__group {
+  margin-top: 8px;
+}
+.rail-conn__sub {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 6px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-3);
+}
+.rail-conn__sub .rail-n {
+  margin-left: 0;
+  font-weight: 400;
+}
+/* A backlink's sentence wraps under its name, whole words (Korean too). */
+.rail-list li.has-ctx {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}
+.rail-conn__ctx {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rail-conn__ctx mark {
+  background: color-mix(in srgb, var(--warning) 24%, transparent);
+  color: var(--ink-2);
+  border-radius: var(--r-sm);
+}
 .outline {
   font-size: 12.5px;
 }
@@ -8217,27 +11757,62 @@ html.notch-window body {
   background: var(--bg-hover);
   color: var(--ink);
 }
-.outline-toggle[aria-pressed="true"] {
+.outline-toggle[aria-expanded="true"] {
   background: var(--bg-active);
   color: var(--ink);
 }
 @media (max-width: 899px) {
-  .reader-body--rail {
-    display: block;
-  }
-  .reader-rail,
-  .outline-toggle {
-    display: none;
+  .reader-rail {
+    position: static;
+    max-height: none;
   }
 }
-/* A split-workspace pane is ~354px at an 1100px window regardless of the
-   viewport, so the pane hides the rail the same way. */
-.workspace-pane .reader-body--rail {
-  display: block;
+.workspace-pane .reader-rail {
+  position: static;
+  max-height: none;
 }
-.workspace-pane .reader-rail,
-.workspace-pane .outline-toggle {
-  display: none;
+/* A narrow window, or a body too narrow for the note and the rail side by
+   side (a split beside Ask), opens the rail as a sheet at the window's right
+   edge over a scrim (ReaderRail.tsx ReaderRailSheet, readerRail.ts
+   railIsSheet). Laid over the note inline, it covered the text. */
+.myco-modal__backdrop.reader-sheet-backdrop {
+  justify-content: flex-end;
+  align-items: stretch;
+}
+.reader-sheet {
+  position: relative;
+  width: min(20rem, calc(100vw - 2rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: calc(0.75rem + env(safe-area-inset-top)) 0.75rem
+    calc(0.75rem + env(safe-area-inset-bottom));
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+}
+.reader-sheet__close {
+  display: flex;
+  margin-left: auto;
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  align-items: center;
+  justify-content: center;
+}
+.reader-sheet > .reader-rail {
+  position: static;
+  max-height: none;
+  overflow: visible;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .reader-sheet {
+    animation: reader-sheet-in 160ms ease-out;
+  }
+}
+@keyframes reader-sheet-in {
+  from {
+    transform: translateX(1.5rem);
+    opacity: 0;
+  }
 }
 
 /* Authorship gutter: a 3px bar left of each paragraph, violet where an agent
@@ -8342,7 +11917,8 @@ html.notch-window body {
   background: var(--warn);
 }
 
-/* Reader header `⋯` overflow (Make cards · Audio overview): a real menu
+/* Reader header `⋯` overflow: source editing, authorship, generation and the
+   note's own actions (favorite, rename, move, delete). A menu
    under the button, closed on Escape / outside click (PageReader.tsx). */
 .rd-more {
   position: relative;
@@ -8366,7 +11942,7 @@ html.notch-window body {
   align-items: center;
   gap: 8px;
   width: 100%;
-  height: 32px;
+  min-height: 2.75rem;
   padding: 0 10px;
   border: 0;
   border-radius: var(--r-md);
@@ -8385,6 +11961,20 @@ html.notch-window body {
   opacity: 0.45;
   cursor: not-allowed;
   background: transparent;
+}
+/* The note's own actions sit under a rule; Delete is the danger row. */
+.rd-menu__sep {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--line);
+}
+.rd-menu .rd-menu__danger,
+.rd-menu .rd-menu__danger:hover,
+.rd-menu .rd-menu__danger:focus-visible {
+  color: var(--danger);
+}
+.rd-menu .is-starred svg {
+  fill: currentColor;
 }
 
 /* ── Renewal material (harvest deck, sieve) ──────────────────────────────
@@ -8451,10 +12041,8 @@ html.notch-window body {
   opacity: 0.45;
   cursor: not-allowed;
 }
+/* Its violet fill is every dark primary's (styles/ui.css); this adds the glow. */
 [data-theme="dark"] .hq-btn.btn-primary {
-  background: #a78bfa;
-  color: #120c22;
-  border-color: transparent;
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.35),
     0 6px 20px rgba(167, 139, 250, 0.28);
@@ -9218,6 +12806,19 @@ html.notch-window body {
 .sv-step[data-state="done"] .sv-v {
   color: var(--ink-2);
 }
+/* 세부 정보: the pipeline's five counters, folded beside the three states a
+   user follows. Open, it takes its own row under them. */
+.sv-rail-details {
+  font-size: var(--fs-12-5);
+  color: var(--ink-3);
+}
+.sv-rail-details > summary {
+  padding-block: 0.4rem;
+  cursor: pointer;
+}
+.sv-rail-details[open] {
+  flex-basis: 100%;
+}
 
 /* The hero is the shared `.u-hero` tile (styles/ui.css) — the stop object
    112px, a 30px title, three 42px verdict counts, the dropzone INSIDE it so
@@ -9754,7 +13355,29 @@ html.notch-window body {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+/* UX S32: the turns and the composer under them, measured as one column so
+   a split pane counts as narrow too (named: the abstain card is a container
+   of its own). */
+.ask-flow {
+  container: ask / inline-size;
+}
+/* Asking, the head folds to its Ask/Agent switch; the title stays for screen
+   readers and focusPageHeading. */
+.u-page.is-asking .u-page__eyebrow,
+.u-page.is-asking .u-page__note {
+  display: none;
+}
+.u-page.is-asking .u-page__title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
 .ask-turn {
+  /* A new turn scrolls to its top, under the sticky topbar. */
+  scroll-margin-top: calc(var(--top-h) + 12px);
   background: linear-gradient(180deg, rgba(24, 23, 21, 0.04), rgba(24, 23, 21, 0.015));
   border-color: rgba(24, 23, 21, 0.09);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
@@ -9772,7 +13395,20 @@ html.notch-window body {
   align-items: start;
   margin-top: 12px;
 }
-@media (max-width: 1000px) {
+/* The split sits beside the 240px sidebar, so at a 1024px window the answer
+   column was ~280px beside a 340px rail. Stack the rail under the answer
+   until the window has room for both. */
+@media (max-width: 1100px) {
+  .ask-split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ask-rail {
+    position: static;
+  }
+}
+/* ...and in a column that narrow at any window size: Ask in a split pane at
+   1280 left the answer ~100px wide, one letter a line. */
+@container ask (max-width: 760px) {
   .ask-split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -9801,15 +13437,59 @@ html.notch-window body {
 }
 .ask-body {
   font-family: var(--font-serif);
-  font-size: 22px;
+  font-size: calc(var(--fs-22) * var(--read-scale));
   line-height: 1.7;
   margin-top: 8px;
 }
 .ask-body .myco-viewer p {
   margin: 0 0 6px;
 }
+@container ask (max-width: 40rem) {
+  .ask-body {
+    font-size: var(--fs-17);
+  }
+}
 .ask-body .myco-viewer > :last-child {
   margin-bottom: 0;
+}
+/* A quoted passage is often Korean: break between words, never inside one
+   (the default breaks between any two syllables, so a narrow column read
+   "우/선/순/위"). */
+.ask-body,
+.spotlight-body {
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+/* A table quoted into an answer or Spotlight: the Viewer here has no .prose
+   around it, so it drew with no borders at the answer's 22px serif and its
+   columns collapsed. Draw it as the Reader does, in the UI face at body size,
+   scrolling sideways when it is wider than the column. */
+.ask-body table,
+.spotlight-body table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 8px 0 12px;
+  border-collapse: collapse;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ask-body th,
+.ask-body td,
+.spotlight-body th,
+.spotlight-body td {
+  border: 1px solid var(--line);
+  padding: 6px 10px;
+  vertical-align: top;
+  text-align: left;
+  min-width: 4.5em;
+}
+.ask-body th,
+.spotlight-body th {
+  font-weight: 600;
+  white-space: nowrap;
+  background: var(--bg-soft);
 }
 .ask-sent {
   display: grid;
@@ -9827,6 +13507,51 @@ html.notch-window body {
 .ask-sent.hot {
   background: color-mix(in srgb, var(--c-concept) 10%, transparent);
   border-left-color: var(--c-concept);
+}
+/* Passages 2–5 fold to three lines under their note's name (UX S32). The
+   words stay in the page; 5.1em is three of .ask-body's 1.7 lines, and the
+   fade says the passage goes on. `clip`, not `hidden`: a hidden box still
+   scrolls from code, so Tab or find-in-page left it scrolled mid-passage
+   (`hidden` stays for WebKit before Safari 16). Focus on a link inside opens
+   the fold, so keyboard focus never sits on words under it. */
+.ask-sent.is-folded .myco-viewer {
+  max-height: 5.1em;
+  overflow: hidden;
+  overflow: clip;
+  mask-image: linear-gradient(to bottom, #000 55%, transparent);
+}
+.ask-sent.is-folded .myco-viewer:focus-within {
+  max-height: none;
+  mask-image: none;
+}
+.ask-sent__note {
+  margin-top: 4px;
+  font-family: var(--font-sans);
+  font-size: var(--fs-12-5);
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.ask-more {
+  min-height: 2.75rem;
+  font-size: var(--fs-12-5);
+}
+/* ↓ back to the composer while it is below the screen: a zero-height sticky
+   row, so the button floats at the bottom of the column, never takes room. */
+.ask-jump {
+  position: sticky;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 3;
+  height: 0;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+.ask-jump__btn {
+  min-height: 2.75rem;
+  border-radius: var(--r-pill);
+  background: var(--bg-elev);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
 }
 .ask-cite {
   font-family: var(--font-mono);
@@ -9859,6 +13584,57 @@ html.notch-window body {
 .ask-cite:focus-visible {
   outline: 2px solid var(--c-concept);
   outline-offset: 2px;
+}
+/* "Quote in note" under a passage: quiet until the passage is pointed at. */
+.ask-quote {
+  font-size: 12.5px;
+  padding: 2px 8px;
+  margin-top: 2px;
+  opacity: 0.7;
+  transition: opacity var(--dur-quick) var(--ease-out);
+}
+.ask-sent:hover .ask-quote,
+.ask-sent:focus-within .ask-quote,
+.ask-quote:focus-visible {
+  opacity: 1;
+}
+/* A citation opened the note: the quoted lines flash for FLASH_MS (2 s,
+   lib/readerFlash) — Live lines through the flash field, Preview elements
+   by class. The reader's header chip back to the question is a button. */
+.ask-flash {
+  animation: ask-flash 2s ease-out;
+}
+@keyframes ask-flash {
+  0%,
+  40% {
+    background: color-mix(in srgb, var(--c-concept) 18%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+@keyframes ask-flash-static {
+  0% {
+    background: color-mix(in srgb, var(--c-concept) 18%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-flash {
+    animation: ask-flash-static 2s steps(1, end);
+  }
+}
+.ask-back {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12.5px;
+}
+.ask-back:hover,
+.ask-back:focus-visible {
+  color: var(--ink);
 }
 /* Retrieval stepper — one line, expands to tiles. */
 .ask-tracebar {
@@ -10264,7 +14040,8 @@ html.notch-window body {
   }
 }
 /* Abstention card — the hero of that state: stop asset 112px with the violet
-   glow, serif title 30, misses on a floor gauge, one row of actions. */
+   glow, serif title 30, one row of actions, and the numbers (misses on a
+   floor gauge) folded under "Details" (UX S30). */
 .ask-abstain {
   position: relative;
   z-index: 0;
@@ -10273,6 +14050,11 @@ html.notch-window body {
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
   background: var(--bg-elev);
+  /* The narrow rules below measure the card, not the window. */
+  container-type: inline-size;
+  /* Korean breaks between words, never "못했/어요" (as .ask-body). */
+  word-break: keep-all;
+  overflow-wrap: break-word;
 }
 .ask-abstain::before {
   content: "";
@@ -10294,24 +14076,11 @@ html.notch-window body {
   align-items: center;
   flex-wrap: wrap;
 }
+/* MYCO's not-found clip: the character moves, so the slot stays still. */
 .ask-orb {
   width: 112px;
   height: 112px;
-  border-radius: 50%;
-  object-fit: cover;
-  background: #0d0c0b;
   flex: 0 0 auto;
-  filter: drop-shadow(0 0 28px rgba(167, 139, 250, 0.45));
-  animation: ask-float 5s ease-in-out infinite;
-}
-@keyframes ask-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
 }
 .ask-abstain h2 {
   margin: 0;
@@ -10327,8 +14096,17 @@ html.notch-window body {
   margin: 8px 0 0;
   line-height: 1.6;
 }
+.ask-absdetails {
+  margin-top: 10px;
+}
+.ask-absnums {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  line-height: 1.6;
+}
 .ask-misses {
-  margin-top: 20px;
+  margin-top: 14px;
 }
 .ask-misses h3 {
   margin: 0 0 4px;
@@ -10401,9 +14179,15 @@ html.notch-window body {
 [data-theme="dark"] .ask-receipt b {
   color: #7ee0a6;
 }
-@media (prefers-reduced-motion: reduce) {
+/* A narrow card (a 375px window, a split pane): beside the 112px orb a 30px
+   title broke two or three syllables a line (UX S30). The orb goes, the
+   title steps down the scale, and the words get the width. */
+@container (max-width: 480px) {
   .ask-orb {
-    animation: none;
+    display: none;
+  }
+  .ask-abstain h2 {
+    font-size: 22px;
   }
 }
 

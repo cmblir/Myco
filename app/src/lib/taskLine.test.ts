@@ -8,7 +8,10 @@ import {
   parseTaskMeta,
   setLineStatus,
   today,
+  toggleCheckbox,
 } from "./taskLine";
+import { markdownRenderer, stripFrontmatter } from "./markdown";
+import { bodyLineOffset } from "./outline";
 
 describe("parseTaskMeta", () => {
   it("strips the markers from the displayed title", () => {
@@ -57,6 +60,42 @@ describe("setLineStatus", () => {
     const out = setLineStatus(doc, 3, "done");
     expect(out?.split("\n").filter((_, i) => i !== 2)).toEqual(
       doc.split("\n").filter((_, i) => i !== 2),
+    );
+  });
+});
+
+describe("toggleCheckbox", () => {
+  const doc = ["- [ ] a", "  * [x] b", "3. [X] c", "> - [ ] quoted", "> > + [ ] deep", "prose [ ] no"].join("\n");
+  const line = (n: number) => toggleCheckbox(doc, n)?.split("\n")[n - 1];
+
+  it("ticks and unticks a to-do in any list or quote, the rest kept", () => {
+    expect(line(1)).toBe("- [x] a");
+    expect(line(2)).toBe("  * [ ] b");
+    expect(line(3)).toBe("3. [ ] c");
+    expect(line(4)).toBe("> - [x] quoted");
+    expect(line(5)).toBe("> > + [x] deep");
+    expect(toggleCheckbox(doc, 1)?.split("\n").slice(1)).toEqual(doc.split("\n").slice(1));
+  });
+
+  it("refuses a line that holds no to-do (the render went stale)", () => {
+    expect(toggleCheckbox(doc, 6)).toBeNull();
+    expect(toggleCheckbox(doc, 0)).toBeNull();
+    expect(toggleCheckbox(doc, 99)).toBeNull();
+  });
+
+  it("counts lines as Preview and the editor do: a lone CR ends one, every separator kept", () => {
+    const cr = "- [ ] t1\r- [ ] t2\r- [ ] t3\n- [ ] t4\n";
+    expect(toggleCheckbox(cr, 2)).toBe("- [ ] t1\r- [x] t2\r- [ ] t3\n- [ ] t4\n");
+    expect(toggleCheckbox(cr, 4)).toBe("- [ ] t1\r- [ ] t2\r- [ ] t3\n- [x] t4\n");
+    expect(toggleCheckbox("- [ ] a\r\n- [ ] b\r\n", 2)).toBe("- [ ] a\r\n- [x] b\r\n");
+  });
+
+  it("flips the box Read drew, on the line it names (PageReader.toggleTask)", () => {
+    const draft = "---\na: 1\rb: 2\n---\n- [ ] t1\r- [ ] t2\r\n- [ ] t3\n- [ ] t4\n";
+    const html = markdownRenderer.render(stripFrontmatter(draft), { tasks: true });
+    const lines = [...html.matchAll(/data-task-line="(\d+)"/g)].map((m) => Number(m[1]));
+    expect(lines.map((l) => toggleCheckbox(draft, l + 1 + bodyLineOffset(draft)))).toEqual(
+      [1, 2, 3, 4].map((i) => draft.replace(`[ ] t${i}`, `[x] t${i}`)),
     );
   });
 });

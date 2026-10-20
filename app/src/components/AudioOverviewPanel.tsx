@@ -23,6 +23,7 @@ export default function AudioOverviewPanel({ t }: { t: Strings }): JSX.Element |
   const stop = useAudioStore((s) => s.stop);
   const seek = useAudioStore((s) => s.seek);
   const reset = useAudioStore((s) => s.reset);
+  const cancelGeneration = useAudioStore((s) => s.cancelGeneration);
   const setRoute = useUIStore((s) => s.setRoute);
   const resolveWikilink = useVaultStore((s) => s.resolveWikilink);
 
@@ -41,7 +42,7 @@ export default function AudioOverviewPanel({ t }: { t: Strings }): JSX.Element |
           <Icon name="spark" size={16} />
           <b>{t.au_title ?? "Audio overview"}</b>
         </div>
-        {script || error ? (
+        {generating || script || error ? (
           <button className="btn btn-ghost" onClick={reset} aria-label={t.au_close ?? "Close"}>
             <Icon name="x" size={13} />
           </button>
@@ -51,10 +52,13 @@ export default function AudioOverviewPanel({ t }: { t: Strings }): JSX.Element |
       {generating ? (
         <div className="muted au-generating" style={{ fontSize: 13 }}>
           <span className="agent-spinner">●</span> {t.au_generating ?? "Writing the dialogue…"}
+          <button className="btn btn-ghost" onClick={() => void cancelGeneration()}>
+            {t.au_stop_generation}
+          </button>
         </div>
       ) : null}
 
-      {error ? <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p> : null}
+      {error ? <p style={{ color: "var(--danger)", fontSize: 13 }}>{error}</p> : null}
 
       {script ? (
         <>

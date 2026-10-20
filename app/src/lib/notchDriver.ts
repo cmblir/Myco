@@ -16,7 +16,7 @@
 // save_voice_capture — the same recorder the spotlight uses, mic release
 // included.
 
-import { useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import {
   CANCELLED_DWELL_MS,
   DONE_DWELL_MS,
@@ -25,16 +25,20 @@ import {
 } from "../components/NotchPanel";
 import type { AgendaOutcome, NotchState } from "../components/NotchPanel";
 import { TRAY_STATUS_EVENT } from "../components/TrayPanel";
-import { withoutActed } from "./notchAgenda";
 import { TRAY_ACTION_EVENT } from "./trayStatus";
+import { requestAgendaAction, TRAY_ACTION_RESULT_EVENT, vaultActionScopeKey, type TrayActionResult, type VaultActionScope } from "./notchAction";
 import { ipc } from "./ipc";
 import { LAST_VAULT_KEY } from "../stores/vaultStore";
 import type {
   NotchAgendaPayload,
   NotchAgendaRow,
   NotchGeometry,
+  RoamPlace,
+  TrayRunningRow,
   TrayStatusPayload,
 } from "./ipc";
+import { ROAM_VISIBILITY_EVENT } from "./roam";
+import { SPOTLIGHT_OPEN_DAILY_EVENT } from "./spotlight";
 import { STRINGS } from "./i18n";
 import { EMPTY_CAPTION, PARTIAL_WINDOW_SECS, startPartialLoop } from "./liveCaption";
 import type { CaptionState } from "./liveCaption";
@@ -88,6 +92,24 @@ export const NOTCH_AGENDA_ROW_H = 32;
  *  `.notch.notch-open.notch-has-agenda` in styles.css. A label plus yes plus
  *  no does not fit in the +20px the capture card takes. */
 export const NOTCH_AGENDA_EXTRA_W = 80;
+/** The mascot's column at the open card's leading edge — must match
+ *  `--notch-mascot-w` in styles.css. It widens the card instead of squeezing
+ *  the text beside it. */
+export const NOTCH_MASCOT_EXTRA_W = 62;
+
+/** The open OS window's width: the widest card this state draws plus the
+ *  12px-per-side transparent hover slop. The agenda card grows from the REAL
+ *  cutout (a fixed width clipped its right-hand button on a 14" shape). */
+export function notchOpenWidth(
+  agendaRows: number,
+  notchW: number | null,
+  mascot: boolean,
+): number {
+  const column = mascot ? NOTCH_MASCOT_EXTRA_W : 0;
+  return agendaRows > 0
+    ? (notchW ?? 172) + NOTCH_AGENDA_EXTRA_W + 24 + column
+    : NOTCH_OPEN_WIDTH + column;
+}
 
 /** What the driver reacts to. `writeOk`/`writeFail` report the async
  *  `_inbox/` write that follows a drop; `statusPush` is the first running row
@@ -98,6 +120,7 @@ export const NOTCH_AGENDA_EXTRA_W = 80;
  *  both gestures are the same esc). `reason` members arrive translated, like
  *  every free-text member of NotchState. */
 export type NotchEvent =
+  | { type: "surfaceReset" }
   | { type: "dragEnter"; paths: string[] }
   | { type: "dragOver" }
   | { type: "dragLeave" }
@@ -110,14 +133,21 @@ export type NotchEvent =
     }
   | { type: "writeOk"; summary: string }
   | { type: "writeFail"; reason: string }
-  | { type: "statusPush"; running: string | null }
+  | {
+      type: "statusPush";
+      running: string | null;
+      /** The running row's kind; absent for the notch's own run. */
+      job?: TrayRunningRow["kind"];
+      /** Kinds whose last run failed (TrayStatusPayload.failed). */
+      failed?: readonly TrayRunningRow["kind"][];
+    }
   | { type: "tick" }
   | { type: "idleTimeout" }
   | { type: "hoverEnter"; due?: { today: number; overdue: number } }
   | { type: "hoverLeave" }
   | { type: "captureOpen" }
   | { type: "captureSubmit" }
-  | { type: "captureSaved"; rel: string }
+  | { type: "captureSaved"; rel: string; line: string }
   | { type: "captureFail"; reason: string }
   | { type: "captureCancel" }
   | { type: "recStart" }
@@ -194,9 +224,26 @@ export function runningPercent(text: string): number {
   return 0;
 }
 
+/** A job's end (done, failed) while myco is out on the job's roam: it waits
+ *  for myco to come back before it folds or opens. */
+function awaitsMyco(panel: NotchState, away: boolean): boolean {
+  return away && (panel.kind === "done" || panel.kind === "failed");
+}
+
+/** What the notch draws for `panel` while myco is `away`: a job's end stays
+ *  collapsed until myco disappears back into the cutout, then the result
+ *  card unfurls with its own mascot. */
+export function panelWhileAway(panel: NotchState, away: boolean): NotchState {
+  return awaitsMyco(panel, away) ? NOTCH_IDLE.panel : panel;
+}
+
 /** How long a state holds before the driver folds it away; null = holds until
- *  something replaces it (dragging, running — states with a live owner). */
-export function dwellMsFor(panel: NotchState): number | null {
+ *  something replaces it (dragging, running — states with a live owner). A
+ *  job's end (done, failed) also holds while myco is `away` roaming: it folds
+ *  once myco has gone back in, so its clip (done's celebration) plays there.
+ *  Other toasts fold on time, so an everyday walk never holds one open. */
+export function dwellMsFor(panel: NotchState, away = false): number | null {
+  if (awaitsMyco(panel, away)) return null;
   switch (panel.kind) {
     case "done":
     case "captured":
@@ -206,6 +253,7 @@ export function dwellMsFor(panel: NotchState): number | null {
     case "accepted":
       return ACCEPTED_DWELL_MS;
     case "rejected":
+    case "failed":
       return REJECTED_DWELL_MS;
     default:
       return null;
@@ -226,6 +274,8 @@ export function reduceNotch(
 ): NotchDriverState {
   const panel = current.panel;
   switch (event.type) {
+    case "surfaceReset":
+      return NOTCH_IDLE;
     case "dragEnter": {
       // A drag is the user, present right now — it outranks passive states.
       // NOT capture or recording: those hold live user state (typed text, a
@@ -310,15 +360,19 @@ export function reduceNotch(
             percent: runningPercent(event.running),
             detail: event.running,
             elapsedMs: Math.max(0, now - since),
+            ...(event.job ? { job: event.job } : null),
           },
           runningSince: since,
         };
       }
       // The run this surface was narrating ended; its last line is the S6
-      // summary (the tray payload has no richer outcome to offer).
-      return panel.kind === "running"
-        ? { panel: { kind: "done", summary: panel.detail }, runningSince: null }
-        : current;
+      // summary, or the failure's when the push says its job failed.
+      if (panel.kind !== "running") return current;
+      const failed = panel.job !== undefined && (event.failed ?? []).includes(panel.job);
+      return {
+        panel: { kind: failed ? "failed" : "done", summary: panel.detail },
+        runningSince: null,
+      };
     }
     case "tick":
       return panel.kind === "running" && current.runningSince !== null
@@ -367,7 +421,7 @@ export function reduceNotch(
         : current;
     case "captureSaved":
       return panel.kind === "captured"
-        ? { panel: { kind: "captured", rel: event.rel }, runningSince: null }
+        ? { panel: { kind: "captured", rel: event.rel, line: event.line }, runningSince: null }
         : current;
     case "captureFail":
       // From "captured" (the optimistic toast) — but also from idle: a save
@@ -571,6 +625,8 @@ export interface NotchDrive {
   onCaptureVoice: () => void;
   /** Peek's "note" row — the same gesture as the lip click. */
   onCaptureOpen: () => void;
+  /** The S7 receipt's Open: the main window shows the written line. */
+  onCapturedOpen: () => void;
   /** S8 ⏎ / the save button: stop the take and hand it to whisper. */
   onRecordStop: () => void;
   /** S7 paste: a lone URL or an oversized selection is a SOURCE, not a
@@ -589,6 +645,12 @@ export interface NotchDrive {
   onAgendaAct: (row: NotchAgendaRow, primary: boolean) => void;
   /** Rows mid-outcome, by id — the beat before they leave. */
   agendaActed: Readonly<Record<string, AgendaOutcome>>;
+  /** myco is out of the notch, roaming the screen (roam.rs): the notch draws
+   *  no myco of its own meanwhile. */
+  mascotAway: boolean;
+  /** The reducer's state as it is, before the two-phase open or a job's end
+   *  waiting for myco hide it: what the roam trigger reads. */
+  panel: NotchState;
 }
 
 /** Open the text capture and ask the native side for key focus — the lip
@@ -609,11 +671,29 @@ function openCapture(raise: (event: NotchEvent) => void): void {
  * state — which in a plain browser without Tauri simply stays idle, exactly
  * what the surface showed before it had a driver.
  */
-/** How much of the collapsed surface peeks BELOW the hardware notch. Without
- * it the idle window sits exactly behind the cutout and is invisible — the
- * first live test's actual finding: nothing to aim a drop at. The mascot cap
- * renders inside this strip. */
+/** Transparent drop area below the hardware cutout; idle paints nothing. */
 export const NOTCH_PEEK_PX = 14;
+
+/** The collapsed OS window never reaches sideways over the menu bar. */
+export function notchCollapsedFrame(
+  notchW: number,
+  notchH: number,
+): { width: number; height: number } {
+  return { width: notchW, height: notchH + NOTCH_PEEK_PX };
+}
+
+/** How long a fold or a re-show settles before the collapsed OS window
+ * re-fits: the card folds first and its window shrinks after, and notch.rs
+ * shows a window only after telling its webview, so a resize sent sooner is
+ * dropped (the native side has already applied its collapsed size). */
+export const NOTCH_FOLD_MS = 420;
+
+/** How long the collapsed re-fit of the OS window waits, in ms. `settlesAt`
+ * is when the last fold or re-show settles; a re-fit inside it waits out the
+ * rest. Other geometry changes re-fit at once. */
+export function collapsedFitDelay(settlesAt: number, now: number): number {
+  return Math.max(0, settlesAt - now);
+}
 
 export function useNotchDriver(): NotchDrive | null {
   // Read once at first render, like NotchPanel's readMockParams.
@@ -624,21 +704,38 @@ export function useNotchDriver(): NotchDrive | null {
   );
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
-  const [drv, raise] = useReducer(
+  const [drv, dispatch] = useReducer(
     (s: NotchDriverState, e: NotchEvent) => reduceNotch(s, e, Date.now()),
     NOTCH_IDLE,
   );
+  const visibleRef = useRef(true);
+  const visibilityEpochRef = useRef(0);
+  const [shown, setShown] = useState(0);
+  const raise = (event: NotchEvent): void => {
+    // A hidden, retained webview still receives status and async save events.
+    // Keep it collapsed until the setting is enabled again.
+    if (visibleRef.current) dispatch(event);
+  };
   const [geom, setGeom] = useState<NotchGeometry | null>(null);
   // Decisions waiting. State, not a ref: the collapsed surface has to appear
   // the moment one arrives, without waiting for another event to re-render.
   const [agenda, setAgenda] = useState<NotchAgendaPayload | null>(null);
-  // Rows already decided: `acted` holds the outcome word for AGENDA_BEAT_MS,
-  // then the id moves to `settled` and stays there for as long as the push
-  // still lists it (the main window's write only reaches the payload a store
-  // refresh later, and until then the row would sit there offering the
-  // decision again).
+  // The main writer confirms completion. Remaining rows, including a refilled
+  // harvest batch with the same id, must stay available after the outcome beat.
   const [acted, setActed] = useState<Record<string, AgendaOutcome>>({});
-  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
+  const pendingActions = useRef(new Set<string>());
+  const actionScopeRef = useRef<VaultActionScope | null>(null);
+  const [actionScope, setActionScope] = useState<VaultActionScope | null>(null);
+  const agendaTimers = useRef(new Set<number>());
+  const agendaMounted = useRef(true);
+  useEffect(() => {
+    agendaMounted.current = true;
+    const timers = agendaTimers.current;
+    return () => {
+      agendaMounted.current = false;
+      timers.forEach(clearTimeout);
+    };
+  }, []);
 
   // The drag-drop subscription is mount-once; the localized template rides a
   // ref so a language change does not tear the listener down mid-drag.
@@ -761,7 +858,12 @@ export function useNotchDriver(): NotchDrive | null {
     if (mocking) return;
     const push = (s: TrayStatusPayload): void => {
       const live = s.running.find((r) => r.text !== "");
-      raise({ type: "statusPush", running: live ? live.text : null });
+      raise({
+        type: "statusPush",
+        running: live ? live.text : null,
+        job: live?.kind,
+        failed: s.failed,
+      });
       // The push already carries today's task counts; the notch reads them
       // rather than running its own vault scan.
       const counts = s.panel?.counts;
@@ -771,16 +873,11 @@ export function useNotchDriver(): NotchDrive | null {
       // Same ride-along: the main window owns the vault and the stores, so it
       // builds the agenda (lib/notchAgenda) and this webview renders it.
       const incoming = s.panel?.agenda ?? null;
+      const scope = s.panel?.actionScope ?? null;
+      if (vaultActionScopeKey(scope) !== vaultActionScopeKey(actionScopeRef.current)) setActed({});
+      actionScopeRef.current = scope;
+      setActionScope(scope);
       setAgenda(incoming);
-      // A decided row the push no longer lists has really left — stop
-      // remembering it, so the set cannot grow with stale ids for the life of
-      // the window.
-      setSettled((prev) => {
-        if (prev.size === 0) return prev;
-        const live = new Set((incoming?.rows ?? []).map((r) => r.id));
-        const next = new Set([...prev].filter((id) => live.has(id)));
-        return next.size === prev.size ? prev : next;
-      });
     };
     void ipc
       .getTrayStatus()
@@ -807,33 +904,49 @@ export function useNotchDriver(): NotchDrive | null {
     };
   }, [mocking]);
 
-  // What the surface actually offers: the push, minus the rows already
-  // decided here.
-  const visibleAgenda = withoutActed(agenda, settled);
+  const visibleAgenda = agenda;
 
   /** A row's yes or no. The action string was routed by whoever built the row
    *  (lib/trayStatus), so this only has to deliver it: the notch emits the
    *  same event Rust emits for a tray-menu click, and applyTrayAction in the
    *  main window — the single writer for all three decisions — acts on it.
    *  Nothing is written from this webview, which has no vault to write to. */
-  const onAgendaAct = (row: NotchAgendaRow, primary: boolean): void => {
+  const onAgendaAct = useCallback((row: NotchAgendaRow, primary: boolean): void => {
     const action = primary ? row.primaryAction : row.secondaryAction;
-    if (!action) return;
-    void import("@tauri-apps/api/event")
-      .then(({ emit }) => emit(TRAY_ACTION_EVENT, action))
-      .catch((err: unknown) =>
-        console.error("notch: agenda action failed:", err),
-      );
-    setActed((prev) => ({ ...prev, [row.id]: primary ? "done" : "dropped" }));
-    window.setTimeout(() => {
-      setSettled((prev) => new Set(prev).add(row.id));
-      setActed((prev) => {
-        const next = { ...prev };
-        delete next[row.id];
-        return next;
-      });
-    }, AGENDA_BEAT_MS);
-  };
+    const scope = actionScope;
+    const scopeKey = vaultActionScopeKey(scope);
+    const key = JSON.stringify([scopeKey, row.id]);
+    const isCurrent = (): boolean => agendaMounted.current && vaultActionScopeKey(actionScopeRef.current) === scopeKey;
+    if (!action || pendingActions.current.has(key) || !isCurrent()) return;
+    if (!scope) {
+      setActed((prev) => ({ ...prev, [key]: "failed" }));
+      return;
+    }
+    pendingActions.current.add(key);
+    setActed((prev) => ({ ...prev, [key]: "pending" }));
+    void import("@tauri-apps/api/event").then(async ({ emit, listen }) => {
+      const ok = await requestAgendaAction(action, {
+        listen: async (receive) => listen<TrayActionResult>(TRAY_ACTION_RESULT_EVENT, (e) => receive(e.payload)),
+        emit: async (request) => { if (!isCurrent()) throw new Error("Agenda scope changed before delivery"); await emit(TRAY_ACTION_EVENT, request); },
+      }, 120_000, scope);
+      if (isCurrent()) setActed((prev) => ({ ...prev, [key]: ok ? (primary ? "done" : "dropped") : "failed" }));
+    }).catch(() => {
+      console.error("notch: agenda action delivery failed");
+      if (isCurrent()) setActed((prev) => ({ ...prev, [key]: "failed" }));
+    }).finally(() => {
+      if (!agendaMounted.current) { pendingActions.current.delete(key); return; }
+      const timer = window.setTimeout(() => {
+        agendaTimers.current.delete(timer);
+        pendingActions.current.delete(key);
+        if (isCurrent()) setActed((prev) => {
+          const next = { ...prev };
+          delete next[key];
+          return next;
+        });
+      }, AGENDA_BEAT_MS);
+      agendaTimers.current.add(timer);
+    });
+  }, [actionScope]);
 
   // S5's lip clock ticks once a second while something runs.
   const kind = drv.panel.kind;
@@ -850,6 +963,64 @@ export function useNotchDriver(): NotchDrive | null {
   // take stops its clock even while the last frame is still displayed.
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   const machineRef = useRef<VoiceMachine | null>(null);
+  const voiceEpochRef = useRef(0);
+  useEffect(() => {
+    if (mocking) return;
+    let gone = false;
+    let unlisten: (() => void) | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<boolean>("notch-visibility", ({ payload }) => {
+          visibleRef.current = payload;
+          visibilityEpochRef.current += 1;
+          // notch.rs re-sizes a shown window for the mascot's default (on);
+          // re-fit it for the setting this window actually has.
+          if (payload) setShown((n) => n + 1);
+          if (!payload) {
+            machineRef.current?.cancel();
+            setVoiceState("idle");
+          }
+          dispatch({ type: "surfaceReset" });
+        }),
+      )
+      .then((stop) => {
+        if (gone) stop();
+        else unlisten = stop;
+      })
+      .catch((error: unknown) =>
+        console.error("notch: visibility listen failed:", error),
+      );
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, [mocking]);
+  // myco out roaming (roam.rs tells every webview): the panel hides its own
+  // myco on the event the roam window's myco pops out on, and shows it again
+  // on the one it sends once that myco has gone back in.
+  const [mascotAway, setMascotAway] = useState(false);
+  useEffect(() => {
+    if (mocking) return;
+    let gone = false;
+    let unlisten: (() => void) | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<RoamPlace | null>(ROAM_VISIBILITY_EVENT, ({ payload }) =>
+          setMascotAway(payload !== null),
+        ),
+      )
+      .then((stop) => {
+        if (gone) stop();
+        else unlisten = stop;
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+    return () => {
+      gone = true;
+      unlisten?.();
+    };
+  }, [mocking]);
   const kindRef = useRef(kind);
   kindRef.current = kind;
   // Waveform data: one ring buffer for the window's whole life. A ref, not
@@ -867,15 +1038,27 @@ export function useNotchDriver(): NotchDrive | null {
 
   const machine = (): VoiceMachine => {
     machineRef.current ??= createVoiceMachine({
-      getStream: () => navigator.mediaDevices.getUserMedia({ audio: true }),
+      getStream: async () => {
+        const epoch = visibilityEpochRef.current;
+        voiceEpochRef.current = epoch;
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        // Disabling during the permission prompt must not start a hidden mic.
+        if (!visibleRef.current || epoch !== visibilityEpochRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          throw new Error("notch-disabled");
+        }
+        return stream;
+      },
       makeRecorder: (s) => createWavRecorder(s),
       save: async (bytes) => {
         const saved = await ipc.saveVoiceCapture(Array.from(bytes));
         // The machine's onChange("saved") carries no rel — announce it here.
-        raise({ type: "recSaved", rel: basename(saved.rel) });
+        if (voiceEpochRef.current === visibilityEpochRef.current)
+          raise({ type: "recSaved", rel: basename(saved.rel) });
         return saved;
       },
       onChange: (state, error) => {
+        if (voiceEpochRef.current !== visibilityEpochRef.current) return;
         setVoiceState(state);
         if (state === "recording") {
           // Fresh ring per take, like the spotlight's: reusing it opened take
@@ -934,6 +1117,7 @@ export function useNotchDriver(): NotchDrive | null {
   useEffect(() => {
     if (mocking) return;
     const onClick = (): void => {
+      if (!visibleRef.current) return;
       if (kindRef.current !== "idle" && kindRef.current !== "peek") return;
       openCapture(raise);
     };
@@ -941,6 +1125,7 @@ export function useNotchDriver(): NotchDrive | null {
     // enter/leave, because collapsed the window is mostly transparent and the
     // whole surface should react, not just the 56px tab.
     const onEnter = (): void => {
+      if (!visibleRef.current) return;
       if (kindRef.current === "idle")
         raise({ type: "hoverEnter", due: dueRef.current ?? undefined });
     };
@@ -966,25 +1151,36 @@ export function useNotchDriver(): NotchDrive | null {
     // is active, and the notch is hovered mid-someone-else's-app. The native
     // side polls the pointer against the panel frame and emits transitions
     // (notch.rs spawn_hover_watch); the DOM pair above stays as the fast path.
-    let unlistenHover: (() => void) | null = null;
+    let unlistenHover: (() => void)[] = [];
     let hoverGone = false;
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
-        listen<boolean>("notch-hover", (e) => {
-          if (e.payload) onEnter();
-          else onLeave();
-        }),
+        Promise.all([
+          listen<boolean>("notch-hover", (e) => {
+            if (e.payload) onEnter();
+            else onLeave();
+          }),
+          // The same watch sends the pointer, panel-local and <= 30 Hz, while
+          // hovered (decision 5). Re-dispatched as the pointermove a frontmost
+          // app would get, so the mascot's eyes have one input path — the one
+          // a real mouse drives in the browser preview.
+          listen<[number, number]>("notch-cursor", ({ payload: [x, y] }) => {
+            window.dispatchEvent(
+              new PointerEvent("pointermove", { clientX: x, clientY: y }),
+            );
+          }),
+        ]),
       )
-      .then((u) => {
-        if (hoverGone) u();
-        else unlistenHover = u;
+      .then((us) => {
+        if (hoverGone) us.forEach((u) => u());
+        else unlistenHover = us;
       })
       .catch((err: unknown) =>
         console.error("notch: hover listen failed:", err),
       );
     return () => {
       hoverGone = true;
-      if (unlistenHover) unlistenHover();
+      unlistenHover.forEach((u) => u());
       window.removeEventListener("click", onClick);
       document.documentElement.removeEventListener("mouseenter", onEnter);
       document.documentElement.removeEventListener("mousemove", onEnter);
@@ -1009,10 +1205,22 @@ export function useNotchDriver(): NotchDrive | null {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-    // onAgendaAct is left out of the deps deliberately: it is re-made every
-    // render and closes over nothing a stale copy would get wrong (two
-    // setStates and the row it is handed).
-  }, [kind, firstRow]);
+    // Keyboard decisions retain the same rendered scope as their row buttons.
+  }, [kind, firstRow, onAgendaAct]);
+
+  // ⏎ on the S7 receipt is its Open (while this panel still holds key focus
+  // from the input; the button is the load-bearing path otherwise).
+  const capturedOpenRef = useRef<() => void>(() => undefined);
+  useEffect(() => {
+    if (kind !== "captured") return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Enter" || e.target instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      capturedOpenRef.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [kind]);
 
   // Recording mode has no input to hang keys on: ⏎/⌥M stop-and-save, esc
   // cancels (mic release is the machine's job, never re-done here).
@@ -1148,7 +1356,7 @@ export function useNotchDriver(): NotchDrive | null {
   const onCaptureSubmit = (text: string): void => {
     raise({ type: "captureSubmit" });
     void ipc.captureNote(text).then(
-      (rel) => raise({ type: "captureSaved", rel }),
+      ({ rel, line }) => raise({ type: "captureSaved", rel, line }),
       (err: unknown) => {
         console.error("notch capture write failed:", err);
         raise({
@@ -1158,6 +1366,17 @@ export function useNotchDriver(): NotchDrive | null {
       },
     );
   };
+
+  // The receipt's Open goes through the main window's spotlight bridge, the
+  // same validated path the Spotlight's written-question Open takes.
+  const onCapturedOpen = (): void => {
+    const p = drv.panel;
+    if (p.kind !== "captured" || !p.line) return;
+    void import("@tauri-apps/api/event")
+      .then(({ emit }) => emit(SPOTLIGHT_OPEN_DAILY_EVENT, { rel: p.rel, line: p.line }))
+      .catch((err: unknown) => console.error("notch: open capture failed:", err));
+  };
+  capturedOpenRef.current = onCapturedOpen;
 
   const onCaptureCancel = (): void => {
     if (kindRef.current === "recording") machine().cancel();
@@ -1192,12 +1411,14 @@ export function useNotchDriver(): NotchDrive | null {
   };
 
   const onCaptureVoice = (): void => {
+    if (!visibleRef.current) return;
     const missing = (): void =>
       raise({
         type: "recFail",
         reason: whisperMissingRef.current ?? "whisper is not installed",
       });
     void ipc.whisperCheck().then((s) => {
+      if (!visibleRef.current) return;
       if (!s.installed) {
         missing();
         return;
@@ -1207,6 +1428,7 @@ export function useNotchDriver(): NotchDrive | null {
   };
 
   voiceToggleRef.current = (): void => {
+    if (!visibleRef.current) return;
     if (!voiceHotkeyGate()) return;
     const action = voiceHotkeyAction(kindRef.current);
     if (action === "stop") void machine().stop();
@@ -1216,11 +1438,11 @@ export function useNotchDriver(): NotchDrive | null {
   // Self-collapse: arm the state's dwell, if it has one. `drv.panel` is a new
   // object only when the reducer actually moved, so no-op pushes do not rearm.
   useEffect(() => {
-    const dwell = dwellMsFor(drv.panel);
+    const dwell = dwellMsFor(drv.panel, mascotAway);
     if (dwell === null) return;
     const id = window.setTimeout(() => raise({ type: "idleTimeout" }), dwell);
     return () => window.clearTimeout(id);
-  }, [drv.panel]);
+  }, [drv.panel, mascotAway]);
 
   // Fit the OS window to the surface — TWO-PHASE on both the notch and the
   // pill: grow the transparent OS window first, unfurl the card only after
@@ -1230,7 +1452,8 @@ export function useNotchDriver(): NotchDrive | null {
   // then a lateral jump as the window recentred under it. (The pill's old
   // ResizeObserver follower had the same gap; it just lacked a recording.)
   const pill = geom !== null && !geom.has_notch;
-  const open = describeNotch(drv.panel, t, pill).open;
+  const shownPanel = panelWhileAway(drv.panel, mascotAway);
+  const open = describeNotch(shownPanel, t).open;
   const [grown, setGrown] = useState(false);
   // The peek card grows by a row per waiting decision — a fixed height would
   // clip the third one, and the card is the only thing that can be resized
@@ -1242,14 +1465,25 @@ export function useNotchDriver(): NotchDrive | null {
   // sized for a card 20px wider than a 172px cutout, and the agenda card is
   // 80px wider than a REAL one. Measured headlessly against the mock's 14"
   // shape — a 284px card was being clipped inside a 252px window, losing the
-  // right-hand button. +24 keeps the 12px-per-side transparent hover slop the
-  // other open states have.
-  const openW =
-    rowCount > 0
-      ? (geom?.has_notch ? geom.notch_w : 172) + NOTCH_AGENDA_EXTRA_W + 24
-      : NOTCH_OPEN_WIDTH;
+  // right-hand button. The mascot's column adds to both.
+  const mascot = useUIStore((s) => s.mascotEnabled);
+  const openW = notchOpenWidth(
+    rowCount,
+    geom?.has_notch ? geom.notch_w : null,
+    mascot,
+  );
+  // The two edges the collapsed re-fit waits on (collapsedFitDelay), compared
+  // against the run before.
+  const wasOpenRef = useRef(false);
+  const shownRef = useRef(shown);
+  const settlesAtRef = useRef(0);
   useEffect(() => {
     if (mocking || geom === null) return;
+    const folded = geom.has_notch
+      ? notchCollapsedFrame(geom.notch_w, geom.notch_h)
+      : null;
+    const folding = wasOpenRef.current && !open;
+    wasOpenRef.current = open;
     if (open) {
       let live = true;
       const unfurl = (): void => {
@@ -1268,27 +1502,39 @@ export function useNotchDriver(): NotchDrive | null {
     }
     setGrown(false);
     // Collapse order is the mirror: card folds instantly (render), the OS
-    // window shrinks after it. Also the boot pass — this arms on mount and
-    // corrects the builder's default size. The pill has no OS-measured cap,
-    // so its collapsed size is the folded card itself, measured after the
-    // fold has rendered (the 172×26 fallback is the builder's PILL_W/H).
-    const id = window.setTimeout(() => {
-      const w = geom.has_notch
-        ? geom.notch_w
-        : Math.ceil(
-            document.querySelector<HTMLElement>(".notch")?.offsetWidth ?? 172,
-          );
-      const h = geom.has_notch
-        ? geom.notch_h + NOTCH_PEEK_PX
-        : Math.ceil(
-            document.querySelector<HTMLElement>(".notch")?.offsetHeight ?? 26,
-          );
+    // window shrinks after it. Geometry changes while collapsed re-fit at
+    // once, as does the boot pass, which corrects the
+    // builder's default size. The pill has no OS-measured cap, so its
+    // collapsed size is the folded card itself, measured after the fold has
+    // rendered (the 172×26 fallback is the builder's PILL_W/H).
+    const now = Date.now();
+    if (folding || shownRef.current !== shown) {
+      settlesAtRef.current = now + NOTCH_FOLD_MS;
+    }
+    shownRef.current = shown;
+    const fit = (): void => {
+      const w =
+        folded?.width ??
+        Math.ceil(
+          document.querySelector<HTMLElement>(".notch")?.offsetWidth ?? 172,
+        );
+      const h =
+        folded?.height ??
+        Math.ceil(
+          document.querySelector<HTMLElement>(".notch")?.offsetHeight ?? 26,
+        );
       void ipc.notchResize(w, h).catch(() => {
         /* plain-browser dev: no Tauri backend */
       });
-    }, 420);
+    };
+    const delay = collapsedFitDelay(settlesAtRef.current, now);
+    if (delay === 0) {
+      fit();
+      return;
+    }
+    const id = window.setTimeout(fit, delay);
     return () => window.clearTimeout(id);
-  }, [mocking, open, geom, openW, openH]);
+  }, [mocking, open, geom, openW, openH, shown]);
 
   // Content below the hardware cutout: the panel's lip offsets by the real
   // notch height (0 on a notchless Mac, where the whole pill is visible).
@@ -1306,18 +1552,21 @@ export function useNotchDriver(): NotchDrive | null {
     // the reducer already moved — the other half of the two-phase open.
     // Applies wherever a real backend measured the display (notch OR pill);
     // a plain browser (geom null) never gates.
-    state: geom !== null && open && !grown ? NOTCH_IDLE.panel : drv.panel,
+    state: geom !== null && open && !grown ? NOTCH_IDLE.panel : shownPanel,
+    panel: drv.panel,
     pill,
     collapsedWidth: geom?.has_notch ? geom.notch_w : null,
     onCaptureSubmit,
     onCaptureCancel,
     onCaptureVoice,
     onCaptureOpen: () => openCapture(raise),
+    onCapturedOpen,
     onRecordStop: () => void machine().stop(),
     onCapturePaste,
     levels: levelsRef.current,
     agenda: visibleAgenda,
     onAgendaAct,
-    agendaActed: acted,
+    agendaActed: Object.fromEntries((visibleAgenda?.rows ?? []).map((row) => [row.id, acted[JSON.stringify([vaultActionScopeKey(actionScope), row.id])]])),
+    mascotAway,
   };
 }

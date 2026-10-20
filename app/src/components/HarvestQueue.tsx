@@ -9,16 +9,19 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { JSX } from "react";
+import { displayName } from "../lib/displayName";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
 import type { HarvestCandidate } from "../lib/ipc";
 import {
   clusterColorVar,
+  clusterLabel,
   distinctCitations,
   excludedRows,
   formatKb,
   harvestLabel,
   harvestSurface,
+  harvestSelected,
   junkExcluded,
   queueProgress,
   selectionTotals,
@@ -44,24 +47,32 @@ function fill(s: string, vars: Record<string, string | number>): string {
 
 export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null {
   const vault = useVaultStore((s) => s.currentVault);
+  const vaultToken = useVaultStore((s) => s.vaultToken);
+  const isOpeningVault = useVaultStore((s) => s.isOpeningVault);
   const adjacency = useVaultStore((s) => s.adjacency);
   const setRoute = useUIStore((s) => s.setRoute);
   const provRows = useProvenanceStore((s) => s.rows);
   const scanProvenance = useProvenanceStore((s) => s.scan);
   const bumpInbox = useIngestStore((s) => s.bumpInboxRev);
 
-  const data = useHarvestStore((s) => s.data);
-  const error = useHarvestStore((s) => s.error);
+  const cachedData = useHarvestStore((s) => s.data);
+  const scannedPath = useHarvestStore((s) => s.scannedPath);
+  const scannedToken = useHarvestStore((s) => s.scannedToken);
+  const cachedError = useHarvestStore((s) => s.error);
+  const sharedRun = useHarvestStore((s) => s.run);
+  const loading = useHarvestStore((s) => s.loading);
   const loadQueue = useHarvestStore((s) => s.load);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [showExcluded, setShowExcluded] = useState(false);
   const [planning, setPlanning] = useState(false);
-  const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   const harvestBtn = useRef<HTMLButtonElement | null>(null);
   const runBtn = useRef<HTMLButtonElement | null>(null);
 
   const root = vault?.path ?? null;
+  const data = scannedPath === root && scannedToken === vaultToken ? cachedData : null;
+  const error = scannedPath === root && scannedToken === vaultToken ? cachedError : null;
+  const progress = sharedRun.phase === null ? null : sharedRun;
   // Per-vault disclosure: absent = collapsed, which is the default once this
   // vault has been harvested at least once.
   const expanded = useUIStore((s) => (root ? (s.harvestExpanded[root] ?? false) : false));
@@ -69,13 +80,16 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
 
   const load = useCallback(
     async (force = false) => {
-      if (root) await loadQueue(root, force);
+      if (!root || isOpeningVault) return;
+      const current = useVaultStore.getState();
+      if (root && !current.isOpeningVault && current.currentVault?.path === root && current.vaultToken === vaultToken) await loadQueue(root, force);
     },
-    [root, loadQueue],
+    [root, vaultToken, isOpeningVault, loadQueue],
   );
 
   useEffect(() => {
     void load();
+    setPlanning(false);
   }, [load]);
 
   // Everything eligible starts checked: the ranker already said yes.
@@ -88,24 +102,30 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   // store, so a revisit costs nothing.
   useEffect(() => {
     if (root) void scanProvenance(root);
-  }, [root, scanProvenance]);
+  }, [root, vaultToken, scanProvenance]);
 
   // Keyboard focus follows the one primary action into and out of the gate.
   useEffect(() => {
     if (planning) runBtn.current?.focus();
   }, [planning]);
 
-  if (!root) return null;
+  if (!root || isOpeningVault) return null;
 
-  const items = data?.items ?? [];
+  const readFailed = data !== null && data.read_status !== "complete" && data.read_status !== "partial";
+  const readIssues = data?.read_issues ?? [];
+  const incompleteRead = data !== null && data.read_status !== "complete";
+  const completeRead = data?.read_status === "complete" && !loading && !error;
+  const readCount = (count: number): string => incompleteRead
+    ? t.hq_read_lower_bound.replace("{n}", count.toLocaleString()) : count.toLocaleString();
+  const items = readFailed ? [] : data?.items ?? [];
   const totals = selectionTotals(items, selected);
   const citesNow = provRows ? distinctCitations(provRows) : null;
-  const queued = data ? queueProgress(data) : null;
+  const queued = completeRead && data ? queueProgress(data) : null;
   const base = citesNow ?? 0;
   const goal = base + totals.citations;
   const running = progress !== null;
   const allSelected = items.length > 0 && totals.count === items.length;
-  const surface = harvestSurface(data);
+  const surface = completeRead ? harvestSurface(data) : "first-run";
   const collapsed = surface === "working" && !expanded;
 
   function toggle(path: string, on: boolean): void {
@@ -118,54 +138,93 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   }
 
   async function run(): Promise<void> {
-    // `running` is this component's own progress. A run started from the notch
-    // reports on the shared store, so without this a second run could copy the
-    // same sessions into _inbox/ while the first is still walking them.
-    if (!root || !data || running) return;
+    // Overview and the notch share the run lock, including across route changes.
+    if (!root || !data || readFailed || error || loading || running) return;
     if (useHarvestStore.getState().run.phase !== null) return;
     const paths = items.filter((c) => selected.has(c.path)).map((c) => c.path);
     if (paths.length === 0) return;
-    setProgress({ done: 0, total: paths.length });
     // The Topbar's activity chip reads the run from the store: a harvest is
     // minutes of work and the bar showed nothing at all for the whole stretch.
     useHarvestStore.getState().startRun(paths.length);
+    let ownedRun = useHarvestStore.getState().run;
+    const isCurrent = (): boolean => {
+      const current = useVaultStore.getState();
+      return (
+        !current.isOpeningVault &&
+        current.currentVault?.path === root &&
+        current.vaultToken === vaultToken &&
+        useHarvestStore.getState().run === ownedRun
+      );
+    };
+    const endRun = (ok: boolean): void => {
+      if (!isCurrent()) return;
+      useHarvestStore.getState().endRun(ok);
+      ownedRun = useHarvestStore.getState().run;
+    };
     try {
-      const res = await ipc.harvestRun(paths);
-      useHarvestStore.getState().setRun(0, res.copied);
-      // The pending _inbox list (Ingest page) refetches on this.
-      bumpInbox();
-      // The existing inbox pass ingests ONE source per call and archives it;
-      // one call per copy walks the queue through. It stops early when a
-      // pass ingests nothing (another run busy, a held source, an error) —
-      // the rest simply wait in _inbox/ for the scheduler.
-      let ingested = 0;
-      for (let i = 0; i < res.copied; i++) {
-        const out = await runInboxPass(root);
-        if (!out.ingested) break;
-        ingested++;
-        setProgress({ done: ingested, total: res.copied });
-        useHarvestStore.getState().setRun(ingested, res.copied);
-      }
-      await scanProvenance(root, true);
-      const after = distinctCitations(useProvenanceStore.getState().rows ?? []);
-      notice.ok(harvestLabel(t.hq_done_title, res.copied), {
-        icon: "distill",
-        sub:
-          ingested === res.copied
-            ? fill(t.hq_done_sub, { base, goal: after })
-            : fill(t.hq_done_partial, { copied: res.copied, ingested }),
+      const origin = Object.freeze(await ipc.agentVaultSession());
+      if (!isCurrent()) return;
+      if (origin.vaultPath !== root || !origin.openingToken)
+        throw new Error(
+          "The native harvest opening differs from the selected vault",
+        );
+      const res = await harvestSelected(root, paths, {
+        origin,
+        expectedVaultToken: vaultToken,
+        copy: async (chosen, vaultPath, capturedOrigin) => {
+          const copied = await ipc.harvestRun(
+            chosen,
+            vaultPath,
+            capturedOrigin,
+          );
+          if (isCurrent()) bumpInbox();
+          return copied;
+        },
+        pass: runInboxPass,
+        isCurrentVault: (path) => path === root && isCurrent(),
+        onProgress: (done, total) => {
+          if (!isCurrent()) return;
+          useHarvestStore.getState().setRun(done, total);
+          ownedRun = useHarvestStore.getState().run;
+        },
       });
-      useHarvestStore.getState().endRun(true);
+      const complete =
+        res.completed > 0 &&
+        res.pending === 0 &&
+        res.skipped.length === 0 &&
+        res.failed.length === 0 &&
+        !res.cancelled;
+      if (res.cancelled) {
+        endRun(false);
+        return;
+      }
+      if (!isCurrent()) return;
+      await scanProvenance(root, true);
+      if (!isCurrent()) return;
+      const after = distinctCitations(useProvenanceStore.getState().rows ?? []);
+      const details = [...res.failed, ...res.skipped]
+        .map((failure) => failure.reason)
+        .join("; ");
+      (complete ? notice.ok : notice.warn)(
+        complete ? harvestLabel(t.hq_done_title, res.completed) : t.hq_failed,
+        {
+          icon: "distill",
+          sub: complete
+            ? fill(t.hq_done_sub, { base, goal: after })
+            : `${fill(t.hq_done_partial, { copied: res.copied, ingested: res.completed })}${details ? ` — ${details}` : ""}`,
+        },
+      );
+      endRun(complete);
     } catch (e) {
-      notice.warn(t.hq_failed, { sub: String(e) });
-      useHarvestStore.getState().endRun(false);
+      if (isCurrent()) notice.warn(t.hq_failed, { sub: String(e) });
+      endRun(false);
     } finally {
-      setProgress(null);
-      setPlanning(false);
-      // The user just harvested — do not re-present the same hero, even to
-      // someone who had deliberately opened the queue. One chevron reopens it.
-      setExpanded(root, false);
-      await load(true);
+      // Refresh only the captured vault; a pending queue stays retryable.
+      if (isCurrent()) {
+        setPlanning(false);
+        setExpanded(root, false);
+        await load(true);
+      }
     }
   }
 
@@ -199,7 +258,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
       ref={harvestBtn}
       type="button"
       className={"btn hq-btn" + (collapsed ? "" : " btn-primary")}
-      disabled={totals.count === 0 || running || planning}
+      disabled={totals.count === 0 || running || planning || loading}
       onClick={() => setPlanning(true)}
     >
       {harvestLabel(t.hq_harvest_btn, totals.count)}
@@ -261,23 +320,25 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
             titleId="hq-title"
             asset={<ActivityIcon name="distill" size={112} />}
             title={
-              <>
+              data && !readFailed ? <>
                 {titleParts[0]}
-                <b>{items.length.toLocaleString()}</b>
+                <b>{readCount(items.length)}</b>
                 {titleParts[1] ?? ""}
-              </>
+              </> : t.bf_title
             }
             lede={
               <>
-                {data
+                {readFailed
+                  ? t.hq_error
+                  : data
                   ? fill(t.hq_lede, {
-                      total: data.total_scanned,
-                      distinct: data.distinct_bodies,
+                      total: readCount(data.total_scanned),
+                      distinct: readCount(data.distinct_bodies),
                     })
                   : error
                     ? t.hq_error
                     : t.hq_loading}
-                {data && items.length > 0 ? (
+                {completeRead && items.length > 0 ? (
                   queued ? (
                     <>
                       {" "}
@@ -301,12 +362,12 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
                 {citesNum}
               </>
             }
-            action={harvestButton}
+            action={data && !readFailed ? harvestButton : undefined}
           />
         </>
       )}
 
-      {data && !collapsed ? (
+      {data && !readFailed && !collapsed ? (
         <div className="hq-drop">
           <button
             type="button"
@@ -317,7 +378,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
             onClick={() => setShowExcluded((v) => !v)}
           >
             <ActivityIcon name="stop" size={28} />
-            <span>{fill(t.hq_excluded_line, { n: junkExcluded(data.excluded) })}</span>
+            <span>{fill(t.hq_excluded_line, { n: readCount(junkExcluded(data.excluded)) })}</span>
             <span className="hq-chev" aria-hidden="true">
               ›
             </span>
@@ -337,7 +398,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
                     {excludedRows(data.excluded).map((r) => (
                       <tr key={r.key}>
                         <td>{t[`hq_ex_${r.key}`]}</td>
-                        <td className="hq-n">{r.count.toLocaleString()}</td>
+                        <td className="hq-n">{readCount(r.count)}</td>
                         <td className="hq-why">{t[`hq_ex_${r.key}_why`]}</td>
                       </tr>
                     ))}
@@ -352,16 +413,21 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
         </div>
       ) : null}
 
-      {error ? (
+      {error || incompleteRead ? (
         <div className="hq-error" role="alert">
-          <span>{error}</span>
-          <button type="button" className="btn" onClick={() => void load(true)}>
+          <div style={{ minWidth: 0, overflowWrap: "anywhere" }}>
+            <p>{error ?? (readFailed ? t.hq_error : t.hq_read_partial)}</p>
+            {readIssues.length ? <ul>{readIssues.map((issue, index) => (
+              <li key={`${issue.path}:${issue.code}:${index}`}><code>{issue.path}</code>: {issue.message}</li>
+            ))}</ul> : null}
+          </div>
+          <button type="button" className="btn" style={{ minWidth: 44, minHeight: 44 }} disabled={loading} aria-busy={loading} onClick={() => void load(true)}>
             {t.hq_retry}
           </button>
         </div>
       ) : null}
 
-      {data && items.length === 0 ? (
+      {completeRead && data && items.length === 0 ? (
         <div className="hq-empty">
           <MascotClip size={56} />
           <div className="hq-empty-body">
@@ -385,6 +451,14 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
                 colorVar={clusterColorVar(
                   c.cluster ? adjacency?.meta?.[`${root}/${c.cluster.page}`]?.type : undefined,
                 )}
+                clusterName={
+                  c.cluster
+                    ? clusterLabel(
+                        c.cluster.page,
+                        adjacency?.meta?.[`${root}/${c.cluster.page}`]?.title,
+                      )
+                    : ""
+                }
                 checked={selected.has(c.path)}
                 open={openRow === c.path}
                 disabled={running}
@@ -398,7 +472,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
             <button
               type="button"
               className="btn btn-ghost"
-              disabled={running}
+              disabled={running || loading}
               onClick={() =>
                 setSelected(allSelected ? new Set() : new Set(items.map((c) => c.path)))
               }
@@ -459,7 +533,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
               ref={runBtn}
               type="button"
               className="btn btn-primary hq-btn"
-              disabled={running}
+              disabled={running || loading || readFailed || !!error}
               aria-busy={running}
               onClick={() => void run()}
             >
@@ -487,6 +561,7 @@ function QueueRow({
   t,
   c,
   colorVar,
+  clusterName,
   checked,
   open,
   disabled,
@@ -496,6 +571,8 @@ function QueueRow({
   t: Strings;
   c: HarvestCandidate;
   colorVar: string;
+  /** The cluster page as the row names it (clusterLabel). */
+  clusterName: string;
   checked: boolean;
   open: boolean;
   disabled: boolean;
@@ -504,6 +581,8 @@ function QueueRow({
 }): JSX.Element {
   const bodyId = `hq-b-${c.rel.replace(/[^a-z0-9]+/gi, "-")}`;
   const name = c.rel.split("/").pop() ?? c.rel;
+  // Rust falls back to the file stem when a transcript has no `# heading`.
+  const title = displayName(c.title);
   return (
     <li
       className={"hq-row" + (checked ? " is-sel" : "") + (open ? " is-open" : "")}
@@ -515,7 +594,7 @@ function QueueRow({
             type="checkbox"
             checked={checked}
             disabled={disabled}
-            aria-label={fill(t.hq_row_select, { name: c.title })}
+            aria-label={fill(t.hq_row_select, { name: title })}
             onChange={(e) => onToggle(e.target.checked)}
           />
         </label>
@@ -527,15 +606,17 @@ function QueueRow({
           onClick={onOpen}
         >
           <span className="hq-row-title">
-            <span className="hq-name">{c.title}</span>
+            <span className="hq-name" title={c.rel}>
+              {title}
+            </span>
             <span className="hq-sz">{formatKb(c.size_bytes)}</span>
           </span>
           <span className="hq-meta">
             {c.cluster ? (
               <>
-                <span className="hq-tb">
+                <span className="hq-tb" title={c.cluster.page}>
                   <span className="hq-tbd" aria-hidden="true" />
-                  {c.cluster.page.replace(/\.md$/i, "")}
+                  {clusterName}
                 </span>
                 <span className="hq-near">
                   {fill(t.hq_near, { score: c.cluster.score.toFixed(2) })}
@@ -582,8 +663,8 @@ function QueueRow({
             {c.cluster ? (
               <div>
                 <dt>{t.hq_will_cluster}</dt>
-                <dd>
-                  {c.cluster.page.replace(/\.md$/i, "")} · {c.cluster.score.toFixed(2)}
+                <dd title={c.cluster.page}>
+                  {clusterName} · {c.cluster.score.toFixed(2)}
                 </dd>
               </div>
             ) : null}

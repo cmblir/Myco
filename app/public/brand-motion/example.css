@@ -1,0 +1,16 @@
+html,
+body {
+  margin: 0;
+  min-width: 0;
+  background: transparent;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+}
+
+.myco-motion {
+  --myco-motion-size: min(15rem, 90vw, 90vh);
+}

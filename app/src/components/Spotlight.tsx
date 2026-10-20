@@ -20,18 +20,25 @@
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import LiveCaption from "./LiveCaption";
+import MascotClip from "./MascotClip";
 import Viewer from "./Viewer";
+import { displayName } from "../lib/displayName";
 import VoiceWave from "./VoiceWave";
 import { ipc } from "../lib/ipc";
-import { STRINGS } from "../lib/i18n";
+import { STRINGS, type Strings } from "../lib/i18n";
 import { Icon } from "../lib/icons";
 import { isComposingKey } from "../lib/ime";
+import { SURFACE_CLIPS } from "../lib/mascotClips";
+import { questionLine, type Captured } from "../lib/dailyNote";
 import { EMPTY_CAPTION, PARTIAL_WINDOW_SECS, startPartialLoop } from "../lib/liveCaption";
 import type { CaptionState } from "../lib/liveCaption";
 import {
   SPOTLIGHT_ANSWER_EVENT,
   SPOTLIGHT_ASK_EVENT,
+  SPOTLIGHT_OPEN_ASK_EVENT,
+  SPOTLIGHT_OPEN_DAILY_EVENT,
   SPOTLIGHT_OPEN_EVENT,
+  SPOTLIGHT_OPEN_INBOX_EVENT,
   SPOTLIGHT_OPENED_EVENT,
   type SpotlightAnswer,
 } from "../lib/spotlight";
@@ -54,18 +61,25 @@ import {
  *  mic is not, and a pause must never read as "no sound". */
 const SILENCE_RMS = 0.003;
 const SILENCE_HOLD_MS = 2500;
+/** How long the saved chip stays before the window closes itself. */
+const SAVED_DWELL_MS = 4000;
 import { createWavRecorder } from "../lib/wavRecorder";
 import { useUIStore } from "../stores/uiStore";
 
 /** In a plain browser, `?window=spotlight&mock=1` makes devMock answer the ask
- *  event with a canned extractive turn — that is how this window is looked at
- *  without the native shell (the real global keypress cannot be). */
+ *  event with a canned extractive turn (an abstention when no sample note
+ *  mentions the question) — that is how this window is looked at without the
+ *  native shell (the real global keypress cannot be). */
 export default function Spotlight(): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SpotlightAnswer | null>(null);
+  // An abstention's question written into today's note (UX S30): what
+  // capture_note wrote once it returns, "" while it runs.
+  const [noted, setNoted] = useState<Captured | "" | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   // First-use whisper model download percent; null outside that window.
   const [modelPct, setModelPct] = useState<number | null>(null);
@@ -114,6 +128,10 @@ export default function Spotlight(): JSX.Element {
   /** "whisper-missing" / "mic-denied" / a save failure — shown in ask mode. */
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [savedRel, setSavedRel] = useState<string | null>(null);
+  // What whisper heard, shown on the saved chip (UX S39).
+  const [savedLine, setSavedLine] = useState("");
+  // The pointer is on the saved row: hold the window open for its Open.
+  const [holdSaved, setHoldSaved] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   // The "nothing is coming in" verdict. A muted or wrong mic used to look
   // identical to a working one; the waveform follows the real signal and goes
@@ -144,6 +162,7 @@ export default function Spotlight(): JSX.Element {
       save: async (bytes) => {
         const saved = await ipc.saveVoiceCapture(Array.from(bytes));
         setSavedRel(saved.rel);
+        setSavedLine(saved.first_line ?? "");
         return saved;
       },
       onChange: (state, error) => {
@@ -194,10 +213,13 @@ export default function Spotlight(): JSX.Element {
         await listen(SPOTLIGHT_OPENED_EVENT, () => {
           setQuestion("");
           setResult(null);
+          setNoted(null);
+          setNoteError(null);
           setBusy(false);
           machineRef.current?.cancel();
           setVoiceNotice(null);
           setSavedRel(null);
+          setHoldSaved(false);
           inputRef.current?.focus();
         }),
       ])
@@ -270,12 +292,13 @@ export default function Spotlight(): JSX.Element {
     });
   }, [voiceState]);
 
-  // Saved chip shown, then the window puts itself away (mockup M7-c).
+  // Saved chip shown, then the window puts itself away (mockup M7-c) — on the
+  // notch's 4 s clock now that the chip has an Open to reach.
   useEffect(() => {
-    if (voiceState !== "saved") return;
-    const id = window.setTimeout(() => close(), 1500);
+    if (voiceState !== "saved" || holdSaved) return;
+    const id = window.setTimeout(() => close(), SAVED_DWELL_MS);
     return () => window.clearTimeout(id);
-  }, [voiceState]);
+  }, [voiceState, holdSaved]);
 
   // Back in ask mode (cancel / error), the input must have focus again.
   useEffect(() => {
@@ -293,6 +316,8 @@ export default function Spotlight(): JSX.Element {
     if (!q || busy) return;
     setBusy(true);
     setResult(null);
+    setNoted(null);
+    setNoteError(null);
     void import("@tauri-apps/api/event")
       .then(({ emit }) => emit(SPOTLIGHT_ASK_EVENT, q))
       .catch(() => {
@@ -313,6 +338,7 @@ export default function Spotlight(): JSX.Element {
           return;
         }
         setSavedRel(null);
+        setHoldSaved(false);
         return machine().start();
       })
       .catch(() => setVoiceNotice("whisper-missing"));
@@ -363,6 +389,11 @@ export default function Spotlight(): JSX.Element {
         toggleVoice();
         return;
       }
+      if (voiceState === "saved" && e.key === "Enter") {
+        e.preventDefault();
+        openSaved();
+        return;
+      }
       if (voiceState === "recording") {
         if (e.key === "Enter") {
           e.preventDefault();
@@ -389,6 +420,57 @@ export default function Spotlight(): JSX.Element {
       });
   };
 
+  // An abstention's closest misses are on the Ask page: close, and let the
+  // main window go there.
+  const openAsk = (): void => {
+    close();
+    void import("@tauri-apps/api/event")
+      .then(({ emit }) => emit(SPOTLIGHT_OPEN_ASK_EVENT))
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+  };
+
+  // "Write it down": the Ask card's capture, from here. capture_note is a
+  // vault command, so this webview writes without knowing the vault, as the
+  // notch does. The question only, never an answer; marked at the press so a
+  // double press writes once, live again if the write failed.
+  const writeDown = (): void => {
+    if (!result || noted !== null) return;
+    setNoted("");
+    setNoteError(null);
+    ipc.captureNote(questionLine(result.question, t)).then(
+      (written) => setNoted(written),
+      (err: unknown) => {
+        setNoted(null);
+        setNoteError(`${t.home_capture_failed}: ${String(err)}`);
+      },
+    );
+  };
+
+  // The written question's Open: close, and let the main window show it.
+  const openNoted = (): void => {
+    if (!noted) return;
+    close();
+    void import("@tauri-apps/api/event")
+      .then(({ emit }) => emit(SPOTLIGHT_OPEN_DAILY_EVENT, noted))
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+  };
+
+  // The voice receipt's Open: close, and let the main window show the note.
+  const openSaved = (): void => {
+    if (!savedRel) return;
+    const rel = savedRel;
+    close();
+    void import("@tauri-apps/api/event")
+      .then(({ emit }) => emit(SPOTLIGHT_OPEN_INBOX_EVENT, rel))
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+  };
+
   const noticeText =
     voiceNotice === "whisper-missing"
       ? (t.voice_whisper_missing ??
@@ -401,17 +483,32 @@ export default function Spotlight(): JSX.Element {
   return (
     <div className="spotlight-card" ref={cardRef}>
       {recordMode ? (
-        <div className="spotlight-voice">
+        <div
+          className="spotlight-voice"
+          onPointerEnter={voiceState === "saved" ? () => setHoldSaved(true) : undefined}
+        >
           <span aria-hidden className="voice-glyph">
             <Icon name="mic" size={16} />
           </span>
           {voiceState === "saved" ? (
-            <span className="voice-saved chip-pop">
-              {(t.voice_saved_chip ?? "{rel} — joins the next ingest").replace(
-                "{rel}",
-                savedRel ?? "",
-              )}
-            </span>
+            <>
+              {/* Where · next, then what was heard: the receipt frame Home's
+                  capture and the notch use, with its Open beside it. */}
+              <span className="voice-saved chip-pop" role="status">
+                <span className="voice-saved__where">
+                  {(t.capture_inbox_receipt ?? "{rel} — joins the next ingest").replace(
+                    "{rel}",
+                    savedRel ?? "",
+                  )}
+                </span>
+                {savedLine ? (
+                  <span className="voice-saved__heard">“{savedLine}”</span>
+                ) : null}
+              </span>
+              <button type="button" className="btn voice-saved-open" onClick={openSaved}>
+                {t.home_open_daily}
+              </button>
+            </>
           ) : (
             <>
               {/* Wave over transcript, the notch's stack — the caption needs
@@ -509,16 +606,22 @@ export default function Spotlight(): JSX.Element {
         </div>
       ) : null}
 
-      {result && !result.error && !recordMode ? (
-        <div className="spotlight-body">
-          {result.extractive ? (
-            <div className="spotlight-label">
-              {t.q_extractive_label ?? "From your notes (top matches, verbatim)"}
-            </div>
-          ) : null}
-          <Viewer content={result.answer} onLinkClick={openCitation} />
-          <div className="spotlight-hint">{t.spot_hint_open ?? ""}</div>
+      {noteError && !recordMode ? (
+        <div className="spotlight-body spotlight-error" role="alert">
+          {noteError}
         </div>
+      ) : null}
+
+      {result && !result.error && !recordMode ? (
+        <SpotlightResult
+          t={t}
+          result={result}
+          onOpen={openCitation}
+          onOpenAsk={openAsk}
+          noted={noted}
+          onNote={writeDown}
+          onOpenNoted={openNoted}
+        />
       ) : null}
 
       {!result && !busy && !recordMode && !noticeText ? (
@@ -526,6 +629,104 @@ export default function Spotlight(): JSX.Element {
           {t.spot_hint_enter ?? ""}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/** The finished turn's body. An abstention is an answer too: the Ask page's
+ *  title (the period's, for a dated question), its "write it down" as the
+ *  primary button, which opens the note once written, and a button to the
+ *  Ask page, where the numbers and the closest misses are — never the
+ *  verbatim label over what is only advice. */
+export function SpotlightResult({
+  t,
+  result,
+  onOpen,
+  onOpenAsk,
+  noted,
+  onNote,
+  onOpenNoted,
+}: {
+  t: Strings;
+  result: SpotlightAnswer;
+  onOpen: (target: string) => void;
+  onOpenAsk: () => void;
+  /** What the question went into today's note as; "" while the write runs. */
+  noted: Captured | "" | null;
+  onNote: () => void;
+  onOpenNoted: () => void;
+}): JSX.Element {
+  // ■ on the Ask page stopped it: the Ask page's 멈춤, in the abstain's type.
+  if (result.stopped)
+    return (
+      <div className="spotlight-body" role="status">
+        <div className="spotlight-abstain">■ {t.q_stopped}</div>
+        <div className="spotlight-hint">{t.q_stopped_sub}</div>
+      </div>
+    );
+  if (result.abstained)
+    return (
+      <div className="spotlight-body">
+        <div className="spotlight-abstain">
+          <MascotClip {...SURFACE_CLIPS.spotlightAbstain} />
+          <span>{result.range ? t.q_range_empty : t.q_abstain_title}</span>
+        </div>
+        {result.range ? (
+          <div className="spotlight-label">
+            {t.q_range_chip
+              .replace("{s}", result.range.start)
+              .replace("{e}", result.range.end)}
+          </div>
+        ) : null}
+        <div className="spotlight-hint">{t.spot_open_ask}</div>
+        <div className="spotlight-acts">
+          {/* Written, it opens the note. aria-disabled while the write
+              runs: a disabled button would drop focus. */}
+          <button
+            type="button"
+            className="btn spotlight-note"
+            aria-live="polite"
+            aria-disabled={noted === "" || undefined}
+            onClick={noted === null ? onNote : noted ? onOpenNoted : undefined}
+          >
+            {noted === null
+              ? t.q_abstain_note
+              : `✓ ${t.q_abstain_noted}${noted ? ` · ${t.home_open_daily}` : ""}`}
+          </button>
+          <button type="button" className="btn spotlight-open-ask" onClick={onOpenAsk}>
+            {t.spot_open_ask_btn}
+          </button>
+        </div>
+      </div>
+    );
+  return (
+    <div className="spotlight-body">
+      {result.extractive ? (
+        <div className="spotlight-label">
+          {t.q_extractive_label ?? "From your notes (top matches, verbatim)"}
+        </div>
+      ) : null}
+      <Viewer content={result.answer} onLinkClick={onOpen} displayNames />
+      {/* The similarity under details, not beside the quote, where "71%"
+          read as "71% right" (UX S14.7). */}
+      {result.relevance?.length ? (
+        <details className="spotlight-details">
+          <summary>{t.spot_details}</summary>
+          <ul>
+            {result.relevance.map((r) => (
+              <li key={r.stem}>
+                {t.spot_sim
+                  .replace("{stem}", displayName(r.stem))
+                  .replace(
+                    "{pct}",
+                    r.similarity === null ? t.q_cite_sim_none : `${Math.round(r.similarity * 100)}%`,
+                  )}
+              </li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+      <div className="spotlight-hint">{t.spot_hint_open ?? ""}</div>
     </div>
   );
 }

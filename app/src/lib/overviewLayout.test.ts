@@ -8,30 +8,25 @@ import {
   defaultOverviewLayout,
   moveOverviewItem,
   moveOverviewItemBefore,
-  moveOverviewItemToZone,
   OVERVIEW_BLOCKS,
   overviewPosition,
   sanitizeOverviewLayout,
   setOverviewSpan,
-  zoneItems,
 } from "./board";
 
 const ids = (layout: { items: { id: string }[] }): string[] =>
   layout.items.map((i) => i.id);
 
 describe("defaultOverviewLayout", () => {
-  it("is the arrangement that shipped before: five in the column, four in the rail", () => {
+  it("is one column: every block in the main zone", () => {
     const d = defaultOverviewLayout();
-    expect(zoneItems(d, "main").map((i) => i.id)).toEqual([
+    expect(d.items.every((i) => i.zone === "main")).toBe(true);
+    expect(ids(d)).toEqual([
       "pulse",
       "harvest",
       "links",
       "recent",
       "board",
-    ]);
-    expect(zoneItems(d, "rail").map((i) => i.id)).toEqual([
-      "since",
-      "suspect",
       "contradictions",
       "reunions",
     ]);
@@ -77,13 +72,21 @@ describe("sanitizeOverviewLayout", () => {
     });
     expect(ids(s)[0]).toBe("board");
     expect(new Set(ids(s))).toEqual(new Set(OVERVIEW_BLOCKS));
-    // The rail blocks it never mentioned keep their default zone.
-    expect(zoneItems(s, "rail").map((i) => i.id)).toEqual([
-      "since",
-      "suspect",
-      "contradictions",
-      "reunions",
-    ]);
+    expect(s.items.every((i) => i.zone === "main")).toBe(true);
+  });
+
+  it("drops the since and suspect panels, which are Home's notices now", () => {
+    const s = sanitizeOverviewLayout({
+      version: 1,
+      items: [
+        { id: "since", zone: "rail", span: 12 },
+        { id: "suspect", zone: "rail", span: 12 },
+        { id: "pulse", zone: "main", span: 12 },
+      ],
+    });
+    expect(ids(s)).not.toContain("since");
+    expect(ids(s)).not.toContain("suspect");
+    expect(ids(s)[0]).toBe("pulse");
   });
 
   it("clamps spans to the grid", () => {
@@ -113,7 +116,8 @@ describe("sanitizeOverviewLayout", () => {
       ],
     });
     expect(ids(s).filter((i) => i === "pulse")).toHaveLength(1);
-    expect(s.items[0]).toEqual({ id: "pulse", zone: "rail", span: 4 });
+    // The old rail is gone: its blocks join the one column, width kept.
+    expect(s.items[0]).toEqual({ id: "pulse", zone: "main", span: 4 });
   });
 
   it.each([null, undefined, 42, "a string", {}, { items: "no" }, []])(
@@ -126,7 +130,7 @@ describe("sanitizeOverviewLayout", () => {
   it("treats an unknown zone as the main column", () => {
     const s = sanitizeOverviewLayout({
       version: 1,
-      items: [{ id: "since", zone: "sidebar", span: 12 }],
+      items: [{ id: "pulse", zone: "sidebar", span: 12 }],
     });
     expect(s.items[0].zone).toBe("main");
   });
@@ -135,62 +139,28 @@ describe("sanitizeOverviewLayout", () => {
 describe("moveOverviewItem", () => {
   it("moves one step later inside a zone", () => {
     const m = moveOverviewItem(defaultOverviewLayout(), "pulse", 1);
-    expect(zoneItems(m, "main").map((i) => i.id)).toEqual([
+    expect(ids(m)).toEqual([
       "harvest",
       "pulse",
       "links",
       "recent",
       "board",
-    ]);
-  });
-
-  it("moves one step earlier inside a zone", () => {
-    const m = moveOverviewItem(defaultOverviewLayout(), "recent", -1);
-    expect(zoneItems(m, "main").map((i) => i.id)).toEqual([
-      "pulse",
-      "harvest",
-      "recent",
-      "links",
-      "board",
-    ]);
-  });
-
-  it("walks a block out of the main column into the rail", () => {
-    // "board" is last in main, "since" first in rail — one step later crosses.
-    const m = moveOverviewItem(defaultOverviewLayout(), "board", 1);
-    expect(m.items.find((i) => i.id === "board")?.zone).toBe("rail");
-    expect(zoneItems(m, "main").map((i) => i.id)).toEqual([
-      "pulse",
-      "harvest",
-      "links",
-      "recent",
-    ]);
-    expect(zoneItems(m, "rail").map((i) => i.id)).toEqual([
-      "since",
-      "board",
-      "suspect",
       "contradictions",
       "reunions",
     ]);
   });
 
-  it("walks a rail block back into the main column", () => {
-    const m = moveOverviewItem(defaultOverviewLayout(), "since", -1);
-    expect(m.items.find((i) => i.id === "since")?.zone).toBe("main");
-    expect(zoneItems(m, "main").map((i) => i.id)).toEqual([
+  it("moves one step earlier inside a zone", () => {
+    const m = moveOverviewItem(defaultOverviewLayout(), "recent", -1);
+    expect(ids(m)).toEqual([
       "pulse",
       "harvest",
-      "links",
       "recent",
-      "since",
+      "links",
       "board",
+      "contradictions",
+      "reunions",
     ]);
-  });
-
-  it("keeps the span while crossing zones", () => {
-    const wide = setOverviewSpan(defaultOverviewLayout(), "board", 6);
-    const m = moveOverviewItem(wide, "board", 1);
-    expect(m.items.find((i) => i.id === "board")?.span).toBe(6);
   });
 
   it("is a no-op at either end, and for a block that is not there", () => {
@@ -202,25 +172,14 @@ describe("moveOverviewItem", () => {
 });
 
 describe("moveOverviewItemBefore (a drop)", () => {
-  it("takes the target's place and zone", () => {
+  it("takes the target's place", () => {
     const m = moveOverviewItemBefore(defaultOverviewLayout(), "board", "pulse");
-    expect(zoneItems(m, "main").map((i) => i.id)).toEqual([
+    expect(ids(m)).toEqual([
       "board",
       "pulse",
       "harvest",
       "links",
       "recent",
-    ]);
-    const rail = moveOverviewItemBefore(
-      defaultOverviewLayout(),
-      "pulse",
-      "contradictions",
-    );
-    expect(rail.items.find((i) => i.id === "pulse")?.zone).toBe("rail");
-    expect(zoneItems(rail, "rail").map((i) => i.id)).toEqual([
-      "since",
-      "suspect",
-      "pulse",
       "contradictions",
       "reunions",
     ]);
@@ -230,33 +189,6 @@ describe("moveOverviewItemBefore (a drop)", () => {
     const d = defaultOverviewLayout();
     expect(moveOverviewItemBefore(d, "pulse", "pulse")).toBe(d);
     expect(moveOverviewItemBefore(d, "pulse", "nope")).toBe(d);
-  });
-});
-
-describe("moveOverviewItemToZone (a drop on the trailing strip)", () => {
-  it("appends to the end of that zone", () => {
-    const m = moveOverviewItemToZone(defaultOverviewLayout(), "pulse", "rail");
-    expect(zoneItems(m, "rail").map((i) => i.id)).toEqual([
-      "since",
-      "suspect",
-      "contradictions",
-      "reunions",
-      "pulse",
-    ]);
-  });
-
-  it("refills a rail the user emptied", () => {
-    let l = defaultOverviewLayout();
-    for (const id of ["since", "suspect", "contradictions", "reunions"])
-      l = moveOverviewItemToZone(l, id, "main");
-    expect(zoneItems(l, "rail")).toEqual([]);
-    l = moveOverviewItemToZone(l, "suspect", "rail");
-    expect(zoneItems(l, "rail").map((i) => i.id)).toEqual(["suspect"]);
-  });
-
-  it("is a no-op for a block already in that zone", () => {
-    const d = defaultOverviewLayout();
-    expect(moveOverviewItemToZone(d, "pulse", "main")).toBe(d);
   });
 });
 
@@ -272,18 +204,9 @@ describe("setOverviewSpan", () => {
 });
 
 describe("overviewPosition", () => {
-  it("reports the 1-based place inside the block's own zone", () => {
+  it("reports the 1-based place in the column", () => {
     const d = defaultOverviewLayout();
-    expect(overviewPosition(d, "links")).toEqual({
-      index: 3,
-      total: 5,
-      zone: "main",
-    });
-    expect(overviewPosition(d, "reunions")).toEqual({
-      index: 4,
-      total: 4,
-      zone: "rail",
-    });
+    expect(overviewPosition(d, "links")).toEqual({ index: 3, total: 7 });
     expect(overviewPosition(d, "nope")).toBeNull();
   });
 });

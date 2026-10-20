@@ -3,9 +3,10 @@
 // drag orbit) explained in one dismissible panel. Toggled by the "?" toolbar
 // button in PageGraph; pure presentation, no graph state.
 
-import type { JSX } from "react";
+import { useRef, type JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
+import { useReturnFocus } from "../lib/returnFocus";
 
 export default function GraphHelp({
   t,
@@ -14,6 +15,9 @@ export default function GraphHelp({
   t: Strings;
   onClose: () => void;
 }): JSX.Element {
+  // Closing hands focus back to the "?" that opened the help.
+  const panelRef = useRef<HTMLElement>(null);
+  useReturnFocus(panelRef);
   // kbd tokens stay untranslated on purpose: they are key/gesture names
   // (Esc, F, ⌘/Ctrl…), rendered as keycaps — the descriptions localize.
   const rows: { keys: string[]; text: string }[] = [
@@ -25,11 +29,13 @@ export default function GraphHelp({
     },
     { keys: ["Esc"], text: t.gr_help_esc ?? "Step out of the focus" },
     { keys: ["F"], text: t.gr_help_fly ?? "Toggle spaceship mode" },
+    { keys: ["[", "]"], text: t.gr_help_rails },
     { keys: ["Drag"], text: t.gr_help_drag ?? "Orbit the cosmos" },
   ];
 
   return (
     <aside
+      ref={panelRef}
       className="graph-help"
       role="region"
       aria-label={t.gr_help_title ?? "Gestures & keys"}

@@ -72,3 +72,33 @@ describe("createPointerDrag", () => {
     expect(changes.at(-1)).toBeNull();
   });
 });
+
+// A finger first has to hold still (UX S52): a short swipe is the page
+// scrolling, not a card leaving its column.
+describe("createPointerDrag by touch", () => {
+  it("lets a swipe before the hold go: no drag, later moves ignored", () => {
+    const { machine, changes, onDrop } = setup({ "10,0": "a" });
+    machine.begin("t1", 0, 0, false);
+    machine.move(10, 0);
+    expect(machine.hold()).toBe(false);
+    machine.move(10, 0);
+    expect(machine.end()).toBe(false);
+    expect(changes).toEqual([]);
+    expect(onDrop).not.toHaveBeenCalled();
+  });
+
+  it("drags once held, like a mouse", () => {
+    const { machine, onDrop } = setup({ "10,0": "a" });
+    machine.begin("t1", 0, 0, false);
+    machine.move(2, 0);
+    expect(machine.hold()).toBe(true);
+    machine.move(10, 0);
+    expect(machine.end()).toBe(true);
+    expect(onDrop).toHaveBeenCalledWith("t1", "a");
+  });
+
+  it("holds nothing when no press is pending", () => {
+    const { machine } = setup();
+    expect(machine.hold()).toBe(false);
+  });
+});

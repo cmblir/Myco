@@ -16,6 +16,13 @@ function detail(over: Partial<RunDetail> = {}): RunDetail {
 }
 
 describe("buildRunRows with diffs", () => {
+  it("keeps permanently deleted audit files absent from git and avoids duplicates", () => {
+    const rows = buildRunRows(detail({ commit: "abc", deleted: [".myco/trash/run/a.md", "wiki/b.md"] }), [
+      { path: "wiki/b.md", status: "deleted", before: "synthetic note", after: null },
+    ]);
+    expect(rows.files.map((r) => r.rel)).toEqual(["wiki/b.md", ".myco/trash/run/a.md"]);
+    expect(rows.files.every((r) => r.statusKey === "history_status_deleted")).toBe(true);
+  });
   it("maps each FileDiff to a row with status label key and computed diff", () => {
     const diffs: FileDiff[] = [
       {
@@ -67,6 +74,12 @@ describe("buildRunRows with diffs", () => {
 });
 
 describe("buildRunRows without a commit (diffs === null)", () => {
+  it("shows permanently deleted files in the manifest fallback", () => {
+    const rows = buildRunRows(detail({ deleted: ["_inbox/quarantine/expired.md"] }), null);
+    expect(rows.files).toEqual([
+      { rel: "_inbox/quarantine/expired.md", statusKey: "history_status_deleted", diff: null, tooLarge: false },
+    ]);
+  });
   it("builds manifest fallback rows from moves/trashed/created and sets noCommit", () => {
     const rows = buildRunRows(
       detail({

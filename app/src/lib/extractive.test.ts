@@ -3,6 +3,7 @@ import {
   citationsOf,
   confidenceBand,
   formatExtractiveAnswer,
+  quoteBody,
   sourceTier,
   uncitedOf,
 } from "./extractive";
@@ -20,9 +21,9 @@ const chunk = (over: Partial<ScoredChunk> = {}): ScoredChunk => ({
 });
 
 describe("formatExtractiveAnswer", () => {
-  it("renders one [[stem]] header per page with block-quoted text", () => {
+  it("renders one path citation per page with block-quoted text", () => {
     const md = formatExtractiveAnswer([chunk({})]);
-    expect(md).toContain("**[[bpe]]**");
+    expect(md).toContain("**[[wiki/bpe|bpe]]**");
     expect(md).toContain("> BPE merges frequent pairs.");
   });
 
@@ -33,9 +34,9 @@ describe("formatExtractiveAnswer", () => {
       chunk({ section: 2, text: "Second passage, same page." }),
     ]);
     // one header per page
-    expect(md.match(/\*\*\[\[bpe\]\]\*\*/g)).toHaveLength(1);
+    expect(md.match(/\*\*\[\[wiki\/bpe\|bpe\]\]\*\*/g)).toHaveLength(1);
     // bpe (rank 1) renders before lora (rank 2)
-    expect(md.indexOf("[[bpe]]")).toBeLessThan(md.indexOf("[[lora]]"));
+    expect(md.indexOf("[[wiki/bpe|bpe]]")).toBeLessThan(md.indexOf("[[wiki/lora|lora]]"));
     expect(md).toContain("> Second passage, same page.");
   });
 
@@ -44,14 +45,23 @@ describe("formatExtractiveAnswer", () => {
     expect(md).toContain("> line one\n> line two");
   });
 
+  it("keeps equal filenames in different source directories unambiguous", () => {
+    const md = formatExtractiveAnswer([
+      chunk({ page: "sessions/2026-09/same.md", stem: "same", text: "Earlier proposal." }),
+      chunk({ page: "raw/conversations/claude/same.md", stem: "same", text: "Original source." }),
+    ]);
+    expect(md).toContain("[[sessions/2026-09/same|same]]");
+    expect(md).toContain("[[raw/conversations/claude/same|same]]");
+  });
+
   it("caps pages at maxPages", () => {
     const hits = ["a", "b", "c"].map((s) =>
       chunk({ page: `wiki/${s}.md`, stem: s, text: `about ${s}` }),
     );
     const md = formatExtractiveAnswer(hits, { maxPages: 2 });
-    expect(md).toContain("[[a]]");
-    expect(md).toContain("[[b]]");
-    expect(md).not.toContain("[[c]]");
+    expect(md).toContain("[[wiki/a|a]]");
+    expect(md).toContain("[[wiki/b|b]]");
+    expect(md).not.toContain("[[wiki/c|c]]");
   });
 
   it("truncates a page's quoted text at perPageChars with an ellipsis", () => {
@@ -62,22 +72,15 @@ describe("formatExtractiveAnswer", () => {
     expect(md.length).toBeLessThan(300);
   });
 
-  it("labels each page with its best chunk's real relevance", () => {
-    // The percentage is the dense cosine, so it is comparable across pages —
-    // unlike the rank-fusion `score`, which would look like confidence and
-    // behave like noise.
+  it("puts no percentage in the answer itself (UX S14.7)", () => {
+    // 71% reads as "71% right" to someone who does not know it is a
+    // similarity; the number sits under the answer's details instead.
     const md = formatExtractiveAnswer([
-      chunk({ similarity: 0.611, text: "first" }),
-      chunk({ section: 2, similarity: 0.688, text: "second, same page" }),
-      chunk({ page: "wiki/lora.md", stem: "lora", similarity: 0.52, text: "LoRA" }),
+      chunk({ similarity: 0.688, text: "first" }),
+      chunk({ page: "wiki/lora.md", stem: "lora", similarity: null, text: "LoRA" }),
     ]);
-    expect(md).toContain("**[[bpe]]** · 69%"); // best of 0.611 / 0.688, not the first
-    expect(md).toContain("**[[lora]]** · 52%");
-  });
-
-  it("omits the percentage for a lexical-only hit rather than inventing one", () => {
-    const md = formatExtractiveAnswer([chunk({ similarity: null })]);
-    expect(md).toContain("**[[bpe]]**");
+    expect(md).toContain("**[[wiki/bpe|bpe]]**\n");
+    expect(md).toContain("**[[wiki/lora|lora]]**\n");
     expect(md).not.toContain("%");
   });
 
@@ -88,6 +91,20 @@ describe("formatExtractiveAnswer", () => {
     const md = formatExtractiveAnswer([chunk({ text: body })], { perPageChars: 30 });
     const fences = (md.match(/```/g) ?? []).length;
     expect(fences % 2).toBe(0);
+  });
+
+  it("never glues the ellipsis onto a closing fence, which would reopen it", () => {
+    const body = "```sh\nnpm i\n```\n" + "Long paragraph ".repeat(40);
+    expect(quoteBody([body], 400)).toBe("```sh\nnpm i\n```\n…");
+  });
+
+  it("drops a ~~~ fence cut in the middle, and reads a ``` inside ~~~ as code", () => {
+    const code = Array.from({ length: 60 }, (_, i) => `line ${i}`).join("\n");
+    expect(quoteBody(["Intro.\n\n~~~\n" + code + "\n~~~"], 400)).toBe(
+      "Intro.…",
+    );
+    const inner = "~~~\n```\ncode\n~~~\n" + "x ".repeat(300);
+    expect(quoteBody([inner], 400)).toBe("~~~\n```\ncode\n~~~\n…");
   });
 
   it("cuts on a line boundary rather than mid-word", () => {

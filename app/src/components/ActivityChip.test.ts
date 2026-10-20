@@ -29,6 +29,7 @@ const IDLE: RunningSources = {
   applyingCount: 0,
   reindex: { stage: "idle", done: 0, total: 0 },
   now: 60_000,
+  monotonicNow: 60_000,
 };
 
 const ask: RunningActivity = { icon: "ask", label: "Ask", detail: "0:12" };
@@ -167,6 +168,16 @@ describe("buildRunning", () => {
     expect(activity.fraction).toBeUndefined();
   });
 
+  it.each([1_000, 10_000_000])("uses the Ask clock independently of wall time %s", now => {
+    const state = { ...IDLE, now, monotonicNow: 100_000, ask: { busy: true, startedAt: 34_000 } };
+    expect(buildRunning(state, t)[0].detail).toBe("1:06");
+  });
+
+  it("renders an Ask starting at monotonic zero", () => {
+    const state = { ...IDLE, monotonicNow: 1_000, ask: { busy: true, startedAt: 0 } };
+    expect(buildRunning(state, t)[0].detail).toBe("0:01");
+  });
+
   it("shows ingest's elapsed time, the ticker the old Topbar pill carried", () => {
     const [activity] = buildRunning(
       { ...IDLE, ingest: { running: true, startedAt: 60_000 - 75_000 } },
@@ -174,6 +185,16 @@ describe("buildRunning", () => {
     );
     expect(activity.label).toBe(t.nav_ingest);
     expect(activity.detail).toBe("1:15");
+  });
+
+  // UX S35: at the plan gate the run waits on the user; a ticking clock
+  // there read as loading.
+  it("says ingest is waiting for a choice at the plan gate, with no ticker", () => {
+    const [activity] = buildRunning(
+      { ...IDLE, ingest: { running: true, startedAt: 0, gateAt: 5_000 } },
+      t,
+    );
+    expect(activity.detail).toBe(t.ing_gate_paused);
   });
 
   it("orders every runner by urgency: waiting-on-a-human first, unwatched last", () => {
@@ -189,6 +210,7 @@ describe("buildRunning", () => {
         applyingCount: 3,
         reindex: { stage: "indexing", done: 218, total: 302 },
         now: 60_000,
+        monotonicNow: 60_000,
       },
       t,
     );

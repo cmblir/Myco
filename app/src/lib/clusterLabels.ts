@@ -3,9 +3,9 @@
 // label per top community, positioned at its live centroid, visible only while
 // the camera is farther than SHOW_RATIO of the framed distance; zooming in
 // cross-fades them out as the per-node labels take over (CSS transition on
-// .is-visible). Label text v1 = the community's top-degree note name — free and
-// identical to the legend, so the two never disagree. (v2, LLM topic summaries,
-// is a later phase; this name stays the fallback.)
+// .is-visible). Label text v1 = the community's top-degree real note name,
+// using a missing-note name only when no real note is available. The full
+// display name stays in the DOM; CSS clips long names without rewriting them.
 //
 // v2 (LLM topics): after the fallback renders, resolveClusterTopic() asks the
 // bundled local model for a 1-3 word topic (cached by member set, serialized,
@@ -24,6 +24,7 @@ const EMPTY_LABELS: ClusterLabel[] = [];
 
 const MAX_LABELS = 6; // matches the legend's top-6 communities
 const MIN_MEMBERS = 3;
+const MAX_LABEL_WIDTH = 240;
 // Camera distance / framed distance above which cluster labels show. Below it
 // the per-node semantic-zoom labels are the detail layer.
 const SHOW_RATIO = 0.6;
@@ -42,6 +43,7 @@ export class ClusterLabels {
   private labels: ClusterLabel[] = [];
   private zoomedOut = true;
   private enabled = true;
+  private maxWidth = MAX_LABEL_WIDTH;
 
   constructor(graph: VaultGraph) {
     this.graph = graph;
@@ -68,29 +70,46 @@ export class ClusterLabels {
     }
   }
 
+  /** Keep the rendered width and the scene's declutter box within the canvas. */
+  setViewportWidth(width: number): number {
+    const maxWidth = Math.min(MAX_LABEL_WIDTH, Math.max(0, width) * 0.4);
+    if (maxWidth !== this.maxWidth) {
+      this.maxWidth = maxWidth;
+      for (const label of this.labels) label.el.style.maxWidth = `${maxWidth}px`;
+    }
+    return maxWidth;
+  }
+
   // Re-derive the top communities (size-ranked, like the legend) and their
   // label text/colour. Called on construction and after live-ingest growth.
   rebuild(): void {
     this.clear();
     const members = new Map<number, string[]>();
-    const top = new Map<number, { id: string; deg: number }>();
     this.graph.forEachNode((id, a) => {
       if (a.community < 0) return;
       (members.get(a.community) ?? members.set(a.community, []).get(a.community)!).push(id);
-      const cur = top.get(a.community);
-      if (!cur || a.deg > cur.deg) top.set(a.community, { id, deg: a.deg });
     });
     const ranked = [...members.entries()]
       .filter(([, ids]) => ids.length >= MIN_MEMBERS)
       .sort((a, b) => b[1].length - a[1].length)
       .slice(0, MAX_LABELS);
-    for (const [cm, ids] of ranked) {
-      const topNode = top.get(cm);
-      if (!topNode) continue;
+    for (const [, ids] of ranked) {
+      // Missing links can have a higher degree than every real note. Prefer
+      // actual notes for both the fallback and the topic prompt's first names.
+      const byDeg = [...ids].sort(
+        (a, b) =>
+          Number(a.startsWith("ghost:")) - Number(b.startsWith("ghost:")) ||
+          this.graph.getNodeAttribute(b, "deg") -
+            this.graph.getNodeAttribute(a, "deg"),
+      );
+      const topId = byDeg[0];
+      const name = this.graph.getNodeAttribute(topId, "label") || stem(topId);
       const el = document.createElement("div");
       el.className = "graph-cluster-label";
-      el.textContent = stem(topNode.id);
-      el.style.color = this.graph.getNodeAttribute(topNode.id, "color");
+      el.textContent = name;
+      el.title = name;
+      el.style.maxWidth = `${this.maxWidth}px`;
+      el.style.color = this.graph.getNodeAttribute(topId, "color");
       const obj = new CSS2DObject(el);
       obj.visible = false;
       this.group.add(obj);
@@ -98,13 +117,11 @@ export class ClusterLabels {
       // v2: upgrade to an LLM topic when (if ever) one resolves. `el` keeps
       // the closure alive; if this label set was rebuilt/disposed meanwhile
       // the detached element updates harmlessly.
-      const byDeg = [...ids].sort(
-        (a, b) =>
-          this.graph.getNodeAttribute(b, "deg") -
-          this.graph.getNodeAttribute(a, "deg"),
-      );
       void resolveClusterTopic(ids, byDeg).then((topic) => {
-        if (topic) el.textContent = topic;
+        if (topic) {
+          el.textContent = topic;
+          el.title = topic;
+        }
       });
     }
     this.update();

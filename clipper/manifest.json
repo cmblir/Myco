@@ -5,6 +5,6 @@
   "description": "Clip the current page (and selection) into your myco vault's _inbox as a source doc for the ingest pipeline.",
   "permissions": ["contextMenus", "activeTab", "scripting"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_title": "Clip to myco" },
+  "action": { "default_title": "Clip to myco", "default_popup": "popup.html" },
   "icons": {}
 }

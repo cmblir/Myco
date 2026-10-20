@@ -2,8 +2,12 @@
 // plugins. Domain logic lives in dedicated modules and stays testable without
 // the Tauri runtime.
 
+pub(crate) mod activity_recall;
 pub mod agent_tools;
 pub mod archive_pack;
+pub mod ask_history;
+pub(crate) mod audio_overview;
+mod audio_overview_commands;
 pub mod backfill;
 pub mod claude;
 pub mod cli_agent;
@@ -12,20 +16,44 @@ mod commands;
 pub mod crash;
 pub mod diarize;
 pub mod distill;
+pub(crate) mod distill_publication;
+pub(crate) mod editor_io;
+pub(crate) mod editor_recovery;
 pub mod embeddings;
 pub mod env;
 pub mod extract;
 pub mod git_log;
 pub mod harvest;
+pub mod image_ingest;
 pub mod importers;
+pub(crate) mod inbox_source;
 pub mod index;
+mod index_publication;
 mod index_updater;
 pub mod inflow_log;
 pub mod intent;
 pub mod judge;
+pub mod local_generation;
 pub mod local_llm;
+pub mod local_model;
+pub(crate) mod local_query_plan;
+pub mod local_synthesis;
+pub mod local_transform;
+pub mod machine_session;
 pub mod mcp_native;
 pub mod myco_pro;
+#[cfg(feature = "native-index-probe")]
+pub mod native_ask_probe;
+#[cfg(feature = "native-index-probe")]
+pub mod native_editor_probe;
+#[cfg(feature = "native-index-probe")]
+pub mod native_image_probe;
+#[cfg(feature = "native-index-probe")]
+pub mod native_import_probe;
+#[cfg(feature = "native-index-probe")]
+pub mod native_index_probe;
+#[cfg(feature = "native-index-probe")]
+pub mod native_session_compile_probe;
 pub mod norm;
 pub mod notch;
 pub mod ollama;
@@ -34,6 +62,7 @@ pub mod page_opens;
 pub mod parser;
 pub mod perf;
 pub mod pipeline;
+pub mod plugins;
 pub mod profile;
 pub mod provenance;
 pub mod providers;
@@ -41,20 +70,41 @@ pub mod registry;
 #[cfg(feature = "rerank")]
 pub mod rerank;
 pub mod retrieval;
+pub mod roam;
+pub mod role_authorization;
 pub mod sample_vault;
 pub mod schedules;
 pub mod secrets;
+pub(crate) mod session_compile;
 pub mod settings;
 pub mod spotlight;
+mod study_deck_commands;
+pub(crate) mod study_deck_io;
 pub mod tasks;
+pub(crate) mod temporal_recall;
 pub mod tray;
 pub mod validator;
 pub mod vault;
 pub mod vault_dir;
 pub mod vault_history;
+
+pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {
+    #[cfg(feature = "native-index-probe")]
+    {
+        tauri::generate_context!("tests/native-index-probe/tauri.conf.json")
+    }
+    #[cfg(not(feature = "native-index-probe"))]
+    {
+        tauri::generate_context!()
+    }
+}
+mod vault_session;
 pub mod vector_index;
+pub mod web_fetch;
 pub mod webview_data;
 pub mod whisper;
+pub(crate) mod wiki_claim_review;
+pub mod wiki_claims;
 pub mod youtube;
 
 use tauri::Manager as _;
@@ -135,8 +185,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         // Confinement root for filesystem commands; populated on open_vault.
         .manage(commands::VaultRoot::default())
+        .manage(image_ingest::ImageIngestState::default())
+        .manage(audio_overview::AudioOverviewRegistry::default())
+        .manage(study_deck_io::StudyDeckRegistry::default())
+        .manage(distill_publication::DistillPublicationRegistry::default())
         // Embedded local model — lazily loaded on first local_* command.
-        .manage(commands::LocalLlmState::default())
+    .manage(commands::LocalLlmState::default())
+    .manage(local_generation::LocalChatState::default())
         // Parsed embedding index, kept across commands so the semantic layer
         // does not re-read and re-deserialize it on every call.
         .manage(vector_index::VectorCache::default())
@@ -157,21 +212,37 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
+            commands::close_vault,
             commands::ensure_default_vault,
             commands::seed_sample_vault,
             commands::list_files,
             commands::file_mtimes,
             commands::classify_intent,
             commands::read_file,
+            commands::read_editor_file,
+            commands::write_editor_file,
+            commands::stage_editor_draft,
+            commands::editor_recovery_supported,
+            commands::read_editor_draft,
+            commands::retire_editor_draft,
+            study_deck_commands::read_study_deck,
+            study_deck_commands::write_study_deck,
+            study_deck_commands::discard_study_deck_snapshot,
             commands::read_raw_bytes,
             commands::write_asset,
             commands::copy_asset,
             commands::read_vault_context,
             commands::write_file,
+            commands::write_file_if_unchanged,
             commands::write_run_log,
             commands::scaffold_obsidian_vault,
             commands::read_external_text,
             commands::describe_image,
+            commands::cancel_image_ingest,
+            audio_overview_commands::audio_overview_begin,
+            audio_overview_commands::audio_overview_generate,
+            audio_overview_commands::audio_overview_publish,
+            audio_overview_commands::audio_overview_cancel,
             commands::whisper_check,
             commands::transcribe_media,
             commands::save_voice_capture,
@@ -180,16 +251,23 @@ pub fn run() {
             commands::create_file,
             commands::create_folder,
             commands::delete_path,
+            commands::trash_paths,
             commands::rename_path,
             commands::move_path,
             commands::save_favorites,
             commands::archive_inbox_source,
+            commands::inbox_source_snapshot,
+            commands::inbox_compile_begin,
+            commands::archive_inbox_source_checked,
+            commands::release_inbox_source,
             commands::list_inbox_entries,
             commands::copy_into_inbox,
             commands::write_inbox_note,
             backfill::backfill_status,
             backfill::promote_sessions,
             commands::available_raw_path,
+            commands::find_raw_copy,
+            commands::derived_raw_copy,
             commands::import_conversations,
             commands::import_session_sweep,
             commands::import_paths,
@@ -215,12 +293,17 @@ pub fn run() {
             commands::set_provider_key,
             commands::delete_provider_key,
             commands::get_settings,
+            commands::capture_model_role,
+            commands::select_model_role,
+            commands::set_role_automatic_use,
             commands::set_settings,
             commands::write_settings_export,
             commands::read_settings_import,
             commands::chat_complete,
             commands::agent_tools_schema,
+            commands::agent_vault_session,
             commands::agent_tool_call,
+            commands::reflect_create_missing_page,
             commands::agent_chat,
             commands::list_provider_models,
             commands::ollama_status,
@@ -236,10 +319,20 @@ pub fn run() {
             commands::save_view,
             commands::list_views,
             commands::delete_view,
+            commands::list_plugins,
             commands::local_query,
             commands::local_chat_model_available,
+            commands::local_chat_status,
+            commands::local_synthesize,
+            commands::local_query_plan,
+            commands::local_transform,
+            commands::cancel_local_synthesis,
+            commands::download_local_chat_model,
+            commands::cancel_local_chat_model_download,
             commands::reindex_embeddings,
             commands::semantic_search,
+            commands::temporal_recall,
+            commands::activity_recall,
             commands::semantic_map,
             commands::wikify_candidates,
             commands::related_pages,
@@ -247,10 +340,7 @@ pub fn run() {
             commands::semantic_edges,
             commands::embed_local_texts,
             commands::fetch_youtube_transcript,
-            commands::list_schedules,
-            commands::upsert_schedule,
-            commands::delete_schedule,
-            commands::install_background_schedule,
+            commands::fetch_web_page,
             commands::get_distill_config,
             commands::set_distill_config,
             commands::distill_run,
@@ -266,6 +356,8 @@ pub fn run() {
             commands::suspect_pages,
             commands::record_recall_miss,
             commands::record_page_open,
+            commands::ask_history_load,
+            commands::ask_history_append,
             commands::resurface_candidates,
             commands::scan_text_secrets,
             commands::scan_raw_audit,
@@ -275,10 +367,19 @@ pub fn run() {
             commands::restore_quarantine,
             commands::extend_quarantine,
             commands::digestable_session_days,
+            commands::publish_distill_note,
             commands::archive_digested_sessions,
             commands::rollupable_buckets,
             commands::archive_rolled,
             commands::full_tier_items,
+            commands::wikify_complete_source,
+            commands::list_wikify_pending,
+            commands::session_summary_path,
+            commands::session_compile_begin,
+            commands::session_compile_step,
+            commands::session_compile_read,
+            commands::session_compile_publish,
+            commands::session_compile_stop,
             commands::append_distill_manifest,
             commands::archive_usage,
             commands::compress_archives,
@@ -298,6 +399,9 @@ pub fn run() {
             notch::notch_resize,
             notch::notch_focus_capture,
             notch::update_notch_enabled,
+            roam::roam_show,
+            roam::roam_hide,
+            roam::roam_place,
             commands::harvest_candidates,
             commands::harvest_run,
             commands::judge_source,
@@ -334,17 +438,14 @@ pub fn run() {
                 }
             });
             // Background index updater: debounces wiki writes into incremental
-            // re-embeds so the vector index never goes stale (Task 4). Pre-arm
-            // it at the launch vault, if any, so a fresh/stale index gets
-            // caught up before the first search rather than waiting for a write.
+            // re-embeds so the vector index never goes stale (Task 4). Binding
+            // starts only after a native vault opening supplies its token.
             let updater = index_updater::IndexUpdater::spawn(app.handle().clone());
             let _ = INDEX_UPDATER.set(updater.clone());
-            if let Some(root) = settings::active_vault() {
-                updater.rebind(std::path::PathBuf::from(root));
-            }
             // Idle-unload janitor for the local embed model (~400 MB): a
             // memory-pressed machine gets the RAM back after 10 quiet minutes.
             commands::spawn_llm_janitor(app.handle().clone());
+            local_generation::spawn_janitor(app.handle().clone());
             // Menu bar tray (activity mirror + quick actions). Best-effort:
             // a tray failure must never block startup.
             if let Err(e) = tray::init(app.handle()) {
@@ -365,9 +466,9 @@ pub fn run() {
             }
             // Resident mode: with the settings toggle ON, closing the window
             // hides it and the app stays in the menu bar; OFF (default) keeps
-            // today's behavior — the close proceeds and the app quits via the
-            // ExitRequested handler below. Settings are re-read per close so
-            // the toggle applies without a restart.
+            // today's behavior — close requests an explicit app exit, including
+            // when a hidden notch window is retained for reuse. Settings are
+            // re-read per close so the toggle applies without a restart.
             if let Some(win) = app.get_webview_window("main") {
                 let win_for_hide = win.clone();
                 win.on_window_event(move |event| {
@@ -375,6 +476,11 @@ pub fn run() {
                         if settings::load().tray_resident {
                             api.prevent_close();
                             let _ = win_for_hide.hide();
+                        } else {
+                            // A hidden notch still counts as a live window, so
+                            // closing only main would leave a headless app.
+                            api.prevent_close();
+                            win_for_hide.app_handle().exit(0);
                         }
                     }
                 });
@@ -414,9 +520,14 @@ pub fn run() {
                                     .body(clip.title.clone())
                                     .show();
                                 eprintln!("clip saved: {}", path.display());
-                                // Nudge the frontend so the tree/inbox refreshes.
+                                // Nudge the frontend so the tree/inbox refreshes,
+                                // and name the doc for its in-app receipt (Open).
                                 use tauri::Emitter;
-                                let _ = handle.emit("myco://clip-saved", ());
+                                let rel = format!("_inbox/{}", clip::clip_filename(&clip));
+                                let _ = handle.emit(
+                                    "myco://clip-saved",
+                                    serde_json::json!({ "rel": rel, "title": clip.title }),
+                                );
                             }
                             // Told, not silently written twice: the page is
                             // already in _inbox/ (or already ingested).
@@ -432,6 +543,25 @@ pub fn run() {
                                     clip.url.as_deref().unwrap_or("")
                                 );
                             }
+                            // A re-clip that carried a note: it joined the
+                            // clip already in _inbox/, or had nowhere to go.
+                            Ok(clip::Saved::NoteAdded(path)) => {
+                                let _ = handle
+                                    .notification()
+                                    .builder()
+                                    .title("Already clipped — note added")
+                                    .body(clip.title.clone())
+                                    .show();
+                                eprintln!("clip note added: {}", path.display());
+                            }
+                            Ok(clip::Saved::DuplicateNoteDropped) => {
+                                let _ = handle
+                                    .notification()
+                                    .builder()
+                                    .title("Already clipped — note not saved")
+                                    .body(clip.title.clone())
+                                    .show();
+                            }
                             Err(e) => eprintln!("clip save failed: {e}"),
                         }
                     }
@@ -439,9 +569,15 @@ pub fn run() {
             }
             Ok(())
         })
-        .build(tauri::generate_context!())
+        .build(app_context())
         .expect("error while running myco")
         .run(|_app, event| {
+            // A resident app may retain a notch window while main is hidden.
+            // Dock/Finder reopening must restore main regardless of that window.
+            #[cfg(target_os = "macos")]
+            if matches!(event, tauri::RunEvent::Reopen { .. }) {
+                tray::show_main_window(_app);
+            }
             // The embedded llama.cpp/ggml Metal backend aborts inside its C++
             // static destructors during process teardown. On macOS, quitting goes
             // AppKit `-[NSApplication terminate:]` → `exit()` → `__cxa_finalize`,

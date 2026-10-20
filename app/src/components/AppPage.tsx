@@ -76,17 +76,29 @@ export function AppPage({
   ]
     .filter(Boolean)
     .join(" ");
+  // A wide page's stage is its subject, so in source order — which is Tab
+  // order — it comes straight after the header, ahead of the bar and the left
+  // rail; ui.css restores the visual order with `order` (UX S44: the graph's
+  // canvas sat 40 Tabs from its find field).
+  const barRow = bar ? <div className="u-page__bar">{bar}</div> : null;
+  const noteRow = note ? <p className="u-page__note">{note}</p> : null;
+  const leftAside = leftRail ? (
+    <aside className="u-page__rail">{leftRail}</aside>
+  ) : null;
   return (
     <div className={shell}>
       <header className="u-page__head">
         <div className="u-page__heading">
           {eyebrow ? <div className="u-page__eyebrow">{eyebrow}</div> : null}
-          <h1 className="u-page__title">{title}</h1>
+          {/* tabIndex -1: focusPageHeading can start the page here. */}
+          <h1 className="u-page__title" tabIndex={-1}>
+            {title}
+          </h1>
         </div>
         {tools ? <div className="u-page__tools">{tools}</div> : null}
       </header>
-      {bar ? <div className="u-page__bar">{bar}</div> : null}
-      {note ? <p className="u-page__note">{note}</p> : null}
+      {wide ? null : barRow}
+      {wide ? null : noteRow}
       <div
         className="u-page__body"
         style={
@@ -98,16 +110,64 @@ export function AppPage({
           } as CSSProperties
         }
       >
-        {leftRail ? <aside className="u-page__rail">{leftRail}</aside> : null}
+        {wide ? null : leftAside}
         <div className="u-page__main">{children}</div>
+        {wide ? leftAside : null}
         {rightRail ? (
           <aside className="u-page__rail u-page__rail--right">
             {rightRail}
           </aside>
         ) : null}
       </div>
+      {wide ? barRow : null}
+      {wide ? noteRow : null}
     </div>
   );
+}
+
+/**
+ * After a route change, start the primary pane's page at its title, so Tab
+ * goes on from the page rather than from the sidebar row or palette opener
+ * that moved it (or the top of the document, when that control unmounted).
+ * A field being typed in, or anything inside a dialog, keeps focus (UX S28
+ * rule 2). False while the page has no title yet (a lazy route still
+ * loading), so the caller can try again.
+ */
+export function focusPageHeading(
+  doc: Pick<Document, "activeElement" | "body" | "querySelector">,
+): boolean {
+  const active = doc.activeElement;
+  if (
+    active &&
+    active !== doc.body &&
+    (["INPUT", "TEXTAREA", "SELECT"].includes(active.tagName) ||
+      (active as HTMLElement).isContentEditable ||
+      active.closest('dialog, [role="dialog"], [aria-modal="true"]'))
+  )
+    return true;
+  // A note editor already mounted found focus still on the control that
+  // moved the page and left it there (focusIsIdle), so it gets focus here.
+  const heading =
+    doc.querySelector<HTMLElement>(PAGE_EDITOR) ??
+    doc.querySelector<HTMLElement>(PAGE_HEADING);
+  heading?.focus();
+  return heading !== null;
+}
+
+/** The primary pane's page title (AppPage's, or the reader's note name). */
+export const PAGE_HEADING = ".route-fade h1";
+
+/** The primary pane's writable note editor, when the page has one. */
+export const PAGE_EDITOR = '.route-fade .cm-content[contenteditable="true"]';
+
+/**
+ * Nobody is using focus: it sits on <body>, or on the page title a route
+ * change parked it on. A view that mounts with the cursor ready (the note
+ * editor) may take it then, and never from anything else.
+ */
+export function focusIsIdle(doc: Pick<Document, "activeElement" | "body">): boolean {
+  const active = doc.activeElement;
+  return !active || active === doc.body || active.matches(PAGE_HEADING);
 }
 
 export default AppPage;

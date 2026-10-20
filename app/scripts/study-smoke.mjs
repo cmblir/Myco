@@ -1,137 +1,232 @@
-// Study route E2E (Feature 3, part 2). Drives the seeded deck through the full
-// review loop (front → reveal → grade → persist), verifies the due count drops
-// after grading, runs the quiz generator, and exercises "Make cards" on a page.
-//
-// Usage (dev server must be running on :5173):
-//   node scripts/study-smoke.mjs [--headed]
+// Grounded synthetic deck review, FSRS persistence, extractive quiz and card preview.
+// No native disk, account or model calls are exercised.
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
-
-const headed = process.argv.includes("--headed");
-const BASE = "http://localhost:5173/?mock=1";
-
-const browser = await chromium.launch({ headless: !headed });
-const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
-
-const errors = [];
-page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
-page.on("console", (m) => {
-  if (m.type() === "error") errors.push(`console: ${m.text()}`);
+const base = process.env.MYCO_TEST_URL ?? "http://127.0.0.1:5173";
+assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(new URL(base).hostname));
+const output = process.env.MYCO_SCREENSHOTS ?? "/tmp/myco-study-workflows";
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({
+  headless: !process.argv.includes("--headed"),
 });
-
-const results = [];
-function check(name, ok, detail = "") {
-  results.push({ name, ok, detail });
-}
-
-// Seed onboarding + language so the app boots straight into the workspace.
-await page.addInitScript(() => {
-  localStorage.setItem("myco.onboarded", "1");
-  localStorage.setItem(
-    "myco-ui",
-    JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
-  );
-});
-
-await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 60_000 });
-await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-
-// The sidebar badge shows the seeded deck's due total (3).
-const badge = await page.locator(".nav-item .nav-badge").first().textContent().catch(() => null);
-check("sidebar due badge", badge === "3", `badge=${badge}`);
-
-// Open the Study route.
-await page.locator(".side-nav .nav-item", { hasText: "Study" }).first().click();
-await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
-check("study route title", (await page.locator(".page-title, .u-page__title").textContent()) === "Study");
-
-// Deck list shows the seeded deck with a due pill.
-await page.waitForSelector(".deck-row", { timeout: 10_000 });
-const deckText = await page.locator(".deck-row").first().innerText();
-check("deck listed", /transformers/i.test(deckText), deckText.replace(/\n/g, " "));
-check("deck due pill", /3 due/.test(deckText), deckText.replace(/\n/g, " "));
-
-// Enter the deck → review session.
-await page.locator(".deck-row").first().click();
-await page.waitForSelector(".study-card", { timeout: 10_000 });
-check("review front shown", (await page.locator(".study-front").count()) > 0);
-check(
-  "progress 1 of 3",
-  /1 \/ 3/.test(await page.locator(".workspace").innerText()),
-);
-
-// Grade all three due cards (reveal → Good).
-for (let i = 1; i <= 3; i++) {
-  await page.locator(".study-flip").click();
-  await page.waitForSelector(".study-back", { timeout: 5000 });
-  if (i === 1) {
-    check("answer revealed", (await page.locator(".study-back").count()) > 0);
-    check(
-      "citation shown",
-      /Source:/.test(await page.locator(".study-card").innerText()),
-    );
-  }
-  await page.locator(".grade-good").click();
-  await page.waitForTimeout(200);
-}
-
-await page.waitForSelector(".study-done", { timeout: 10_000 });
-check("all done reached", (await page.locator(".study-done").count()) > 0);
-
-// Back to decks — the graded cards are now scheduled in the future, so the deck
-// should no longer report due cards (persistence round-tripped through disk).
-await page.locator(".btn", { hasText: "All decks" }).first().click();
-await page.waitForSelector(".deck-row", { timeout: 10_000 });
-const deckAfter = await page.locator(".deck-row").first().innerText();
-check(
-  "due cleared after review",
-  /All caught up/.test(deckAfter),
-  deckAfter.replace(/\n/g, " "),
-);
-
-// Quiz mode: enter deck, switch to Quiz, generate, answer one question.
-await page.locator(".deck-row").first().click();
-await page.waitForSelector(".segmented", { timeout: 10_000 });
-await page.locator(".segmented button", { hasText: "Quiz" }).click();
-await page.locator(".btn", { hasText: "Generate quiz" }).click();
-await page.waitForSelector(".quiz-choice", { timeout: 10_000 });
-check("quiz generated", (await page.locator(".quiz-choice").count()) >= 2);
-await page.locator(".quiz-choice").first().click();
-await page.waitForTimeout(200);
-check(
-  "quiz feedback shown",
-  /(Correct|Not quite)/.test(await page.locator(".workspace").innerText()),
-);
-
-// "Make cards" from a wiki page: open one via the sidebar tree.
-await page.locator(".nav-item", { hasText: "wiki" }).first().click();
-await page.locator(".nav-leaf", { hasText: "attention-mechanism" }).first().click();
-await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
-const beforeErr = errors.length;
+let checks = 0;
+const deckPath = "/myco/cards/attention-mechanism.md";
 try {
-  const makeBtn = page.locator(".btn", { hasText: "Make cards" }).first();
-  await makeBtn.waitFor({ timeout: 10_000 });
-  await makeBtn.click();
-  await page
-    .waitForFunction(() => /cards added/.test(document.body.innerText), { timeout: 15_000 })
-    .catch(() => {});
-  check(
-    "make cards result",
-    /cards added/.test(await page.locator(".workspace").innerText()),
-    "no 'cards added' message",
-  );
-  check("make cards no errors", errors.length === beforeErr, errors.slice(beforeErr).join(" | "));
-} catch (e) {
-  await page.screenshot({ path: "/tmp/study-makecards.png" }).catch(() => {});
-  check("make cards result", false, String(e).split("\n")[0]);
+  for (const width of [375, 768, 1280]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    page.setDefaultTimeout(15000);
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.route("**/*", (r) => {
+      const u = new URL(r.request().url());
+      return ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname) ||
+        !["http:", "https:"].includes(u.protocol)
+        ? r.continue()
+        : r.abort("blockedbyclient");
+    });
+    await page.addInitScript(() => {
+      localStorage.setItem("myco.onboarded", "1");
+      localStorage.setItem(
+        "myco-ui",
+        JSON.stringify({
+          version: 3,
+          state: { lang: "en", theme: "light", aiCards: false },
+        }),
+      );
+    });
+    const read = () =>
+      page.evaluate(
+        async (path) =>
+          (await window.__TAURI_INTERNALS__.invoke("read_file", { path })).raw,
+        deckPath,
+      );
+    async function navigateStudy() {
+      if (await page.locator(".app.sidebar-collapsed").count())
+        await page.getByTitle(/^Toggle sidebar/).click();
+      const more = page
+        .locator(".side-nav")
+        .getByRole("button", { name: /^More tools/ });
+      if ((await more.getAttribute("aria-expanded")) === "false")
+        await more.click();
+      await page
+        .locator(".side-nav .nav-item")
+        .filter({ has: page.locator(".ni-text", { hasText: /^Study$/ }) })
+        .click();
+      await page.locator(".deck-row").first().waitFor();
+    }
+    try {
+      await page.goto(base + "/?mock=1", { waitUntil: "domcontentloaded" });
+      await page.locator(".home-page").waitFor();
+      await navigateStudy();
+      const deck = page
+        .locator(".deck-row")
+        .filter({
+          has: page.locator(".deck-row__name", {
+            hasText: /^attention-mechanism$/,
+          }),
+        });
+      assert.match(await deck.innerText(), /2 cards\n2 due/);
+      checks++;
+      assert.match(
+        await page.locator(".route-fade").innerText(),
+        /2 review cards are due/,
+      );
+      checks++;
+      const before = await read();
+      const originalFronts = before
+        .split("\n")
+        .filter((line) => line.includes(" ?? "));
+      assert.equal(originalFronts.length, 2);
+      checks++;
+      await page
+        .getByRole("button", { name: "Start review", exact: true })
+        .click();
+      await page.locator(".study-card").waitFor();
+      for (let i = 0; i < 2; i++) {
+        assert.match(
+          await page.locator(".route-fade").innerText(),
+          new RegExp(i + 1 + " / 2"),
+        );
+        checks++;
+        await page.locator(".study-flip").click();
+        await page.locator(".study-back").waitFor();
+        assert.match(await page.locator(".study-card").innerText(), /Source:/);
+        checks++;
+        await page.getByRole("button", { name: /^Remembered/ }).click();
+      }
+      await page.locator(".study-done").waitFor();
+      checks++;
+      await page.waitForFunction(async (path) => {
+        const raw = (
+          await window.__TAURI_INTERNALS__.invoke("read_file", { path })
+        ).raw;
+        return (
+          [
+            ...raw.matchAll(
+              /<!--SR:!([^|]+)\|[^|]+\|[^|]+\|(\d+)\|[^|]+\|([^|]+)\|/g,
+            ),
+          ].filter((match) => Number(match[2]) === 2).length === 2
+        );
+      }, deckPath);
+      const persisted = await read();
+      assert.deepEqual(
+        persisted.split("\n").filter((line) => line.includes(" ?? ")),
+        originalFronts,
+      );
+      checks++;
+      const state = [
+        ...persisted.matchAll(
+          /<!--SR:!([^|]+)\|[^|]+\|[^|]+\|(\d+)\|[^|]+\|([^|]+)\|/g,
+        ),
+      ];
+      assert.equal(state.length, 2);
+      checks++;
+      const today = await page.evaluate(() => {
+        const d = new Date();
+        return [
+          d.getFullYear(),
+          String(d.getMonth() + 1).padStart(2, "0"),
+          String(d.getDate()).padStart(2, "0"),
+        ].join("-");
+      });
+      assert.ok(state.every((match) => match[1] > today && match[3] === today));
+      checks++;
+      await page
+        .getByRole("button", { name: "All decks", exact: true })
+        .click();
+      await deck.waitFor();
+      assert.match(await deck.innerText(), /All caught up/);
+      checks++;
+      assert.equal(
+        await page
+          .getByRole("button", { name: "Start review", exact: true })
+          .count(),
+        0,
+      );
+      checks++;
+      await deck.locator(".deck-row__open").click();
+      await page.getByRole("button", { name: "Quiz", exact: true }).click();
+      await page
+        .getByRole("button", { name: "Generate quiz", exact: true })
+        .click();
+      await page.locator(".quiz-choice").first().waitFor();
+      assert.ok((await page.locator(".quiz-choice").count()) >= 3);
+      checks++;
+      await page.locator(".quiz-choice").first().click();
+      assert.match(
+        await page.locator(".route-fade").innerText(),
+        /Correct|Not quite/,
+      );
+      checks++;
+      assert.equal(
+        await page.locator(".quiz-choice:not(:disabled)").count(),
+        0,
+      );
+      checks++;
+      await page.locator(".study-src-link").click();
+      await page.locator(".reader-head").waitFor();
+      await page.getByRole("button", { name: "More", exact: true }).click();
+      await page
+        .getByRole("menuitem", { name: "Make cards", exact: true })
+        .click();
+      const preview = page.getByRole("dialog", { name: "Cards from this note", exact: true });
+      await preview.waitFor();
+      assert.match(await preview.innerText(), /Cards from this note/);
+      checks++;
+      assert.ok((await preview.locator(".card-preview .is-dupe").count()) >= 2);
+      checks++;
+      const selected = await preview
+        .getByRole("checkbox", { checked: true })
+        .count();
+      assert.ok(selected > 0);
+      checks++;
+      await preview.getByRole("button", { name: "Save", exact: true }).click();
+      await preview.waitFor({ state: "detached" });
+      await page.waitForFunction(() =>
+        /\d+ cards added/.test(
+          document.querySelector(".reader")?.textContent ??
+            document.body.textContent,
+        ),
+      );
+      const expanded = await read();
+      assert.equal(
+        expanded.split("\n").filter((line) => line.includes(" ?? ")).length,
+        2 + selected,
+      );
+      checks++;
+      assert.ok(state.every((match) => expanded.includes(match[0])));
+      checks++;
+      await page.getByRole("button", { name: "More", exact: true }).click();
+      await page
+        .getByRole("menuitem", { name: "Make cards", exact: true })
+        .click();
+      await page.waitForFunction(() =>
+        document.body.textContent.includes("already"),
+      );
+      assert.equal(await page.getByRole("dialog", { name: "Cards from this note", exact: true }).count(), 0);
+      checks++;
+      assert.equal(await read(), expanded);
+      checks++;
+      await navigateStudy();
+      assert.match(await deck.innerText(), new RegExp(selected + " due"));
+      checks++;
+      assert.deepEqual(errors, []);
+      checks++;
+      await page.screenshot({ path: output + "/" + width + ".png" });
+      console.log(
+        "PASS " +
+          width +
+          "px grounded review/FSRS/revisit/quiz/card preview/dedup (mock IPC)",
+      );
+    } finally {
+      await page.close();
+    }
+  }
+} finally {
+  await browser.close();
 }
-
-await browser.close();
-
-let failed = 0;
-for (const r of results) {
-  console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.name}${r.detail ? "  — " + r.detail : ""}`);
-  if (!r.ok) failed++;
-}
-console.log(`\n${results.length - failed}/${results.length} checks clean`);
-if (errors.length) console.log(`\n${errors.length} page/console errors:\n` + errors.join("\n"));
-process.exit(failed ? 1 : 0);
+console.log(
+  checks +
+    " assertions passed; model and native filesystem behavior are not exercised.",
+);

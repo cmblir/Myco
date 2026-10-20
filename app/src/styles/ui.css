@@ -69,6 +69,24 @@
   background: var(--ink-2);
   border-color: var(--ink-2);
 }
+/* Dark: every primary family (the kit, the older .btn-primary, the modal
+   shell) takes the tray's violet with dark ink (7:1). The ink fill turned
+   near-white there, the same as a plain light button beside it, so a view
+   read as having two main actions. */
+[data-theme="dark"] .u-btn--primary,
+[data-theme="dark"] .btn-primary,
+[data-theme="dark"] .myco-modal__btn--primary:not(.myco-modal__btn--danger) {
+  background: var(--live);
+  border-color: var(--live);
+  color: #120c22;
+}
+[data-theme="dark"] .u-btn--primary:hover:not(:disabled),
+[data-theme="dark"] .btn-primary:hover:not(:disabled),
+[data-theme="dark"] .myco-modal__btn--primary:not(.myco-modal__btn--danger):hover {
+  background: var(--live);
+  border-color: var(--live);
+  filter: brightness(1.08);
+}
 
 .u-btn--quiet {
   background: transparent;
@@ -167,6 +185,16 @@
 .u-segment__btn[aria-pressed="true"] .u-segment__count {
   color: var(--ink-3);
 }
+/* A 44px segment where a finger presses it (UX S47); the fixed 32px track
+   would clip the taller buttons. */
+@media (max-width: 768px), (any-pointer: coarse) {
+  .u-segment {
+    height: auto;
+  }
+  .u-segment__btn {
+    min-height: 44px;
+  }
+}
 
 /* ── Chip ────────────────────────────────────────────────────────────────
  * A read-only fact: a label, optionally a mono value, optionally a tone. The
@@ -252,6 +280,146 @@
 .u-check.is-disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* ── Sheet ───────────────────────────────────────────────────────────────
+ * A menu that rises from the bottom edge on a phone width or a touch screen
+ * (Sheet.tsx, UX S49). The menus inside keep their own markup; here they
+ * lose their dropdown chrome and grow to a thumb's size. Bottom and max
+ * height are set inline from visualViewport, so a soft keyboard never
+ * covers it.
+ */
+.u-sheet__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  background: rgba(0, 0, 0, 0.45);
+}
+.u-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-width: 640px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  box-shadow: var(--shadow-pop);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  animation: u-sheet-in var(--dur-quick, 160ms) var(--ease-out, ease-out);
+}
+.u-sheet:focus {
+  outline: none;
+}
+@keyframes u-sheet-in {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-sheet {
+    animation: none;
+  }
+}
+.u-sheet__head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 8px 8px 16px;
+  border-bottom: 1px solid var(--line-soft, var(--line));
+  touch-action: none;
+}
+.u-sheet__handle {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  width: 36px;
+  height: 4px;
+  margin-left: -18px;
+  border-radius: var(--r-pill);
+  background: var(--line-strong, var(--line));
+}
+.u-sheet__titles {
+  flex: 1;
+  min-width: 0;
+}
+.u-sheet__title {
+  margin: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: var(--fs-14, 14px);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.u-sheet__meta {
+  margin: 2px 0 0;
+  color: var(--ink-4);
+  font-size: var(--fs-12-5, 12.5px);
+}
+.u-sheet__close {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: var(--fs-14, 14px);
+}
+.u-sheet__close:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.u-sheet__body {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px 8px 8px;
+}
+/* The menus inside: no dropdown box, 44px rows, 16px text. */
+.u-sheet .myco-menu,
+.u-sheet .rd-menu {
+  position: static;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  box-shadow: none;
+}
+.u-sheet .myco-menu button,
+.u-sheet .rd-menu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  font-size: 1rem;
+}
+/* Danger last, under its own rule (view, then tidy, then danger). The note
+   menu's rows are rounded buttons, so its rule is drawn above the button. */
+.u-sheet .myco-menu li:has(> .myco-menu__danger) {
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+  padding-top: 4px;
+}
+.u-sheet .rd-menu .rd-menu__danger {
+  position: relative;
+  margin-top: 9px;
+}
+.u-sheet .rd-menu .rd-menu__danger::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -5px;
+  height: 1px;
+  background: var(--line);
 }
 
 /* ── Page frame ──────────────────────────────────────────────────────────
@@ -344,6 +512,14 @@
   flex: 1 1 auto;
   min-height: 0;
   padding-bottom: 16px;
+  /* AppPage puts a wide page's body before its bar and note in source order
+     (Tab order); this puts it back under them on screen. */
+  order: 1;
+}
+/* Likewise the left rail follows the stage in source order but stays left:
+   grid auto-placement follows order-modified document order. */
+.u-page--wide .u-page__rail:not(.u-page__rail--right) {
+  order: -1;
 }
 .u-page__main {
   min-width: 0;
@@ -463,6 +639,13 @@ button.u-rail__head:hover {
   font-family: var(--font-mono);
   font-size: var(--fs-11);
   color: var(--ink-4);
+}
+/* A head action (the gaps rail's 정리): the kit's quiet button, shortened so
+   the head keeps its height. */
+.u-rail__headbtn {
+  height: 24px;
+  margin-block: -4px;
+  padding: 0 8px;
 }
 .u-rail__list {
   flex: 1 1 auto;

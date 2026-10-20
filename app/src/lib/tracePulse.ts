@@ -10,6 +10,7 @@
 // are read live from graphology each frame so the trace tracks the moving layout.
 import * as THREE from "three";
 import type { VaultGraph } from "./graphData";
+import type { LinkRoute } from "./pulseLayer";
 
 const TRAIN = 7; // dots in the comet (head + tail)
 const TAIL_GAP = 0.035; // phase spacing between successive tail dots
@@ -50,6 +51,8 @@ export class TracePulse {
   private head = 0; // head phase in [0,1) along the whole path
   private color = new THREE.Color(0xffffff);
   private tmp = new THREE.Vector3();
+  /** The drawn path of each link, when it is not the straight chord. */
+  along: LinkRoute | null = null;
 
   constructor(graph: VaultGraph, pr: number, dark: boolean) {
     this.graph = graph;
@@ -132,6 +135,7 @@ export class TracePulse {
     for (let i = 0; i < seg.length; i++) {
       if (target <= seg[i] || i === seg.length - 1) {
         const local = seg[i] > 1e-6 ? target / seg[i] : 0;
+        if (this.along?.(p[i], p[i + 1], local, out)) return;
         const a = this.graph.getNodeAttributes(p[i]);
         const b = this.graph.getNodeAttributes(p[i + 1]);
         out.set(

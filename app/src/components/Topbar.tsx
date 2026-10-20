@@ -12,7 +12,7 @@ import { createPortal } from "react-dom";
 import type { JSX } from "react";
 import { Icon, ProviderGlyph } from "../lib/icons";
 import type { IconName, ProviderId } from "../lib/icons";
-import type { Strings } from "../lib/i18n";
+import type { Lang, Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -27,6 +27,12 @@ import ActivityChip from "./ActivityChip";
 import { PROVIDERS } from "../lib/providers";
 import { ipc } from "../lib/ipc";
 import type { MycoSettings } from "../lib/ipc";
+import { listedName } from "../lib/displayName";
+import { moveNotes } from "../lib/noteActions";
+import { stripExt } from "./SidebarTree";
+import { workflowLabel, type WorkflowStatus } from "../lib/workflowOutcome";
+import { stopSessionPass, useSessionCompilerDisplay, type SessionCompilerDisplay } from "../lib/sessionIngest";
+import { formatTicker } from "../lib/time";
 
 export default function Topbar({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
@@ -41,9 +47,14 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
     (s) => s.navHistory.idx < s.navHistory.entries.length - 1,
   );
   const currentVault = useVaultStore((s) => s.currentVault);
+  // Only a page's crumb needs a title: an opaque session stem is named by it.
+  const pageTitle = useVaultStore((s) =>
+    route.startsWith("page:") ? s.adjacency?.meta?.[route.slice(5)]?.title : undefined,
+  );
 
   const projectName = currentVault?.name ?? t.app_name;
-  const { crumb, icon } = breadcrumbFor(route, projectName, t);
+  const { crumb, icon } = breadcrumbFor(route, projectName, t, currentVault?.path, pageTitle);
+  const movePath = movableNote(route, currentVault?.path);
 
   return (
     <div className="topbar">
@@ -54,8 +65,10 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       >
         <Icon name="sidebar" />
       </button>
+      {/* Back/forward leave the phone shell: the OS edge swipe goes back
+          there, and the arrows sat on it (styles.css, UX S50). */}
       <button
-        className="icon-btn"
+        className="icon-btn topbar-history"
         onClick={goBack}
         disabled={!canBack}
         title={t.tb_back ?? "Back (⌘[)"}
@@ -64,7 +77,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
         <Icon name="arrowL" size={14} />
       </button>
       <button
-        className="icon-btn"
+        className="icon-btn topbar-history"
         onClick={goForward}
         disabled={!canFwd}
         title={t.tb_forward ?? "Forward (⌘])"}
@@ -75,17 +88,33 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       <div className="breadcrumb">
         <Icon name={icon} size={14} />
         {crumb.map((c, i) => (
-          <span key={i} style={{ display: "inline-flex", gap: 6 }}>
+          <span key={i} className="crumb">
             {i > 0 ? <span className="crumb-sep">/</span> : null}
-            {i === crumb.length - 1 ? <b>{c}</b> : <span>{c}</span>}
+            {i === crumb.length - 1 ? (
+              <b title={route.startsWith("page:") ? route.slice(5) : undefined}>{c}</b>
+            ) : movePath && i > 0 ? (
+              // A folder crumb moves the note elsewhere (S15), the tree's Move.
+              <button
+                className="crumb-folder"
+                title={t.sb_move_to}
+                aria-label={`${c} — ${t.sb_move_to}`}
+                onClick={() => void moveNotes([movePath], t)}
+              >
+                {c}
+                <Icon name="chevD" size={11} />
+              </button>
+            ) : (
+              <span>{c}</span>
+            )}
           </span>
         ))}
       </div>
       <div className="topbar-spacer" />
       {/* Split view: open a second pane beside the current one (Overview + Graph
-          etc.). Defaults the pane to Graph, or Overview when Graph is primary. */}
+          etc.). Defaults the pane to Graph, or Overview when Graph is primary.
+          Hidden in the phone shell (styles.css, UX S42). */}
       <button
-        className={`pill pill-icon${splitRoute ? " is-active" : ""}`}
+        className={`pill pill-icon split-toggle${splitRoute ? " is-active" : ""}`}
         onClick={() =>
           setSplitRoute(splitRoute ? null : route === "graph" ? "overview" : "graph")
         }
@@ -130,9 +159,10 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
 function probeProviderReady(
   provider: string,
   settings: MycoSettings,
+  model?: string,
 ): Promise<boolean> {
   if (!provider) return Promise.resolve(false);
-  if (provider === "builtin-local") return Promise.resolve(true); // bundled in the app binary
+  if (provider === "builtin-local") return model === "extractive-retrieval" || model === "extractive-ingest" ? Promise.resolve(true) : ipc.localChatStatus(model).then((status) => status.state === "ready");
   if (provider === "anthropic-cli")
     return ipc.claudeCheck().then((r) => r.installed);
   if (provider === "ollama")
@@ -208,8 +238,8 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
   const wrapRef = useRef<HTMLDivElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
-  const provider = settings?.query_provider ?? "";
-  const model = settings?.query_model ?? "";
+  const provider = settings?.model_roles?.roles.ask.providerId ?? "";
+  const model = settings?.model_roles?.roles.ask.modelId ?? "";
   const isLocal = provider === "builtin-local";
 
   const label = isLocal
@@ -224,10 +254,10 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
   useEffect(() => {
     if (!settings) return;
     let alive = true;
-    probeProviderReady(settings.query_provider, settings)
+    probeProviderReady(settings.model_roles?.roles.ask.providerId ?? "", settings, settings.model_roles?.roles.ask.modelId)
       .then((ok) => alive && setQueryReady(ok))
       .catch(() => alive && setQueryReady(false));
-    probeProviderReady(settings.ingest_provider, settings)
+    probeProviderReady(settings.model_roles?.roles.compilation.providerId ?? "", settings, settings.model_roles?.roles.compilation.modelId)
       .then((ok) => alive && setIngestReady(ok))
       .catch(() => alive && setIngestReady(false));
     return () => {
@@ -326,7 +356,7 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
                   <span className={"dot" + (ingestReady ? " is-ready" : "")}></span>
                   <b>{t.s_model_ingest}</b>
                   <span className="sr-action">
-                    {providerName(settings.ingest_provider)} · {settings.ingest_model || "—"}
+                    {providerName(settings.model_roles?.roles.compilation.providerId ?? "")} · {settings.model_roles?.roles.compilation.modelId || "—"}
                   </span>
                 </div>
               </div>
@@ -356,8 +386,9 @@ export function runPillOutcome(src: {
   running: boolean;
   outcome: RunOutcome;
   seen: boolean;
-}): RunOutcome {
-  return src.running || src.seen ? null : src.outcome;
+  workflowStatus?: WorkflowStatus | null;
+}): RunOutcome | WorkflowStatus {
+  return src.running || src.seen ? null : src.workflowStatus === "success" ? "done" : src.workflowStatus ?? src.outcome;
 }
 
 interface RunPillProps {
@@ -369,6 +400,8 @@ interface RunPillProps {
   route: RouteId;
   doneLabel: string;
   errorLabel: string;
+  workflowStatus?: WorkflowStatus | null;
+  statusLabel?: string;
   markSeen: () => void;
 }
 
@@ -382,6 +415,8 @@ function RunPill({
   route,
   doneLabel,
   errorLabel,
+  workflowStatus,
+  statusLabel,
   markSeen,
 }: RunPillProps): JSX.Element | null {
   const current = useUIStore((s) => s.route);
@@ -396,10 +431,12 @@ function RunPill({
     if (!seen && (current === route || split === route)) markSeen();
   }, [seen, current, split, route, markSeen]);
 
-  const shown = runPillOutcome({ running, outcome, seen });
+  const shown = runPillOutcome({ running, outcome, seen, workflowStatus });
   if (!shown) return null;
   const ok = shown === "done";
-  const label = ok ? doneLabel : errorLabel;
+  const label = ok ? doneLabel : statusLabel ?? errorLabel;
+  const color = ok ? "var(--ok)" : shown === "error" || shown === "failed" ? "var(--danger)"
+    : shown === "pending" || shown === "partial" ? "var(--warn)" : "var(--ink-3)";
   return (
     <button
       className="pill chip-pop"
@@ -408,18 +445,49 @@ function RunPill({
     >
       <span
         className="dot"
-        style={{ background: ok ? "#16a34a" : "#dc2626" }}
+        style={{ background: color }}
       ></span>
       <span>{label}</span>
     </button>
   );
 }
 
-/** Every finished-run pill in the bar, in one place: the five long jobs that
- * outlive the page that started them. Nothing here is live — that is
- * ActivityChip's running list. */
+export function sessionCompilerLabel(run: SessionCompilerDisplay, t: Strings, lang: Lang, now: number): string {
+  const status = run.stopping ? t.session_compile_stopping
+    : run.preparationRequired ? t.session_compile_preparation
+    : run.status === "running" ? t.session_compile_label
+    : `${t.session_compile_label} · ${workflowLabel(run.status, t)}`;
+  const progress = run.processedWindows === null || run.eligibleWindows === null ? ""
+    : t.session_compile_progress.replace("{processed}", new Intl.NumberFormat(lang).format(run.processedWindows))
+      .replace("{total}", new Intl.NumberFormat(lang).format(run.eligibleWindows));
+  const elapsed = t.q_elapsed.replace("{time}", formatTicker(Math.max(0, (run.finishedAt ?? now) - run.startedAt)));
+  return [status, progress, elapsed].filter(Boolean).join(" · ");
+}
+
+function SessionCompilerRun({ t }: { t: Strings }): JSX.Element | null {
+  const run = useSessionCompilerDisplay(state => state.run);
+  const vault = useVaultStore(state => state.currentVault);
+  const vaultToken = useVaultStore(state => state.vaultToken);
+  const isOpeningVault = useVaultStore(state => state.isOpeningVault);
+  const lang = useUIStore(state => state.lang);
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (run?.status !== "running") return;
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [run?.status, run?.startedAt]);
+  if (!run || isOpeningVault || run.vaultPath !== vault?.path || run.vaultToken !== vaultToken || run.status === "skipped") return null;
+  return <span style={{ display: "inline-flex", alignItems: "center", gap: "0.5rem", flexWrap: "wrap", minWidth: 0 }}>
+    <span role="status" title={run.error ?? run.modelId ?? undefined}>{sessionCompilerLabel(run, t, lang, now)}</span>
+    {run.status === "running" && <button type="button" style={{ minHeight: 44, minWidth: 44 }}
+      disabled={run.stopping} onClick={() => stopSessionPass(run.vaultPath, run.vaultToken)}>{t.ag_stop}</button>}
+  </span>;
+}
+
+/** Keep native session telemetry alongside the existing finished-run pills. */
 function RunPills({ t }: { t: Strings }): JSX.Element {
   const ingestStage = useIngestStore((s) => s.stage);
+  const ingestStatus = useIngestStore((s) => s.workflowStatus);
   const ingestSeen = useIngestStore((s) => s.seen);
   const ingestMarkSeen = useIngestStore((s) => s.markSeen);
   const askBusy = useQueryStore((s) => s.busy);
@@ -431,6 +499,7 @@ function RunPills({ t }: { t: Strings }): JSX.Element {
   const lintMarkSeen = useLintStore((s) => s.markSeen);
   const distillRunning = useDistillRunStore((s) => s.running);
   const distillOutcome = useDistillRunStore((s) => s.outcome);
+  const distillStatus = useDistillRunStore((s) => s.workflowStatus);
   const distillSeen = useDistillRunStore((s) => s.seen);
   const distillMarkSeen = useDistillRunStore((s) => s.markSeen);
   const harvestPhase = useHarvestStore((s) => s.run.phase);
@@ -440,6 +509,7 @@ function RunPills({ t }: { t: Strings }): JSX.Element {
 
   return (
     <>
+      <SessionCompilerRun t={t} />
       <RunPill
         running={
           ingestStage === "writing-raw" ||
@@ -449,6 +519,8 @@ function RunPills({ t }: { t: Strings }): JSX.Element {
         // "refused" is not an outcome the bar reports: the refusal itself is
         // the result, and it is only readable on the page.
         outcome={stageOutcome(ingestStage)}
+        workflowStatus={ingestStage === "refused" ? null : ingestStatus}
+        statusLabel={ingestStatus ? workflowLabel(ingestStatus, t) : undefined}
         seen={ingestSeen}
         route="ingest"
         doneLabel={t.ing_chip_done}
@@ -478,6 +550,8 @@ function RunPills({ t }: { t: Strings }): JSX.Element {
       <RunPill
         running={distillRunning}
         outcome={distillOutcome}
+        workflowStatus={distillStatus}
+        statusLabel={distillStatus ? workflowLabel(distillStatus, t) : undefined}
         seen={distillSeen}
         route="feedback"
         doneLabel={t.tb_distill_done}
@@ -506,10 +580,23 @@ function stageOutcome(stage: string): RunOutcome {
   return null;
 }
 
-function breadcrumbFor(
+/** The open note its folder crumbs may move (S15), or null: off a page,
+ *  outside the vault, or under raw/ — immutable, and move_path refuses it. */
+export function movableNote(route: string, root?: string): string | null {
+  if (!route.startsWith("page:") || !root) return null;
+  const path = route.slice("page:".length);
+  return path.startsWith(`${root}/`) && !path.startsWith(`${root}/raw/`) ? path : null;
+}
+
+/** The bar's trail for `route`. A page reads project / its folders under
+ *  `root` / the name the tree lists it by (no `.md`); its full path is the
+ *  last crumb's tooltip. Exported for its unit test. */
+export function breadcrumbFor(
   route: string,
   project: string,
   t: Strings,
+  root?: string,
+  title?: string,
 ): { crumb: string[]; icon: IconName } {
   if (route === "overview")
     return { crumb: [project, t.nav_overview], icon: "home" };
@@ -522,12 +609,17 @@ function breadcrumbFor(
     return { crumb: [project, t.nav_history], icon: "history" };
   if (route === "provenance")
     return { crumb: [project, t.nav_provenance], icon: "quote" };
+  if (route === "tasks") return { crumb: [project, t.nav_tasks], icon: "check" };
+  if (route === "study") return { crumb: [project, t.nav_study], icon: "sparkles" };
+  if (route === "feedback") return { crumb: [project, t.nav_feedback], icon: "inbox" };
   if (route === "settings")
     return { crumb: [t.nav_settings], icon: "settings" };
   if (route.startsWith("page:")) {
     const path = route.slice(5);
-    const name = path.split(/[\\/]/).pop() ?? path;
-    return { crumb: [project, name], icon: "page" };
+    const inVault = !!root && path.startsWith(`${root}/`);
+    const parts = (inVault ? path.slice(root.length + 1) : path).split(/[\\/]/);
+    const name = listedName(stripExt(parts.pop() ?? path), title);
+    return { crumb: [project, ...(inVault ? parts : []), name], icon: "page" };
   }
   return { crumb: [project], icon: "home" };
 }

@@ -22,6 +22,7 @@ import MascotClip from "./MascotClip";
 import { ipc } from "../lib/ipc";
 import type { TrayPanelPayload, TrayStatusPayload } from "../lib/ipc";
 import { bumpedKeys, pickNowCard } from "../lib/trayStatus";
+import { isVaultTrayAction, requestAgendaAction, TRAY_ACTION_RESULT_EVENT, vaultActionScopeKey, type TrayActionResult, type VaultActionScope } from "../lib/notchAction";
 
 /** Pushed by Rust on every update_tray_status call. */
 export const TRAY_STATUS_EVENT = "myco://tray-status";
@@ -95,7 +96,7 @@ const MOCK_STATUS: TrayStatusPayload = {
     },
   },
   ask: "위키에 질문",
-  distill: "지금 증류",
+  distill: "지금 정리",
   open: "myco 열기",
   quit: "종료",
 };
@@ -210,13 +211,20 @@ export default function TrayPanel(): JSX.Element {
       ? MOCK_STATUS
       : null,
   );
+  const actionScopeRef = useRef<VaultActionScope | null>(status?.panel?.actionScope ?? null);
+  const mounted = useRef(true);
 
   useEffect(() => {
     // The window itself is transparent; only the rounded panel paints.
     document.documentElement.classList.add("tray-window");
+    const push = (next: TrayStatusPayload): void => {
+      actionScopeRef.current = next.panel?.actionScope ?? null;
+      setStatus(next);
+    };
+    mounted.current = true;
     void ipc
       .getTrayStatus()
-      .then(setStatus)
+      .then((next) => { if (mounted.current) push(next); })
       .catch(() => {
         /* plain-browser dev: no Tauri backend */
       });
@@ -225,7 +233,7 @@ export default function TrayPanel(): JSX.Element {
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
         listen<TrayStatusPayload>(TRAY_STATUS_EVENT, (e) =>
-          setStatus(e.payload),
+          push(e.payload),
         ),
       )
       .then((u) => {
@@ -241,6 +249,7 @@ export default function TrayPanel(): JSX.Element {
     window.addEventListener("keydown", onKey);
     return () => {
       cancelled = true;
+      mounted.current = false;
       if (unlisten) unlisten();
       window.removeEventListener("keydown", onKey);
     };
@@ -288,40 +297,75 @@ export default function TrayPanel(): JSX.Element {
   }, [status]);
 
   // Mascot reaction (CSS transform class, cleared when the keyframe ends),
-  // the top glow's mood, the decided now-cards (collapsed until the next
-  // push drops them), and the approve toast.
+  // the top glow's mood, and the confirmed approve toast. Row removal always
+  // follows the writer's authoritative status push.
   const [reaction, setReaction] = useState<Reaction>(null);
   const [mood, setMood] = useState<Mood>(null);
-  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [pending, setPending] = useState<Set<string>>(() => new Set());
+  const pendingRef = useRef(new Set<string>());
+  const [actionError, setActionError] = useState(false);
   const [chartOpen, setChartOpen] = useState(false);
-  useEffect(() => {
-    // Drop collapsed cards once the push no longer lists their proposal.
-    const live = new Set((status?.proposals ?? []).map((p) => p.path));
-    setGone((g) => {
-      const next = new Set([...g].filter((path) => live.has(path)));
-      return next.size === g.size ? g : next;
-    });
-  }, [status]);
   const [toast, setToast] = useState<{ text: string; out: boolean } | null>(
     null,
   );
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
   const later = (fn: () => void, ms: number): void => {
-    timers.current.push(setTimeout(fn, ms));
+    const capturedKey = vaultActionScopeKey(status?.panel?.actionScope);
+    timers.current.push(setTimeout(() => {
+      if (mounted.current && vaultActionScopeKey(actionScopeRef.current) === capturedKey) fn();
+    }, ms));
   };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const scopeKey = vaultActionScopeKey(status?.panel?.actionScope);
+  useEffect(() => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setPending(new Set());
+    setActionError(false);
+    setMood(null);
+    setReaction(null);
+    setToast(null);
+  }, [scopeKey]);
 
   const act = (action: string): void => {
-    void ipc.trayPanelAction(action).catch(() => {
-      /* plain-browser dev: no Tauri backend */
-    });
+    if (isVaultTrayAction(action)) {
+      const capturedKey = vaultActionScopeKey(status?.panel?.actionScope);
+      void submit(action).then((ok) => { if (ok && mounted.current && vaultActionScopeKey(actionScopeRef.current) === capturedKey) setReaction("nod"); });
+    } else void ipc.trayPanelAction(action).catch(() => console.error("tray: navigation delivery failed"));
   };
 
-  const decide = (path: string, label: string, approve: boolean): void => {
-    // Same handlers the in-app popover uses: the action string carries the
-    // proposal path back to the main window, which owns distillStore.
-    act(`proposal-${approve ? "approve" : "reject"}:${path}`);
-    setGone((g) => new Set(g).add(path));
+  const submit = async (action: string): Promise<boolean> => {
+    const scope = status?.panel?.actionScope ?? null;
+    const capturedKey = vaultActionScopeKey(scope);
+    const key = JSON.stringify([capturedKey, action]);
+    const isCurrent = (): boolean => mounted.current && vaultActionScopeKey(actionScopeRef.current) === capturedKey;
+    if (pendingRef.current.has(key) || !isCurrent()) return false;
+    if (!scope) { setActionError(true); return false; }
+    pendingRef.current.add(key);
+    setPending((previous) => new Set(previous).add(key));
+    setActionError(false);
+    try {
+      const { listen } = await import("@tauri-apps/api/event");
+      const ok = await requestAgendaAction(action, {
+        listen: async (receive) => listen<TrayActionResult>(TRAY_ACTION_RESULT_EVENT, (event) => receive(event.payload)),
+        emit: async (request) => { if (!isCurrent()) throw new Error("Tray scope changed before delivery"); await ipc.trayPanelAction(request.action, request.scope, request.requestId); },
+      }, 120_000, scope);
+      if (!isCurrent()) return false;
+      setActionError(!ok);
+      return ok;
+    } catch {
+      if (isCurrent()) setActionError(true);
+      return false;
+    } finally {
+      pendingRef.current.delete(key);
+      if (isCurrent()) setPending((previous) => { const next = new Set(previous); next.delete(key); return next; });
+    }
+  };
+
+  const decide = async (path: string, label: string, approve: boolean): Promise<void> => {
+    const capturedKey = vaultActionScopeKey(status?.panel?.actionScope);
+    if (!(await submit(`proposal-${approve ? "approve" : "reject"}:${path}`))) return;
+    if (!mounted.current || vaultActionScopeKey(actionScopeRef.current) !== capturedKey) return;
     setReaction(approve ? "nod" : "wiggle");
     setMood(approve ? "ok" : "warn");
     later(() => setMood(null), approve ? 3600 : 2600);
@@ -342,6 +386,8 @@ export default function TrayPanel(): JSX.Element {
   const counts = panel?.counts;
   const labels = panel?.labels;
   const proposal = (s.proposals ?? [])[0];
+  const proposalPending = proposal && [true, false].some((approve) => pending.has(JSON.stringify([scopeKey, `proposal-${approve ? "approve" : "reject"}:${proposal.path}`])));
+  const distillPending = pending.has(JSON.stringify([scopeKey, "distill"]));
   const now = pickNowCard({
     proposals: s.proposals?.length ?? 0,
     overdue: counts?.overdue ?? 0,
@@ -355,7 +401,8 @@ export default function TrayPanel(): JSX.Element {
       return (
         <div
           key={proposal.path}
-          className={"tray-now" + (gone.has(proposal.path) ? " is-gone" : "")}
+          className="tray-now"
+          aria-busy={proposalPending || undefined}
         >
           <ActivityIcon name="distill" size={52} />
           <span className="tray-now-k">{labels.nowEyebrow}</span>
@@ -367,14 +414,16 @@ export default function TrayPanel(): JSX.Element {
             <button
               type="button"
               className="tray-b is-pri"
-              onClick={() => decide(proposal.path, proposal.label, true)}
+              disabled={!!proposalPending || !panel?.actionScope}
+              onClick={() => { void decide(proposal.path, proposal.label, true); }}
             >
               {s.proposalApprove}
             </button>
             <button
               type="button"
               className="tray-b"
-              onClick={() => decide(proposal.path, proposal.label, false)}
+              disabled={!!proposalPending || !panel?.actionScope}
+              onClick={() => { void decide(proposal.path, proposal.label, false); }}
             >
               {s.proposalReject}
             </button>
@@ -449,6 +498,7 @@ export default function TrayPanel(): JSX.Element {
       </header>
 
       {nowCard}
+      {pending.size > 0 || actionError ? <div role="status" className="tray-sub">{actionError ? labels?.actionFailed : labels?.actionPending}</div> : null}
 
       {counts && labels ? (
         <section className="tray-tile">
@@ -567,10 +617,8 @@ export default function TrayPanel(): JSX.Element {
           <button
             type="button"
             className="tray-b"
-            onClick={() => {
-              setReaction("nod");
-              act("distill");
-            }}
+            disabled={distillPending || !panel?.actionScope}
+            onClick={() => act("distill")}
           >
             <ActivityIcon name="distill" size={20} />
             {s.distill}

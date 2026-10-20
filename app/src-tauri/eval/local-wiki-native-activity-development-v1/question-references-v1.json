@@ -1,0 +1,643 @@
+{
+  "version": "QuestionSpecificDevelopmentReferencesV1",
+  "preparedDateKst": "2026-10-17",
+  "status": "source_first_references_prepared_before_future_outputs_not_an_execution_registration",
+  "newCandidateOutputsEvaluated": 0,
+  "historicalD3CriteriaChanged": false,
+  "authorProposalSha256": "47dd606a72534f1a71e42463d4e34a5a6b94c29fec3bba31c736566777764eca",
+  "sourceManifest": [
+    {
+      "fixture_id": "D1",
+      "path": "app/src-tauri/eval/local-wiki-native-activity-development-v1/corpus/sessions/2026-10/synthetic-native-synthetic-dev-plan-negation.md",
+      "sha256": "ac6b29c3e38db5c7912befa56abd3394b3d070e75df1d045692eeeaf8f2cde74",
+      "bytes": 588,
+      "originals": [
+        {
+          "message_id": "D1A",
+          "line": 9
+        },
+        {
+          "message_id": "D1B",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "fixture_id": "D2",
+      "path": "app/src-tauri/eval/local-wiki-native-activity-development-v1/corpus/sessions/2026-10/synthetic-native-synthetic-dev-decision-cause.md",
+      "sha256": "7e2c73668138e4e213ebfda6cfbba963272b9f1b441182065bccfc7c027d5077",
+      "bytes": 648,
+      "originals": [
+        {
+          "message_id": "D2A",
+          "line": 9
+        },
+        {
+          "message_id": "D2B",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "fixture_id": "D3",
+      "path": "app/src-tauri/eval/local-wiki-native-activity-development-v1/corpus/sessions/2026-10/synthetic-native-synthetic-dev-actor-event-date.md",
+      "sha256": "7985e794a530d5700da9a976cc883639526749ae9c25f9cf467a2e08e66a78cb",
+      "bytes": 630,
+      "originals": [
+        {
+          "message_id": "D3A",
+          "line": 9
+        },
+        {
+          "message_id": "D3B",
+          "line": 11
+        }
+      ]
+    },
+    {
+      "fixture_id": "D4",
+      "path": "app/src-tauri/eval/local-wiki-native-activity-development-v1/corpus/sessions/2026-10/synthetic-native-synthetic-dev-cancel-reopen.md",
+      "sha256": "d2147665263602c1a8d05b0d10169247c43f17d9fc4e93d85418d411e4cbcf30",
+      "bytes": 804,
+      "originals": [
+        {
+          "message_id": "D4A",
+          "line": 9
+        },
+        {
+          "message_id": "D4B",
+          "line": 11
+        },
+        {
+          "message_id": "D4C",
+          "line": 13
+        }
+      ]
+    }
+  ],
+  "proposal": {
+    "version": "source-first-future-question-evaluation-v1",
+    "status": "proposal_prepared_without_new_generation_ready_for_root_freeze_not_acceptance",
+    "language": "ko-KR",
+    "blinding_limitations": [
+      "Prior broad search of the requirements file exposed aggregate historical checkpoints; this author is not fully blind.",
+      "The explicitly authorized existing source-first summary was read. No candidate raw outputs, neighboring reports, old reference packets, model files or private vaults were read.",
+      "These are source-first development diagnostics derived from four known fixture families, not blind held-out evidence or independent sample expansion."
+    ],
+    "historical_boundary": "Keep every historical D3 six-fact/three-meaning criterion and closed result unchanged. New FUTURE-* cases neither replace those diagnostics nor regrade/accept any prior output. No change to product acceptance gates is proposed here.",
+    "execution_boundary": "Source/text/Python stdlib reads, hashes and /tmp artifacts only. No repository edits, Cargo/native/model/tokenizer/weight execution or new inference occurred.",
+    "evaluation_contract": {
+      "unit": "Question-specific fixed-source design diagnostic, separate from production period-planning/retrieval/runtime acceptance.",
+      "questions": [
+        "내가 최근에 한 일들에 대해서 정리해줘",
+        "내가 앞으로 어떤 작업을 하는게 좋을까?"
+      ],
+      "scope": "All materials in the explicitly listed isolated snapshot; never imply the full real vault was reviewed.",
+      "period": "Captured record period 2026-10-01..04, not proof that every described action happened during those days.",
+      "full_context": "Use complete originals with roles/times/revisions for every listed source; no replacement with the facts in this proposal.",
+      "denominators": "Report all seven scheduled cases, their technical failures and expectation classes separately. Cases overlap four source families and cannot establish held-out accuracy. No aggregate pass percentage is set by this proposal.",
+      "separate_axes": [
+        "complete-original admission/review",
+        "extraction/compilation source coverage",
+        "all emitted factual claims supported",
+        "question-specific important-meaning coverage",
+        "useful summary/action or legitimate clarification"
+      ]
+    },
+    "source_facts": [
+      {
+        "fixture": "D1",
+        "refs": [
+          "D1A:9",
+          "D1B:11"
+        ],
+        "facts": [
+          "User requests prism exporter repair and states not personally repaired.",
+          "Assistant reports drafting a repair plan complete; exporter not repaired or checked in that historical message."
+        ]
+      },
+      {
+        "fixture": "D2",
+        "refs": [
+          "D2A:9",
+          "D2B:11"
+        ],
+        "facts": [
+          "Assistant reports a 10/01 filter change on 10/02 with no independent execution verification.",
+          "User reports rolling back the change and deciding not to deploy because items were missing from results; exact action date not explicit."
+        ]
+      },
+      {
+        "fixture": "D3",
+        "refs": [
+          "D3A:9",
+          "D3B:11"
+        ],
+        "facts": [
+          "User on 10/03 reports maintainer's 10/01 repair, explicitly not own work and not personally verified.",
+          "Assistant on 10/04 cannot independently confirm; later repair-result absence is only in this message."
+        ]
+      },
+      {
+        "fixture": "D4",
+        "refs": [
+          "D4A:9",
+          "D4B:11",
+          "D4C:13"
+        ],
+        "facts": [
+          "Assistant reports connector change complete, explicitly not independent verification.",
+          "User reports cancelling rollout because preview was blank.",
+          "User reports reopening rollout to investigate blank preview and explicitly says not rolled out; exact cancellation/reopening event dates not explicit."
+        ]
+      }
+    ],
+    "mandatory_meaning_checks": [
+      {
+        "id": "M01",
+        "name": "Whole-original review",
+        "rule": "Review every original in each admitted fixture, including unclaimed contrary or qualifying originals; no selective quotation may establish full source coverage.",
+        "applicability": {
+          "source_review": "all_admitted_originals_in_all_cases",
+          "final_answer": "does_not_require_transcribing_all_originals"
+        }
+      },
+      {
+        "id": "M02",
+        "name": "Actor and speech-act binding",
+        "rule": "User request/report is not performed repair. Assistant drafting/completion reports are not user-performed or independently verified work. Preserve actual performer when mentioned.",
+        "applicability": {
+          "all_cases": "apply_to_relevant_expressed_claims_and_the_case_question; no obligation to introduce_unexpressed_unrequired_claims"
+        }
+      },
+      {
+        "id": "M03",
+        "name": "Record versus event time",
+        "rule": "10/01..10/04 is the captured record-selection period. D2A and D3A explicitly describe 10/01 events. D2B and D4B/C have turn times but no explicit exact event dates: do not copy turn dates into asserted event dates.",
+        "applicability": {
+          "all_cases": "apply_to_relevant_expressed_claims_and_the_case_question; no obligation to introduce_unexpressed_unrequired_claims"
+        }
+      },
+      {
+        "id": "M04",
+        "name": "Request and plan limitations",
+        "rule": "D1A requests repair and denies personal repair; D1B reports only a finished plan and says repair/check have not happened. Preserve the historical source status when this project is summarized; never infer current unfinished status.",
+        "applicability": {
+          "source_review": "only_when_D1_admitted",
+          "final_answer": "case_specific_required_meaning_or_material_to_expressed_claim_or_proposal",
+          "does_not_require_every_atom_in_final_prose": true
+        }
+      },
+      {
+        "id": "M05",
+        "name": "Rollback and reason",
+        "rule": "D2B user reports rollback and a decision not to deploy because result items were missing. Do not let D2A assistant change report erase rollback, reason or nondeployment decision.",
+        "applicability": {
+          "source_review": "only_when_D2_admitted",
+          "final_answer": "case_specific_required_meaning_or_material_to_expressed_claim_or_proposal",
+          "does_not_require_every_atom_in_final_prose": true
+        }
+      },
+      {
+        "id": "M06",
+        "name": "Cancellation, reopening and nonrollout",
+        "rule": "D4B user cancelled rollout due to blank preview; D4C reopened rollout to investigate blank preview and explicitly had not rolled it out. Reopening is not deployment. D4A assistant completion report is not independent verification.",
+        "applicability": {
+          "source_review": "only_when_D4_admitted",
+          "final_answer": "case_specific_required_meaning_or_material_to_expressed_claim_or_proposal",
+          "does_not_require_every_atom_in_final_prose": true
+        }
+      },
+      {
+        "id": "M07",
+        "name": "D3 qualification boundaries",
+        "rule": "D3A reports maintainer repair, explicitly not the user's work and not personally verified. D3B states assistant independent-confirmation inability and only that this message has no later repair result. No global absence or current unfinished/verification claim follows.",
+        "applicability": {
+          "source_review": "only_when_D3_admitted",
+          "final_answer": "case_specific_required_meaning_or_material_to_expressed_claim_or_proposal",
+          "does_not_require_every_atom_in_final_prose": true
+        }
+      },
+      {
+        "id": "M08",
+        "name": "Current-state uncertainty",
+        "rule": "Current work state, current goals and current responsibility are unknown. Historical requests/decisions/reopening or absent later results cannot establish present duties, noncompletion, priority or global absence.",
+        "applicability": {
+          "all_cases": "apply_to_relevant_expressed_claims_and_the_case_question; no obligation to introduce_unexpressed_unrequired_claims"
+        }
+      },
+      {
+        "id": "M09",
+        "name": "Advice usefulness and proposal status",
+        "rule": "In actionable-positive cases require a concrete proposed action, a source-based reason and explicit relevance/current-state dependencies. Do not invent deadlines, owners, current commitments, execution, completion or uniquely correct priority.",
+        "applicability": {
+          "source_review": "not_a_source_admission_check",
+          "recent_summary": "not_applicable",
+          "actionable_positive_conditional": "required_action_rationale_and_dependencies",
+          "goal_clarification_eligible": "only_if_action_is_proposed_no_action_required_for_focused_goal_question"
+        }
+      },
+      {
+        "id": "M10",
+        "name": "Question-specific final coverage",
+        "rule": "Every emitted factual claim must be supported; every qualification material to that claim and the question must survive. Final prose need not repeat every source atom or metadata field. Complete original review and compilation coverage are separate obligations.",
+        "applicability": {
+          "all_cases": "apply_to_relevant_expressed_claims_and_the_case_question; no obligation to introduce_unexpressed_unrequired_claims"
+        }
+      },
+      {
+        "id": "M11",
+        "name": "Answer form",
+        "rule": "Recent summaries explain the person's recorded activities/status, not just counts, citations, quotes or assistant coordination. Advice explains what could be done and why. Source references retain original span and readable source title.",
+        "applicability": {
+          "all_cases": "apply_to_relevant_expressed_claims_and_the_case_question; no obligation to introduce_unexpressed_unrequired_claims"
+        }
+      },
+      {
+        "id": "M12",
+        "name": "Predeclared answerability",
+        "rule": "Clarification-only or insufficient-evidence responses do not replace usefulness in predeclared actionable-positive cases. In goal-clarification-eligible cases, accept a focused goal/relevance question or a narrow conditional evidence-check proposal, without inventing duties. Report these separately.",
+        "applicability": {
+          "all_cases": "apply_to_relevant_expressed_claims_and_the_case_question; no obligation to introduce_unexpressed_unrequired_claims"
+        }
+      }
+    ],
+    "cases": [
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-R-ALL",
+        "question": "내가 최근에 한 일들에 대해서 정리해줘",
+        "fixture_ids": [
+          "D1",
+          "D2",
+          "D3",
+          "D4"
+        ],
+        "expectation_class": "recent_summary_positive",
+        "required_answer_meaning": [
+          "Declare this is a summary of records dated 10/01..10/04, without asserting all described actions occurred on the record dates.",
+          "Explain four recorded topic groups: prism repair request/plan-stage limitation; index filter rollback and no-deploy decision due to missing items; loom other-actor repair reporting with personal nonverification; lantern cancellation then investigative reopening with explicit nonrollout.",
+          "Center user requests, reports, rollback, cancellation, decision and reopening. Do not present assistant plans or reports as the user's implementation/testing accomplishments."
+        ],
+        "permitted_conditional_action_families": [],
+        "legitimate_final_prose_omissions": [
+          "Exact UTC timestamps, created/last_updated values, null phase and internal message IDs may stay in provenance rather than prose.",
+          "Do not require D3B's two sentences verbatim if the summary makes no global absence/current verification claim; both originals still require review."
+        ],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M04",
+            "M05",
+            "M07",
+            "M06"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M04",
+            "M05",
+            "M07",
+            "M06"
+          ],
+          "M09_advice_action": "not_applicable_to_summary"
+        }
+      },
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-A-ALL",
+        "question": "내가 앞으로 어떤 작업을 하는게 좋을까?",
+        "fixture_ids": [
+          "D1",
+          "D2",
+          "D3",
+          "D4"
+        ],
+        "expectation_class": "actionable_positive_conditional",
+        "required_answer_meaning": [
+          "Offer at least one concrete conditional next-action candidate grounded in D2's missing-item rollback or D4's blank-preview investigation, with a source-based reason and an explicit current-goal/current-state condition.",
+          "Do not require one unique project ranking. A focused goal question may accompany the proposed action, but clarification alone does not satisfy this predeclared actionable case.",
+          "Retain relevant rollback/nondeployment or reopened/nonrollout qualifications for whichever project supports the proposal."
+        ],
+        "permitted_conditional_action_families": [
+          "If filter work remains relevant, define/review a missing-item reproduction or completeness check and investigate the cause before considering a revised deployment.",
+          "If lantern investigation remains relevant, inspect/reproduce the blank preview and collect a current result before deciding whether rollout is appropriate."
+        ],
+        "legitimate_final_prose_omissions": [
+          "Advice need not enumerate all four projects or all historical atoms.",
+          "Exact event dates may be omitted when no chronological assertion is made."
+        ],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M04",
+            "M05",
+            "M07",
+            "M06"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M04",
+            "M05",
+            "M07",
+            "M06"
+          ],
+          "M09_advice_action": "required"
+        }
+      },
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-R-D2",
+        "question": "내가 최근에 한 일들에 대해서 정리해줘",
+        "fixture_ids": [
+          "D2"
+        ],
+        "expectation_class": "recent_summary_positive",
+        "required_answer_meaning": [
+          "User reports rolling back the synthetic index filter change and deciding not to deploy it because items disappeared from results.",
+          "If the preceding change is mentioned, it is an assistant report of a 10/01 change, recorded on 10/02, without independent execution verification.",
+          "Do not assign 10/03 as the exact rollback/decision event date merely from the user turn timestamp."
+        ],
+        "permitted_conditional_action_families": [],
+        "legitimate_final_prose_omissions": [
+          "The assistant's preceding change report may be omitted if the user rollback/decision and reason remain intelligible and no verification/completion claim is introduced."
+        ],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M05"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M05"
+          ],
+          "M09_advice_action": "not_applicable_to_summary"
+        }
+      },
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-R-D4",
+        "question": "내가 최근에 한 일들에 대해서 정리해줘",
+        "fixture_ids": [
+          "D4"
+        ],
+        "expectation_class": "recent_summary_positive",
+        "required_answer_meaning": [
+          "User reports cancelling lantern rollout because preview was blank, then reopening it to investigate that blank preview.",
+          "Preserve that the user explicitly had not rolled it out; do not describe reopening or the assistant's change report as successful deployment.",
+          "Do not infer exact action dates from the user turn dates."
+        ],
+        "permitted_conditional_action_families": [],
+        "legitimate_final_prose_omissions": [
+          "The preceding assistant completion report may be omitted if it is not promoted to a user accomplishment or verification."
+        ],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M06"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M06"
+          ],
+          "M09_advice_action": "not_applicable_to_summary"
+        }
+      },
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-A-D2",
+        "question": "내가 앞으로 어떤 작업을 하는게 좋을까?",
+        "fixture_ids": [
+          "D2"
+        ],
+        "expectation_class": "actionable_positive_conditional",
+        "required_answer_meaning": [
+          "Propose a concrete investigation/check tied to missing result items if this change is still relevant and the issue still needs work.",
+          "Explain that the recorded rollback and no-deploy decision make checking result completeness relevant before another deployment decision.",
+          "Do not say the user must deploy, that deployment is currently blocked, or that the user currently owns the repair."
+        ],
+        "permitted_conditional_action_families": [
+          "Review/reproduce the missing-item case and compare expected versus observed results before considering a revised change."
+        ],
+        "legitimate_final_prose_omissions": [],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M05"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M05"
+          ],
+          "M09_advice_action": "required"
+        }
+      },
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-A-D4",
+        "question": "내가 앞으로 어떤 작업을 하는게 좋을까?",
+        "fixture_ids": [
+          "D4"
+        ],
+        "expectation_class": "actionable_positive_conditional",
+        "required_answer_meaning": [
+          "Propose a concrete blank-preview investigation or current evidence check, conditional on continuing this work.",
+          "Tie the reason to the user's cancellation and explicit investigative reopening; preserve historical nonrollout.",
+          "Do not recommend rollout as already justified or state the current preview remains blank without newer evidence."
+        ],
+        "permitted_conditional_action_families": [
+          "Reproduce/inspect the blank-preview path and obtain a current preview result before deciding whether to roll out."
+        ],
+        "legitimate_final_prose_omissions": [],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M06"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M06"
+          ],
+          "M09_advice_action": "required"
+        }
+      },
+      {
+        "scope": "All materials within the explicitly isolated case snapshot",
+        "captured_record_period": [
+          "2026-10-01",
+          "2026-10-04"
+        ],
+        "current_work_state": "unknown",
+        "case_id": "FUTURE-A-D3",
+        "question": "내가 앞으로 어떤 작업을 하는게 좋을까?",
+        "fixture_ids": [
+          "D3"
+        ],
+        "expectation_class": "goal_clarification_eligible_insufficient_for_current_priority",
+        "required_answer_meaning": [
+          "Recognize that this source provides a historical report of another actor's repair and personal nonverification, not a current user task or current project priority.",
+          "A focused question about the present goal or whether adapter status matters is legitimate. A narrow conditional request for verification/current-state evidence is also legitimate.",
+          "Do not require implementation/repair advice or a fabricated owner/current unfinished state. Do not turn message-local no-later-result into global absence."
+        ],
+        "permitted_conditional_action_families": [
+          "If adapter state affects the current goal and confirmation is still needed, inspect/request the maintainer's result or verification evidence before deciding whether more work is needed."
+        ],
+        "legitimate_final_prose_omissions": [
+          "A goal question need not recount every D3 atom, but any factual preface must preserve the material reporter/performer and verification qualifications."
+        ],
+        "check_applicability": {
+          "source_review": [
+            "M01",
+            "M02",
+            "M03",
+            "M08",
+            "M07"
+          ],
+          "final_answer_general": [
+            "M02",
+            "M03",
+            "M08",
+            "M10",
+            "M11",
+            "M12"
+          ],
+          "final_answer_case_required_or_claim_material": [
+            "M07"
+          ],
+          "M09_advice_action": "only_if_an_action_is_proposed; focused_goal_question_needs_no_action"
+        }
+      }
+    ],
+    "coordinator_noise_stress": {
+      "status": "not_counted_as_an_eighth_case_and_no_new_source_authored",
+      "observation": "Current four fixtures contain assistant task/plan/completion reports, not a genuine separate assistant coordinator process-log fixture. Do not relabel those reports as coordinator-only noise or as user work.",
+      "permitted_existing_source_stress": "A separately declared fixed-source presentation-order diagnostic could present the complete D1 and D3 containers before D2 and D4 (order D1,D3,D2,D4), leaving the strongest user-reported rollback/cancellation/reopening evidence later. Preserve every original byte, role, timestamp, identity and full-source admission. This is attribution/later-evidence retention stress, not genuine coordinator-noise robustness and not a new independent case.",
+      "future_requirement": "A genuine coordinator-noise stress case needs a separately authored synthetic source, candidate-independent original review, source hash and labels before generation. Do not splice invented text into current fixtures or infer that this source-only proposal tested it."
+    },
+    "requirements_refs": [
+      {
+        "path": "app/docs/specs/2026-10-08-llm-wiki-model-and-validation-plan.md",
+        "lines": [
+          411,
+          412,
+          1324,
+          1327,
+          1328,
+          1350,
+          1351,
+          1396,
+          1400,
+          1401,
+          1934,
+          1946,
+          1951,
+          1954,
+          1959,
+          1970,
+          1973,
+          2132,
+          2134,
+          2135,
+          2155,
+          2161,
+          2166
+        ]
+      }
+    ],
+    "check_applicability_contract": {
+      "priority": "Case-specific required_answer_meaning remains mandatory. The applicability fields clarify where existing checks apply; they do not remove any case-specific required meaning.",
+      "source_review": "All admitted originals require complete review. M04..M07 apply to original-source review only when the corresponding D1..D4 fixture is admitted; an unadmitted fixture never creates a check obligation.",
+      "final_answer": "M04..M07 constrain the factual claims and proposals to which those qualifications are material, plus any case-specific required meaning. They do not force every historical atom or project into advice prose. Read-all-source review is independent of final mention-all-facts coverage.",
+      "advice_usefulness": "M09 requires a concrete useful action only in actionable_positive_conditional cases. It is not demanded of a recent-summary case. In goal_clarification_eligible cases it constrains an action only if one is proposed; a focused goal question remains permitted without an action."
+    }
+  }
+}

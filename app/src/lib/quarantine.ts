@@ -20,8 +20,13 @@ export interface QuarantineItem {
   /** `ontology::describe`'s English sentence, verbatim — the only place the
    *  threshold `s_knn` was compared against is recorded. */
   reason: string;
-  /** Unix seconds the TTL sweep may trash this; 0 if unknown. */
+  /** Unix seconds after which a distill run trashes this, or asks first
+   *  (`asks_on_expiry`); 0 if unknown. */
   expires: number;
+  /** Whether that run only makes a delete proposal (any session, an item of
+   *  unknown origin, everything at Conservative): the backend's own rule,
+   *  `distill::expiry_asks`. */
+  asks_on_expiry: boolean;
   /** One-line body preview (frontmatter stripped, whitespace collapsed). */
   preview: string;
 }
@@ -68,6 +73,98 @@ export function daysLeft(item: QuarantineItem, nowMs: number = Date.now()): numb
   return Math.max(0, Math.ceil((item.expires * 1000 - nowMs) / 86_400_000));
 }
 
+/** The TTL line: how long this item still has, and once it is due, what the
+ *  next run does with it. Only an item the backend says it trashes reads
+ *  "may move it to trash". A malformed sidecar has no expiry at all — say so
+ *  rather than implying it is safe forever. */
+export function ttlLine(item: QuarantineItem, t: Strings, nowMs: number = Date.now(), permanent = false): string {
+  const left = daysLeft(item, nowMs);
+  if (left === null) return t.qz_expires_unknown ?? "No expiry recorded";
+  if (left > 0) return (t.qz_expires_in ?? "{n} days left").replace("{n}", String(left));
+  return item.asks_on_expiry === false
+    ? (permanent ? t.qz_expires_due_permanent : t.qz_expires_due ?? "Expired — the next run may move it to trash")
+    : (t.qz_expires_due_ask ?? "Expired — the next run asks you under Proposals before deleting it");
+}
+
 /** How many days "keep longer" adds. One knob, not a picker — the TTL itself
  *  is configurable in Settings; this is just a reprieve. */
 export const KEEP_DAYS = 30;
+
+/** Why an item sits in quarantine, as the tab groups it: the provenance kinds
+ *  `distill::scan` writes as `machine:<kind>` (spec 2026-10-02 결정 1), and
+ *  everything else (similarity, a malformed sidecar) as `other`. */
+export type QuarantineGroupKey = "myco" | "agent" | "hello" | "empty" | "other";
+
+export interface QuarantineGroup {
+  key: QuarantineGroupKey;
+  items: QuarantineItem[];
+}
+
+const GROUP_ORDER: QuarantineGroupKey[] = ["myco", "agent", "hello", "empty", "other"];
+
+/** The tab's groups, fixed order, empty ones left out. Each keeps the order the
+ *  backend listed its items in (soonest expiry first). */
+export function groupQuarantine(items: QuarantineItem[]): QuarantineGroup[] {
+  const keyOf = (reason: string): QuarantineGroupKey => {
+    const kind = reason.startsWith("machine:") ? reason.slice(8) : "";
+    return (GROUP_ORDER as string[]).includes(kind) ? (kind as QuarantineGroupKey) : "other";
+  };
+  return GROUP_ORDER.map((key) => ({
+    key,
+    items: items.filter((i) => keyOf(i.reason) === key),
+  })).filter((g) => g.items.length > 0);
+}
+
+export function groupLabel(key: QuarantineGroupKey, t: Strings): string {
+  switch (key) {
+    case "myco":
+      return t.qz_group_myco ?? "Records of myco calling a model";
+    case "agent":
+      return t.qz_group_agent ?? "Agent task prompts";
+    case "hello":
+      return t.qz_group_hello ?? "Connection tests";
+    case "empty":
+      return t.qz_group_empty ?? "Empty sessions";
+    default:
+      return t.qz_group_other ?? "Other items";
+  }
+}
+
+/** The in-page confirmation a group's "restore all" / "trash all" opens. */
+export function batchConfirm(
+  action: "restore" | "trash",
+  group: QuarantineGroup,
+  t: Strings,
+  permanent = false,
+): { title: string; message: string; confirmLabel: string; danger: boolean } {
+  const n = String(group.items.length);
+  const label = groupLabel(group.key, t);
+  if (action === "restore") {
+    return {
+      title: (t.qz_confirm_restore_all_title ?? "Restore all {n}?").replace("{n}", n),
+      message: (
+        t.qz_confirm_restore_all_msg ??
+        "Everything in “{group}” goes back where it came from and won't be set aside again."
+      ).replace("{group}", label),
+      confirmLabel: t.qz_restore_all ?? "Restore all",
+      danger: false,
+    };
+  }
+  if (permanent) {
+    return {
+      title: t.sb_delete_n_q.replace("{n}", n),
+      message: t.delete_permanent_msg.replace("{n}", n),
+      confirmLabel: t.set_delete_permanent,
+      danger: true,
+    };
+  }
+  return {
+    title: (t.qz_confirm_trash_all_title ?? "Trash all {n}?").replace("{n}", n),
+    message: (
+      t.qz_confirm_trash_all_msg ??
+      "Everything in “{group}” goes to the system trash (recoverable from there)."
+    ).replace("{group}", label),
+    confirmLabel: t.qz_trash_all ?? "Trash all",
+    danger: true,
+  };
+}

@@ -83,6 +83,7 @@ export type AtlasVariant = "atlas" | "synapse";
 
 function fa2Settings(graph: VaultGraph, variant: AtlasVariant): Record<string, unknown> {
   const n = graph.order;
+  const barnesHutOptimize = n > 800;
   // inferSettings tunes gravity/scaling to the graph size; LinLog + outbound-
   // attraction distribution give the tight-community, spread-hub Gephi look.
   // adjustSizes (overlap prevention) is the classic FA2 perf trap — collision
@@ -102,8 +103,11 @@ function fa2Settings(graph: VaultGraph, variant: AtlasVariant): Record<string, u
     ...inferred,
     linLogMode: true,
     outboundAttractionDistribution: true,
-    adjustSizes: n <= 2000,
-    barnesHutOptimize: n > 800,
+    // FA2 0.10.1's Barnes-Hut repulsion ignores node radii. Enable it only
+    // when attraction also treats nodes as points. The final separation pass
+    // still prevents rendered nodes from overlapping at larger sizes.
+    adjustSizes: !barnesHutOptimize,
+    barnesHutOptimize,
     scalingRatio,
     // Vault graphs are SPARSE (≈1 edge/node, many orphans and disconnected
     // star-clusters). Plain gravity can't hold the pieces LinLog repulsion
@@ -347,5 +351,12 @@ function hashUnit(id: string): number {
     h ^= id.charCodeAt(k);
     h = Math.imul(h, 16777619);
   }
+  // FNV alone leaves :ax/:ay only ±0.0039 apart, tying radius to angle and
+  // seeding one spiral instead of a disc. Avalanche the bits before sampling.
+  h ^= h >>> 16;
+  h = Math.imul(h, 0x85ebca6b);
+  h ^= h >>> 13;
+  h = Math.imul(h, 0xc2b2ae35);
+  h ^= h >>> 16;
   return (h >>> 0) / 4294967296;
 }

@@ -6,6 +6,7 @@
 // ≤400 nodes) and triggers are user clicks, so churn is negligible.
 import * as THREE from "three";
 import type { VaultGraph } from "./graphData";
+import type { LinkRoute } from "./pulseLayer";
 import {
   edgeProgress,
   nodeFlash,
@@ -91,6 +92,9 @@ export class WaveLayer {
   private t = 0;
   private intensity = 1;
   private c = new THREE.Color();
+  private at = new THREE.Vector3();
+  /** The drawn path of each link, when it is not the straight chord. */
+  along: LinkRoute | null = null;
 
   constructor(graph: VaultGraph, pr: number, dark: boolean) {
     this.graph = graph;
@@ -196,12 +200,9 @@ export class WaveLayer {
         sAlp.setX(i, 0);
         continue;
       }
-      sPos.setXYZ(
-        i,
-        sa.x + (ta.x - sa.x) * p,
-        sa.y + (ta.y - sa.y) * p,
-        sa.z + (ta.z - sa.z) * p,
-      );
+      if (!this.along?.(e.s, e.t, p, this.at))
+        this.at.set(sa.x + (ta.x - sa.x) * p, sa.y + (ta.y - sa.y) * p, sa.z + (ta.z - sa.z) * p);
+      sPos.setXYZ(i, this.at.x, this.at.y, this.at.z);
       // Spark carries the TARGET node's hue toward it (the signal "delivers"
       // the next ring's colour), fading in/out at the endpoints.
       this.c.set(ta.color);

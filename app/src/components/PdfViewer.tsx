@@ -214,7 +214,7 @@ export default function PdfViewer({ t }: { t: Strings }): JSX.Element | null {
       {loading ? (
         <p className="muted" style={{ padding: 16 }}>{t.pdf_loading ?? "Loading PDF…"}</p>
       ) : error ? (
-        <p style={{ color: "#dc2626", padding: 16 }}>
+        <p style={{ color: "var(--danger)", padding: 16 }}>
           {t.pdf_error ?? "Could not open this PDF."} {error}
         </p>
       ) : (

@@ -6,14 +6,40 @@
 // content-writing distill step already has (sessionDigest.ts, digests.ts).
 
 import { ipc } from "./ipc";
-import type { FileNode } from "./ipc";
+import type { AgentVaultSession, DistillPublicationReceipt, FileNode } from "./ipc";
+import type { RoleSnapshot, RoleUsage } from "./modelRoles";
 import { complete } from "./chat";
+import HEADS from "./mycoPromptHeads.json";
 import { stripFrontmatter } from "./markdown";
 import { matchWikilinkAt } from "./wikilinks";
+import { WorkflowOperationError } from "./workflowOutcome";
+import { publicationClaim, publishManagedNote, requireNativeCreation, requirePublicationOrigin } from "./distillPublication";
+import { isMissingFile } from "./sessionEvidence";
+
+interface PendingMapPublication { manifestId: string; publication: DistillPublicationReceipt }
+// Session-local recovery only; restart discovery requires the native journal.
+const pendingPublications = new Map<string, PendingMapPublication>();
+
+export class MapPublicationError extends WorkflowOperationError {
+  constructor(readonly writtenPath: string, error: unknown) {
+    super("pending", "unavailable", `Topic map ${writtenPath} is retained; publication unavailable, manual recovery may be required: ${String(error)}`);
+    this.name = "MapPublicationError";
+  }
+}
+
+async function recordPublication(vaultPath: string, origin: AgentVaultSession, pending: PendingMapPublication): Promise<void> {
+  try {
+    requireNativeCreation(pending.publication);
+    await ipc.appendDistillManifest(vaultPath, pending.manifestId, [], [pending.publication.path], origin,
+      [publicationClaim(pending.publication)], [pending.publication.publicationId]);
+  } catch (error) {
+    throw new MapPublicationError(pending.publication.path, error);
+  }
+}
 
 function mapSystemPrompt(cluster: string): string {
   return (
-    `Write a topic map (Map of Content) for the '${cluster}' topic. Structure: one-paragraph ` +
+    `${HEADS.map}${cluster}' topic. Structure: one-paragraph ` +
     "overview, then grouped [[wikilinks]] to the member pages with one-line descriptions. Only " +
     "link to the member pages listed below — do not link to any other page. Cite nothing " +
     "external. Output markdown body only."
@@ -54,20 +80,22 @@ function mapFileNodes(tree: FileNode[]): Extract<FileNode, { kind: "file" }>[] {
  *  label is its medoid stem, recomputed every ontology rebuild, so a map
  *  drafted for an OLD medoid must still be found even after the label has
  *  since drifted to a different (but still current) member. Checked before
- *  drafting so a crash between a previous draftMap's write and the caller's
- *  status->done rewrite never re-drafts the same cluster into a `-2` file on
- *  retry: "location is state," the same rule Rust's own map-exists dedup
- *  (`existing_map_clusters`) already applies. `ipc.readFile`'s `frontmatter`
+ *  drafting so a legacy map is preserved rather than duplicated after a crash.
+ *  A matching file alone cannot complete the proposal or authorize undo;
+ *  native capability recovery remains required. `ipc.readFile`'s `frontmatter`
  *  is already-parsed YAML (Rust's `vault::read_file`), so no hand-rolled
  *  frontmatter parsing is needed here. */
 async function findExistingMapPath(
   vaultPath: string,
   cluster: string,
   memberStems: Set<string>,
+  assertCurrent: () => void,
 ): Promise<string | null> {
-  const tree = await ipc.listFiles(vaultPath).catch(() => []);
+  const tree = await ipc.listFiles(vaultPath);
+  assertCurrent();
   for (const f of mapFileNodes(tree)) {
-    const file = await ipc.readFile(f.path).catch(() => null);
+    const file = await ipc.readFile(f.path);
+    assertCurrent();
     const fm = file?.frontmatter as { cluster?: unknown } | null | undefined;
     if (typeof fm?.cluster !== "string") continue;
     if (fm.cluster === cluster || memberStems.has(fm.cluster.toLowerCase())) {
@@ -125,14 +153,14 @@ function slugify(s: string): string {
  *  `free_path` does (`-2`, `-3`… before a taken name) — probed via readFile,
  *  which rejects when nothing is there, since there is no generic
  *  "does this path exist" ipc call. */
-async function freeMapPath(vaultPath: string, slug: string): Promise<string> {
+async function freeMapPath(vaultPath: string, slug: string, assertCurrent: () => void): Promise<string> {
   for (let n = 1; ; n++) {
     const name = n === 1 ? `${slug}.md` : `${slug}-${n}.md`;
     const path = `${vaultPath}/wiki/maps/${name}`;
-    const exists = await ipc.readFile(path).then(
-      () => true,
-      () => false,
-    );
+    let exists = true;
+    try { await ipc.readFile(path); }
+    catch (error) { if (!isMissingFile(error)) throw error; exists = false; }
+    assertCurrent();
     if (!exists) return path;
   }
 }
@@ -150,25 +178,46 @@ async function freeMapPath(vaultPath: string, slug: string): Promise<string> {
  *  multi-map run into manifests only undoable one id at a time, and the
  *  Settings undo button only ever reaches the newest. The default (a fresh
  *  `llm-<now>` id) fits the other caller, distillStore's manual per-click
- *  approve, where one click IS the whole run. */
+ *  approve, where one click IS the whole run. `isCurrent` optionally guards
+ *  that originating session; already-dispatched IO and model work cannot be undone. */
 export async function draftMap(
   vaultPath: string,
   cluster: string,
   members: string[],
   manifestId = `llm-${Math.floor(Date.now() / 1000)}`,
+  isCurrent: () => boolean = () => true,
+  usage: RoleUsage = "foreground",
+  capturedRole?: RoleSnapshot,
 ): Promise<string> {
+  const assertCurrent = () => {
+    if (!isCurrent()) throw new Error("Vault changed; topic map cancelled");
+  };
+  assertCurrent();
+  const origin = await ipc.agentVaultSession();
+  assertCurrent();
+  requirePublicationOrigin(origin, vaultPath);
+  const roleSnapshot = capturedRole ?? await ipc.captureModelRole(origin, "organization", usage);
+  const publicationKey = JSON.stringify([vaultPath, origin.openingToken, cluster]);
+  const pending = pendingPublications.get(publicationKey);
+  if (pending) {
+    await recordPublication(vaultPath, origin, pending);
+    assertCurrent();
+    return pending.publication.path;
+  }
   const memberStems = new Set(members.map((m) => memberStem(m).toLowerCase()));
-  const existing = await findExistingMapPath(vaultPath, cluster, memberStems);
-  if (existing) return existing;
+  const existing = await findExistingMapPath(vaultPath, cluster, memberStems, assertCurrent);
+  assertCurrent();
+  if (existing) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} has no native creation capability in this opening; manual recovery required`);
 
   const body = await complete({
-    task: "generate",
+    task: "generate", featureRole: "organization", origin, roleSnapshot, usage,
     cwd: vaultPath,
     messages: [
       { role: "system", content: mapSystemPrompt(cluster) },
       { role: "user", content: userPrompt(members) },
     ],
   });
+  assertCurrent();
   // Guard: the system prompt asks for "markdown body only", but a model can
   // still emit its own frontmatter fence out of habit — strip it so code's
   // own frontmatter block below is the only one in the file.
@@ -192,21 +241,15 @@ export async function draftMap(
     `tags: [map]\n` +
     `---\n\n${safeBody}\n`;
 
-  try {
-    await ipc.createFolder(`${vaultPath}/wiki`, "maps");
-  } catch {
-    /* already exists */
-  }
-  const path = await freeMapPath(vaultPath, slugify(cluster));
-  await ipc.writeFile(path, content);
+  assertCurrent();
+  const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
+  assertCurrent();
   const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
-  // Important 4 (Phase B whole-branch review): record the drafted file in an
-  // undo-manifest so "undo this run" can remove it — same best-effort rule as
-  // the other TS-step recordings (a bookkeeping failure must not fail the
-  // draft that already succeeded).
-  await ipc.appendDistillManifest(vaultPath, manifestId, [], [rel])
-    .catch((e) => {
-      console.error(`[maps] manifest append failed for ${rel}:`, e);
-    });
+  const key = rel.slice("wiki/maps/".length).replace(/\.md$/, "");
+  const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot);
+  pendingPublications.set(publicationKey, { manifestId, publication });
+  assertCurrent();
+  await recordPublication(vaultPath, origin, { manifestId, publication });
+  assertCurrent();
   return rel;
 }

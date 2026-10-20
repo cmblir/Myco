@@ -9,21 +9,23 @@
 //! `Hit` type the rest of the app already consumes.
 
 use std::collections::{HashMap, HashSet};
-use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 use crate::vector_index::Hit;
+
+#[cfg(test)]
+#[path = "retrieval_cache_admission_tests.rs"]
+mod cache_admission_tests;
 
 /// Magic + format-version byte for the `.mxb` sidecar. Unlike `.mxv`
 /// (`vector_index::MAGIC`), there is no embedding model baked into the
 /// format: BM25 is purely lexical, so it survives an embed-model swap that
 /// would otherwise wipe the vector index.
 const MXB_MAGIC: &[u8; 4] = b"MXB1";
-// v2: `tokenize` NFC-normalizes its input, so terms stored by a v1 index
-// (which could contain NFD jamo bigrams) no longer match query tokens. The
-// bump forces a rebuild instead of a silent permanent miss.
-const MXB_VERSION: u8 = 2;
+// v3: persist each chunk hash so a same-section body edit cannot return stale
+// lexical evidence; rebuild old sidecars instead of trusting their positions.
+const MXB_VERSION: u8 = 3;
 
 /// BM25 term-frequency saturation parameter.
 const K1: f32 = 1.2;
@@ -217,9 +219,105 @@ pub fn text_matches_phrases(text: &str, phrases: &[String]) -> bool {
     phrases.iter().all(|p| lower.contains(p.as_str()))
 }
 
+/// Strong lexical evidence, never inferred from a positive BM25 score alone.
+/// Explicit phrases, distinctive identifiers and complete substantive query
+/// terms can ground a quote when an embedding model misses an exact name.
+pub fn exact_lexical_match(query: &str, text: &str) -> bool {
+    let (phrases, clean) = parse_phrases(query);
+    if !phrases.is_empty() {
+        return text_matches_phrases(text, &phrases);
+    }
+    let body = crate::norm::nfc(text).to_lowercase();
+    let stop = [
+        "what",
+        "when",
+        "where",
+        "which",
+        "why",
+        "how",
+        "the",
+        "a",
+        "an",
+        "is",
+        "are",
+        "was",
+        "were",
+        "did",
+        "do",
+        "does",
+        "my",
+        "me",
+        "i",
+        "in",
+        "on",
+        "of",
+        "to",
+        "and",
+        "for",
+        "about",
+        "show",
+        "find",
+        "tell",
+        "this",
+        "that",
+        "it",
+        "please",
+        "지난",
+        "어제",
+        "오늘",
+        "내가",
+        "나는",
+        "했던",
+        "알려줘",
+        "찾아줘",
+        "무엇",
+        "뭐야",
+        "언제",
+        "어디",
+        "어떻게",
+        "왜",
+    ];
+    let terms: Vec<String> = clean
+        .split(|c: char| !c.is_alphanumeric() && !matches!(c, '_' | '-' | '/' | '.'))
+        .map(|t| {
+            t.trim_matches(|c: char| matches!(c, '-' | '/' | '.'))
+                .to_lowercase()
+        })
+        .filter(|t| t.chars().count() >= 3 && !stop.contains(&t.as_str()))
+        .collect();
+    let identifier = |t: &str| {
+        let acronym = t.chars().all(|c| c.is_ascii_alphanumeric())
+            && clean.split_whitespace().any(|w| {
+                w.trim_matches(|c: char| !c.is_alphanumeric())
+                    .to_lowercase()
+                    == t
+                    && w.chars().filter(|c| c.is_ascii_uppercase()).count() >= 2
+            });
+        (t.chars().count() >= 4
+            && (t.chars().any(|c| c.is_ascii_digit()) || t.contains(['_', '/', '.'])))
+            || (t.chars().count() >= 3 && acronym)
+    };
+    let contains = |term: &str| {
+        body.match_indices(term).any(|(i, _)| {
+            // Latin IDs must match a whole token: PPO must not match PPOTrainer.
+            if !term.is_ascii() {
+                return true;
+            }
+            let left = body[..i].chars().next_back();
+            let right = body[i + term.len()..].chars().next();
+            !left.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+                && !right.is_some_and(|c| c.is_ascii_alphanumeric() || c == '_')
+        })
+    };
+    terms.iter().any(|t| identifier(t) && contains(t))
+        || terms.len() >= 2 && terms.iter().all(|t| contains(t))
+}
+
 /// One indexed chunk: identity is `(page, section)`, mirroring
 /// `VectorStore::Record` so lexical and dense hits refer to the same chunk.
+#[derive(PartialEq, Eq)]
 struct Bm25Doc {
+    hash: u64,
     page: String,
     stem: String,
     section: usize,
@@ -228,6 +326,7 @@ struct Bm25Doc {
 
 /// One occupied slot: a chunk plus its term->tf map. Slots live in a
 /// `Vec<Option<Slot>>` whose indices are *stable* — see `Bm25Index`.
+#[derive(PartialEq, Eq)]
 struct Slot {
     doc: Bm25Doc,
     terms: HashMap<String, u32>,
@@ -302,6 +401,36 @@ impl Bm25Index {
         self.page_slots.keys().cloned().collect()
     }
 
+    /// Borrow indexed identities for bounded read-only evidence scans.
+    pub(crate) fn page_names(&self) -> impl Iterator<Item = &str> {
+        self.page_slots.keys().map(String::as_str)
+    }
+
+    pub(crate) fn indexed_pages(&self) -> usize {
+        self.page_slots.len()
+    }
+
+    pub fn chunk_hash(&self, page: &str, section: usize) -> Option<u64> {
+        self.page_slots
+            .get(page)?
+            .iter()
+            .filter_map(|&i| self.slots[i].as_ref())
+            .find(|slot| slot.doc.section == section)
+            .map(|slot| slot.doc.hash)
+    }
+
+    pub fn page_hashes(&self, page: &str) -> Option<Vec<u64>> {
+        let slots = self.page_slots.get(page)?;
+        let mut chunks: Vec<_> = slots
+            .iter()
+            .filter_map(|&i| self.slots[i].as_ref())
+            .map(|s| (s.doc.section, s.doc.hash))
+            .collect();
+        // Recycled slots persist in physical order; source identity uses section order.
+        chunks.sort_unstable_by_key(|(section, _)| *section);
+        Some(chunks.into_iter().map(|(_, hash)| hash).collect())
+    }
+
     /// Replace all chunks for one page with a fresh set, keeping the derived
     /// `postings`/`total_len` correct incrementally. Mirrors
     /// `VectorStore::upsert_page`'s replace-the-page shape so the two indexes
@@ -321,6 +450,7 @@ impl Bm25Index {
                 *terms.entry(t.clone()).or_insert(0) += 1;
             }
             let doc = Bm25Doc {
+                hash: crate::embeddings::content_hash(text),
                 page: page.to_string(),
                 stem: stem.to_string(),
                 section: i,
@@ -423,7 +553,18 @@ impl Bm25Index {
 
     /// Top-`k` chunks by BM25 score against `query`.
     pub fn search(&self, query: &str, k: usize) -> Vec<Bm25Hit> {
-        if self.n_live == 0 {
+        self.search_where(query, k, |_, _| true)
+    }
+
+    /// Apply native scope/path predicates before Top-K truncation. Candidate
+    /// scores are lexical hints, not semantic subject identity.
+    pub(crate) fn search_where(
+        &self,
+        query: &str,
+        k: usize,
+        keep: impl Fn(&str, usize) -> bool,
+    ) -> Vec<Bm25Hit> {
+        if self.n_live == 0 || k == 0 {
             return Vec::new();
         }
         let n = self.n_live as f32;
@@ -456,6 +597,9 @@ impl Bm25Index {
                 let doc = self.slots[doc_idx]
                     .as_ref()
                     .expect("posting points at a live slot");
+                if !keep(&doc.doc.page, doc.doc.section) {
+                    continue;
+                }
                 let doc_len = doc.doc.len as f32;
                 let tf = tf as f32;
                 let denom = tf + K1 * (1.0 - B + B * doc_len / avg_len);
@@ -497,27 +641,29 @@ impl Bm25Index {
     /// lexical and dense sidecars for one vault sit next to each other —
     /// just a different extension.
     pub fn path_for(vault_root: &str) -> Result<PathBuf, String> {
-        let mut h = std::collections::hash_map::DefaultHasher::new();
-        vault_root.hash(&mut h);
-        let dir = crate::settings::settings_dir()?.join("embeddings");
-        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir embeddings: {e}"))?;
-        Ok(dir.join(format!("{:016x}.mxb", h.finish())))
+        crate::index_publication::read_path_for(vault_root, "mxb")
     }
 
     /// Read the index, or return an empty one. A missing, truncated, or
     /// corrupt file is never fatal: the index is derived state that a
     /// reindex rebuilds, so a bad read just degrades to "not indexed yet".
     pub fn load(path: &Path) -> Self {
-        std::fs::read(path)
-            .ok()
-            .and_then(|bytes| Self::decode(&bytes))
-            .unwrap_or_default()
+        match Self::load_checked(path) {
+            Ok(index) => index,
+            Err(error) => {
+                eprintln!("[bm25_index] compatibility read failed: {error}");
+                Self::default()
+            }
+        }
     }
 
     /// Atomic temp-file-plus-rename save, mirroring `VectorStore::save`: a
     /// unique per-save temp name so two overlapping saves each publish a
     /// whole file rather than racing on a shared `.tmp` path.
     pub fn save(&self, path: &Path) -> Result<(), String> {
+        if path.extension().and_then(|extension| extension.to_str()) == Some("mxp") {
+            return Err("paired indexes must be saved through the index publisher".into());
+        }
         let bytes = self.encode();
         let tmp = path.with_extension(format!("{}.mxb.tmp", unique_suffix()));
         std::fs::write(&tmp, &bytes).map_err(|e| format!("write index: {e}"))?;
@@ -526,6 +672,19 @@ impl Bm25Index {
             return Err(format!("rename index: {e}"));
         }
         Ok(())
+    }
+
+    /// Authoritative publisher reads preserve existing read and decode failures.
+    pub(crate) fn load_checked(path: &Path) -> Result<Self, String> {
+        match crate::index_publication::read_snapshot(path)? {
+            Some(snapshot) => decode_captured_index(path, &snapshot.bytes),
+            None => Ok(Self::default()),
+        }
+    }
+
+    /// Persisted live slots are ordered; free slots and term-map order are not.
+    fn same_persisted_content(&self, other: &Self) -> bool {
+        self.slots.iter().flatten().eq(other.slots.iter().flatten())
     }
 
     /// Serialize to the binary format. Only the per-doc identity (`page`,
@@ -555,6 +714,7 @@ impl Bm25Index {
             put_str(&mut out, &doc.page);
             put_str(&mut out, &doc.stem);
             out.extend_from_slice(&(doc.section as u32).to_le_bytes());
+            out.extend_from_slice(&doc.hash.to_le_bytes());
             out.extend_from_slice(&doc.len.to_le_bytes());
             out.extend_from_slice(&(terms.len() as u32).to_le_bytes());
             for (term, tf) in terms {
@@ -582,6 +742,9 @@ impl Bm25Index {
             }
             fn u32(&mut self) -> Option<u32> {
                 Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
+            }
+            fn u64(&mut self) -> Option<u64> {
+                Some(u64::from_le_bytes(self.take(8)?.try_into().ok()?))
             }
             fn string(&mut self) -> Option<String> {
                 let len = self.u32()? as usize;
@@ -611,6 +774,7 @@ impl Bm25Index {
             let page = c.string()?;
             let stem = c.string()?;
             let section = c.u32()? as usize;
+            let hash = c.u64()?;
             let len = c.u32()?;
             let n_terms = c.u32()? as usize;
             // Same guard, per-term: at least a 4-byte length prefix + 4-byte
@@ -626,6 +790,7 @@ impl Bm25Index {
             }
             slots.push(Some(Slot {
                 doc: Bm25Doc {
+                    hash,
                     page,
                     stem,
                     section,
@@ -653,73 +818,134 @@ fn unique_suffix() -> String {
     format!("{}-{n}", std::process::id())
 }
 
-/// Identity of the index file as it is right now: modified time and length.
-/// Cheap (one `stat`) next to the parse it guards. Mirrors
-/// `vector_index::fingerprint`.
-fn fingerprint(path: &Path) -> Option<(std::time::SystemTime, u64)> {
-    let meta = std::fs::metadata(path).ok()?;
-    Some((meta.modified().ok()?, meta.len()))
+fn decode_captured_index(path: &Path, bytes: &[u8]) -> Result<Bm25Index, String> {
+    if path.extension().and_then(|extension| extension.to_str()) == Some("mxp") {
+        crate::index_publication::decode(bytes)
+            .map(|pair| pair.lexical)
+            .ok_or_else(|| "published index pair is corrupt".into())
+    } else {
+        Bm25Index::decode(bytes).ok_or_else(|| "legacy lexical index is corrupt".into())
+    }
 }
 
 struct CacheEntry {
     path: PathBuf,
-    fingerprint: (std::time::SystemTime, u64),
+    fingerprint: crate::index_publication::IndexFileRevision,
     index: Arc<Bm25Index>,
 }
 
 /// Replace the entry unless it already holds this exact revision of `path`.
 /// Returns `None` when there is no index file to key freshness on.
-fn ensure_fresh<'a>(slot: &'a mut Option<CacheEntry>, path: &Path) -> Option<&'a mut CacheEntry> {
-    let fp = fingerprint(path)?;
+fn ensure_fresh<'a>(
+    slot: &'a mut Option<CacheEntry>,
+    path: &Path,
+) -> Result<Option<&'a mut CacheEntry>, String> {
+    let Some(snapshot) = crate::index_publication::read_snapshot(path)? else {
+        *slot = None;
+        return Ok(None);
+    };
     let hit = slot
         .as_ref()
-        .is_some_and(|e| e.path == *path && e.fingerprint == fp);
+        .is_some_and(|e| e.path == *path && e.fingerprint == snapshot.revision);
     if !hit {
+        let index = decode_captured_index(path, &snapshot.bytes)?;
+        if crate::index_publication::read_snapshot(path)?
+            .map(|current| current.revision)
+            .as_ref()
+            != Some(&snapshot.revision)
+        {
+            return Err("lexical index revision changed during checked load".into());
+        }
         *slot = Some(CacheEntry {
             path: path.to_path_buf(),
-            fingerprint: fp,
-            index: Arc::new(Bm25Index::load(path)),
+            fingerprint: snapshot.revision,
+            index: Arc::new(index),
         });
     }
-    slot.as_mut()
+    Ok(slot.as_mut())
 }
 
 /// Keeps the parsed BM25 index in memory across commands, mirroring
 /// `vector_index::VectorCache` exactly: without it, every lexical-search
 /// command would re-read and re-parse the whole `.mxb` file from disk on
 /// every call, the same cost `VectorCache` already eliminated for the dense
-/// side. Freshness is keyed on the file's mtime+length rather than trusted,
+/// side. Freshness is keyed on captured file content rather than trusted,
 /// so a rewrite from outside this cache is picked up instead of served stale.
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Bm25Cache {
-    inner: Mutex<Option<CacheEntry>>,
+    inner: Arc<Mutex<Option<CacheEntry>>>,
 }
 
 impl Bm25Cache {
-    /// The index for `path`, parsed at most once per on-disk revision.
+    /// Load the lexical index off-thread, including cache-lock and cold-parse waits.
+    pub async fn get_async(&self, path: PathBuf) -> Result<Arc<Bm25Index>, String> {
+        let cache = self.clone();
+        tauri::async_runtime::spawn_blocking(move || cache.get_checked(&path))
+            .await
+            .map_err(|e| format!("BM25 cache load task failed: {e}"))?
+    }
+
+    /// Compatibility reader returns an uncached empty index after logging failures.
     pub fn get(&self, path: &Path) -> Arc<Bm25Index> {
+        match self.get_checked(path) {
+            Ok(index) => index,
+            Err(error) => {
+                eprintln!("[bm25_cache] compatibility read failed: {error}");
+                Arc::new(Bm25Index::default())
+            }
+        }
+    }
+
+    /// Native readers preserve existing file, decode, and cache-lock failures.
+    pub(crate) fn get_checked(&self, path: &Path) -> Result<Arc<Bm25Index>, String> {
         // Held across the load: the parse is the expensive thing being cached,
         // and serializing concurrent first-callers is better than having each
         // of them parse the same file.
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        match ensure_fresh(&mut guard, path) {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| "BM25 cache lock poisoned".to_string())?;
+        Ok(match ensure_fresh(&mut guard, path)? {
             Some(entry) => Arc::clone(&entry.index),
             // No file on disk: return an empty index *uncached*, since there is
             // nothing to key freshness on. Caching it would pin "empty" past the
             // first reindex.
             None => Arc::new(Bm25Index::default()),
+        })
+    }
+
+    /// Compatibility adoption logs checked publication failures without replacing the cache.
+    pub fn put(&self, path: &Path, index: Bm25Index) {
+        if let Err(error) = self.put_checked(path, index) {
+            eprintln!("[bm25_cache] compatibility adoption failed: {error}");
         }
     }
 
-    /// Adopt an index this process just wrote, so the writer's own work is
-    /// reused instead of being re-read from the file it came from.
-    pub fn put(&self, path: &Path, index: Bm25Index) {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        *guard = fingerprint(path).map(|fp| CacheEntry {
+    /// Adopt only the parsed bytes whose content matches the supplied live slots.
+    pub(crate) fn put_checked(&self, path: &Path, index: Bm25Index) -> Result<(), String> {
+        let mut guard = self
+            .inner
+            .lock()
+            .map_err(|_| "BM25 cache lock poisoned".to_string())?;
+        let snapshot = crate::index_publication::read_snapshot(path)?
+            .ok_or_else(|| "published lexical index is missing".to_string())?;
+        let persisted = decode_captured_index(path, &snapshot.bytes)?;
+        if crate::index_publication::read_snapshot(path)?
+            .map(|current| current.revision)
+            .as_ref()
+            != Some(&snapshot.revision)
+        {
+            return Err("lexical index revision changed during checked adoption".into());
+        }
+        if !index.same_persisted_content(&persisted) {
+            return Err("supplied lexical index does not match the published file".into());
+        }
+        *guard = Some(CacheEntry {
             path: path.to_path_buf(),
-            fingerprint: fp,
-            index: Arc::new(index),
+            fingerprint: snapshot.revision,
+            index: Arc::new(persisted),
         });
+        Ok(())
     }
 }
 
@@ -926,6 +1152,7 @@ pub fn apply_tier_prior(hits: &mut [Hit], weights: &TierWeights) {
 ///                daily/weekly/monthly digests. NOT sessions, NOT sources.
 ///   `Sessions` — transcripts only (`sessions/**`).
 ///   `All`      — the whole index (raw/ is never indexed anyway).
+///   `Pages`    — notes and maps (`wiki/**`) only: a code plugin's recall.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Scope {
@@ -933,14 +1160,16 @@ pub enum Scope {
     Wiki,
     Sessions,
     All,
+    Pages,
 }
 
 impl Scope {
     pub fn keeps(self, page: &str) -> bool {
         match self {
-            Scope::All => true,
+            Scope::All => !page.starts_with("raw/") || page.starts_with("raw/conversations/"),
             Scope::Sessions => source_tier(page) == Tier::Session,
             Scope::Wiki => !matches!(source_tier(page), Tier::Session | Tier::Source),
+            Scope::Pages => matches!(source_tier(page), Tier::Note | Tier::Map),
         }
     }
 }
@@ -957,6 +1186,58 @@ impl std::str::FromStr for Scope {
                 "unknown scope: {other} — use wiki, sessions or all"
             )),
         }
+    }
+}
+
+#[cfg(test)]
+mod lexical_evidence_tests {
+    use super::exact_lexical_match;
+    #[test]
+    fn only_distinctive_or_complete_lexical_evidence_is_grounded() {
+        assert!(!exact_lexical_match(
+            "what is the reward model",
+            "the model was mentioned"
+        ));
+        assert!(!exact_lexical_match("PPO", "PPOTrainer is unrelated"));
+        assert!(exact_lexical_match(
+            "PPO",
+            "The policy is updated with PPO."
+        ));
+        assert!(!exact_lexical_match(
+            "ppo",
+            "The policy is updated with PPO."
+        ));
+        assert!(exact_lexical_match(
+            "where is ID_8F27",
+            "The request ID_8F27 failed."
+        ));
+        assert!(exact_lexical_match(
+            "what reward model",
+            "the reward model decision"
+        ));
+        assert!(exact_lexical_match(
+            "why \"keep exact quotes\"",
+            "We keep exact quotes in memory."
+        ));
+        assert!(!exact_lexical_match(
+            "\"keep exact quotes\"",
+            "Keep unrelated quotes."
+        ));
+    }
+    #[test]
+    fn hashes_survive_lexical_codec_and_changed_bodies_replace_them() {
+        let mut index = super::Bm25Index::new();
+        index.upsert_page("wiki/a.md", "a", &["alpha".into()]);
+        let reloaded = super::Bm25Index::decode(&index.encode()).unwrap();
+        assert_eq!(
+            reloaded.chunk_hash("wiki/a.md", 0),
+            Some(crate::embeddings::content_hash("alpha"))
+        );
+        index.upsert_page("wiki/a.md", "a", &["beta".into()]);
+        assert_ne!(
+            index.chunk_hash("wiki/a.md", 0),
+            reloaded.chunk_hash("wiki/a.md", 0)
+        );
     }
 }
 
@@ -1086,7 +1367,7 @@ mod tier_tests {
             "monthly/2026-08.md",
         ];
         let sessions = ["sessions/2026-08/a.md", "sessions/archive/2026-07/b.md"];
-        let sources = ["raw/x.md", "_inbox/y.md"];
+        let sources = ["raw/conversations/fixture/x.md", "_inbox/y.md"];
         for p in wiki {
             assert!(Scope::Wiki.keeps(p), "{p}");
             assert!(!Scope::Sessions.keeps(p), "{p}");
@@ -1102,9 +1383,33 @@ mod tier_tests {
             assert!(!Scope::Sessions.keeps(p), "{p}");
             assert!(Scope::All.keeps(p), "{p}");
         }
+        assert!(!Scope::All.keeps("raw/x.md"));
+        assert!(!Scope::All.keeps("raw/conversations-other/x.md"));
         assert_eq!(Scope::default(), Scope::Wiki);
         assert_eq!("all".parse::<Scope>(), Ok(Scope::All));
         assert!("everything".parse::<Scope>().is_err());
+    }
+
+    /// A plugin's recall: wiki/ pages only, so digests that rank first
+    /// cannot use up its `k` before the app drops them.
+    #[test]
+    fn pages_scope_keeps_notes_and_maps_only() {
+        for p in ["wiki/a.md", "wiki/maps/m.md"] {
+            assert!(Scope::Pages.keeps(p), "{p}");
+        }
+        for p in [
+            "daily/2026-08-21.md",
+            "weekly/2026-W34.md",
+            "monthly/2026-08.md",
+            "sessions/2026-08/a.md",
+            "raw/x.md",
+        ] {
+            assert!(!Scope::Pages.keeps(p), "{p}");
+        }
+        assert_eq!(
+            serde_json::from_str::<Scope>("\"pages\"").unwrap(),
+            Scope::Pages
+        );
     }
 }
 
@@ -1535,6 +1840,67 @@ mod tests {
         }
         assert_eq!(after[0].stem, "rlhf");
     }
+
+    #[test]
+    fn mxb_recycled_slots_preserve_page_hash_section_order_after_persistence() {
+        let pages = [
+            (
+                "wiki/synthetic-a.md",
+                vec![
+                    "synthetic alpha first section".to_string(),
+                    "synthetic beta second section".to_string(),
+                    "synthetic gamma third section".to_string(),
+                ],
+            ),
+            (
+                "wiki/synthetic-b.md",
+                vec![
+                    "synthetic delta first section".to_string(),
+                    "synthetic epsilon second section".to_string(),
+                ],
+            ),
+        ];
+        let mut index = Bm25Index::new();
+        for (page, chunks) in &pages {
+            index.upsert_page(page, "Synthetic", chunks);
+        }
+        // Replacing each page reuses its freed slots in reverse physical order.
+        for (page, chunks) in &pages {
+            index.upsert_page(page, "Synthetic", chunks);
+            let hashes: Vec<_> = chunks
+                .iter()
+                .map(|c| crate::embeddings::content_hash(c))
+                .collect();
+            assert!(index.page_hashes(page).as_ref() == Some(&hashes));
+        }
+        let before = ranked(&index, "synthetic");
+        let decoded = Bm25Index::decode(&index.encode()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("synthetic.mxb");
+        index.save(&path).unwrap();
+        let reloaded = Bm25Index::load(&path);
+
+        for persisted in [&decoded, &reloaded] {
+            assert_eq!(ranked(persisted, "synthetic"), before);
+            for (page, chunks) in &pages {
+                let hashes: Vec<_> = chunks
+                    .iter()
+                    .map(|c| crate::embeddings::content_hash(c))
+                    .collect();
+                for (section, hash) in hashes.iter().enumerate() {
+                    assert!(
+                        persisted.chunk_hash(page, section) == Some(*hash),
+                        "individual synthetic chunk hashes must remain current"
+                    );
+                }
+                assert!(
+                    persisted.page_hashes(page).as_ref() == Some(&hashes),
+                    "page hash arrays must preserve section order after persistence"
+                );
+            }
+        }
+    }
+
     #[test]
     fn mxb_decode_rejects_corrupt_input_without_panicking() {
         assert!(Bm25Index::decode(b"").is_none());
@@ -1600,6 +1966,84 @@ mod tests {
             assert!(p2.starts_with(data), "index path escaped the test data dir");
         });
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn async_bm25_cache_does_not_stall_heartbeat() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("idx.mxb");
+        let mut index = Bm25Index::new();
+        index.upsert_page("wiki/a.md", "a", &["synthetic policy PPO".into()]);
+        index.save(&path).unwrap();
+        let cache = Arc::new(Bm25Cache::default());
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let worker_cache = Arc::clone(&cache);
+        let holder = std::thread::spawn(move || {
+            let _guard = worker_cache.inner.lock().unwrap();
+            held_tx.send(()).unwrap();
+            // A broken inline loader eventually returns, so red never hangs.
+            release_rx
+                .recv_timeout(std::time::Duration::from_secs(1))
+                .is_ok()
+        });
+        held_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        let load = cache.get_async(path);
+        let heartbeat = async {
+            tokio::task::yield_now().await;
+            release_tx.send(()).unwrap();
+        };
+        tokio::pin!(load, heartbeat);
+        let heartbeat_first = tokio::select! {
+            biased;
+            loaded = &mut load => {
+                assert_eq!(loaded.unwrap().len(), 1);
+                false
+            },
+            _ = &mut heartbeat => true,
+        };
+        if heartbeat_first {
+            assert_eq!(load.await.unwrap().len(), 1);
+        }
+        let released_by_heartbeat = holder.join().unwrap();
+        assert!(
+            heartbeat_first,
+            "BM25 cache blocked the current-thread heartbeat"
+        );
+        assert!(
+            released_by_heartbeat,
+            "BM25 cache lock outlived the heartbeat"
+        );
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn async_bm25_cache_cold_callers_share_parse_and_notice_rewrite() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("idx.mxb");
+        let cache = Bm25Cache::default();
+        assert!(cache.get_async(path.clone()).await.unwrap().is_empty());
+        let mut index = Bm25Index::new();
+        index.upsert_page("wiki/a.md", "a", &["synthetic policy PPO".into()]);
+        index.save(&path).unwrap();
+        let (first, second) =
+            tokio::join!(cache.get_async(path.clone()), cache.get_async(path.clone()));
+        let (first, second) = (first.unwrap(), second.unwrap());
+        assert!(
+            Arc::ptr_eq(&first, &second),
+            "cold callers parsed separate indexes"
+        );
+        assert!(Arc::ptr_eq(&first, &cache.get(&path)));
+        assert_eq!(first.search("PPO", 1)[0].page, "wiki/a.md");
+
+        index.upsert_page("wiki/b.md", "b", &["synthetic revision marker".into()]);
+        index.save(&path).unwrap();
+        let replaced = cache.get_async(path.clone()).await.unwrap();
+        assert!(!Arc::ptr_eq(&first, &replaced));
+        assert_eq!(replaced.len(), 2);
+        std::fs::remove_file(&path).unwrap();
+        assert!(cache.get_async(path).await.unwrap().is_empty());
     }
 
     #[test]
@@ -1687,5 +2131,63 @@ mod tests {
                 "tied chunks must order by page asc, then section asc, every run"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod scoped_resolution_tests {
+    use super::*;
+
+    #[test]
+    fn bm25_scope_is_applied_before_top_k_not_after_global_noise_wins() {
+        let mut index = Bm25Index::new();
+        for i in 0..64 {
+            index.upsert_page(
+                &format!("wiki/noise-{i}.md"),
+                "Synthetic noise",
+                &["synthetic_export_btn".into()],
+            );
+        }
+        index.upsert_page("sessions/later.md","Synthetic later outcome",&["The assistant reported synthetic_export_btn completed; a later user rejection follows.".into()]);
+        assert!(index.search("synthetic_export_btn", 1)[0]
+            .page
+            .starts_with("wiki/"));
+        let scoped = index.search_where("synthetic_export_btn", 1, |page, _| {
+            Scope::Sessions.keeps(page)
+        });
+        assert_eq!(scoped.len(), 1);
+        assert_eq!(scoped[0].page, "sessions/later.md");
+    }
+
+    #[test]
+    fn bm25_explicit_paths_and_chunk_predicates_cannot_consume_the_result_budget() {
+        let mut index = Bm25Index::new();
+        index.upsert_page(
+            "sessions/a.md",
+            "Synthetic A",
+            &[
+                "synthetic_export_btn".into(),
+                "synthetic_export_btn has a later state.".into(),
+            ],
+        );
+        index.upsert_page(
+            "sessions/b.md",
+            "Synthetic B",
+            &["synthetic_export_btn".into()],
+        );
+        let matches = index.search_where("synthetic_export_btn", 1, |page, section| {
+            page == "sessions/a.md" && section == 1
+        });
+        assert_eq!(matches.len(), 1);
+        assert_eq!(
+            (matches[0].page.as_str(), matches[0].section),
+            ("sessions/a.md", 1)
+        );
+        assert!(index
+            .search_where("synthetic_export_btn", 0, |_, _| true)
+            .is_empty());
+        assert!(index
+            .search_where("synthetic_export_btn", 1, |_, _| false)
+            .is_empty());
     }
 }

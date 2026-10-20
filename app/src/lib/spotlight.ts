@@ -12,8 +12,10 @@
 // emit + listen; verified in the tauri 2.11.1 ACL), so no relay command is
 // needed for the question itself.
 
+import { openCaptured, openInboxDoc, type Captured } from "./dailyNote";
 import { STRINGS } from "./i18n";
-import { askCopy, useQueryStore } from "../stores/queryStore";
+import { groupByPage } from "./extractive";
+import { askCopy, QUOTED_PAGES, useQueryStore, type ChatTurn } from "../stores/queryStore";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { wikilinkBase } from "./wikilinks";
@@ -24,6 +26,16 @@ export const SPOTLIGHT_ASK_EVENT = "myco://spotlight-ask";
 export const SPOTLIGHT_ANSWER_EVENT = "myco://spotlight-answer";
 /** Spotlight → main window: a citation was clicked; open the app on it. */
 export const SPOTLIGHT_OPEN_EVENT = "myco://spotlight-open";
+/** Spotlight → main window: an abstention's "Open in Ask" — show the Ask
+ *  page, where the turn and its near misses already are. Not a sentinel on
+ *  SPOTLIGHT_OPEN_EVENT: that path resolves-or-creates a page. */
+export const SPOTLIGHT_OPEN_ASK_EVENT = "myco://spotlight-open-ask";
+/** Spotlight → main window: the abstention's written question was opened —
+ *  show the daily note capture_note named, on the line it wrote (Captured). */
+export const SPOTLIGHT_OPEN_DAILY_EVENT = "myco://spotlight-open-daily";
+/** Spotlight → main window: the voice receipt's Open — show the `_inbox/`
+ *  note save_voice_capture wrote (its vault-relative path). */
+export const SPOTLIGHT_OPEN_INBOX_EVENT = "myco://spotlight-open-inbox";
 /** Rust → spotlight: the window was just shown; reset and focus the input. */
 export const SPOTLIGHT_OPENED_EVENT = "myco://spotlight-opened";
 
@@ -38,11 +50,41 @@ export interface SpotlightAnswer {
   error?: string;
   /** Quoted passages rather than model synthesis (builtin-local provider). */
   extractive?: boolean;
+  /** Nothing cleared the relevance floor: `answer` is advice, not a quote,
+   *  and the spotlight says it has no evidence instead of showing it. */
+  abstained?: boolean;
+  /** The dated question's window, named in the abstention. */
+  range?: { start: string; end: string };
+  /** Stopped with ■ on the Ask page before the answer came back. */
+  stopped?: boolean;
+  /** Each quoted note's similarity (null: a keyword-only match), shown under
+   *  the answer's details, not beside the quote (UX S14.7). */
+  relevance?: { stem: string; similarity: number | null }[];
+}
+
+/** The finished turn as the spotlight gets it. Only a turn that quoted
+ *  something is `extractive` — an empty one's body is advice ("nothing
+ *  found", "reindex"), and labelling it "from your notes, verbatim" is the
+ *  one thing an answer that quotes the vault or says nothing must not do. */
+export function spotlightAnswerOf(question: string, turn: ChatTurn | undefined): SpotlightAnswer {
+  return {
+    question,
+    answer: turn?.a ?? "",
+    error: turn?.error,
+    extractive: turn?.extractive && !turn.extractiveEmpty,
+    abstained: turn?.abstained,
+    range: turn?.range,
+    stopped: turn?.stopped,
+    relevance: turn?.hits
+      ? groupByPage(turn.hits, QUOTED_PAGES).map((g) => ({ stem: g.stem, similarity: g.best }))
+      : undefined,
+  };
 }
 
 /** Wire the main window's half: answer the spotlight's questions and follow
- *  its citation clicks. Call ONCE, from the main window only. Returns a
- *  teardown. Safe in a plain browser (no event bus): it just does nothing. */
+ *  its citation, "Open in Ask" and written-question Open clicks. Call ONCE,
+ *  from the main window only. Returns a teardown. Safe in a plain browser (no
+ *  event bus): it just does nothing. */
 export function initSpotlightBridge(): () => void {
   const unlisteners: (() => void)[] = [];
   let cancelled = false;
@@ -93,18 +135,12 @@ export function initSpotlightBridge(): () => void {
       });
       return;
     }
+    // Its own turn, as ask() ended it: by the time it settles the last turn
+    // may be another question's (■, then the Ask page asking on).
     void useQueryStore
       .getState()
       .ask(question, lang, askCopy(t))
-      .then(() => {
-        const turn = useQueryStore.getState().turns.at(-1);
-        reply({
-          question,
-          answer: turn?.a ?? "",
-          error: turn?.error,
-          extractive: turn?.extractive,
-        });
-      });
+      .then((turn) => reply(spotlightAnswerOf(question, turn)));
   });
 
   subscribe<string>(SPOTLIGHT_OPEN_EVENT, (target) => {
@@ -117,6 +153,19 @@ export function initSpotlightBridge(): () => void {
       .then((path) => {
         if (path) useUIStore.getState().setRoute(`page:${path}`);
       });
+  });
+
+  subscribe(SPOTLIGHT_OPEN_ASK_EVENT, () => useUIStore.getState().setRoute("query"));
+
+  // The path is another webview's word: only this vault's daily note opens.
+  subscribe<Captured | null>(SPOTLIGHT_OPEN_DAILY_EVENT, (written) => {
+    const vault = useVaultStore.getState().currentVault?.path;
+    if (vault && written && typeof written === "object") openCaptured(vault, written);
+  });
+
+  subscribe<unknown>(SPOTLIGHT_OPEN_INBOX_EVENT, (rel) => {
+    const vault = useVaultStore.getState().currentVault?.path;
+    if (vault) openInboxDoc(vault, rel);
   });
 
   return () => {

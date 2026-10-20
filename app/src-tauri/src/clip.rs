@@ -1,4 +1,4 @@
-// Web clipper deep link — `memx://clip?url=…&title=…&selection=…` turns a
+// Web clipper deep link — `memx://clip?url=…&title=…&selection=…&note=…` turns a
 // browser page into an `_inbox/` source doc for the ingest pipeline. The
 // parsing half is pure and unit-tested; the saving half only ever writes
 // inside `<vault>/_inbox/`. Inputs come from the outside world (any app can
@@ -12,12 +12,18 @@ use std::path::{Path, PathBuf};
 const MAX_TITLE: usize = 300;
 const MAX_URL: usize = 2048;
 const MAX_SELECTION: usize = 20_000;
+const MAX_NOTE: usize = 500;
+/// The label a clip's note is quoted under. The backlog contract (S39) fixes
+/// the Korean wording; the file is ingest input, not UI, so it is not i18n'd.
+const NOTE_LABEL: &str = "내 메모";
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Clip {
     pub title: String,
     pub url: Option<String>,
     pub selection: Option<String>,
+    /// Why it was saved: one line from the clipper popup (`note=`).
+    pub note: Option<String>,
 }
 
 /// Strip control chars and cap length (on a char boundary).
@@ -55,6 +61,7 @@ pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
     let mut title = String::new();
     let mut page_url: Option<String> = None;
     let mut selection: Option<String> = None;
+    let mut note: Option<String> = None;
     for (k, v) in u.query_pairs() {
         match k.as_ref() {
             "title" => title = clean(&v, MAX_TITLE),
@@ -69,6 +76,16 @@ pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
                 let v = clean(&v, MAX_SELECTION);
                 if !v.is_empty() {
                     selection = Some(v);
+                }
+            }
+            "note" => {
+                // One line: the note is quoted as a single `>` line.
+                let v = clean(
+                    &v.split_whitespace().collect::<Vec<_>>().join(" "),
+                    MAX_NOTE,
+                );
+                if !v.is_empty() {
+                    note = Some(v);
                 }
             }
             _ => {}
@@ -88,6 +105,7 @@ pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
         title,
         url: page_url,
         selection,
+        note,
     })
 }
 
@@ -210,6 +228,9 @@ pub fn clip_markdown(clip: &Clip, clipped_at: i64) -> String {
     out.push_str(&format!(
         "created: {clipped_at}\nclipped: {clipped_at}\n---\n\n"
     ));
+    if let Some(n) = &clip.note {
+        out.push_str(&format!("> {NOTE_LABEL}: {n}\n\n"));
+    }
     out.push_str(&format!("# {}\n\n", clip.title));
     if let Some(u) = &clip.url {
         out.push_str(&format!("Source: {u}\n\n"));
@@ -231,6 +252,11 @@ pub enum Saved {
     Written(PathBuf),
     /// This URL is already in the import ledger — nothing was written.
     Duplicate,
+    /// Already clipped, and the re-clip's note was added to that `_inbox/` doc.
+    NoteAdded(PathBuf),
+    /// Already clipped, but its doc names no file to add the note to, so the
+    /// note was not saved — the caller must say so.
+    DuplicateNoteDropped,
 }
 
 /// Write the clip into `<root>/_inbox/`, creating the folder if needed.
@@ -246,7 +272,10 @@ pub enum Saved {
 /// the same article is new material rather than a refused duplicate; a whole-
 /// page clip stays keyed on the URL alone.
 pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
-    let mut ledger = Ledger::load(root);
+    let _import_guard = crate::importers::wikify::import_lock()?;
+    let mut ledger = Ledger::load(root)?;
+    let inbox = root.join("_inbox");
+    crate::vault::confine_delete_path(root, &inbox.to_string_lossy())?;
     let url_key = clip.url.as_deref().map(ledger_key);
     let key = match (clip.url.as_deref(), clip.selection.as_deref()) {
         (Some(u), Some(sel)) if !sel.trim().is_empty() => Some(ledger_key_with_selection(u, sel)),
@@ -257,8 +286,8 @@ pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
     // source archived) or deleted by hand could never be clipped again — the
     // only recovery was hand-editing .myco/ledger.json.
     let is_dup = |k: &str| ledger.seen_key(k) && clip_still_present(root, ledger.entry(k));
-    if key.as_deref().is_some_and(&is_dup) {
-        return Ok(Saved::Duplicate);
+    if let Some(k) = key.as_deref().filter(|k| is_dup(k)) {
+        return add_note_to_duplicate(root, clip, ledger.entry(k));
     }
     // Entries written before clips were keyed per passage live under the bare
     // URL key. `clip_filename` already hashes title+url+selection, so an
@@ -268,11 +297,22 @@ pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
         .as_deref()
         .is_some_and(|k| is_dup(k) && ledger.entry(k) == Some(&clip_filename(clip)))
     {
-        return Ok(Saved::Duplicate);
+        return add_note_to_duplicate(root, clip, Some(&clip_filename(clip)));
     }
-    let inbox = root.join("_inbox");
     std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
-    let path = inbox.join(clip_filename(clip));
+    let filename = clip_filename(clip);
+    let mut path = inbox.join(&filename);
+    crate::vault::confine_delete_path(root, &path.to_string_lossy())?;
+    if key.is_none() {
+        // URL-less captures are separate sources; never replace an earlier note.
+        let stem = filename.trim_end_matches(".md");
+        let mut suffix = 2;
+        while std::fs::symlink_metadata(&path).is_ok() {
+            path = inbox.join(format!("{stem}-{suffix}.md"));
+            crate::vault::confine_delete_path(root, &path.to_string_lossy())?;
+            suffix += 1;
+        }
+    }
     // Confinement is structural (slug filename inside a fixed dir), but keep
     // the belt-and-braces canonical check used everywhere else.
     let canonical_parent = inbox
@@ -282,20 +322,60 @@ pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
         return Err("inbox escapes vault root".to_string());
     }
     let body = clip_markdown(clip, now_secs());
-    std::fs::write(&path, &body).map_err(|e| format!("write clip: {e}"))?;
+    crate::vault::write_file_if_unchanged(&path.to_string_lossy(), &body, None)
+        .map_err(|e| format!("write clip: {e}"))?;
     crate::inflow_log::record(root, "clipper", "clip");
     if let Some(k) = key {
         // The doc's file name, not its content hash: dedup is URL-keyed, and
         // the name is what `clip_still_present` needs to tell "already here"
         // from "was here, then ingested or deleted".
         ledger.record(k, clip_filename(clip));
-        // Best effort: the doc is already on disk, and a ledger that failed to
-        // save costs a duplicate next time, never the clip.
-        if let Err(e) = ledger.save(root) {
-            eprintln!("clip ledger not saved: {e}");
-        }
+        ledger.save(root).map_err(|error| {
+            format!(
+                "clip retained but ledger publication incomplete; retry after recovery: {error}"
+            )
+        })?;
     }
     Ok(Saved::Written(path))
+}
+
+/// A re-clip of a page already in `_inbox/`: its note (if any) goes into that
+/// doc as the first body line, the same place `clip_markdown` puts it. Only
+/// the `_inbox/` file the ledger names is touched — never anything else.
+fn add_note_to_duplicate(
+    root: &Path,
+    clip: &Clip,
+    recorded: Option<&String>,
+) -> Result<Saved, String> {
+    let Some(note) = &clip.note else {
+        return Ok(Saved::Duplicate);
+    };
+    let Some(name) = recorded.filter(|n| n.ends_with(".md") && !n.contains(['/', '\\'])) else {
+        return Ok(Saved::DuplicateNoteDropped);
+    };
+    let path = root.join("_inbox").join(name);
+    crate::vault::confine_delete_path(root, &path.to_string_lossy())?;
+    let md = match std::fs::read_to_string(&path) {
+        Ok(text) => text,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Saved::DuplicateNoteDropped)
+        }
+        Err(error) => return Err(format!("read clip note: {error}")),
+    };
+    let line = format!("> {NOTE_LABEL}: {note}\n\n");
+    if md.contains(&line) {
+        return Ok(Saved::Duplicate);
+    }
+    let Some((front, body)) = md.split_once("\n---\n\n") else {
+        return Ok(Saved::DuplicateNoteDropped);
+    };
+    crate::vault::write_file_if_unchanged(
+        &path.to_string_lossy(),
+        &format!("{front}\n---\n\n{line}{body}"),
+        Some(&crate::importers::wikify::source_revision(&md)),
+    )
+    .map_err(|e| format!("write clip note: {e}"))?;
+    Ok(Saved::NoteAdded(path))
 }
 
 fn now_secs() -> i64 {
@@ -308,6 +388,77 @@ fn now_secs() -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn synthetic_clip() -> Clip {
+        Clip {
+            title: "Synthetic source".into(),
+            url: Some("https://example.com/synthetic".into()),
+            selection: None,
+            note: None,
+        }
+    }
+
+    #[test]
+    fn clip_boundary_corrupt_ledger_blocks_publication() {
+        let vault = tempfile::tempdir().unwrap();
+        std::fs::create_dir(vault.path().join(".myco")).unwrap();
+        let path = vault.path().join(".myco/ledger.json");
+        let original = b"{corrupt synthetic identity";
+        std::fs::write(&path, original).unwrap();
+        assert!(save_clip(vault.path(), &synthetic_clip()).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), original);
+        assert!(!vault.path().join("_inbox").exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clip_boundary_aliased_inbox_preserves_raw_bytes() {
+        let vault = tempfile::tempdir().unwrap();
+        let clip = synthetic_clip();
+        let raw = vault.path().join("raw");
+        std::fs::create_dir(&raw).unwrap();
+        let source = raw.join(clip_filename(&clip));
+        let original = b"Synthetic immutable raw source";
+        std::fs::write(&source, original).unwrap();
+        std::os::unix::fs::symlink(&raw, vault.path().join("_inbox")).unwrap();
+        let outcome = save_clip(vault.path(), &clip);
+        assert_eq!(std::fs::read(source).unwrap(), original);
+        assert!(outcome.is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clip_boundary_aliased_final_file_preserves_raw_bytes() {
+        let vault = tempfile::tempdir().unwrap();
+        let clip = synthetic_clip();
+        let raw = vault.path().join("raw");
+        std::fs::create_dir(&raw).unwrap();
+        let source = raw.join("synthetic.md");
+        let original = b"Synthetic immutable raw source";
+        std::fs::write(&source, original).unwrap();
+        std::fs::create_dir(vault.path().join("_inbox")).unwrap();
+        std::os::unix::fs::symlink(
+            &source,
+            vault.path().join("_inbox").join(clip_filename(&clip)),
+        )
+        .unwrap();
+        let outcome = save_clip(vault.path(), &clip);
+        assert_eq!(std::fs::read(source).unwrap(), original);
+        assert!(outcome.is_err());
+    }
+
+    #[test]
+    fn clip_boundary_existing_untracked_human_projection_survives() {
+        let vault = tempfile::tempdir().unwrap();
+        let clip = synthetic_clip();
+        std::fs::create_dir(vault.path().join("_inbox")).unwrap();
+        let path = vault.path().join("_inbox").join(clip_filename(&clip));
+        let original = b"# Human annotation\nRetain this decision.";
+        std::fs::write(&path, original).unwrap();
+        let outcome = save_clip(vault.path(), &clip);
+        assert_eq!(std::fs::read(path).unwrap(), original);
+        assert!(outcome.is_err());
+    }
 
     #[test]
     fn parses_a_full_clip() {
@@ -361,6 +512,7 @@ mod tests {
             title: "Hello, World! 안녕".into(),
             url: Some("https://x.com".into()),
             selection: None,
+            note: None,
         };
         let f1 = clip_filename(&c);
         let f2 = clip_filename(&c);
@@ -376,6 +528,7 @@ mod tests {
             title: "T".into(),
             url: Some("https://x.com".into()),
             selection: Some("line one\nline two".into()),
+            note: None,
         };
         let md = clip_markdown(&c, 1_700_000_000);
         assert!(md.contains("Source: https://x.com"));
@@ -391,6 +544,7 @@ mod tests {
             title: "Attention: all you need".into(),
             url: Some("https://arxiv.org/abs/1706.03762".into()),
             selection: None,
+            note: None,
         };
         let md = clip_markdown(&c, 1_700_000_000);
         let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
@@ -432,6 +586,7 @@ mod tests {
             title: "he said \"hi\"\n---\nsource: trusted".into(),
             url: None,
             selection: Some("s".into()),
+            note: None,
         };
         let md = clip_markdown(&c, 1);
         let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
@@ -453,6 +608,7 @@ mod tests {
             title: "t".into(),
             url: Some("https://x.com".into()),
             selection: None,
+            note: None,
         };
         let Saved::Written(p) = save_clip(dir.path(), &c).unwrap() else {
             panic!("first clip must be written");
@@ -474,6 +630,7 @@ mod tests {
             title: "post".into(),
             url: Some("https://example.com/post".into()),
             selection: None,
+            note: None,
         };
         let Saved::Written(first) = save_clip(root, &clip).unwrap() else {
             panic!("first clip must be written");
@@ -507,6 +664,7 @@ mod tests {
             title: "Paper".into(),
             url: Some("https://x.com/a".into()),
             selection: Some("first highlight".into()),
+            note: None,
         };
         assert!(matches!(
             save_clip(dir.path(), &first).unwrap(),
@@ -514,6 +672,7 @@ mod tests {
         ));
         let second = Clip {
             selection: Some("second highlight".into()),
+            note: None,
             ..first.clone()
         };
         assert!(matches!(
@@ -535,6 +694,7 @@ mod tests {
             title: "Paper".into(),
             url: Some("https://x.com/a".into()),
             selection: None,
+            note: None,
         };
         assert!(matches!(
             save_clip(dir.path(), &page).unwrap(),
@@ -552,8 +712,9 @@ mod tests {
             title: "Paper".into(),
             url: Some("https://x.com/a".into()),
             selection: Some("only highlight".into()),
+            note: None,
         };
-        let mut ledger = Ledger::load(dir.path());
+        let mut ledger = Ledger::load(dir.path()).unwrap();
         ledger.record(ledger_key("https://x.com/a"), clip_filename(&clip));
         ledger.save(dir.path()).unwrap();
         std::fs::create_dir_all(dir.path().join("_inbox")).unwrap();
@@ -574,6 +735,7 @@ mod tests {
                 title: "t".into(),
                 url: Some(u.into()),
                 selection: None,
+                note: None,
             };
             assert!(matches!(
                 save_clip(dir.path(), &c).unwrap(),
@@ -591,6 +753,7 @@ mod tests {
             title: "notes".into(),
             url: None,
             selection: Some("some highlighted prose".into()),
+            note: None,
         };
         assert!(matches!(
             save_clip(dir.path(), &c).unwrap(),
@@ -600,5 +763,94 @@ mod tests {
             save_clip(dir.path(), &c).unwrap(),
             Saved::Written(_)
         ));
+    }
+
+    /// `note=` is the clipper popup's "why I saved this" line — the same
+    /// contract as a phone share sheet's comment field. One line, capped.
+    #[test]
+    fn parses_a_note_as_one_capped_line() {
+        let c =
+            parse_clip_url("myco://clip?url=https%3A%2F%2Fx.com&note=for%0Athe%20talk").unwrap();
+        assert_eq!(c.note.as_deref(), Some("for the talk"));
+        let long = "n".repeat(2000);
+        let c =
+            parse_clip_url(&format!("myco://clip?url=https%3A%2F%2Fx.com&note={long}")).unwrap();
+        assert_eq!(c.note.unwrap().chars().count(), MAX_NOTE);
+        let c = parse_clip_url("myco://clip?url=https%3A%2F%2Fx.com&note=%20%20").unwrap();
+        assert_eq!(c.note, None);
+    }
+
+    #[test]
+    fn a_note_is_the_first_body_line() {
+        let c = Clip {
+            title: "T".into(),
+            url: Some("https://x.com".into()),
+            selection: Some("s".into()),
+            note: Some("for the talk".into()),
+        };
+        let md = clip_markdown(&c, 1_700_000_000);
+        let body = md.split_once("\n---\n\n").unwrap().1;
+        assert!(
+            body.starts_with("> 내 메모: for the talk\n\n# T\n"),
+            "{body}"
+        );
+        // A note never reaches a clip without one.
+        let none = Clip { note: None, ..c };
+        assert!(!clip_markdown(&none, 1_700_000_000).contains("내 메모"));
+    }
+
+    /// The right-click menu clips with no note; the popup then re-clips the
+    /// same page WITH one. That note must land on the clip already in
+    /// _inbox/, not vanish behind "Already clipped".
+    #[test]
+    fn a_note_on_a_re_clip_joins_the_existing_doc() {
+        let dir = tempfile::tempdir().unwrap();
+        let bare = Clip {
+            title: "P".into(),
+            url: Some("https://x.com/p".into()),
+            selection: None,
+            note: None,
+        };
+        let Saved::Written(path) = save_clip(dir.path(), &bare).unwrap() else {
+            panic!("first clip must be written");
+        };
+        let noted = Clip {
+            note: Some("for the talk".into()),
+            ..bare.clone()
+        };
+        assert_eq!(
+            save_clip(dir.path(), &noted).unwrap(),
+            Saved::NoteAdded(path.clone())
+        );
+        let md = std::fs::read_to_string(&path).unwrap();
+        let body = md.split_once("\n---\n\n").unwrap().1;
+        assert!(
+            body.starts_with("> 내 메모: for the talk\n\n# P\n"),
+            "{body}"
+        );
+        // The same note again adds nothing; no note is a plain duplicate.
+        assert_eq!(save_clip(dir.path(), &noted).unwrap(), Saved::Duplicate);
+        assert_eq!(save_clip(dir.path(), &bare).unwrap(), Saved::Duplicate);
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), md);
+    }
+
+    /// A legacy ledger entry names no file, so there is nowhere to put the
+    /// note: the caller is told it was not saved instead of a bare duplicate.
+    #[test]
+    fn a_note_with_nowhere_to_go_is_reported_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut ledger = Ledger::load(dir.path()).unwrap();
+        ledger.record(ledger_key("https://x.com/p"), "deadbeef".to_string());
+        ledger.save(dir.path()).unwrap();
+        let noted = Clip {
+            title: "P".into(),
+            url: Some("https://x.com/p".into()),
+            selection: None,
+            note: Some("for the talk".into()),
+        };
+        assert_eq!(
+            save_clip(dir.path(), &noted).unwrap(),
+            Saved::DuplicateNoteDropped
+        );
     }
 }

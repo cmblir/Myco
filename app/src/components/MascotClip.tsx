@@ -1,74 +1,40 @@
-// MYCO — the mascot the product is named after. Plays the keyed
-// (transparent-background) mascot
-// loop on empty/waiting surfaces. Alpha video needs a different codec per
-// engine: the Tauri shell is WKWebView (Safari engine) → HEVC+alpha (hvc1
-// .mov); a Chromium dev browser → VP9 alpha WebM. The source is picked by
-// ENGINE SNIFF rather than <source> fallback on purpose — Chromium can
-// hardware-decode hvc1 but WITHOUT its alpha layer, so it would "successfully"
-// play the mov with the keyed-out backdrop painted back in.
+// MYCO — the mascot the product is named after. Plays a keyed
+// (transparent-background) clip from lib/mascotClips on empty, waiting and
+// reacting surfaces; that module owns the clip table, the engine sniff and the
+// rules for when a clip may play.
 // Honors prefers-reduced-motion (static poster frame, mirrors ThinkingGalaxy)
-// and falls back to the poster if playback errors. The clip frame is a wide
-// 16:9; the component crops to a square around the centered character so
-// callers just pass one size.
-import { useEffect, useRef, useState } from "react";
+// and falls back to the poster if playback errors. It plays only while the
+// window is shown and the slot is on screen. The idle frame is a wide 16:9;
+// the component crops to a square around the centered character so callers
+// just pass one size.
+import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { MycoMark } from "../lib/icons";
 import { useUIStore } from "../stores/uiStore";
-import idleMovUrl from "../assets/mascot/idle.mov";
-import idleWebmUrl from "../assets/mascot/idle.webm";
-import idlePosterUrl from "../assets/mascot/idle.poster.png";
+import { CLIPS, clipView, playbackRef, wantsHevc } from "../lib/mascotClips";
+import type { ClipSpec, MascotClipKey } from "../lib/mascotClips";
 
-interface ClipSpec {
-  mov: string;
-  webm: string;
-  poster: string;
-  /** video display height ÷ box size — centres the character in the square crop. */
-  zoom: number;
-  /**
-   * Whether the clip repeats. `false` is a ONE-SHOT: it plays once and holds
-   * its last frame.
-   *
-   * An ambient clip (idle) loops — it is scenery. A reactive clip (a celebrate
-   * on a finished run) must not: a victory dance on a permanent loop stops
-   * reading as a reaction and starts reading as a nag, which is the failure mode
-   * that killed Clippy. Defaults to true so an ambient clip is the easy case.
-   */
-  loop?: boolean;
-}
+export type { MascotClipKey };
 
-// Adding a clip is one entry here plus its three assets (hvc1 .mov, VP9 .webm,
-// poster .png) in assets/mascot/ — see docs/mascot-clip-backlog.md.
-const CLIPS = {
-  // The idle character spans ~71% of the frame height centered; 1.15 makes it
-  // fill ~82% of the square crop.
-  idle: { mov: idleMovUrl, webm: idleWebmUrl, poster: idlePosterUrl, zoom: 1.15 },
-} as const satisfies Record<string, ClipSpec>;
-export type MascotClipKey = keyof typeof CLIPS;
-
-// The Tauri shell is ALWAYS WKWebView on macOS — detect the runtime directly
-// (its UA may omit the "Safari" token, which mis-routed the shell to the VP9
-// webm; WKWebView decodes VP9 WITHOUT alpha, painting an opaque black box).
-const IS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
-// Real Safari browsers carry no Chromium token in the UA.
-const SAFARI_ENGINE =
-  typeof navigator !== "undefined" &&
-  /safari/i.test(navigator.userAgent) &&
-  !/chrome|chromium|crios|edg|android/i.test(navigator.userAgent);
-const WANTS_HEVC = IS_TAURI || SAFARI_ENGINE;
+const WANTS_HEVC = wantsHevc();
 
 export default function MascotClip({
   clip = "idle",
   size = 120,
+  held = false,
   onEnded,
 }: {
   clip?: MascotClipKey;
-  /** Square crop size in px; the character fills ~82% of it. */
+  /** Square box in px. idle's character fills ~82% of it, a krea clip's
+   *  ~64% (the rest is room for its hops and props). */
   size?: number;
+  /** Show the still and never play: the moment this one-shot marks is
+   *  already over (the Ingest hero coming back to a finished run). */
+  held?: boolean;
   /** Fires when a one-shot clip finishes. Never fires for a looping clip. */
   onEnded?: () => void;
 }): JSX.Element {
   const [failed, setFailed] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
   // A finished one-shot holds its last frame. Tracked in state (not left to the
   // element) so the reduced-motion and error paths render the same still.
   const [ended, setEnded] = useState(false);
@@ -86,11 +52,14 @@ export default function MascotClip({
   const reduced =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  // A one-shot that never plays — reduced motion, a decode error, or the mascot
-  // switched off — still has to tell its caller it is over, or anything waiting
-  // on the clip waits forever. The still frame IS the whole animation here, so
-  // report it finished rather than leaving the caller hanging.
-  const willNotPlay = !mascotEnabled || reduced || failed;
+  // Held lives here, not in `ended`'s initial state: the [clip] effect above
+  // resets `ended` as the clip mounts.
+  const view = clipView({ mascotEnabled, reduced, failed, ended: ended || held });
+  // A one-shot that never plays — reduced motion, a decode error, the mascot
+  // switched off, or held — still has to tell its caller it is over, or
+  // anything waiting on the clip waits forever. The still frame IS the whole
+  // animation here, so report it finished rather than leaving the caller hanging.
+  const willNotPlay = !mascotEnabled || reduced || failed || held;
   useEffect(() => {
     if (!loops && willNotPlay) onEnded?.();
     // onEnded is intentionally not a dep: callers pass inline closures, and
@@ -112,25 +81,17 @@ export default function MascotClip({
   // plays therefore stays a poster forever, which is the desired outcome and
   // cannot show a control.
   const [playing, setPlaying] = useState(false);
-  useEffect(() => {
-    setPlaying(false);
-  }, [clip]);
-  useEffect(() => {
-    const v = videoRef.current;
-    if (!v) return;
-    let cancelled = false;
-    const attempt = v.play();
-    if (attempt && typeof attempt.catch === "function") {
-      attempt.catch(() => {
-        if (!cancelled) setFailed(true);
-      });
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [clip, reduced, failed, ended]);
+  // Window and viewport visibility, bound to each <video> as it mounts. The
+  // video is keyed by clip, so a swapped clip is a new element: it is bound
+  // again, and the one it replaces resets `playing` as it goes.
+  const [videoRef] = useState(() =>
+    playbackRef(
+      () => setFailed(true),
+      () => setPlaying(false),
+    ),
+  );
 
-  if (!mascotEnabled) {
+  if (view === "mark") {
     return (
       <span
         aria-hidden
@@ -168,15 +129,17 @@ export default function MascotClip({
           starts (so a stall falls back to it without a flash) but must go
           INVISIBLE: the clip is alpha-keyed, so a lit poster shows through
           every transparent pixel and the character reads as two overlapping
-          copies of itself the moment it moves. */}
+          copies of itself the moment it moves. A finished one-shot unmounts
+          its video, so the poster has to come back then. */}
       <img
         src={c.poster}
         alt=""
         draggable={false}
-        style={{ ...mediaStyle, opacity: playing ? 0 : 1 }}
+        style={{ ...mediaStyle, opacity: playing && view === "video" ? 0 : 1 }}
       />
-      {reduced || failed || ended ? null : (
+      {view !== "video" ? null : (
         <video
+          key={clip}
           ref={videoRef}
           onPlaying={() => setPlaying(true)}
           src={WANTS_HEVC ? c.mov : c.webm}

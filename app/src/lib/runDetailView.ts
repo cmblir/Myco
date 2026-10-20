@@ -46,6 +46,7 @@ export function buildRunRows(detail: RunDetail, diffs: FileDiff[] | null): RunRo
       files: [
         ...detail.moves.map(([from, to]) => row(`${from} → ${to}`, "history_status_renamed")),
         ...detail.trashed.map(([from]) => row(from, "history_status_deleted")),
+        ...(detail.deleted ?? []).map((rel) => row(rel, "history_status_deleted")),
         ...detail.created.map((rel) => row(rel, "history_status_added")),
       ],
       noCommit: true,
@@ -53,7 +54,7 @@ export function buildRunRows(detail: RunDetail, diffs: FileDiff[] | null): RunRo
     };
   }
   return {
-    files: diffs.map((d) => {
+    files: [...diffs.map((d) => {
       // Added files have after only, deleted before only, modified both — both
       // sides null happens exclusively when the Rust side capped the content.
       const tooLarge = d.before === null && d.after === null;
@@ -63,7 +64,9 @@ export function buildRunRows(detail: RunDetail, diffs: FileDiff[] | null): RunRo
         diff: tooLarge ? null : diffLines(d.before ?? "", d.after ?? ""),
         tooLarge,
       };
-    }),
+    }), ...(detail.deleted ?? []).filter((rel) => !diffs.some((d) => d.path === rel)).map((rel) => ({
+      rel, statusKey: "history_status_deleted" as const, diff: null, tooLarge: false,
+    }))],
     noCommit: false,
     whyRel: detail.report_rel,
   };

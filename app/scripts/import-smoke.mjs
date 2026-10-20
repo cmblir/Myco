@@ -1,108 +1,192 @@
-// Usage (dev server on :5173):  node scripts/import-smoke.mjs
-//
-// The conversation-import card must render on Ingest, run an import, and show
-// both the success and the secret-quarantine warning (the mock returns one of
-// each). 3 viewports.
+// Synthetic in-memory IPC workflows; no private exports or accounts are read.
+import assert from "node:assert/strict";
+import { mkdir } from "node:fs/promises";
 import { chromium } from "playwright";
-
-const VIEWPORTS = [
-  { name: "mobile", width: 375, height: 667 },
-  { name: "small", width: 768, height: 800 },
-  { name: "full", width: 1280, height: 800 },
-];
-const browser = await chromium.launch({ headless: true });
-const results = [];
-const check = (n, ok, d = "") => results.push({ n, ok, d });
-
-for (const vp of VIEWPORTS) {
-  const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
-  const errors = [];
-  page.on("pageerror", (e) => errors.push(e.message));
-  await page.addInitScript(() => {
-    localStorage.setItem("myco.onboarded", "1");
-    localStorage.setItem("myco-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
-    // The card calls the dialog plugin's open() for the file path; stub it to a
-    // fixed path so the flow proceeds to import_conversations (which the mock
-    // answers).
-    window.__TAURI_INTERNALS__ = window.__TAURI_INTERNALS__ || {};
-  });
-  await page.goto("http://localhost:5173/?mock=1", { waitUntil: "domcontentloaded", timeout: 60_000 });
-  await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-  if (vp.width <= 768) {
-    await page.locator(".topbar .icon-btn").first().click();
-    await page.waitForTimeout(300);
+const base = process.env.MYCO_TEST_URL ?? "http://127.0.0.1:5173";
+assert.ok(["127.0.0.1", "localhost", "[::1]"].includes(new URL(base).hostname));
+const output = process.env.MYCO_SCREENSHOTS ?? "/tmp/myco-import-workflows";
+await mkdir(output, { recursive: true });
+const browser = await chromium.launch({
+  headless: !process.argv.includes("--headed"),
+});
+let checks = 0;
+try {
+  for (const width of [375, 768, 1280]) {
+    const page = await browser.newPage({ viewport: { width, height: 900 } });
+    page.setDefaultTimeout(15000);
+    const errors = [];
+    page.on("pageerror", (e) => errors.push(e.message));
+    await page.route("**/*", (r) => {
+      const u = new URL(r.request().url());
+      return ["127.0.0.1", "localhost", "[::1]"].includes(u.hostname) ||
+        !["http:", "https:"].includes(u.protocol)
+        ? r.continue()
+        : r.abort("blockedbyclient");
+    });
+    await page.addInitScript(() => {
+      localStorage.setItem("myco.onboarded", "1");
+      localStorage.setItem(
+        "myco-ui",
+        JSON.stringify({ version: 3, state: { lang: "en", theme: "light" } }),
+      );
+      window.importCalls = [];
+      window.failImportRetry = true;
+      window.holdImportSweep = true;
+      let internals;
+      Object.defineProperty(window, "__TAURI_INTERNALS__", {
+        configurable: true,
+        get: () => internals,
+        set: (value) => {
+          const invoke = value.invoke;
+          value.invoke = async (command, args) => {
+            if (command === "import_paths") {
+              window.importCalls.push(args);
+              if (window.failImportRetry)
+                throw new Error("Synthetic retry transport failure");
+            }
+            const result = await invoke(command, args);
+            if (command === "import_session_sweep" && window.holdImportSweep)
+              await new Promise((resolve) => {
+                window.finishImportSweep = resolve;
+              });
+            return result;
+          };
+          internals = value;
+        },
+      });
+    });
+    async function navigate(label) {
+      if (await page.locator(".app.sidebar-collapsed").count())
+        await page.getByTitle(/^Toggle sidebar/).click();
+      await page
+        .locator(".side-nav .nav-item")
+        .filter({
+          has: page.locator(".ni-text", {
+            hasText: new RegExp("^" + label + "$"),
+          }),
+        })
+        .click();
+    }
+    async function openImport() {
+      await navigate("Add sources");
+      for (const locator of [
+        page.getByTestId("intake-more-sources"),
+        page.getByTestId("intake-advanced"),
+      ])
+        if ((await locator.getAttribute("open")) === null)
+          await locator.locator("summary").first().click();
+      const sessions = page
+        .getByTestId("intake-advanced")
+        .locator("details")
+        .filter({
+          has: page.locator("summary", { hasText: /^Session sweep/ }),
+        });
+      if ((await sessions.getAttribute("open")) === null)
+        await sessions.locator("summary").first().click();
+    }
+    try {
+      await page.goto(base + "/?mock=1", { waitUntil: "domcontentloaded" });
+      await page.locator(".home-page").waitFor();
+      await openImport();
+      const card = page
+        .locator("section.zotero-import")
+        .filter({ hasText: "Import a conversation" });
+      await card
+        .getByRole("button", { name: "Choose a file…", exact: true })
+        .click();
+      await card.getByTestId("import-secret-warning").waitFor();
+      assert.match(await card.innerText(), /Imported 1 conversation/);
+      checks++;
+      assert.match(
+        await card.getByTestId("import-secret-warning").innerText(),
+        /1 conversation.*held back/,
+      );
+      checks++;
+      await card
+        .getByRole("button", {
+          name: "Import my Claude Code sessions",
+          exact: true,
+        })
+        .click();
+      await card.getByRole("progressbar").waitFor();
+      assert.equal(
+        await card
+          .getByRole("button", { name: "Importing…", exact: true })
+          .isDisabled(),
+        true,
+      );
+      checks++;
+      await navigate("Home");
+      await page.locator(".home-page").waitFor();
+      await openImport();
+      await card.getByRole("progressbar").waitFor();
+      checks++;
+      await page.waitForFunction(
+        () => typeof window.finishImportSweep === "function",
+      );
+      assert.match(await card.getByTestId("import-progress").innerText(), /2 failed/);
+      checks++;
+      await page.evaluate(() => {
+        window.holdImportSweep = false;
+        window.finishImportSweep();
+      });
+      const failures = card.getByTestId("import-failures");
+      await failures.waitFor();
+      assert.match(
+        await failures.locator("summary").innerText(),
+        /^2 couldn’t be imported$/,
+      );
+      checks++;
+      await failures.locator("summary").click();
+      const paths = await failures.locator(".muted span").allInnerTexts();
+      assert.equal(paths.length, 2);
+      checks++;
+      await failures
+        .getByRole("button", { name: "Retry failed (2)", exact: true })
+        .click();
+      const alert = card.getByRole("alert");
+      await alert.waitFor();
+      assert.match(
+        await alert.innerText(),
+        /Synthetic retry transport failure/,
+      );
+      checks++;
+      await failures
+        .getByRole("button", { name: "Retry failed (2)", exact: true })
+        .waitFor();
+      checks++;
+      await page.evaluate(() => {
+        window.failImportRetry = false;
+      });
+      await failures
+        .getByRole("button", { name: "Retry failed (2)", exact: true })
+        .click();
+      await failures.waitFor({ state: "detached" });
+      await alert.waitFor({ state: "detached" });
+      checks++;
+      assert.deepEqual(await page.evaluate(() => window.importCalls), [
+        { paths, dest: "sessions" },
+        { paths, dest: "sessions" },
+      ]);
+      checks++;
+      assert.match(await card.innerText(), /Imported 2 conversation/);
+      checks++;
+      assert.deepEqual(errors, []);
+      checks++;
+      await page.screenshot({ path: output + "/" + width + ".png" });
+      console.log(
+        "PASS " +
+          width +
+          "px import/quarantine/progress/failed retry/destination (mock IPC)",
+      );
+    } finally {
+      await page.close();
+    }
   }
-  await page.locator(".side-nav .nav-item", { hasText: /Ingest|가져오기|取り込み/ }).first().click();
-  await page.waitForTimeout(800);
-  const at = (n) => `[${vp.name}] ${n}`;
-
-  // The card renders.
-  const card = page.locator("section.zotero-import", { hasText: /Import a conversation/ });
-  check(at("import card renders"), (await card.count()) >= 1, String(await card.count()));
-
-  const btn = card.getByRole("button", { name: /Choose a file/ });
-  check(at("import button present"), (await btn.count()) === 1);
-
-  // Click it: the mock dialog returns a path, import_conversations returns one
-  // imported + one quarantined, so both the success line and the secret warning
-  // must appear.
-  await btn.click();
-  await page.waitForTimeout(800);
-  const resultText = await card.locator(".zotero-import__result").allInnerTexts();
-  check(at("success line shows the import count"), resultText.some((x) => /_inbox/.test(x)), JSON.stringify(resultText));
-  check(at("secret quarantine warning shows"), (await card.locator("[data-testid='import-secret-warning']").count()) === 1);
-
-  // The session-sweep buttons import everything on disk in one click.
-  const cc = card.getByRole("button", { name: /Claude Code sessions/ });
-  const cx = card.getByRole("button", { name: /Codex sessions/ });
-  check(at("Claude Code sweep button present"), (await cc.count()) === 1);
-  check(at("Codex sweep button present"), (await cx.count()) === 1);
-  await cc.click();
-  // A progress bar shows while the sweep streams (mock: ~14 files over ~840ms).
-  await page.waitForSelector("[data-testid='import-progress']", { timeout: 5_000 }).catch(() => {});
-  check(at("a progress bar shows during the sweep"),
-    (await card.locator("[data-testid='import-progress']").count()) === 1);
-
-  // Then the result line lands.
-  await page
-    .waitForFunction(
-      () =>
-        [...document.querySelectorAll(".zotero-import__result")].some((el) =>
-          /_inbox/.test(el.textContent || ""),
-        ),
-      null,
-      { timeout: 10_000 },
-    )
-    .catch(() => {});
-  const sweepText = await card.locator(".zotero-import__result").allInnerTexts();
-  check(at("sweep reports an import count into _inbox"),
-    sweepText.some((x) => /_inbox/.test(x) && /\d/.test(x)), JSON.stringify(sweepText));
-
-  // The failures list + retry appear (mock returns 2 failures).
-  const failures = card.locator("[data-testid='import-failures']");
-  check(at("failures list appears"), (await failures.count()) === 1);
-  const retry = failures.getByRole("button", { name: /Retry failed/ });
-  check(at("retry button present"), (await retry.count()) === 1);
-  // Retry succeeds in the mock → failures clear.
-  await retry.click();
-  await page.waitForFunction(
-    () => document.querySelector("[data-testid='import-failures']") === null,
-    null,
-    { timeout: 10_000 },
-  ).catch(() => {});
-  check(at("retry clears the failures"),
-    (await card.locator("[data-testid='import-failures']").count()) === 0);
-
-  await page.screenshot({ path: `test-results/import-card/${vp.name}.png` });
-  check(at("no page errors"), errors.length === 0, errors.slice(0, 1).join("; "));
-  await page.close();
+} finally {
+  await browser.close();
 }
-
-await browser.close();
-let failed = 0;
-for (const r of results) {
-  console.log(`${r.ok ? "PASS" : "FAIL"}  ${r.n}${r.d ? "  — " + r.d : ""}`);
-  if (!r.ok) failed++;
-}
-console.log(`\n${results.length - failed}/${results.length} passed`);
-process.exit(failed ? 1 : 0);
+console.log(
+  checks +
+    " assertions passed; native parsers, receipts and disk writes are not exercised.",
+);

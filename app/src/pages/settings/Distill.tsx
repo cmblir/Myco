@@ -1,22 +1,25 @@
 // Settings > Distill — the ontology run, its gate and budget, the profile it
 // learns, vault history, PII handling and the archive tiers.
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { Lang, Strings } from "../../lib/i18n";
 import { useUIStore } from "../../stores/uiStore";
 import { useVaultStore } from "../../stores/vaultStore";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ipc } from "../../lib/ipc";
+import { captureArchiveOpening } from "../../lib/archiveOpening";
 import type { RawAuditReport, RunSummary } from "../../lib/ipc";
-import { formatRunLine } from "../../lib/runList";
+import { formatRunLine, runTitle } from "../../lib/runList";
 import { stepLabel } from "../../components/ActivityChip";
+import { DeletionPolicyCard } from "./Deletion";
 import { SettingsCard } from "../../components/SettingsCard";
 import {
   archiveBucketKey,
   backlogTrend,
   GATE_MIN_WIKI_PAGES,
   lastDigestOutcome,
+  pendingEvidenceSources,
   lastMonthlyOutcome,
   lastWeeklyOutcome,
   lastRunLabel,
@@ -75,6 +78,7 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const [weeksRolledUp, setWeeksRolledUp] = useState(0);
   // Same, one layer further up: months rolled up out of weekly/.
   const [monthsRolledUp, setMonthsRolledUp] = useState(0);
+  const [sourcesPending, setSourcesPending] = useState(0);
 
   useEffect(() => {
     if (!vaultPath) return;
@@ -105,6 +109,7 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
     );
     setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
     setMonthsRolledUp(lastMonthlyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
+    setSourcesPending(pendingEvidenceSources(vaultPath));
     return () => {
       cancelled = true;
     };
@@ -129,6 +134,7 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
     if (!chainRunning) {
       setStopping(false);
       if (vaultPath) setStoppedAfter(lastStopPoint.get(vaultPath) ?? null);
+      if (vaultPath) setSourcesPending(pendingEvidenceSources(vaultPath));
     }
   }, [chainRunning, vaultPath]);
 
@@ -144,10 +150,14 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       // first, but two runs never overlap.
       const r = await runDistillGuarded(vaultPath);
       if (r === null) {
-        setError(t.set_distill_busy ?? "A distill run is already in progress.");
+        setError(
+          t.set_distill_busy ??
+            "A distill run or an inbox auto-ingest pass is already in progress.",
+        );
         return;
       }
       setReport(r);
+      setSourcesPending(pendingEvidenceSources(vaultPath));
       setStatus(await ipc.distillStatus(vaultPath));
       const digest = lastDigestOutcome.get(vaultPath);
       setDigestExtractive(
@@ -208,9 +218,11 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         </h2>
         <p className="muted" style={{ margin: "6px 0 0", fontSize: 14 }}>
           {t.set_distill_lede ??
-            "Periodically folds new pages into the wiki's ontology, archiving what's been absorbed and proposing merges for the rest."}
+            "Periodically scores how well new notes fit your vault, quarantines sessions no person wrote, writes digests of your sessions, and archives sessions once they are digested. It never changes the originals in raw/."}
         </p>
       </div>
+
+      <DeletionPolicyCard t={t} />
 
       <SettingsCard id="distill_enabled" className="card">
         <div
@@ -223,7 +235,7 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             </div>
             <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
               {t.set_distill_enabled_desc ??
-                "While myco is open and you're idle, distill the backlog on its own schedule."}
+                "While myco is open, it tidies up on its own once you have not touched it for the idle minutes below and the backlog has reached the count trigger. It runs at most once an hour. No run, automatic or manual, changes the raw/ folder."}
             </div>
           </div>
           <button
@@ -463,6 +475,11 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               .replace("{min}", String(GATE_MIN_WIKI_PAGES))}
           </div>
         ) : null}
+        {sourcesPending > 0 ? (
+          <p className="muted" role="status">
+            {t.set_distill_evidence_pending.replace("{n}", String(sourcesPending))}
+          </p>
+        ) : null}
         {digestExtractive ? (
           // The digest ran, but extractively (quotes, no LLM) — say so, and
           // name the setting that upgrades it to real summaries.
@@ -548,9 +565,10 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             </button>
           </div>
         ) : null}
+        {(runs.find((r) => r.id === status?.last_run_id)?.deleted ?? report?.deleted ?? 0) > 0 ? <p className="muted" style={{ fontSize: 12 }}>{t.delete_undo_limit}</p> : null}
         {undoResult !== null ? (
           <div
-            style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+            style={{ color: "var(--ok)", fontSize: 12, marginTop: 8 }}
             data-testid="distill-undo-result"
           >
             {(t.set_distill_undo_result ?? "Reversed {n} changes").replace(
@@ -574,14 +592,12 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
                   borderBottom: "1px solid var(--line-soft)",
                 }}
               >
-                <span
-                  className="muted"
-                  style={{ fontSize: 12.5, fontFamily: "var(--font-mono)" }}
-                >
-                  {r.id}
+                <span className="muted" style={{ fontSize: 12.5 }} title={r.id}>
+                  {runTitle(r, lang, t)}
                 </span>
                 <span className="muted" style={{ fontSize: 12 }}>
                   {formatRunLine(r, lang)}
+                  {(r.deleted ?? 0) > 0 ? <span style={{ display: "block" }}>{t.delete_undo_limit}</span> : null}
                 </span>
                 <button
                   className="btn"
@@ -644,21 +660,21 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         ) : null}
         {report ? (
           <div
-            style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+            style={{ color: "var(--ok)", fontSize: 12, marginTop: 8 }}
             data-testid="distill-report"
           >
             {(
               t.set_distill_report ??
-              "Archived {a}, trashed {tr}, {p} proposals — backlog now {b}"
+              "Trashed {tr}, {p} proposals — backlog now {b}"
             )
-              .replace("{a}", String(report.archived))
               .replace("{tr}", String(report.trashed))
               .replace("{p}", String(report.proposals))
               .replace("{b}", String(report.backlog_after))}
+            {(report.deleted ?? 0) > 0 ? ` · ${t.deleted_count.replace("{n}", String(report.deleted))}` : null}
           </div>
         ) : null}
         {error ? (
-          <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+          <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>
             {error}
           </div>
         ) : null}
@@ -865,7 +881,7 @@ function RawAuditCard({
       </div>
       {report && hits.length === 0 ? (
         <div
-          style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+          style={{ color: "var(--ok)", fontSize: 12, marginTop: 8 }}
           data-testid="raw-audit-clean"
         >
           {(t.set_audit_clean ?? "{n} files · {m} in history — 0 secrets")
@@ -897,7 +913,7 @@ function RawAuditCard({
         </div>
       ) : null}
       {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+        <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>
           {error}
         </div>
       ) : null}
@@ -947,6 +963,13 @@ function SettingsArchive({
   lang: Lang;
   vaultPath: string | undefined;
 }): JSX.Element {
+  const vaultToken = useVaultStore((state) => state.vaultToken);
+  const isOpeningVault = useVaultStore((state) => state.isOpeningVault);
+  const isCurrent = useCallback((): boolean => {
+    const current = useVaultStore.getState();
+    return !current.isOpeningVault && current.currentVault?.path === vaultPath && current.vaultToken === vaultToken;
+  }, [vaultPath, vaultToken]);
+  const measurementSeq = useRef(0);
   const [usage, setUsage] = useState<BucketUsage[] | null>(null);
   const [measuring, setMeasuring] = useState(false);
   const [months, setMonths] = useState(3);
@@ -955,20 +978,34 @@ function SettingsArchive({
   const [failed, setFailed] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    measurementSeq.current += 1;
+    setUsage(null);
+    setMeasuring(false);
+    setBusy(null);
+    setNote(null);
+    setFailed([]);
+    setError(null);
+  }, [vaultPath, vaultToken]);
+
   const measure = useMemo(
     () => async (): Promise<void> => {
-      if (!vaultPath) return;
+      if (!vaultPath || isOpeningVault || !isCurrent()) return;
+      const request = ++measurementSeq.current;
+      const canAdopt = (): boolean => isCurrent() && measurementSeq.current === request;
       setMeasuring(true);
       setError(null);
       try {
-        setUsage(await ipc.archiveUsage(vaultPath));
+        const origin = await captureArchiveOpening(vaultPath, canAdopt);
+        const result = await ipc.archiveUsage(vaultPath, origin);
+        if (canAdopt()) setUsage(result);
       } catch (e) {
-        setError(String(e));
+        if (canAdopt()) setError(String(e));
       } finally {
-        setMeasuring(false);
+        if (canAdopt()) setMeasuring(false);
       }
     },
-    [vaultPath],
+    [vaultPath, isCurrent, isOpeningVault],
   );
 
   useEffect(() => {
@@ -976,13 +1013,15 @@ function SettingsArchive({
   }, [measure]);
 
   async function compress(): Promise<void> {
-    if (!vaultPath) return;
+    if (!vaultPath || !isCurrent()) return;
     setBusy("compress");
     setError(null);
     setNote(null);
     setFailed([]);
     try {
-      const r = await ipc.compressArchives(vaultPath, months);
+      const origin = await captureArchiveOpening(vaultPath, isCurrent);
+      const r = await ipc.compressArchives(vaultPath, months, origin);
+      if (!isCurrent()) return;
       setFailed(r.failed);
       setNote(
         r.buckets === 0 && r.failed.length === 0
@@ -999,20 +1038,22 @@ function SettingsArchive({
       );
       await measure();
     } catch (e) {
-      setError(String(e));
+      if (isCurrent()) setError(String(e));
     } finally {
-      setBusy(null);
+      if (isCurrent()) setBusy(null);
     }
   }
 
   async function restore(tree: ArchiveTree, bucket: string): Promise<void> {
-    if (!vaultPath) return;
+    if (!vaultPath || !isCurrent()) return;
     setBusy(`${tree}/${bucket}`);
     setError(null);
     setNote(null);
     setFailed([]);
     try {
-      const r = await ipc.restoreArchiveBucket(vaultPath, tree, bucket);
+      const origin = await captureArchiveOpening(vaultPath, isCurrent);
+      const r = await ipc.restoreArchiveBucket(vaultPath, tree, bucket, origin);
+      if (!isCurrent()) return;
       setNote(
         (t.set_archive_restored ?? "Restored {n} files to {bucket}")
           .replace("{n}", String(r.files))
@@ -1020,9 +1061,9 @@ function SettingsArchive({
       );
       await measure();
     } catch (e) {
-      setError(String(e));
+      if (isCurrent()) setError(String(e));
     } finally {
-      setBusy(null);
+      if (isCurrent()) setBusy(null);
     }
   }
 
@@ -1040,7 +1081,7 @@ function SettingsArchive({
         <button
           className="btn"
           onClick={() => void measure()}
-          disabled={measuring || !vaultPath}
+          disabled={measuring || !vaultPath || isOpeningVault}
           aria-busy={measuring}
           data-testid="archive-measure-btn"
         >
@@ -1103,7 +1144,7 @@ function SettingsArchive({
                   <button
                     className="btn"
                     onClick={() => void restore(b.tree, b.bucket)}
-                    disabled={busy !== null || !vaultPath}
+                    disabled={busy !== null || !vaultPath || isOpeningVault}
                     aria-busy={busy === `${b.tree}/${b.bucket}`}
                   >
                     {busy === `${b.tree}/${b.bucket}`
@@ -1132,7 +1173,7 @@ function SettingsArchive({
         <button
           className="btn"
           onClick={() => void compress()}
-          disabled={busy !== null || !vaultPath}
+          disabled={busy !== null || !vaultPath || isOpeningVault}
           aria-busy={busy === "compress"}
           data-testid="archive-compress-btn"
         >
@@ -1144,7 +1185,7 @@ function SettingsArchive({
 
       {note ? (
         <div
-          style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+          style={{ color: "var(--ok)", fontSize: 12, marginTop: 8 }}
           data-testid="archive-note"
         >
           {note}
@@ -1155,14 +1196,14 @@ function SettingsArchive({
           style={{ fontSize: 12, marginTop: 6 }}
           data-testid="archive-failed"
         >
-          {(t.set_archive_failed ?? "Left untouched: {list}").replace(
+          {(t.set_archive_failed ?? "Incomplete buckets; available copies retained: {list}").replace(
             "{list}",
             failed.join("; "),
           )}
         </div>
       ) : null}
       {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+        <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>
           {error}
         </div>
       ) : null}
@@ -1313,7 +1354,7 @@ function SettingsProfile({
         ) : null}
       </div>
       {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+        <div style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}>
           {error}
         </div>
       ) : null}

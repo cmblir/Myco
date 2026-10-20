@@ -5,17 +5,16 @@
 import { useEffect } from "react";
 import type { JSX, KeyboardEvent } from "react";
 import type { Strings } from "../lib/i18n";
+import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import type { FileNode } from "../lib/ipc";
-import {
-  confirmAction,
-  pickDialog,
-  promptText,
-  useDialogStore,
-} from "../stores/dialogStore";
-import { dropNested, folderChoices } from "../lib/treeOps";
+import { promptText } from "../stores/dialogStore";
+import { dropNested } from "../lib/treeOps";
+import { deleteNotes, moveNotes, renameNote } from "../lib/noteActions";
 import { promptNewNote } from "../lib/newNote";
 import { newNoteFromTemplate } from "./TemplatePicker";
+import { Sheet, useSheetMode } from "./ui";
+import { stripExt } from "./SidebarTree";
 
 export interface ContextMenuState {
   x: number;
@@ -27,22 +26,36 @@ export interface ContextMenuState {
   opener: HTMLElement | null;
 }
 
+/** "Edited {date}" for a sheet's head; nothing for an unknown time. */
+export function editedLine(t: Strings, lang: string, secs: number | undefined): string | undefined {
+  if (!secs) return undefined;
+  let date: string;
+  try {
+    date = new Intl.DateTimeFormat(lang, { dateStyle: "medium", timeStyle: "short" }).format(
+      new Date(secs * 1000),
+    );
+  } catch {
+    date = new Date(secs * 1000).toISOString().slice(0, 16).replace("T", " ");
+  }
+  return t.sb_edited.replace("{date}", date);
+}
+
 export function ContextMenu({
   menu,
+  edited,
   onClose,
   clearSelection,
   t,
 }: {
   menu: ContextMenuState;
+  /** The row's last change (unix seconds), shown in the sheet's head. */
+  edited?: number;
   onClose: () => void;
   /** Called after a move or delete, so a stale selection never lingers. */
   clearSelection: () => void;
   t: Strings;
 }): JSX.Element {
   const createFolder = useVaultStore((s) => s.createFolder);
-  const deletePath = useVaultStore((s) => s.deletePath);
-  const renamePath = useVaultStore((s) => s.renamePath);
-  const movePaths = useVaultStore((s) => s.movePaths);
   const toggleFavorite = useVaultStore((s) => s.toggleFavorite);
   const favorites = useVaultStore((s) => s.favorites);
   const root = useVaultStore((s) => s.currentVault?.path ?? "");
@@ -51,6 +64,9 @@ export function ContextMenu({
   // A folder and its children count once: the store acts on the ancestor only.
   const n = String(dropNested(paths).length);
   const starred = favorites.includes(node.path.slice(root.length + 1));
+  const lang = useUIStore((s) => s.lang);
+  // A phone width or a touch screen: the same items rise as a sheet (UX S49).
+  const sheet = useSheetMode();
 
   useEffect(() => () => menu.opener?.focus(), [menu.opener]);
 
@@ -97,54 +113,23 @@ export function ContextMenu({
 
   async function handleMove(): Promise<void> {
     onClose();
-    const choices = folderChoices(useVaultStore.getState().fileTree, root, paths);
-    if (choices.length === 0) return;
-    const dir = await pickDialog({
-      title: (t.sb_move_title ?? "Move {n} item(s) to").replace("{n}", n),
-      body: <FolderList choices={choices} rootLabel={t.sb_move_root ?? "Vault root"} />,
-    });
-    if (!dir) return;
-    await movePaths(paths, dir);
-    clearSelection();
+    if (await moveNotes(paths, t)) clearSelection();
   }
 
   async function handleRename(): Promise<void> {
     onClose();
-    const newName = await promptText({
-      title: t.sb_rename ?? "Rename…",
-      message: (t.sb_rename_msg ?? "Rename “{name}” to:").replace("{name}", node.name),
-      defaultValue: node.name,
-    });
-    if (!newName || newName === node.name) return;
-    await renamePath(node.path, newName);
+    await renameNote(node.path, t);
   }
 
   async function handleDelete(): Promise<void> {
     onClose();
-    const ok = await confirmAction({
-      title: many
-        ? (t.sb_delete_n_q ?? "Delete {n} items?").replace("{n}", n)
-        : node.kind === "directory"
-          ? (t.sb_delete_folder_q ?? "Delete folder?")
-          : (t.sb_delete_file_q ?? "Delete file?"),
-      // delete_path trashes (vault.rs), so say so instead of "permanently".
-      message: many
-        ? (t.sb_delete_msg ?? "{n} item(s) will move to the Trash.").replace("{n}", n)
-        : (t.sb_delete_one_msg ?? "“{name}” will move to the Trash.").replace(
-            "{name}",
-            node.name,
-          ),
-      danger: true,
-    });
-    if (!ok) return;
-    await deletePath(paths);
-    clearSelection();
+    if (await deleteNotes(paths, t, node.kind === "directory")) clearSelection();
   }
 
-  return (
+  const list = (
     <ul
       className="myco-menu"
-      style={{ left: menu.x, top: menu.y }}
+      style={sheet ? undefined : { left: menu.x, top: menu.y }}
       role="menu"
       onClick={(e) => e.stopPropagation()}
       onKeyDown={onKey}
@@ -198,30 +183,15 @@ export function ContextMenu({
       </li>
     </ul>
   );
-}
-
-/** Move-to destinations as full-width buttons; picking one closes the dialog with its path. */
-function FolderList({
-  choices,
-  rootLabel,
-}: {
-  choices: { path: string; label: string }[];
-  rootLabel: string;
-}): JSX.Element {
-  const close = useDialogStore((s) => s.close);
+  if (!sheet) return list;
   return (
-    <div style={{ display: "grid", gap: "0.35rem" }}>
-      {choices.map((c) => (
-        <button
-          key={c.path}
-          type="button"
-          className="myco-modal__btn"
-          style={{ width: "100%", textAlign: "left" }}
-          onClick={() => close(c.path)}
-        >
-          {c.label || rootLabel}
-        </button>
-      ))}
-    </div>
+    <Sheet
+      title={many ? t.sb_n_items.replace("{n}", n) : stripExt(node.name)}
+      meta={many ? undefined : editedLine(t, lang, edited)}
+      closeLabel={t.ui_close}
+      onClose={onClose}
+    >
+      {list}
+    </Sheet>
   );
 }

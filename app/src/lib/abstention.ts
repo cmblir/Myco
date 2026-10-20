@@ -6,12 +6,10 @@
 import { hitTier, sourceTier } from "./extractive";
 import type { NearMiss, ScoredChunk } from "./ipc";
 
-/** No hit carries a dense cosine at or above `floor`. A lexical-only hit
- * (no cosine) keeps its place in an answer that has dense evidence, but on
- * its own it is a keyword coincidence, not grounds — so it does not rescue
- * an otherwise empty result. */
+/** Exact source verification and dense relevance are independent evidence.
+ * An unverified keyword coincidence never rescues an empty result. */
 export function shouldAbstain(hits: ScoredChunk[], floor: number): boolean {
-  return !hits.some((h) => h.similarity != null && h.similarity >= floor);
+  return !hits.some((h) => h.exact_match === true || (h.similarity != null && h.similarity >= floor));
 }
 
 /** Near-miss rows for the abstention card: the rejected hits plus any
@@ -23,7 +21,7 @@ export function nearMissesOf(
   max = 4,
 ): NearMiss[] {
   const lexical: NearMiss[] = hits
-    .filter((h) => h.similarity == null)
+    .filter((h) => h.similarity == null && h.exact_match !== true)
     .map((h) => ({
       page: h.page,
       tier: hitTier(sourceTier(h.page)),

@@ -1,0 +1,14 @@
+.notch-settings-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.notch-settings-toggle__thumb {
+  transition: left 150ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .notch-settings-toggle__thumb {
+    transition: none;
+  }
+}

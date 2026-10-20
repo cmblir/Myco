@@ -16,6 +16,9 @@ export interface RailProps {
   onToggle?: () => void;
   /** Pinned under the scrolling list — a key the list must not scroll away. */
   footer?: ReactNode;
+  /** A control at the end of a plain head (the gaps rail's 정리). Not for a
+   *  collapsible rail: its head is itself a button. */
+  action?: ReactNode;
   children?: ReactNode;
 }
 
@@ -30,6 +33,7 @@ export function Rail({
   open,
   onToggle,
   footer,
+  action,
   children,
 }: RailProps): JSX.Element {
   const collapsible = Boolean(onToggle);
@@ -60,7 +64,10 @@ export function Rail({
           {head}
         </button>
       ) : (
-        <header className="u-rail__head">{head}</header>
+        <header className="u-rail__head">
+          {head}
+          {action}
+        </header>
       )}
       {shown ? <div className="u-rail__list">{children}</div> : null}
       {shown && footer ? <div className="u-rail__foot">{footer}</div> : null}

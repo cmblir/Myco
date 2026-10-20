@@ -32,6 +32,12 @@ describe("shouldAbstain", () => {
       false,
     );
   });
+
+  it("accepts a verified exact identifier even below the dense floor", () => {
+    expect(shouldAbstain([chunk({ similarity: 0.31, exact_match: true })], 0.42)).toBe(false);
+    expect(shouldAbstain([chunk({ similarity: null, exact_match: true })], 0.42)).toBe(false);
+    expect(shouldAbstain([chunk({ similarity: 0.31, exact_match: false })], 0.42)).toBe(true);
+  });
 });
 
 describe("nearMissesOf", () => {

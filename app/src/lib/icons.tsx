@@ -50,7 +50,9 @@ export type IconName =
   | "save"
   | "shield"
   | "mic"
-  | "star";
+  | "star"
+  | "calendar"
+  | "bell";
 
 export function Icon({
   name,
@@ -114,7 +116,9 @@ export function Icon({
     settings: (
       <>
         <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a8 8 0 0 0 0-6l1.5-1.5-2-3.4-2 1A8 8 0 0 0 12 3l-.5-2.2h-3L8 3a8 8 0 0 0-5 2.1l-2-1L-1 7l1.5 1.5a8 8 0 0 0 0 6L-1 16l2 3.4 2-1A8 8 0 0 0 8 21l.5 2.2h3L12 21a8 8 0 0 0 5-2.1l2 1 2-3.4z" />
+        {/* The teeth are centred on the hub at x = 12; they once sat 2 units left
+            and ran past the viewBox, so the left teeth were clipped. */}
+        <path d="M21.4 15a8 8 0 0 0 0-6l1.5-1.5-2-3.4-2 1A8 8 0 0 0 14 3l-.5-2.2h-3L10 3a8 8 0 0 0-5 2.1l-2-1L1 7l1.5 1.5a8 8 0 0 0 0 6L1 16l2 3.4 2-1A8 8 0 0 0 10 21l.5 2.2h3L14 21a8 8 0 0 0 5-2.1l2 1 2-3.4z" />
       </>
     ),
     sun: (
@@ -248,6 +252,18 @@ export function Icon({
     ),
     star: (
       <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.2 1 5.9L12 17l-5.2 2.8 1-5.9-4.3-4.2 5.9-.8z" />
+    ),
+    calendar: (
+      <>
+        <path d="M4 6h16v14H4z" />
+        <path d="M4 10h16M8 3v5M16 3v5" />
+      </>
+    ),
+    bell: (
+      <>
+        <path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 8 2.5 8h-17S6 15 6 9z" />
+        <path d="M10 20.5a2.2 2.2 0 0 0 4 0" />
+      </>
     ),
   };
   return <svg {...props}>{paths[name] ?? null}</svg>;

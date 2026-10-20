@@ -15,9 +15,8 @@ use std::sync::Mutex;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
-/// Event the frontend listens on for tray menu actions. Payload is an opaque
-/// string the frontend expands, e.g. "overview" | "links" | "settings" |
-/// "query" | "distill".
+/// Event the frontend listens on for tray actions. Navigation carries an
+/// opaque string; mutations carry the originating vault scope and optional ACK ID.
 pub const TRAY_ACTION_EVENT: &str = "myco://tray-action";
 
 /// Event the tray-panel window listens on for live status pushes; the same
@@ -56,6 +55,10 @@ pub struct TrayStatus {
     /// progress bar), rendered as disabled info items at the top.
     #[serde(default)]
     pub running: Vec<RunningRow>,
+    /// Running-row kinds whose last run failed. The notch reads it to end a
+    /// run on a failure instead of on done; the menu never does.
+    #[serde(default)]
+    pub failed: Vec<String>,
     /// Section headers, rendered as disabled rows above their section —
     /// native menus have no styled headers, a disabled item is the
     /// platform-honest equivalent. Empty string (or an empty section)
@@ -128,6 +131,43 @@ pub struct TrayProposal {
     pub sub: String,
 }
 
+/// Identity of the main window's vault session when a panel snapshot was built.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultActionScope {
+    pub vault_path: String,
+    pub vault_token: String,
+}
+
+fn cached_action_scope(status: &TrayStatus) -> Option<VaultActionScope> {
+    serde_json::from_value(status.panel.get("actionScope")?.clone()).ok()
+}
+
+fn scoped_action_payload(
+    status: &TrayStatus,
+    action: &str,
+    scope: Option<VaultActionScope>,
+    request_id: Option<String>,
+) -> Result<serde_json::Value, String> {
+    let scope = scope.ok_or("Vault action context is missing")?;
+    if scope.vault_path.trim().is_empty()
+        || scope.vault_token.trim().is_empty()
+        || cached_action_scope(status).as_ref() != Some(&scope)
+    {
+        return Err("Vault action context is stale".into());
+    }
+    // This cache check supplements the main window's current-session check;
+    // the cache can lag behind a vault switch and is not filesystem authority.
+    let mut payload = serde_json::json!({ "action": action, "scope": scope });
+    if let Some(id) = request_id {
+        if id.trim().is_empty() {
+            return Err("Tray action request ID is empty".into());
+        }
+        payload["requestId"] = serde_json::Value::String(id);
+    }
+    Ok(payload)
+}
+
 /// Pre-translated "today's inflow" lines for the tray-panel window, plus the
 /// hourly buckets its sparkbar draws. The native menu uses only `summary`.
 /// Rows are split label / sub / count so the panel can right-align the counts
@@ -173,7 +213,7 @@ impl TrayStatus {
     }
 }
 
-fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
+pub(crate) fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
         let _ = win.unminimize();
@@ -211,7 +251,15 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
             // face. From the popover this also keeps the panel focused and
             // open, so the user watches it flip to "증류 중 — …" live via the
             // status push instead of everything vanishing on click.
-            let _ = app.emit(TRAY_ACTION_EVENT, "distill");
+            let status = app.state::<TrayStatusCache>().0.lock().unwrap().clone();
+            match scoped_action_payload(&status, "distill", cached_action_scope(&status), None) {
+                Ok(payload) => {
+                    if let Err(error) = app.emit(TRAY_ACTION_EVENT, payload) {
+                        eprintln!("tray_action_emit_failed: {error}");
+                    }
+                }
+                Err(error) => eprintln!("tray_action_rejected: {error}"),
+            }
         }
         _ => {}
     }
@@ -623,7 +671,12 @@ pub fn resize_tray_panel(app: AppHandle, height: f64) -> Result<(), String> {
 /// handler as the native menu rows so both surfaces behave identically
 /// (including resident-mode show and quit). "dismiss" just hides the panel.
 #[tauri::command]
-pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
+pub fn tray_panel_action(
+    app: AppHandle,
+    action: String,
+    scope: Option<VaultActionScope>,
+    request_id: Option<String>,
+) -> Result<(), String> {
     // Navigation/quit actions close the popover (they move the user
     // somewhere else). "distill" does NOT: the panel stays open and
     // live-updates to show the run it just started — closing it read as
@@ -631,20 +684,18 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
     // Map-proposal decisions stay open too, for the same reason as "distill":
     // the row leaves on the next status push, which is the feedback.
     let is_proposal_decision = action.starts_with("proposal-");
-    if action != "distill" && !is_proposal_decision {
-        if let Some(win) = app.get_webview_window(PANEL_LABEL) {
-            let _ = win.hide();
-        }
-    }
-    // The path travels in the action string; only the main window (which owns
-    // distillStore, the single writer) can act on it.
-    if is_proposal_decision {
-        let _ = app.emit(TRAY_ACTION_EVENT, action.as_str());
+    if action == "distill" || is_proposal_decision {
+        let status = app.state::<TrayStatusCache>().0.lock().unwrap().clone();
+        let payload = scoped_action_payload(&status, &action, scope, request_id)?;
+        app.emit(TRAY_ACTION_EVENT, payload)
+            .map_err(|error| error.to_string())?;
         return Ok(());
+    }
+    if let Some(win) = app.get_webview_window(PANEL_LABEL) {
+        let _ = win.hide();
     }
     let menu_id = match action.as_str() {
         "query" => "tray-query",
-        "distill" => "tray-distill",
         "open" => "tray-open",
         "quit" => "tray-quit",
         "overview" => "tray-overview",
@@ -665,6 +716,111 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn scoped_status() -> (TrayStatus, VaultActionScope) {
+        let scope = VaultActionScope {
+            vault_path: "/synthetic/vault-a".into(),
+            vault_token: "synthetic-open-a".into(),
+        };
+        let status = TrayStatus {
+            panel: serde_json::json!({ "actionScope": scope }),
+            ..TrayStatus::default()
+        };
+        (status, scope)
+    }
+
+    #[test]
+    fn panel_decisions_preserve_their_snapshot_scope_and_ack_id() {
+        let (status, scope) = scoped_status();
+        let payload = scoped_action_payload(
+            &status,
+            "proposal-approve:work/feedback/shared.md",
+            Some(scope.clone()),
+            Some("synthetic-request".into()),
+        )
+        .unwrap();
+        assert_eq!(payload["scope"], serde_json::to_value(scope).unwrap());
+        assert_eq!(payload["requestId"], "synthetic-request");
+        assert_eq!(
+            payload["action"],
+            "proposal-approve:work/feedback/shared.md"
+        );
+    }
+
+    #[test]
+    fn stale_panel_paths_and_reopened_vault_tokens_are_rejected() {
+        let (status, scope) = scoped_status();
+        for stale in [
+            VaultActionScope {
+                vault_path: "/synthetic/vault-b".into(),
+                ..scope.clone()
+            },
+            VaultActionScope {
+                vault_token: "synthetic-previous-open-a".into(),
+                ..scope
+            },
+        ] {
+            assert!(scoped_action_payload(&status, "distill", Some(stale), None).is_err());
+        }
+    }
+
+    #[test]
+    fn unscoped_or_uninitialized_panel_mutations_fail_closed() {
+        let (status, scope) = scoped_status();
+        assert!(scoped_action_payload(&status, "distill", None, None).is_err());
+        assert!(scoped_action_payload(&TrayStatus::boot(), "distill", Some(scope), None).is_err());
+    }
+
+    #[test]
+    fn empty_context_and_empty_request_ids_are_rejected() {
+        let (mut status, scope) = scoped_status();
+        assert!(
+            scoped_action_payload(&status, "distill", Some(scope.clone()), Some(" ".into()))
+                .is_err()
+        );
+        for empty in [
+            VaultActionScope {
+                vault_path: "".into(),
+                ..scope.clone()
+            },
+            VaultActionScope {
+                vault_token: "".into(),
+                ..scope
+            },
+        ] {
+            status.panel = serde_json::json!({ "actionScope": empty });
+            assert!(scoped_action_payload(&status, "distill", Some(empty), None).is_err());
+        }
+    }
+
+    #[test]
+    fn native_menu_mutations_keep_context_without_requesting_an_ack() {
+        let (status, scope) = scoped_status();
+        let payload = scoped_action_payload(&status, "distill", Some(scope), None).unwrap();
+        assert!(payload.get("scope").is_some());
+        assert!(payload.get("requestId").is_none());
+    }
+
+    #[test]
+    fn cached_panel_context_survives_the_native_status_round_trip() {
+        let (status, scope) = scoped_status();
+        let encoded = serde_json::to_string(&status).unwrap();
+        let decoded: TrayStatus = serde_json::from_str(&encoded).unwrap();
+        assert_eq!(cached_action_scope(&decoded), Some(scope));
+    }
+
+    #[test]
+    fn the_failed_jobs_reach_the_notch_through_the_stored_status() {
+        // The notch hears the status Rust re-emits, so a field serde drops
+        // would bring myco home celebrating a failed run.
+        let s: TrayStatus = serde_json::from_str(r#"{"running":[],"failed":["ingest"]}"#).unwrap();
+        assert_eq!(
+            serde_json::to_value(&s).unwrap()["failed"],
+            serde_json::json!(["ingest"])
+        );
+        let old: TrayStatus = serde_json::from_str(r#"{"running":[]}"#).unwrap();
+        assert!(old.failed.is_empty());
+    }
 
     #[test]
     fn a_click_right_after_a_blur_hide_means_close_not_reshow() {

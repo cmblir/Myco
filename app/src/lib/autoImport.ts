@@ -15,16 +15,43 @@ import { log } from "./log";
 import { useImportStore } from "../stores/importStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
+import { useVaultStore } from "../stores/vaultStore";
+import type { ImportOutcome } from "./ipc";
+import type { WorkflowStatus } from "./workflowOutcome";
 
 const KINDS = ["claude-code", "codex"] as const;
 
-/** When the last sweep finished (any kind succeeded), ms epoch. Module-level
+/** When the last clean sweep finished, ms epoch. Module-level
  * because the scheduler keeps no other state; the inflow section's "last
  * sweep" sub-line is its only reader. Null until a sweep completes. */
-let lastSweepAt: number | null = null;
+let lastCleanSweep: { vaultPath: string; vaultToken: string; at: number } | null = null;
+
+export interface SweepReceipt {
+  requestId: string;
+  vaultPath: string;
+  vaultToken: string;
+  startedAt: number;
+  finishedAt: number | null;
+  status: WorkflowStatus;
+  error?: string;
+  items: { kind: typeof KINDS[number]; outcome?: ImportOutcome; error?: string }[];
+}
+
+let lastReceipt: SweepReceipt | null = null;
+let activeSweep: object | null = null;
+
+function isCurrentScope(scope: { vaultPath: string; vaultToken: string }): boolean {
+  const current = useVaultStore.getState();
+  return !current.isOpeningVault && current.currentVault?.path === scope.vaultPath &&
+    current.vaultToken === scope.vaultToken;
+}
 
 export function getLastSweepAt(): number | null {
-  return lastSweepAt;
+  return lastCleanSweep && isCurrentScope(lastCleanSweep) ? lastCleanSweep.at : null;
+}
+
+export function getLastSweepReceipt(): SweepReceipt | null {
+  return lastReceipt && isCurrentScope(lastReceipt) ? lastReceipt : null;
 }
 
 function busy(): boolean {
@@ -49,21 +76,60 @@ function busy(): boolean {
  * session directory doesn't exist (tool not installed) — that is the normal
  * state on most machines, not an error worth surfacing. */
 export async function runSessionSweep(): Promise<void> {
-  if (busy()) return;
-  for (const kind of KINDS) {
-    try {
-      const out = await ipc.importSessionSweep(kind);
-      lastSweepAt = Date.now();
-      if (out.imported > 0) {
-        log.info("auto_import.swept", {
-          kind,
-          imported: out.imported,
-          skipped: out.skipped,
-        });
-      }
-    } catch {
-      /* no session dir / vault closed — retry next tick */
+  const { currentVault: vault, vaultToken, isOpeningVault } = useVaultStore.getState();
+  if (!vault || isOpeningVault || busy() || activeSweep) return;
+  const owner = {};
+  activeSweep = owner;
+  const receipt: SweepReceipt = {
+    requestId: crypto.randomUUID(), vaultPath: vault.path, vaultToken, startedAt: Date.now(), finishedAt: null,
+    status: "pending", items: [],
+  };
+  lastReceipt = receipt;
+  try {
+    const origin = Object.freeze(await ipc.agentVaultSession());
+    if (!isCurrentScope(receipt)) return;
+    if (origin.vaultPath !== vault.path) {
+      throw new Error("Native sweep opening differs from the requested vault");
     }
+    for (const kind of KINDS) {
+      if (!isCurrentScope(receipt)) return;
+      if (busy()) break;
+      try {
+        const out = await ipc.importSessionSweep(kind, origin, receipt.requestId);
+        if (!isCurrentScope(receipt)) return;
+        receipt.items.push({ kind, outcome: out });
+        if (out.failed.length || out.quarantined.length) {
+          log.warn("auto_import.incomplete", {
+            kind, failed: out.failed.length, quarantined: out.quarantined.length,
+          });
+        } else if (out.imported > 0) {
+          log.info("auto_import.swept", { kind, imported: out.imported, skipped: out.skipped });
+        }
+      } catch (error) {
+        if (!isCurrentScope(receipt)) return;
+        receipt.items.push({ kind, error: String(error) });
+        log.warn("auto_import.failed", { kind, code: "import_failed" });
+      }
+    }
+    const incomplete = receipt.items.length !== KINDS.length ||
+      receipt.items.some(item => item.error || item.outcome?.failed.length || item.outcome?.quarantined.length);
+    const progressed = receipt.items.some(item => item.outcome &&
+      (item.outcome.imported + item.outcome.skipped > 0 ||
+        item.outcome.failed.length === 0 && item.outcome.quarantined.length === 0));
+    receipt.status = !incomplete ? "success" : progressed ? "partial" :
+      receipt.items.some(item => item.error || item.outcome?.failed.length) ? "failed" : "pending";
+    receipt.finishedAt = Date.now();
+    if (receipt.status === "success") {
+      lastCleanSweep = { vaultPath: vault.path, vaultToken, at: receipt.finishedAt };
+    }
+  } catch (error) {
+    if (!isCurrentScope(receipt)) return;
+    receipt.status = "failed";
+    receipt.finishedAt = Date.now();
+    receipt.error = String(error);
+    log.warn("auto_import.failed", { code: "opening_failed" });
+  } finally {
+    if (activeSweep === owner) activeSweep = null;
   }
 }
 

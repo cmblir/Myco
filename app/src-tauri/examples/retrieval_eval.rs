@@ -30,7 +30,7 @@ use std::path::PathBuf;
 use myco_lib::rerank::Reranker;
 use myco_lib::{
     embeddings,
-    local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
+    local_llm::{embed_spec_by_id, EmbedRole, LocalLlm},
     retrieval::{apply_tier_prior, rrf_fuse, Bm25Index, TierWeights},
     sample_vault,
     vector_index::VectorStore,
@@ -73,21 +73,24 @@ fn main() {
             .expect("parse eval set");
 
     eprintln!("loading model {} (spec: {spec_id}) …", model_path.display());
-    let llm = LocalLlm::load(&model_path).expect("load model");
+    let mut llm = if spec_id == "gemma" {
+        LocalLlm::load(&model_path).expect("load chat baseline")
+    } else {
+        LocalLlm::load_embed_host().expect("embed host")
+    };
+    if spec_id != "gemma" {
+        llm.load_embed_model(&model_path).expect("load embed model");
+    }
 
     // Document/query embedding, branched once here (DRY) instead of at each
-    // call site. The non-gemma branch runs the shared pooling core
-    // (`embed_pooled`) against the SAME loaded model rather than `embed_spec`,
-    // which would need a second load via `load_embed_model` — both produce
-    // identical vectors since they share the pooling core, but this avoids
-    // loading the model file twice.
+    // call site. Purpose-built models use the production role-prefix and
+    // token-window path, including every long passage's tail.
     let doc_vecs = |llm: &LocalLlm, chunks: &[String]| -> Vec<Vec<f32>> {
         if spec_id == "gemma" {
             llm.embed(chunks).expect("embed page")
         } else {
             let spec = embed_spec_by_id(&spec_id).expect("known spec");
-            let prefixed = apply_prefix(spec, EmbedRole::Document, chunks);
-            llm.embed_pooled(&prefixed, spec.pooling, spec.max_ctx)
+            llm.embed_spec(spec, EmbedRole::Document, chunks)
                 .expect("embed page")
         }
     };
@@ -99,8 +102,7 @@ fn main() {
                 .unwrap()
         } else {
             let spec = embed_spec_by_id(&spec_id).expect("known spec");
-            let prefixed = apply_prefix(spec, EmbedRole::Query, &[q.to_string()]);
-            llm.embed_pooled(&prefixed, spec.pooling, spec.max_ctx)
+            llm.embed_spec(spec, EmbedRole::Query, &[q.to_string()])
                 .expect("embed query")
                 .pop()
                 .unwrap()
@@ -140,7 +142,9 @@ fn main() {
         chunks_total += chunks.len();
         pages += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
-        store.upsert_page(&rel, &stem, entries);
+        store
+            .upsert_page(&rel, &stem, entries)
+            .expect("valid dense index vectors");
         bm25.upsert_page(&rel, &stem, &chunks);
         for (i, c) in chunks.iter().enumerate() {
             chunk_text.insert(format!("{rel}#{i}"), c.clone());
@@ -171,7 +175,9 @@ fn main() {
             chunks_total += chunks.len();
             pages += 1;
             let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
-            store.upsert_page(&rel, &stem, entries);
+            store
+                .upsert_page(&rel, &stem, entries)
+                .expect("valid dense index vectors");
             bm25.upsert_page(&rel, &stem, &chunks);
             for (i, c) in chunks.iter().enumerate() {
                 chunk_text.insert(format!("{rel}#{i}"), c.clone());
@@ -315,7 +321,9 @@ fn main() {
     let tier_prior = std::env::var("MYCO_TIER_PRIOR").is_ok();
     for lab in &set.queries {
         let qvec = query_vec(&llm, &lab.q);
-        let dense_hits = store.search(&qvec, 40);
+        let dense_hits = store
+            .search(&qvec, 40)
+            .expect("valid dense search geometry");
         let bm25_query = if ko_strip {
             myco_lib::retrieval::strip_ko_particles(&lab.q)
         } else {

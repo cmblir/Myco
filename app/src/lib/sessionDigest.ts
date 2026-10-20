@@ -1,144 +1,71 @@
-// Session daily-digest (Phase B, Task 2). Collapses each day's raw agent
-// session logs into a handful of markdown bullets appended to daily/<day>.md,
-// then archives the source logs to the cold tier via ipc.archiveDigestedSessions
-// (Phase B, Task 1) — this is the step that actually shrinks the active index,
-// unlike Task 1's read-only bookkeeping.
+// Bounded session previews backed by complete, revision-bound quoted evidence.
+// Input files stay active until every chunk has a durable coverage receipt.
 
 import { ipc } from "./ipc";
-import { complete, getActiveModel } from "./chat";
+import type { AgentVaultSession, ArchiveOptions, ArchivePublication, ArchiveReceipt, DistillPublicationReceipt } from "./ipc";
+import { sha256 } from "./tidyRun";
+import { complete } from "./chat";
+import type { RoleSnapshot, RoleUsage } from "./modelRoles";
+import HEADS from "./mycoPromptHeads.json";
+import { cosine, dropNearDuplicates, renderQuoteBullets, stripFiller } from "./quoteBullets";
+import { writeEvidenceNote } from "./evidenceWrite";
+import { publicationClaim, publishManagedNote, requireNativeCreation, requirePublicationOrigin } from "./distillPublication";
+import { STRINGS, type Lang } from "./i18n";
+import { useUIStore } from "../stores/uiStore";
+import { WorkflowOperationError, workflowIssue, workflowStatus, type WorkflowProgress, type WorkflowIssue } from "./workflowOutcome";
+import { getLocalOrganizeModel, localTransformNote, LocalTransformSourceError, requireLocalTransformPreview, tryLocalTransform, type LocalTransformPreview } from "./localTransform";
 import {
-  cosine,
-  dropNearDuplicates,
-  renderQuoteBullets,
-  stripFiller,
-  type QuoteUnit,
-} from "./quoteBullets";
+  completedEvidenceSources, evidencePrompt, evidenceSection,
+  fingerprint, isMissingFile, nextEvidenceBatch, sourceEvidence, type EvidenceChunk,
+  type EvidenceSource,
+} from "./sessionEvidence";
 
-export interface DigestOutcome {
+export { fingerprint } from "./sessionEvidence";
+
+export interface DigestOutcome extends WorkflowProgress {
   daysDigested: number;
   filesArchived: number;
   skipped: "nothing" | null;
-  /** How this run produced its bullets: an LLM summary, or (builtin-local,
-   *  which has no generative model) extractive quotes ranked by embedding.
-   *  A marker-guarded day digested one way is never re-digested the other. */
   mode: "llm" | "extractive";
+  /** Unfinished files remain searchable and resume on the next run. */
+  filesPending?: number;
+  chunksProcessed?: number;
+  summaryFallbacks?: number;
 }
 
 export const DIGEST_SYSTEM =
-  "Extract only decisions, facts and outcomes from these agent session logs. " +
-  "Output 3-10 markdown bullets. No preamble. These are machine logs: mark " +
-  "uncertain items with '(uncertain)'.";
+  `${HEADS.sessionDigest} ` +
+  "Output 3-10 markdown bullets, citing the supplied source chunk IDs. No preamble. " +
+  "Preserve dates and historical changes; a decision mention is not proof of execution. " +
+  "Mark uncertain items with '(uncertain)'.";
 
-// Cheap guard against a pathological day (many/huge session files) blowing
-// the prompt budget — not a token-accurate count, just a char ceiling shared
-// across the day's files so the total stays roughly bounded regardless of
-// how many files landed on that day.
-const MAX_DAY_CHARS = 60_000;
-
-// Digest section header. Must differ from Rust's "## Distill summary (auto)"
-// (Task 1, the summary tier) — this is a separate section in the same file.
 const HEADER = "## Session digest (auto)";
-
-// Machine-readable record of WHICH session files a digest section covers,
-// written into the same daily/<day>.md write as the bullets themselves — so
-// there is no window where the digest is durable but the record isn't, and a
-// crash can never re-charge the LLM for work already on disk.
-// Parsed by distill.rs's digested_session_entries (DIGEST_MARKER_OPEN /
-// DIGEST_MARKER_CLOSE); keep the literals in lockstep. Anchored on the FILES,
-// not the day: session_day derives the day from frontmatter/mtime, so the same
-// file can bucket into a different day on a later run.
-const MARKER_OPEN = "<!-- myco:digested-sessions ";
-const MARKER_CLOSE = " -->";
-
-/** FNV-1a (32-bit) over `text`'s UTF-8 bytes, as 8 lowercase hex chars. Must
- * stay byte-identical to distill.rs's `content_fingerprint`, which reads back
- * what this writes. Not a cryptographic hash — it only has to notice that a
- * session file changed since it was digested. */
-export function fingerprint(text: string): string {
-  let h = 0x811c9dc5;
-  for (const b of new TextEncoder().encode(text)) {
-    h = Math.imul(h ^ b, 0x01000193);
-  }
-  return (h >>> 0).toString(16).padStart(8, "0");
-}
-
-// `<stem>:<fingerprint>` per file. The stem alone is the CONVERSATION id and
-// survives a re-import unchanged, so a conversation the user resumed would
-// match its own earlier record and be archived without ever being digested;
-// binding the record to the content makes the grown file a miss. Accepted
-// trade: that file is then digested in full, duplicating its earlier turns in
-// a later daily note — cheaper than losing the new half of a conversation.
-function digestMarker(files: string[], fingerprints: string[]): string {
-  const entries = files.map(
-    (f, i) => (f.split("/").pop() ?? f).replace(/\.md$/, "") + ":" + fingerprints[i],
-  );
-  return MARKER_OPEN + entries.join(" ") + MARKER_CLOSE;
-}
-
-// Fallback llm_digest_days when getDistillConfig is unavailable — mirrors
-// DistillConfig's Rust-side default.
 const DEFAULT_DIGEST_DAYS = 3;
 
-// ---------------------------------------------------------------------------
-// Extractive digest (builtin-local). No generative model is bundled (bge-m3
-// embeds only; Ask quotes notes verbatim), so instead of skipping the day the
-// digest quotes it: split the day's session docs into speaker turns, embed
-// them locally, rank by cosine to the day centroid with MMR diversity, and
-// emit the top picks as quoted bullets. Deterministic given the same inputs —
-// the embedder is, and MMR ties break to document order.
-// ---------------------------------------------------------------------------
-
-// Embedding-batch cap per day: bounds local embed time the way MAX_DAY_CHARS
-// bounds the LLM prompt. Candidates keep document order, so the cap drops the
-// tail of the day, mirroring buildDayPrompt's omission behaviour.
-const MAX_UNITS = 48;
-// Drops "ok"/"thanks" turns that could never carry a decision or outcome.
-const MIN_UNIT_CHARS = 40;
-// Per-unit slice for embedding and quoting — a turn can be pages long.
-const UNIT_CHARS = 600;
-// Rendered per-bullet cap.
-const BULLET_CHARS = 200;
-const MAX_BULLETS = 8;
-// MMR relevance/diversity trade-off. 0.6 (not the textbook 0.7) so an exact
-// duplicate of an already-picked quote always loses to a distinct one.
-const MMR_LAMBDA = 0.6;
-
-/** Split one session doc into candidate quote units. Importer-written docs
- * (importers/mod.rs `to_inbox_doc`) delimit turns with `**Role:**` headers;
- * hand-placed files without them fall back to blank-line paragraphs. */
-function splitTurns(doc: string): string[] {
-  let body = doc;
-  if (body.startsWith("---\n")) {
-    const end = body.indexOf("\n---\n", 4);
-    if (end >= 0) body = body.slice(end + 5);
-  }
-  const turns = body.split(/^\*\*(?:User|Assistant|System|Tool):\*\*\s*$/m);
-  return turns.length > 1 ? turns.slice(1) : body.split(/\n{2,}/);
+interface PendingEvidencePublication { receipt: DistillPublicationReceipt; sources: string; options: ArchiveOptions }
+// References to native-issued capabilities only. Restart/reopen never derives
+// ownership from existing bytes or evidence markers.
+const pendingPublications = new Map<string, PendingEvidencePublication>();
+function publicationKey(origin: AgentVaultSession, path: string): string {
+  return JSON.stringify([origin.vaultPath, origin.openingToken, path]);
+}
+function sourceSignature(sources: EvidenceSource[]): string {
+  return JSON.stringify(sources.map(source => [source.path, source.revision]).sort((a, b) => a[0].localeCompare(b[0])));
 }
 
-function candidateUnits(files: string[], contents: string[]): QuoteUnit[] {
-  const units: QuoteUnit[] = [];
-  for (let i = 0; i < files.length && units.length < MAX_UNITS; i++) {
-    const stem = (files[i].split("/").pop() ?? files[i]).replace(/\.md$/, "");
-    for (const turn of splitTurns(contents[i])) {
-      if (units.length >= MAX_UNITS) break;
-      // Collapse to one line — these render inside a single markdown bullet.
-      // Filler is stripped BEFORE the length filter and before embedding, so
-      // "네, 알겠습니다" both stops polluting the vector and stops a
-      // pure-acknowledgment turn from clearing MIN_UNIT_CHARS on its own.
-      const text = stripFiller(turn.replace(/\s+/g, " ").trim());
-      if (text.length < MIN_UNIT_CHARS) continue;
-      units.push({ text: text.slice(0, UNIT_CHARS), label: stem });
-    }
-  }
-  return units;
+/** Legacy full-file receipt, emitted only after all evidence chunks exist. */
+export function fullCoverageMarker(open: string, sources: EvidenceSource[]): string {
+  const entries = sources.map(source =>
+    (source.path.split("/").pop() ?? source.path).replace(/\.md$/, "") + ":" + source.revision,
+  );
+  return open + entries.join(" ") + " -->";
 }
 
 /** Indices of up to `k` vectors, MMR-selected against the (unnormalized)
  * centroid: score = λ·cos(v, centroid) − (1−λ)·max cos(v, picked). Ties break
  * to the lowest index, i.e. document order — that is what makes the whole
  * digest deterministic. Exported for its own test. */
-export function mmrSelect(vectors: number[][], k: number, lambda = MMR_LAMBDA): number[] {
+export function mmrSelect(vectors: number[][], k: number, lambda = 0.6): number[] {
   if (vectors.length === 0) return [];
   // Sum, not mean: cosine is scale-invariant, so dividing by n changes nothing.
   const centroid = new Array(vectors[0].length).fill(0);
@@ -163,181 +90,212 @@ export function mmrSelect(vectors: number[][], k: number, lambda = MMR_LAMBDA): 
   return picked;
 }
 
-/** The extractive counterpart of the day's `complete()` call: quoted bullets
- * grouped under the session that said them, top MAX_BULLETS by centroid+MMR
- * once near-duplicates are dropped. */
-async function extractiveBullets(files: string[], contents: string[]): Promise<string> {
-  const units = candidateUnits(files, contents);
-  // A day of blank/trivial files still deserves a section — the marker in the
-  // same write is what stops it being re-offered forever.
-  if (units.length === 0) return "- (no quotable content)";
-  const vectors = await ipc.embedLocalTexts(units.map((u) => u.text));
-  // Rank twice the target so the near-duplicate filter has replacements to
-  // fall through to: emitting 4 bullets because 4 restatements were dropped
-  // would lose content the day actually earned.
-  const ranked = dropNearDuplicates(mmrSelect(vectors, MAX_BULLETS * 2), vectors);
-  return renderQuoteBullets(units, ranked.slice(0, MAX_BULLETS), BULLET_CHARS);
+/** Embeddings select the preview only; all chunks are retained as evidence. */
+export async function extractiveEvidencePreview(batch: EvidenceChunk[], maxBullets = 8): Promise<string> {
+  const units = batch.map(chunk => ({
+    text: stripFiller(chunk.text.replace(/\s+/g, " ").trim()),
+    label: chunk.source.split("/").pop()?.replace(/\.md$/, "") ?? chunk.source,
+  })).filter(unit => unit.text.length >= 40);
+  if (!units.length) return "- (see source evidence below)";
+  const vectors = await ipc.embedLocalTexts(units.map(unit => unit.text));
+  if (vectors.length !== units.length) throw new Error("Evidence embedding count does not match input");
+  const ranked = dropNearDuplicates(mmrSelect(vectors, maxBullets * 2), vectors);
+  return renderQuoteBullets(units, ranked.slice(0, maxBullets), 220);
 }
 
-function buildDayPrompt(files: string[], contents: string[]): string {
-  let out = "";
-  let i = 0;
-  for (; i < files.length; i++) {
-    const remaining = MAX_DAY_CHARS - out.length;
-    if (remaining <= 0) break;
-    const name = files[i].split("/").pop() ?? files[i];
-    const header = `### ${name}\n`;
-    out += header + contents[i].slice(0, Math.max(0, remaining - header.length)) + "\n\n";
+/** Existing notes may be absent, but I/O errors must never erase their text. */
+export async function readDigestNote(path: string): Promise<string> {
+  try { return (await ipc.readFile(path)).raw; }
+  catch (error) {
+    if (isMissingFile(error)) return "";
+    throw error;
   }
-  // Files that never made it into the pool must say so — otherwise the model
-  // digests a partial day and has no way to signal it isn't the whole thing.
-  const omitted = files.length - i;
-  if (omitted > 0) {
-    out += `…(${omitted} more session logs omitted for length)\n`;
-  }
-  return out;
 }
 
-/** Read-or-empty + append, following Sidebar's DailyNoteButton idiom. Avoids
- * duplicating the header on repeat runs the same day: a second run appends
- * its bullets under a "_run of <ISO date>_" sub-line instead. Returns
- * whether this call created `daily/<day>.md` (vs. appending to one that
- * already existed) — the caller only needs to record a manifest `created`
- * entry (Important 4, Phase B whole-branch review) in the former case; an
- * appended-to-existing file was already visible to undo/the run report
- * before this run touched it. */
-async function appendDigest(
-  vaultPath: string,
-  day: string,
-  bullets: string,
-  files: string[],
-  fingerprints: string[],
-  extractive: boolean,
-): Promise<boolean> {
-  const filePath = `${vaultPath}/daily/${day}.md`;
-  // Blank counts as missing: an earlier crash could leave a zero-byte
-  // daily/<day>.md that reads back fine, and the retry would then skip the
-  // only place that seeds the title and sets `created` — producing an
-  // untitled daily note whose content undo never hears about. There is no
-  // separate create step any more; writeFile is tmpfile+fsync+rename and
-  // creates the file itself, so the window that made the blank file is gone.
-  const existingRaw = await ipc
-    .readFile(filePath)
-    .then((f) => f.raw)
-    .catch(() => "");
-  const created = existingRaw.trim() === "";
-  if (created) {
-    try {
-      await ipc.createFolder(vaultPath, "daily");
-    } catch {
-      /* already exists */
+/** Provider output is a preview, never an authorization to discard evidence. */
+export async function evidencePreview(
+  batch: EvidenceChunk[], vaultPath: string, system: string, extractive: boolean,
+  options: { localModelId?: string; lang?: Lang; signal?: AbortSignal; originals?: ReadonlyMap<string, string>; origin?: AgentVaultSession; roleSnapshot?: RoleSnapshot; usage?: RoleUsage } = {},
+): Promise<{ text: string; extractive: boolean; fallback: boolean; localPreview?: LocalTransformPreview }> {
+  if (!batch.length) return { text: "", extractive, fallback: false };
+  if (options.localModelId) {
+    const lang = options.lang ?? useUIStore.getState().lang;
+    const local = await tryLocalTransform({ batch, vaultPath, kind: "organize", modelId: options.localModelId,
+      lang, signal: options.signal, originals: options.originals, origin: options.origin, roleSnapshot: options.roleSnapshot });
+    if (local) {
+      // Native verifies its preview subset. Durable quotes also need the
+      // revisions of the other source files in this bounded 48-chunk batch.
+      const revisions = new Map(batch.map(chunk => [chunk.source, chunk.revision]));
+      for (const [page, revision] of revisions) {
+        if (options.signal?.aborted) throw new Error("stopped");
+        let raw: string;
+        try { raw = (await ipc.readFile(`${vaultPath}/${page}`)).raw; }
+        catch { throw new LocalTransformSourceError("source_verification_failed"); }
+        if (fingerprint(raw) !== revision) throw new LocalTransformSourceError("source_changed_during_generation");
+      }
+      if (options.signal?.aborted) throw new Error("stopped");
+      requireLocalTransformPreview(local);
+      return { text: `_${localTransformNote(local, STRINGS[lang])}_\n\n${local.text}`,
+        extractive: false, fallback: false, localPreview: local };
     }
+    throw new WorkflowOperationError("pending", "unavailable", "Selected local preview could not be prepared; source remains pending");
   }
-  const existing = created ? `# ${day}\n\n` : existingRaw;
-  const marker = digestMarker(files, fingerprints);
-  // The HEADER itself never changes (distill.rs and repeat-run detection key
-  // on it) — extractive runs are labeled in the sub-line instead.
-  const label = extractive
-    ? `_from ${files.length} session logs — extractive quotes (no LLM)_`
-    : `_from ${files.length} session logs — low confidence_`;
-  const runLine = extractive
-    ? `_run of ${new Date().toISOString()} (extractive)_`
-    : `_run of ${new Date().toISOString()}_`;
-  const section = existing.includes(HEADER)
-    ? `\n${runLine}\n${marker}\n${bullets.trim()}\n`
-    : `\n${HEADER}\n${label}\n${marker}\n${bullets.trim()}\n`;
-  // One atomic write (vault::write_file is tmpfile+fsync+rename) carrying both
-  // the digest text and the record of what it covers.
-  await ipc.writeFile(filePath, existing + section);
-  return created;
+  if (extractive) return { text: await extractiveEvidencePreview(batch), extractive: true, fallback: false };
+  const text = await complete({
+      task: "generate", featureRole: "organization", usage: options.usage, origin: options.origin, roleSnapshot: options.roleSnapshot, cwd: vaultPath,
+      messages: [{ role: "system", content: system }, { role: "user", content: evidencePrompt(batch) }],
+    });
+    if (!text.trim() || !/^[-*] .+/m.test(text) || text.length > 20_000) {
+      throw new Error("Digest preview did not contain valid markdown bullets");
+    }
+  return { text, extractive: false, fallback: false };
 }
 
-/** Digests up to `llm_digest_days` of the oldest digestable session-log days
- * into daily/<day>.md, one LLM call per day, then archives the source files
- * to the cold tier. Stops at the first day that errors (logged, not thrown)
- * so a bad day never gets archived — everything before it still did. */
-export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome> {
-  const { provider } = await getActiveModel("query");
-  // builtin-local used to skip here ("no-provider") — it now digests
-  // extractively instead: quotes ranked by the bundled embedder, no LLM call.
-  // Everything else (marker, manifest, archive) is the same machinery.
-  const extractive = provider === "builtin-local";
-  const mode = extractive ? ("extractive" as const) : ("llm" as const);
+/** Rebuild an append after a cooperating editor save changes the note.
+ * Complete-file markers and partial receipts share the same conditional write. */
+export async function appendEvidenceDigest(args: {
+  vaultPath: string; origin: AgentVaultSession; directory: "daily" | "weekly" | "monthly"; bucket: string; header: string;
+  sourceLabel: string; sources: EvidenceSource[]; batch: EvidenceChunk[];
+  preview: string; extractive: boolean; markerOpen: string;
+  localPreview?: LocalTransformPreview; roleSnapshot?: RoleSnapshot;
+}): Promise<{ created: boolean; complete: EvidenceSource[]; publication: ArchivePublication; options: ArchiveOptions }> {
+  const { vaultPath, directory, bucket, sources, batch } = args;
+  requirePublicationOrigin(args.origin, vaultPath);
+  const filePath = `${vaultPath}/${directory}/${bucket}.md`;
+  let receipt: DistillPublicationReceipt | undefined;
+  const timestamp = new Date().toISOString();
+  const written = await writeEvidenceNote({
+    readFile: ipc.readFile,
+    writeFileIfUnchanged: async (_path, content, expected) => {
+      const complete = completedEvidenceSources(sources, content);
+      const operationId = await evidenceOperationId(args.origin, directory, bucket, complete, `${directory}/${bucket}.md`, await sha256(content));
+      receipt = await publishManagedNote(args.origin, operationId, { kind: directory, key: bucket }, content, expected, args.roleSnapshot);
+    },
+  }, filePath, current => {
+    const existing = current || `# ${bucket}\n\n`;
+    const evidence = evidenceSection(sources, batch);
+    const completeSources = completedEvidenceSources(sources, existing + evidence);
+    const marker = completeSources.length ? fullCoverageMarker(args.markerOpen, completeSources) : "";
+    const label = args.localPreview ? "low confidence" : args.extractive ? "extractive quotes (no LLM)" : "low confidence";
+    const opening = existing.includes(args.header)
+      ? `\n_run of ${timestamp}${args.extractive && !args.localPreview ? " (extractive)" : ""}_\n`
+      : `\n${args.header}\n_from ${sources.length} ${args.sourceLabel} — ${label}_\n`;
+    const content = existing + opening + marker + "\n" + args.preview.trim() + "\n" + evidence;
+    return { content, result: { complete: completeSources } };
+  });
+  if (!receipt) throw new WorkflowOperationError("pending", "validation_rejected", "Missing native publication receipt; manual recovery required");
+  const options: ArchiveOptions = { origin: args.origin, manifestId: receipt.operationId,
+    publications: [publicationClaim(receipt)], publicationIds: [receipt.publicationId] };
+  pendingPublications.set(publicationKey(args.origin, receipt.path), { receipt, options, sources: sourceSignature(written.complete) });
+  return { created: receipt.nativeCreated, complete: written.complete, publication: publicationClaim(receipt), options };
+}
 
-  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
-  const digestDays = cfg?.llm_digest_days ?? DEFAULT_DIGEST_DAYS;
-  const days = (await ipc.digestableSessionDays(vaultPath)).slice(0, digestDays);
-  if (days.length === 0) {
-    return { daysDigested: 0, filesArchived: 0, skipped: "nothing", mode };
+/** Compute the operation before the native write; it does not grant ownership. */
+async function evidenceOperationId(origin: AgentVaultSession, layer: string, bucket: string,
+  sources: EvidenceSource[], path: string, revision: string): Promise<string> {
+  const digest = await sha256(JSON.stringify([origin.vaultPath, layer, bucket,
+    sources.map(source => [source.path, source.revision]).sort((a, b) => a[0].localeCompare(b[0])),
+    path, revision]));
+  return `llm-${BigInt(`0x${digest.slice(0, 15)}`).toString()}`;
+}
+
+/** Retry only a capability retained from this process and original opening. */
+export async function evidenceArchiveOptions(origin: AgentVaultSession, layer: string, bucket: string,
+  sources: EvidenceSource[], existing: string): Promise<ArchiveOptions> {
+  requirePublicationOrigin(origin, origin.vaultPath);
+  const pending = pendingPublications.get(publicationKey(origin, `${layer}/${bucket}.md`));
+  requireNativeCreation(pending?.receipt);
+  if (!pending || pending.sources !== sourceSignature(sources) || pending.receipt.revision !== await sha256(existing)) {
+    throw new WorkflowOperationError("pending", "unavailable", "Publication changed or archive input differs; preserve artifacts for manual recovery");
   }
+  return pending.options;
+}
 
+/** Native declined moves stay pending; requested files are never completion proof. */
+export function evidenceArchiveIssues(receipt: ArchiveReceipt, step: string): WorkflowIssue[] {
+  return [...receipt.pending, ...receipt.skipped].map(item => ({
+    step, item: item.path, status: "pending", code: "incomplete", error: item.reason, retryable: receipt.retryable,
+  }));
+}
+
+/** Each run handles at most 48 chunks per day, retaining every quoted chunk.
+ * Legacy whole-file markers are rechecked rather than trusted as coverage. */
+export async function runSessionDigest(vaultPath: string, usage: RoleUsage = "foreground", capturedRole?: RoleSnapshot): Promise<DigestOutcome> {
+  const origin = await ipc.agentVaultSession();
+  requirePublicationOrigin(origin, vaultPath);
+  const roleSnapshot = capturedRole ?? await ipc.captureModelRole(origin, "organization", usage);
+  const { providerId: provider, modelId: model } = roleSnapshot.routeSignature;
+  const localModelId = await getLocalOrganizeModel({ provider, model });
+  const extractive = provider === "builtin-local" && !localModelId;
+  const mode = extractive ? "extractive" as const : "llm" as const;
+  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
+  const days = (await ipc.digestableSessionDays(vaultPath)).slice(0, cfg?.llm_digest_days ?? DEFAULT_DIGEST_DAYS);
+  if (!days.length) return { daysDigested: 0, filesArchived: 0, skipped: "nothing", mode };
   let daysDigested = 0;
   let filesArchived = 0;
-  for (const { day, files, already_digested } of days) {
+  let filesPending = 0;
+  let chunksProcessed = 0;
+  let summaryFallbacks = 0;
+  const issues: WorkflowIssue[] = [];
+  for (const [index, { day, files }] of days.entries()) {
+    let archived = 0;
+    let pendingCounted = 0;
     try {
-      if (already_digested) {
-        // Retry: a prior run's appendDigest already put these exact files'
-        // digest in daily/<day>.md (its marker names them, which is how Rust
-        // set this flag) but archiveDigestedSessions failed afterward — only
-        // the file move needs retrying, never the LLM call or a second append.
-        // No fingerprints of our own to hand over — the marker that run wrote
-        // is the record, and Rust re-checks each file against it.
-        await ipc.archiveDigestedSessions(vaultPath, day, files, null);
-      } else {
-        const contents = await Promise.all(
-          files.map((f) => ipc.readFile(`${vaultPath}/${f}`).then((fc) => fc.raw)),
-        );
-        const bullets = extractive
-          ? await extractiveBullets(files, contents)
-          : await complete({
-              task: "generate",
-              cwd: vaultPath,
-              messages: [
-                { role: "system", content: DIGEST_SYSTEM },
-                { role: "user", content: buildDayPrompt(files, contents) },
-              ],
-            });
-        // The append itself records which files it covered (Defect C fix): if
-        // archiveDigestedSessions below fails, the next run's
-        // digestableSessionDays reads that marker back, flags these files
-        // already_digested, and takes the retry branch above — no re-paid LLM
-        // call, no duplicate digest section, and no second write to lose.
-        const fingerprints = contents.map(fingerprint);
-        const dailyCreated = await appendDigest(
-          vaultPath,
-          day,
-          bullets,
-          files,
-          fingerprints,
-          extractive,
-        );
-        // Same fingerprints the marker just recorded: the auto-collect sweep
-        // has its own timer and can rewrite a resumed conversation's file
-        // between the read above and this move, so Rust archives only files
-        // still holding the bytes we digested (a changed one stays in
-        // sessions/ for the next run — see archive_digested_sessions).
-        const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files, fingerprints);
-        // Important 4 (Phase B whole-branch review): fold the daily-file
-        // create into the SAME manifest archiveDigestedSessions just wrote for
-        // this day's session-file moves, so "undo this run" reverses both —
-        // only when this run actually created the file (see appendDigest's
-        // doc comment). Best-effort: a bookkeeping failure here must not
-        // undo the digest/archive that already succeeded.
-        if (dailyCreated) {
-          await ipc
-            .appendDistillManifest(vaultPath, manifestId, [], [`daily/${day}.md`])
-            .catch((e) => {
-              console.error("[distill] manifest append failed for daily digest file", vaultPath, day, e);
-            });
-        }
+      const existing = await readDigestNote(`${vaultPath}/daily/${day}.md`);
+      const sources: EvidenceSource[] = [];
+      const originals = new Map<string, string>();
+      // Sequential reads avoid loading unrelated days in parallel on 8 GB hosts.
+      for (const path of files) {
+        const raw = (await ipc.readFile(`${vaultPath}/${path}`)).raw;
+        sources.push(sourceEvidence(path, raw, day));
+        if (localModelId) originals.set(path, raw);
       }
-    } catch (err) {
-      console.error("[distill] session digest failed", vaultPath, day, err);
+      const batch = nextEvidenceBatch(sources, existing);
+      const priorComplete = completedEvidenceSources(sources, existing);
+      let completeSources = priorComplete;
+      let options: ArchiveOptions;
+      if (batch.length || priorComplete.length !== sources.length) {
+        const preview = await evidencePreview(batch, vaultPath, DIGEST_SYSTEM, extractive, { localModelId, originals, origin, roleSnapshot, usage });
+        const appended = await appendEvidenceDigest({
+          vaultPath, origin, directory: "daily", bucket: day, header: HEADER,
+          sourceLabel: "session logs", sources, batch, preview: preview.text,
+          extractive: preview.extractive, markerOpen: "<!-- myco:digested-sessions ",
+          localPreview: preview.localPreview, roleSnapshot,
+        });
+        completeSources = appended.complete;
+        options = appended.options;
+        chunksProcessed += batch.length;
+        summaryFallbacks += Number(preview.fallback);
+        if (!appended.created) throw new WorkflowOperationError("pending", "unavailable", "Existing digest was updated; native creation authority is unavailable, so sources remain for manual recovery");
+      } else options = await evidenceArchiveOptions(origin, "daily", day, completeSources, existing);
+      pendingCounted = sources.length - completeSources.length;
+      filesPending += pendingCounted;
+      const receipt = await ipc.archiveDigestedSessions(vaultPath, day,
+        completeSources.map(source => source.path), completeSources.map(source => source.revision), options);
+      filesArchived += receipt.moved.length;
+      archived = receipt.moved.length;
+      const blocked = evidenceArchiveIssues(receipt, "digest");
+      filesPending += blocked.length;
+      pendingCounted += blocked.length;
+      issues.push(...blocked);
+      daysDigested++;
+      if (blocked.length) {
+        filesPending += days.slice(index + 1).reduce((count, next) => count + next.files.length, 0);
+        break;
+      }
+    } catch (error) {
+      console.error("[distill] session digest failed", vaultPath, day, error);
+      const issue = workflowIssue("digest", error, day);
+      issues.push(issue);
+      filesPending += files.length - archived - pendingCounted + days.slice(index + 1).reduce((count, next) => count + next.files.length, 0);
       break;
     }
-    daysDigested++;
-    filesArchived += files.length;
   }
-
-  return { daysDigested, filesArchived, skipped: null, mode };
+  return { daysDigested, filesArchived, skipped: null, mode,
+    ...(issues.length || filesPending ? { status: workflowStatus(issues, daysDigested + filesArchived + chunksProcessed, filesPending) } : {}),
+    ...(issues.length ? { issues } : {}),
+    ...(filesPending ? { filesPending } : {}),
+    ...(chunksProcessed ? { chunksProcessed } : {}),
+    ...(summaryFallbacks ? { summaryFallbacks } : {}),
+  };
 }

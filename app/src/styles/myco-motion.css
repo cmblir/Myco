@@ -1,0 +1,328 @@
+/* Portable motion source. Keep public/brand-motion/myco-motion.css identical. */
+.myco-motion {
+  --myco-motion-size: 6rem;
+  --myco-motion-accent: #9b79ce;
+  --r-pill: 999px;
+  position: relative;
+  display: inline-block;
+  width: var(--myco-motion-size);
+  height: var(--myco-motion-size);
+  flex: 0 0 auto;
+  isolation: isolate;
+  pointer-events: none;
+  vertical-align: middle;
+}
+
+.myco-motion--static {
+  display: inline-grid;
+  place-items: center;
+}
+
+.myco-motion__figure {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  transform-origin: 50% 80%;
+}
+
+.myco-motion__figure img {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: auto;
+  max-width: none;
+  height: 105%;
+  transform: translate(-50%, -50%);
+  user-select: none;
+}
+
+.myco-motion__halo {
+  position: absolute;
+  inset: 17% 12% 7%;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    #b18bdd20 0%,
+    #b18bdd0a 48%,
+    transparent 72%
+  );
+}
+
+.myco-motion__shadow {
+  position: absolute;
+  left: 30%;
+  bottom: 7%;
+  width: 40%;
+  height: 6%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse, #8f72b42e, transparent 72%);
+}
+
+.myco-motion__signal,
+.myco-motion__spark {
+  position: absolute;
+  display: none;
+}
+
+.myco-motion__signal i {
+  display: none;
+}
+
+.myco-motion[data-variant="idle"] .myco-motion__figure {
+  animation: myco-breathe 6s ease-in-out infinite;
+}
+
+.myco-motion[data-variant="welcome"] .myco-motion__figure {
+  animation: myco-greet 1.15s ease-in-out both;
+}
+
+.myco-motion[data-variant="welcome"] .myco-motion__spark,
+.myco-motion[data-variant="success"] .myco-motion__spark {
+  display: block;
+  width: 8%;
+  height: 8%;
+  color: var(--myco-motion-accent);
+  opacity: 0;
+  animation: myco-spark 1.15s 120ms ease-out both;
+}
+
+.myco-motion__spark::before,
+.myco-motion__spark::after {
+  position: absolute;
+  inset: 42% 0;
+  border-radius: var(--r-pill);
+  background: currentColor;
+  content: "";
+}
+
+.myco-motion__spark::after {
+  transform: rotate(90deg);
+}
+
+.myco-motion__spark--one {
+  top: 20%;
+  left: 12%;
+}
+
+.myco-motion__spark--two {
+  top: 37%;
+  right: 8%;
+  scale: 0.7;
+}
+
+.myco-motion[data-variant="thinking"] .myco-motion__figure {
+  animation: myco-consider 7s ease-in-out infinite;
+}
+
+.myco-motion[data-variant="thinking"] .myco-motion__signal {
+  top: 22%;
+  right: 0;
+  display: flex;
+  gap: 12%;
+  width: 27%;
+  height: 6%;
+}
+
+.myco-motion[data-variant="thinking"] .myco-motion__signal i {
+  display: block;
+  width: 22%;
+  height: 100%;
+  border-radius: 50%;
+  background: var(--myco-motion-accent);
+  opacity: 0.35;
+  animation: myco-thought 2.4s ease-in-out infinite;
+}
+
+.myco-motion[data-variant="thinking"] .myco-motion__signal i:nth-child(2) {
+  animation-delay: 180ms;
+}
+
+.myco-motion[data-variant="thinking"] .myco-motion__signal i:nth-child(3) {
+  animation-delay: 360ms;
+}
+
+.myco-motion[data-variant="saving"] .myco-motion__signal {
+  bottom: 0;
+  left: 32%;
+  display: block;
+  width: 36%;
+  height: 3%;
+  overflow: hidden;
+  border-radius: var(--r-pill);
+  background: #9b79ce26;
+}
+
+.myco-motion[data-variant="saving"] .myco-motion__signal::after {
+  display: block;
+  width: 40%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--myco-motion-accent);
+  animation: myco-save 2.4s ease-in-out infinite;
+  content: "";
+}
+
+.myco-motion[data-variant="success"] .myco-motion__figure {
+  animation: myco-nod 850ms ease-in-out both;
+}
+
+.myco-motion[data-variant="success"] .myco-motion__signal {
+  right: 7%;
+  bottom: 17%;
+  display: block;
+  width: 23%;
+  height: 23%;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  background: #4f7865;
+  animation: myco-confirm 500ms 200ms ease-out both;
+}
+
+.myco-motion[data-variant="success"] .myco-motion__signal::after {
+  position: absolute;
+  top: 25%;
+  left: 30%;
+  width: 25%;
+  height: 40%;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+  content: "";
+}
+
+.myco-motion[data-variant="empty"] .myco-motion__figure {
+  transform: rotate(-4deg);
+  animation: myco-peek 8s ease-in-out infinite;
+}
+
+.myco-motion[data-variant="empty"] .myco-motion__signal {
+  top: 29%;
+  right: 7%;
+  display: block;
+  width: 12%;
+  height: 12%;
+  border: 1px dashed var(--myco-motion-accent);
+  border-radius: 50%;
+  opacity: 0.7;
+}
+
+@keyframes myco-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2%);
+  }
+}
+
+@keyframes myco-greet {
+  0% {
+    transform: translateY(4%) scale(0.95);
+  }
+  35% {
+    transform: translateY(-3%) rotate(-7deg);
+  }
+  65% {
+    transform: rotate(5deg);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+@keyframes myco-spark {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  35% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+}
+
+@keyframes myco-consider {
+  0%,
+  100% {
+    transform: rotate(-2deg);
+  }
+  50% {
+    transform: rotate(2deg);
+  }
+}
+
+@keyframes myco-thought {
+  0%,
+  65%,
+  100% {
+    opacity: 0.35;
+  }
+  30% {
+    opacity: 1;
+  }
+}
+
+@keyframes myco-save {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(150%);
+  }
+}
+
+@keyframes myco-nod {
+  0%,
+  100% {
+    transform: none;
+  }
+  35% {
+    transform: translateY(3%) scale(1.02, 0.96);
+  }
+  65% {
+    transform: translateY(-3%);
+  }
+}
+
+@keyframes myco-confirm {
+  from {
+    opacity: 0;
+    transform: scale(0.75);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes myco-peek {
+  0%,
+  30%,
+  100% {
+    transform: rotate(-4deg);
+  }
+  50%,
+  70% {
+    transform: rotate(0deg);
+  }
+}
+
+/* Hosts can pause a preview without replacing or hiding the brand asset. */
+.myco-motion[data-paused="true"] *,
+.myco-motion[data-paused="true"] *::before,
+.myco-motion[data-paused="true"] *::after {
+  animation-play-state: paused !important;
+}
+
+/* The media query responds immediately when the OS preference changes. */
+@media (prefers-reduced-motion: reduce) {
+  .myco-motion *,
+  .myco-motion *::before,
+  .myco-motion *::after {
+    animation: none !important;
+  }
+}

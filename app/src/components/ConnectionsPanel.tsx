@@ -5,27 +5,41 @@
 // scroll positions became one. Accepting writes through the shared
 // `acceptSuggestion` — no second way to land a wikilink.
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { JSX } from "react";
+import { listedName } from "../lib/displayName";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc, type VecHit } from "../lib/ipc";
-import { notice } from "../lib/notice";
 import Rail from "./Rail";
-import { connectionRows, type ConnRow } from "../lib/readerRail";
+import { stem } from "../lib/graphData";
 import {
-  acceptSuggestion,
+  connectionRows,
+  linkContext,
+  type ConnRow,
+  type LinkContext,
+} from "../lib/readerRail";
+import {
   suggestLinks,
   type LinkSuggestion,
   type LinkSuggestionIO,
 } from "../lib/linkSuggestions";
+import { applyLinkSuggestions, registerLinkDraft } from "../lib/linkActions";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useNoteInsertStore } from "../stores/noteInsertStore";
 import { useReindexStore } from "../stores/reindexStore";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 
 /** Matches `ls-leave` in styles.css: an accepted row slides out before it goes. */
 const LEAVE_MS = 320;
+
+/** Backlinks whose note is read for its linking sentence. ponytail: a hub
+ *  note past this many lists the rest by name only; read on scroll if one
+ *  ever needs them all. */
+const CONTEXT_READS = 50;
+
+const KINDS = ["backlink", "related", "suggested"] as const;
 
 export default function ConnectionsPanel({
   filePath,
@@ -40,18 +54,29 @@ export default function ConnectionsPanel({
   t: Strings;
 }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
-  const refreshLinkGraph = useVaultStore((s) => s.refreshLinkGraph);
+  const revision = useVaultStore((s) => s.revision);
   const vaultRoot = useVaultStore((s) => s.currentVault?.path ?? "");
   const setRoute = useUIStore((s) => s.setRoute);
   const sem = useLinkSuggestStore((s) => s.sem);
   const dismissed = useLinkSuggestStore((s) => s.dismissed);
   const refreshSem = useLinkSuggestStore((s) => s.refresh);
+  const linkBusy = useLinkSuggestStore((s) => s.busy);
   const dismissKeys = useLinkSuggestStore((s) => s.dismiss);
   const indexedPages = useReindexStore((s) => s.indexedPages);
   const refreshStatus = useReindexStore((s) => s.refreshStatus);
+  const insert = useNoteInsertStore((s) => s.insert);
   const [related, setRelated] = useState<VecHit[] | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [leavingKey, setLeavingKey] = useState<string | null>(null);
+  // Tagged with the note they were read for, so a note opened next never
+  // shows the previous note's sentences while its own load.
+  const [contexts, setContexts] = useState<{
+    for: string;
+    map: ReadonlyMap<string, LinkContext>;
+  } | null>(null);
+  const subId = useId();
+
+  useEffect(() => registerLinkDraft(filePath, io), [filePath, io]);
 
   useEffect(() => {
     if (indexedPages === null) void refreshStatus();
@@ -85,6 +110,34 @@ export default function ConnectionsPanel({
     };
   }, [rel]);
 
+  const backward = adjacency?.backward[filePath];
+  // The list as a string: a graph rebuild hands over a new array every time,
+  // and only a changed list is worth re-reading the notes for — or a moved
+  // vault fingerprint, since a prose edit elsewhere keeps the list the same.
+  const backKey = backward?.join("\n") ?? "";
+  useEffect(() => {
+    let alive = true;
+    const target = stem(filePath);
+    const paths = backKey ? backKey.split("\n").slice(0, CONTEXT_READS) : [];
+    void Promise.all(
+      paths.map((p) =>
+        ipc.readFile(p).then(
+          (f) => [p, linkContext(f.raw, target)] as const,
+          // An unreadable note keeps its row, named, without a sentence.
+          () => [p, null] as const,
+        ),
+      ),
+    ).then((pairs) => {
+      if (!alive) return;
+      const map = new Map<string, LinkContext>();
+      for (const [p, c] of pairs) if (c) map.set(p, c);
+      setContexts({ for: filePath, map });
+    });
+    return () => {
+      alive = false;
+    };
+  }, [filePath, backKey, revision]);
+
   const suggestions =
     adjacency && sem
       ? suggestLinks(adjacency, sem, dismissed, Number.POSITIVE_INFINITY).filter(
@@ -93,31 +146,28 @@ export default function ConnectionsPanel({
       : [];
   const rows = connectionRows({
     filePath,
-    backward: adjacency?.backward[filePath],
+    backward,
     related,
     vaultRoot,
     suggestions,
+    contexts: contexts?.for === filePath ? contexts.map : undefined,
   });
+  // One sub-list per relationship, in the rows' own order; empty ones hidden.
+  const groups = KINDS.map((kind) => ({
+    kind,
+    rows: rows.filter((r) => r.kind === kind),
+  })).filter((g) => g.rows.length > 0);
 
   async function accept(s: LinkSuggestion): Promise<void> {
     setBusyKey(s.key);
     try {
-      await acceptSuggestion(s, io);
-      setLeavingKey(s.key);
-      await new Promise((r) => setTimeout(r, LEAVE_MS));
-      dismissKeys([s.key]); // accepted pairs also leave the queue
-      await refreshLinkGraph();
-      notice.ok(
-        (t.rd_conn_added ?? "[[{name}]] added under ## Related").replace(
-          "{name}",
-          nameOf(s.target),
-        ),
-        { icon: "link" },
-      );
-    } catch (e) {
-      notice.warn(t.ls_toast_failed ?? "Couldn't add the links", {
-        sub: String(e),
-        action: { label: t.ls_toast_retry ?? "Retry", run: () => void accept(s) },
+      await applyLinkSuggestions([s], {
+        io,
+        onAccepted: async () => {
+          setLeavingKey(s.key);
+          await new Promise((r) => setTimeout(r, LEAVE_MS));
+        },
+        successTitle: t.rd_conn_added.replace("{name}", nameOf(s.target)),
       });
     } finally {
       setBusyKey(null);
@@ -140,51 +190,84 @@ export default function ConnectionsPanel({
           ) : null}
         </>
       ) : (
-        <ul className="rail-list conn">
-          {rows.map((row) => (
-            <li
-              key={row.path}
-              className={leavingKey === row.suggestion?.key ? "is-leaving" : undefined}
-            >
-              <span className={`rail-tag t-${row.kind}`}>{label(row, t)}</span>
-              <button
-                type="button"
-                className="rail-conn__name"
-                title={row.path}
-                onClick={() => setRoute(`page:${row.path}`)}
-              >
-                {row.name}
-              </button>
-              {row.score !== undefined ? (
-                <span className="rail-n">{(row.score * 100).toFixed(0)}%</span>
-              ) : null}
-              {row.suggestion ? (
-                <>
+        groups.map((g) => (
+          <div key={g.kind} className="rail-conn__group">
+            <div className="rail-conn__sub" id={`${subId}-${g.kind}`}>
+              {groupLabel(g.kind, t)}
+              <span className="rail-n">{g.rows.length}</span>
+            </div>
+            <ul className="rail-list conn" aria-labelledby={`${subId}-${g.kind}`}>
+              {g.rows.map((row) => (
+                <li
+                  key={row.path}
+                  // Only a suggestion is ever leaving; only a backlink has a sentence.
+                  className={
+                    row.context
+                      ? "has-ctx"
+                      : leavingKey === row.suggestion?.key
+                        ? "is-leaving"
+                        : undefined
+                  }
+                >
+                  <span className={`rail-tag t-${row.kind}`}>{label(row, t)}</span>
                   <button
                     type="button"
-                    className="icon-btn"
-                    disabled={busyKey !== null}
-                    aria-label={t.ls_accept ?? "Link them"}
-                    title={t.ls_accept ?? "Link them"}
-                    onClick={() => void accept(row.suggestion as LinkSuggestion)}
+                    className="rail-conn__name"
+                    title={row.path}
+                    onClick={() => setRoute(`page:${row.path}`)}
                   >
-                    <Icon name="check" size={13} />
+                    {listedName(row.name, adjacency?.meta?.[row.path]?.title)}
                   </button>
-                  <button
-                    type="button"
-                    className="icon-btn"
-                    disabled={busyKey !== null}
-                    aria-label={t.ls_dismiss ?? "Dismiss"}
-                    title={t.ls_dismiss ?? "Dismiss"}
-                    onClick={() => dismissKeys([row.suggestion?.key ?? ""])}
-                  >
-                    <Icon name="x" size={13} />
-                  </button>
-                </>
-              ) : null}
-            </li>
-          ))}
-        </ul>
+                  {row.score !== undefined ? (
+                    <span className="rail-n">{(row.score * 100).toFixed(0)}%</span>
+                  ) : null}
+                  {insert ? (
+                    <button
+                      type="button"
+                      className="icon-btn"
+                      aria-label={t.ins_link}
+                      title={t.ins_link}
+                      onClick={() => insert(`[[${row.name}]]`, false)}
+                    >
+                      <Icon name="link" size={13} />
+                    </button>
+                  ) : null}
+                  {row.suggestion ? (
+                    <>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        disabled={busyKey !== null || linkBusy}
+                        aria-label={t.ls_accept ?? "Link them"}
+                        title={t.ls_accept ?? "Link them"}
+                        onClick={() => void accept(row.suggestion as LinkSuggestion)}
+                      >
+                        <Icon name="check" size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        className="icon-btn"
+                        disabled={busyKey !== null || linkBusy}
+                        aria-label={t.ls_dismiss ?? "Dismiss"}
+                        title={t.ls_dismiss ?? "Dismiss"}
+                        onClick={() => dismissKeys([row.suggestion?.key ?? ""])}
+                      >
+                        <Icon name="x" size={13} />
+                      </button>
+                    </>
+                  ) : null}
+                  {row.context ? (
+                    <p className="rail-conn__ctx">
+                      {row.context.before}
+                      <mark>{row.context.link}</mark>
+                      {row.context.after}
+                    </p>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))
       )}
     </Rail>
   );
@@ -193,6 +276,12 @@ export default function ConnectionsPanel({
 function label(row: ConnRow, t: Strings): string {
   if (row.kind === "backlink") return t.rd_conn_back ?? "Backlink";
   if (row.kind === "related") return t.rd_related ?? "Related";
+  return t.rd_conn_sug ?? "Suggested";
+}
+
+function groupLabel(kind: ConnRow["kind"], t: Strings): string {
+  if (kind === "backlink") return t.rd_conn_backs ?? "Backlinks";
+  if (kind === "related") return t.rd_related ?? "Related";
   return t.rd_conn_sug ?? "Suggested";
 }
 

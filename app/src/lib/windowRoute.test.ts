@@ -3,7 +3,13 @@
 
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { isSpotlightWindow, isTrayPanelWindow } from "./windowRoute";
+import {
+  isMyco3DWindow,
+  isNotchWindow,
+  isRoamWindow,
+  isSpotlightWindow,
+  isTrayPanelWindow,
+} from "./windowRoute";
 
 describe("isTrayPanelWindow", () => {
   it("matches the ?window=tray query Rust opens the panel with", () => {
@@ -40,6 +46,35 @@ describe("isSpotlightWindow", () => {
   });
 });
 
+describe("isRoamWindow", () => {
+  it("matches the ?window=roam query roam.rs opens the roam panel with", () => {
+    expect(isRoamWindow("?window=roam")).toBe(true);
+    expect(isRoamWindow("?window=roam&roamMock=1&roamFrame=3")).toBe(true);
+  });
+
+  it("is no other window", () => {
+    for (const s of ["", "?mock=1", "?window=notch", "?window=tray", "?window=spotlight"]) {
+      expect(isRoamWindow(s)).toBe(false);
+    }
+    for (const s of ["?window=notch", "?window=tray", "?window=spotlight"]) {
+      expect(isNotchWindow(s) || isTrayPanelWindow(s) || isSpotlightWindow(s)).toBe(true);
+    }
+  });
+});
+
+describe("isMyco3DWindow", () => {
+  it("matches the ?window=myco3d preview of the 3D myco", () => {
+    expect(isMyco3DWindow("?window=myco3d")).toBe(true);
+    expect(isMyco3DWindow("?window=myco3d&skin=white&bg=solid")).toBe(true);
+  });
+
+  it("is no other window", () => {
+    for (const s of ["", "?mock=1", "?window=notch", "?window=roam", "?window=tray"]) {
+      expect(isMyco3DWindow(s)).toBe(false);
+    }
+  });
+});
+
 // The gate is only worth anything if main.tsx still returns before rendering
 // App: App is what starts the auto-ingest/reindex/reflect/import schedulers and
 // the tray sender, and a third JS context running them would double every
@@ -52,16 +87,22 @@ describe("main.tsx bootstrap order", () => {
     "utf8",
   );
 
-  it("returns from both secondary-window branches before rendering App", () => {
+  it("returns from every secondary-window branch before rendering App", () => {
     const trayGate = source.indexOf("isTrayPanelWindow(location.search)");
     const spotlightGate = source.indexOf("isSpotlightWindow(location.search)");
+    const roamGate = source.indexOf("isRoamWindow(location.search)");
+    const myco3dGate = source.indexOf("isMyco3DWindow(location.search)");
     const appRender = source.indexOf("<App />");
     expect(trayGate).toBeGreaterThan(-1);
     expect(spotlightGate).toBeGreaterThan(-1);
+    expect(roamGate).toBeGreaterThan(-1);
+    expect(myco3dGate).toBeGreaterThan(-1);
+    expect(appRender).toBeGreaterThan(myco3dGate);
     expect(appRender).toBeGreaterThan(spotlightGate);
+    expect(appRender).toBeGreaterThan(roamGate);
     // Each gated branch must end in a bare `return;` — falling through would
-    // mount App in the tray/spotlight window on top of its own component.
-    for (const gate of [trayGate, spotlightGate]) {
+    // mount App in the tray/spotlight/roam window on top of its own component.
+    for (const gate of [trayGate, spotlightGate, roamGate, myco3dGate]) {
       const branch = source.slice(gate, appRender);
       expect(branch).toContain("return;");
     }

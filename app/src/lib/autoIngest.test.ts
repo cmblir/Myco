@@ -1,44 +1,67 @@
-// pendingInboxRows feeds the "waiting in _inbox" list on PageIngest — the
-// place the inflow "보기 →" lands. Ordering and the today flag are what make
-// "+N arrived" findable, so they get pinned here. runInboxPass is the
-// unattended consumer of the same listing: redaction guard, format routing
-// (Q4 item 20a), and the pass accounting live in the second half.
-
+// Mocked frontend transport only; native snapshot and model authority have separate gates.
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+  InboxEntry,
+  InboxSourceSnapshot,
+  SessionCompileContext,
+  SessionCompileStepResult,
+} from "./ipc";
+import { roleFixture } from "./modelRoles.testSupport";
+import { WorkflowOperationError } from "./workflowOutcome";
 
 const listInboxEntries = vi.fn();
-const readFile = vi.fn();
+const agentVaultSession = vi.fn();
+const inboxSourceSnapshot = vi.fn();
+const archiveInboxSourceChecked = vi.fn();
+const releaseInboxSource = vi.fn();
 const scanTextSecrets = vi.fn();
 const getSettings = vi.fn();
-const archiveInboxSource = vi.fn();
-const whisperCheck = vi.fn();
+const judgeSource = vi.fn();
+const readFile = vi.fn();
 const describeImage = vi.fn();
 const transcribeMedia = vi.fn();
 const readExternalText = vi.fn();
+const derivedRawCopy = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
-    listInboxEntries: (...a: unknown[]) => listInboxEntries(...a),
-    readFile: (...a: unknown[]) => readFile(...a),
-    scanTextSecrets: (...a: unknown[]) => scanTextSecrets(...a),
-    getSettings: (...a: unknown[]) => getSettings(...a),
-    archiveInboxSource: (...a: unknown[]) => archiveInboxSource(...a),
-    whisperCheck: (...a: unknown[]) => whisperCheck(...a),
-    describeImage: (...a: unknown[]) => describeImage(...a),
-    transcribeMedia: (...a: unknown[]) => transcribeMedia(...a),
-    readExternalText: (...a: unknown[]) => readExternalText(...a),
+    listInboxEntries: (...args: unknown[]) => listInboxEntries(...args),
+    agentVaultSession: (...args: unknown[]) => agentVaultSession(...args),
+    inboxSourceSnapshot: (...args: unknown[]) => inboxSourceSnapshot(...args),
+    archiveInboxSourceChecked: (...args: unknown[]) =>
+      archiveInboxSourceChecked(...args),
+    releaseInboxSource: (...args: unknown[]) => releaseInboxSource(...args),
+    scanTextSecrets: (...args: unknown[]) => scanTextSecrets(...args),
+    getSettings: (...args: unknown[]) => getSettings(...args),
+    judgeSource: (...args: unknown[]) => judgeSource(...args),
+    readFile: (...args: unknown[]) => readFile(...args),
+    describeImage: (...args: unknown[]) => describeImage(...args),
+    transcribeMedia: (...args: unknown[]) => transcribeMedia(...args),
+    readExternalText: (...args: unknown[]) => readExternalText(...args),
+    derivedRawCopy: (...args: unknown[]) => derivedRawCopy(...args),
   },
 }));
-
 const startIngest = vi.fn();
+const startInboxCompilation = vi.fn();
 const bumpInboxRev = vi.fn();
-const ingestState = { stage: "idle", startIngest, bumpInboxRev };
+const ingestState = {
+  stage: "idle",
+  startIngest,
+  startInboxCompilation,
+  bumpInboxRev,
+};
 vi.mock("../stores/ingestStore", () => ({
   useIngestStore: { getState: () => ingestState },
 }));
-
-import type { InboxEntry } from "./ipc";
-import { IMAGE_INGEST_PROMPT } from "./mediaIngest";
+let ui = {
+  currentVault: { path: "/v" },
+  vaultToken: "synthetic-ui-opening",
+  isOpeningVault: false,
+};
+vi.mock("../stores/vaultStore", () => ({
+  useVaultStore: { getState: () => ui },
+}));
 import { pendingInboxRows, runInboxPass } from "./autoIngest";
+import { tryLock, unlock } from "./vaultLock";
 
 const NOW = new Date(2026, 7, 19, 14, 0); // local 2026-08-19 14:00
 const secs = (d: Date): number => Math.floor(d.getTime() / 1000);
@@ -93,172 +116,595 @@ describe("pendingInboxRows", () => {
   });
 });
 
-// Q4 item 13 — the promotion guard: scan BEFORE startIngest writes
-// raw/<slug>.md. A flagged source stays in _inbox/ and the pass moves on to
-// the next candidate so one flagged file cannot jam the queue.
-describe("runInboxPass redaction guard", () => {
+const origin = { vaultPath: "/v", openingToken: "synthetic-native-opening" };
+const revision = "a".repeat(64);
+const snapshot: InboxSourceSnapshot = {
+  snapshotId: "synthetic-snapshot",
+  origin,
+  inboxRel: "_inbox/a.md",
+  sourceRevision: revision,
+  text: "Immutable synthetic original.\n",
+};
+const context: SessionCompileContext = {
+  jobId: "synthetic-job",
+  attemptId: "synthetic-attempt",
+  origin,
+  source: {
+    key: "synthetic-inbox",
+    rawPath: "raw/synthetic.md",
+    sourceRevision: revision,
+  },
+  roleSnapshot: roleFixture(
+    "compilation",
+    "builtin-local",
+    "synthetic-model",
+    origin,
+    "automatic",
+  ),
+  compileSignature: "synthetic-signature",
+  summaryPath: "wiki/source-synthetic.md",
+  indexPath: "wiki/index.md",
+  logPath: "wiki/log.md",
+  reportPath: "ingest-reports/synthetic.md",
+};
+const completed: SessionCompileStepResult = {
+  attemptId: context.attemptId,
+  sourceRevision: revision,
+  state: "completed",
+  step: null,
+  eligibleWindows: 2,
+  nextPacket: 2,
+  publication: { ok: true, state: "completed", attemptId: context.attemptId },
+};
+const selected = {
+  sourcePath: "/v/_inbox/a.md",
+  sourceRevision: revision,
+  origin,
+  expectedVaultToken: "synthetic-ui-opening",
+};
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((finish) => {
+    resolve = finish;
+  });
+  return { promise, resolve };
+}
+
+describe("native-bound inbox pass (mocked transport)", () => {
   beforeEach(() => {
-    listInboxEntries.mockReset();
-    readFile.mockReset();
-    scanTextSecrets.mockReset();
-    getSettings.mockReset();
-    archiveInboxSource.mockReset();
-    whisperCheck.mockReset();
-    describeImage.mockReset();
-    transcribeMedia.mockReset();
-    readExternalText.mockReset();
-    startIngest.mockReset();
-    bumpInboxRev.mockReset();
+    vi.clearAllMocks();
+    ui = {
+      currentVault: { path: "/v" },
+      vaultToken: "synthetic-ui-opening",
+      isOpeningVault: false,
+    };
     ingestState.stage = "idle";
-
-    getSettings.mockResolvedValue({ pii_quarantine_enabled: false });
-    listInboxEntries.mockResolvedValue([
-      entry("leak.md", 100),
-      entry("clean.md", 90),
-    ]);
-    readFile.mockImplementation((p: string) => Promise.resolve({ raw: `body of ${p}` }));
-    startIngest.mockImplementation(async () => {
-      ingestState.stage = "done";
+    listInboxEntries.mockReset().mockResolvedValue([entry("a.md", 100)]);
+    agentVaultSession.mockReset().mockResolvedValue(origin);
+    inboxSourceSnapshot
+      .mockReset()
+      .mockImplementation(async (_origin, rel) => ({
+        ...snapshot,
+        inboxRel: rel,
+      }));
+    archiveInboxSourceChecked.mockReset().mockResolvedValue({
+      archivedPath: "/v/_inbox/.archived/a.md",
+      sourceRevision: revision,
+      harvestCompleted: true,
     });
-    archiveInboxSource.mockResolvedValue("");
-  });
-
-  it("skips a flagged source, ingests the next clean one, and counts the held file", async () => {
-    scanTextSecrets
-      .mockResolvedValueOnce({ secrets: ["aws-access-key"], pii: [] })
-      .mockResolvedValueOnce({ secrets: [], pii: [] });
-
-    const result = await runInboxPass("/v");
-
-    expect(startIngest).toHaveBeenCalledTimes(1);
-    expect(startIngest).toHaveBeenCalledWith("clean", "body of /v/_inbox/clean.md", {
-      headless: true,
-    });
-    expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clean.md");
-    expect(result).toEqual({ ingested: true, held: 1, unsupported: 0, refused: 0 });
-  });
-
-  it("holds PII sources when quarantine is on and never calls startIngest", async () => {
-    getSettings.mockResolvedValue({ pii_quarantine_enabled: true });
-    scanTextSecrets.mockResolvedValue({ secrets: [], pii: ["email"] });
-
-    const result = await runInboxPass("/v");
-
-    expect(startIngest).not.toHaveBeenCalled();
-    expect(archiveInboxSource).not.toHaveBeenCalled();
-    expect(result).toEqual({ ingested: false, held: 2, unsupported: 0, refused: 0 });
-  });
-
-  it("promotes a PII source in warn-only mode (the default)", async () => {
-    scanTextSecrets.mockResolvedValue({ secrets: [], pii: ["email"] });
-
-    const result = await runInboxPass("/v");
-
-    expect(startIngest).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0, refused: 0 });
-  });
-
-  it("archives a refused source and walks on to the next one", async () => {
-    // Judged junk must not sit at the head of _inbox/ forever: the first
-    // source ends at "refused" (nothing written), the pass archives it and
-    // still ingests the second in the same pass.
-    scanTextSecrets.mockResolvedValue({ secrets: [], pii: [] });
-    startIngest
-      .mockImplementationOnce(async () => {
-        ingestState.stage = "refused";
-      })
-      .mockImplementationOnce(async () => {
-        ingestState.stage = "done";
-      });
-
-    const result = await runInboxPass("/v");
-
-    expect(startIngest).toHaveBeenCalledTimes(2);
-    expect(archiveInboxSource.mock.calls.map((c) => c[0])).toEqual([
-      "/v/_inbox/leak.md",
-      "/v/_inbox/clean.md",
-    ]);
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0, refused: 1 });
-  });
-});
-
-// Q4 item 20a — the pass sees every file: supported non-md routed through
-// sourceTextFor, media gated on one whisperCheck per pass, unsupported
-// formats counted and left in place instead of silently invisible.
-describe("runInboxPass format routing", () => {
-  beforeEach(() => {
-    listInboxEntries.mockReset();
-    readFile.mockReset();
-    scanTextSecrets.mockReset();
-    getSettings.mockReset();
-    archiveInboxSource.mockReset();
-    whisperCheck.mockReset();
-    describeImage.mockReset();
-    transcribeMedia.mockReset();
-    readExternalText.mockReset();
-    startIngest.mockReset();
-    bumpInboxRev.mockReset();
-    ingestState.stage = "idle";
-
-    getSettings.mockResolvedValue({
+    releaseInboxSource.mockReset().mockResolvedValue(undefined);
+    getSettings.mockReset().mockResolvedValue({
       pii_quarantine_enabled: false,
-      query_provider: "prov-x",
-      query_model: "model-y",
+      query_provider: "paid-provider",
+      query_model: "paid-model",
     });
-    scanTextSecrets.mockResolvedValue({ secrets: [], pii: [] });
-    startIngest.mockImplementation(async () => {
-      ingestState.stage = "done";
+    scanTextSecrets.mockReset().mockResolvedValue({ secrets: [], pii: [] });
+    judgeSource.mockReset().mockResolvedValue({
+      verdict: "harvest",
+      reason: "synthetic admission",
+      rule: "synthetic",
     });
-    archiveInboxSource.mockResolvedValue("");
+    startInboxCompilation
+      .mockReset()
+      .mockResolvedValue({ context, result: completed });
   });
 
-  it("counts unsupported formats, leaves them in place, and still ingests the next supported file", async () => {
-    listInboxEntries.mockResolvedValue([
-      entry("book.epub", 100),
-      entry("clean.md", 90),
-    ]);
-    readFile.mockResolvedValue({ raw: "clean body" });
-
-    const result = await runInboxPass("/v");
-
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 1, refused: 0 });
-    expect(startIngest).toHaveBeenCalledWith("clean", "clean body", { headless: true });
-    expect(archiveInboxSource).toHaveBeenCalledTimes(1);
-    expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clean.md");
-  });
-
-  it("routes a non-md source through sourceTextFor with the settings provider/model", async () => {
-    listInboxEntries.mockResolvedValue([entry("shot.png", 100)]);
-    describeImage.mockResolvedValue("a described chart");
-
-    const result = await runInboxPass("/v");
-
-    expect(describeImage).toHaveBeenCalledWith(
-      "prov-x",
-      "model-y",
-      "/v/_inbox/shot.png",
-      IMAGE_INGEST_PROMPT,
+  it("uses the copy's first revision, original opening and actual native completion", async () => {
+    const out = await runInboxPass("/v", selected);
+    expect(agentVaultSession).not.toHaveBeenCalled();
+    expect(inboxSourceSnapshot).toHaveBeenCalledWith(
+      origin,
+      "_inbox/a.md",
+      revision,
     );
-    expect(startIngest).toHaveBeenCalledWith("shot", "a described chart", {
-      headless: true,
+    expect(startInboxCompilation).toHaveBeenCalledWith(snapshot, {
+      usage: "automatic",
+      expectedVaultToken: selected.expectedVaultToken,
     });
-    expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/shot.png");
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0, refused: 0 });
+    expect(archiveInboxSourceChecked).toHaveBeenCalledWith(snapshot, context);
+    expect(out).toMatchObject({
+      ingested: true,
+      harvestCompleted: true,
+      sourcePath: selected.sourcePath,
+      sourceRevision: revision,
+      origin,
+    });
+    expect(releaseInboxSource).toHaveBeenCalledWith(snapshot);
+    expect(startIngest).not.toHaveBeenCalled();
+    expect(readFile).not.toHaveBeenCalled();
+    expect(bumpInboxRev).toHaveBeenCalledTimes(1);
   });
 
-  it("holds media when whisper is missing — one whisperCheck per pass", async () => {
-    listInboxEntries.mockResolvedValue([
-      entry("talk.mp3", 100),
-      entry("lecture.mp4", 95),
-      entry("clean.md", 90),
+  it("captures a native opening only once for a scheduled pass", async () => {
+    await runInboxPass("/v");
+    expect(agentVaultSession).toHaveBeenCalledTimes(1);
+    expect(inboxSourceSnapshot).toHaveBeenCalledWith(
+      origin,
+      "_inbox/a.md",
+      undefined,
+    );
+    expect(startInboxCompilation).toHaveBeenCalledWith(
+      snapshot,
+      expect.objectContaining({ usage: "automatic" }),
+    );
+  });
+
+  it("retains foreground usage for a user-started harvest without changing the automatic default", async () => {
+    await runInboxPass("/v", { ...selected, usage: "foreground" });
+    expect(startInboxCompilation).toHaveBeenLastCalledWith(snapshot, {
+      usage: "foreground",
+      expectedVaultToken: selected.expectedVaultToken,
+    });
+    await runInboxPass("/v", selected);
+    expect(startInboxCompilation).toHaveBeenLastCalledWith(snapshot, {
+      usage: "automatic",
+      expectedVaultToken: selected.expectedVaultToken,
+    });
+  });
+
+  it.each(["snapshot", "scan", "compile", "archive"])(
+    "does not publish old-opening success after reopening during %s",
+    async (boundary) => {
+      const gate = deferred<unknown>();
+      const entered = deferred<void>();
+      const pause = () => {
+        entered.resolve();
+        return gate.promise;
+      };
+      if (boundary === "snapshot")
+        inboxSourceSnapshot.mockImplementationOnce(pause);
+      if (boundary === "scan") scanTextSecrets.mockImplementationOnce(pause);
+      if (boundary === "compile")
+        startInboxCompilation.mockImplementationOnce(pause);
+      if (boundary === "archive")
+        archiveInboxSourceChecked.mockImplementationOnce(pause);
+      const pass = runInboxPass("/v", selected);
+      await entered.promise;
+      ui = { ...ui, vaultToken: "synthetic-reopened" };
+      gate.resolve(
+        boundary === "snapshot"
+          ? snapshot
+          : boundary === "scan"
+            ? { secrets: [], pii: [] }
+            : boundary === "compile"
+              ? { context, result: completed }
+              : {
+                  archivedPath: "/v/_inbox/.archived/a.md",
+                  sourceRevision: revision,
+                  harvestCompleted: true,
+                },
+      );
+      expect(await pass).toMatchObject({
+        ingested: false,
+        error: expect.stringContaining("opening"),
+      });
+      expect(bumpInboxRev).not.toHaveBeenCalled();
+      if (boundary !== "archive")
+        expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+      if (boundary === "snapshot" || boundary === "scan")
+        expect(startInboxCompilation).not.toHaveBeenCalled();
+      expect(releaseInboxSource).toHaveBeenCalledWith(snapshot);
+    },
+  );
+
+  it("refuses an opening returned after the same path was reopened", async () => {
+    const gate = deferred<typeof origin>();
+    agentVaultSession.mockReturnValueOnce(gate.promise);
+    const pass = runInboxPass("/v");
+    ui = { ...ui, vaultToken: "synthetic-reopened" };
+    gate.resolve(origin);
+    expect(await pass).toMatchObject({
+      ingested: false,
+      error: expect.any(String),
+    });
+    expect(listInboxEntries).not.toHaveBeenCalled();
+  });
+
+  it("does not return old-opening success after snapshot cleanup waits through reopening", async () => {
+    const entered = deferred<void>();
+    const cleanup = deferred<void>();
+    releaseInboxSource.mockImplementationOnce(() => {
+      entered.resolve();
+      return cleanup.promise;
+    });
+    const pass = runInboxPass("/v", selected);
+    await entered.promise;
+    // The old opening's archive was already received before the transition.
+    expect(bumpInboxRev).toHaveBeenCalledTimes(1);
+    ui = { ...ui, vaultToken: "synthetic-reopened" };
+    cleanup.resolve();
+    expect(await pass).toMatchObject({
+      ingested: false,
+      error: expect.stringContaining("opening"),
+    });
+    expect(bumpInboxRev).toHaveBeenCalledTimes(1);
+  });
+
+  it("rejects a changed first read before compilation or archiving", async () => {
+    inboxSourceSnapshot.mockResolvedValueOnce({
+      ...snapshot,
+      sourceRevision: "b".repeat(64),
+      text: "Changed synthetic body",
+    });
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: expect.stringContaining("snapshot"),
+    });
+    expect(startInboxCompilation).not.toHaveBeenCalled();
+    expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+    expect(releaseInboxSource).toHaveBeenCalledTimes(1);
+  });
+
+  it.each([0, 1])(
+    "retains partial native compilation even with %i pending windows",
+    async (pending) => {
+      startInboxCompilation.mockResolvedValueOnce({
+        context,
+        result: {
+          ...completed,
+          state: "partial",
+          nextPacket: completed.eligibleWindows - pending,
+          publication: null,
+        },
+      });
+      expect(await runInboxPass("/v", selected)).toMatchObject({
+        ingested: false,
+        harvestCompleted: false,
+        pendingChunks: pending,
+      });
+      expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+      expect(bumpInboxRev).not.toHaveBeenCalled();
+      expect(releaseInboxSource).toHaveBeenCalledWith(snapshot);
+    },
+  );
+
+  it("retains actual false completion instead of replacing it with stage done", async () => {
+    ingestState.stage = "done";
+    archiveInboxSourceChecked.mockResolvedValueOnce({
+      archivedPath: "/v/_inbox/.archived/a.md",
+      sourceRevision: revision,
+      harvestCompleted: false,
+    });
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: true,
+      harvestCompleted: false,
+    });
+  });
+
+  it("keeps unavailable source admission pending without an archive or generic fallback", async () => {
+    startInboxCompilation.mockRejectedValueOnce(
+      new WorkflowOperationError(
+        "pending",
+        "unavailable",
+        "Synthetic original lacks admitted lineage; source remains pending",
+      ),
+    );
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      harvestCompleted: false,
+      held: 1,
+      sourceRevision: revision,
+      origin,
+      pendingReason: expect.stringContaining("pending"),
+    });
+    expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+    expect(startIngest).not.toHaveBeenCalled();
+    expect(bumpInboxRev).not.toHaveBeenCalled();
+    expect(releaseInboxSource).toHaveBeenCalledWith(snapshot);
+  });
+
+  it("requires the archive's exact source revision", async () => {
+    archiveInboxSourceChecked.mockResolvedValueOnce({
+      archivedPath: "/v/_inbox/.archived/a.md",
+      sourceRevision: "b".repeat(64),
+      harvestCompleted: true,
+    });
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: expect.any(String),
+    });
+    expect(bumpInboxRev).not.toHaveBeenCalled();
+  });
+
+  it("holds a flagged title and body before native compilation", async () => {
+    scanTextSecrets.mockResolvedValueOnce({
+      secrets: ["synthetic-secret"],
+      pii: [],
+    });
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      held: 1,
+      sourcePath: selected.sourcePath,
+    });
+    expect(scanTextSecrets.mock.calls[0][0]).toBe(`a\n\n${snapshot.text}`);
+    expect(startInboxCompilation).not.toHaveBeenCalled();
+    expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+  });
+
+  it("archives an admitted refusal without claiming harvest completion", async () => {
+    judgeSource.mockResolvedValueOnce({
+      verdict: "drop",
+      reason: "synthetic refusal",
+      rule: "synthetic",
+    });
+    archiveInboxSourceChecked.mockResolvedValueOnce({
+      archivedPath: "/v/_inbox/.archived/a.md",
+      sourceRevision: revision,
+      harvestCompleted: false,
+    });
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      refused: 1,
+    });
+    expect(archiveInboxSourceChecked).toHaveBeenCalledWith(snapshot);
+    expect(startInboxCompilation).not.toHaveBeenCalled();
+  });
+
+  it.each(["shot.png", "recording.mp3", "paper.pdf", "book.epub"])(
+    "keeps %s pending without an unbound extraction or paid model call",
+    async (name) => {
+      listInboxEntries.mockResolvedValueOnce([entry(name, 100)]);
+      const out = await runInboxPass("/v", {
+        ...selected,
+        sourcePath: `/v/_inbox/${name}`,
+      });
+      expect(out.ingested).toBe(false);
+      expect(out.held + out.unsupported).toBe(1);
+      expect(inboxSourceSnapshot).not.toHaveBeenCalled();
+      expect(describeImage).not.toHaveBeenCalled();
+      expect(transcribeMedia).not.toHaveBeenCalled();
+      expect(readExternalText).not.toHaveBeenCalled();
+      expect(derivedRawCopy).not.toHaveBeenCalled();
+      expect(startIngest).not.toHaveBeenCalled();
+      expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+    },
+  );
+
+  it("selects only the requested copy and preserves an unrelated pending source", async () => {
+    listInboxEntries.mockResolvedValueOnce([
+      entry("other.md", 200),
+      entry("a.md", 100),
     ]);
-    whisperCheck.mockResolvedValue({ installed: false, version: null, path: null });
-    readFile.mockResolvedValue({ raw: "clean body" });
+    await runInboxPass("/v", selected);
+    expect(inboxSourceSnapshot).toHaveBeenCalledTimes(1);
+    expect(inboxSourceSnapshot).toHaveBeenCalledWith(
+      origin,
+      "_inbox/a.md",
+      revision,
+    );
+  });
 
-    const result = await runInboxPass("/v");
+  it("retains a missing target, read failure, archive failure and release failure as errors", async () => {
+    listInboxEntries.mockResolvedValueOnce([entry("other.md", 200)]);
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: expect.any(String),
+    });
+    inboxSourceSnapshot.mockRejectedValueOnce(
+      new Error("Source revision changed"),
+    );
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: "Source revision changed",
+    });
+    archiveInboxSourceChecked.mockRejectedValueOnce(
+      new Error("Archive unavailable"),
+    );
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: "Archive unavailable",
+    });
+    releaseInboxSource.mockRejectedValueOnce(new Error("Release unavailable"));
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: expect.stringContaining("Release unavailable"),
+    });
+  });
 
-    expect(whisperCheck).toHaveBeenCalledTimes(1);
-    expect(transcribeMedia).not.toHaveBeenCalled();
-    expect(result).toEqual({ ingested: true, held: 2, unsupported: 0, refused: 0 });
+  it.each([new Error("Compilation unavailable"), 0, false])(
+    "retains both the original processing rejection %s and native release failure",
+    async (failure) => {
+      startInboxCompilation.mockRejectedValueOnce(failure);
+      releaseInboxSource.mockRejectedValueOnce(
+        new Error("Release unavailable"),
+      );
+      expect(await runInboxPass("/v", selected)).toMatchObject({
+        ingested: false,
+        error: `${String(failure)}; Inbox snapshot release failed: Error: Release unavailable`,
+      });
+      expect(releaseInboxSource).toHaveBeenCalledTimes(1);
+      expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+      expect(bumpInboxRev).not.toHaveBeenCalled();
+    },
+  );
+
+  it("waits for native release before returning the original failure and unlocking", async () => {
+    const entered = deferred<void>();
+    const cleanup = deferred<void>();
+    startInboxCompilation.mockRejectedValueOnce(
+      new Error("Compilation unavailable"),
+    );
+    releaseInboxSource.mockImplementationOnce(() => {
+      entered.resolve();
+      return cleanup.promise;
+    });
+    let settled = false;
+    const pass = runInboxPass("/v", selected).then((outcome) => {
+      settled = true;
+      return outcome;
+    });
+    await entered.promise;
+    expect(settled).toBe(false);
+    expect(tryLock("/v")).toBe(false);
+    expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+    cleanup.resolve();
+    expect(await pass).toMatchObject({
+      ingested: false,
+      error: "Compilation unavailable",
+    });
+    expect(releaseInboxSource).toHaveBeenCalledTimes(1);
+    expect(tryLock("/v")).toBe(true);
+    unlock("/v");
+  });
+
+  it.each([new Error("Compilation unavailable"), 0, false])(
+    "retains processing rejection %s and detects same-path reopening during native release",
+    async (failure) => {
+      const entered = deferred<void>();
+      const cleanup = deferred<void>();
+      startInboxCompilation.mockRejectedValueOnce(failure);
+      releaseInboxSource.mockImplementationOnce(() => {
+        entered.resolve();
+        return cleanup.promise;
+      });
+      const pass = runInboxPass("/v", selected);
+      await entered.promise;
+      ui = { ...ui, vaultToken: "synthetic-reopened" };
+      cleanup.resolve();
+      expect(await pass).toMatchObject({
+        ingested: false,
+        error: `${String(failure)}; The originating vault opening is no longer active`,
+      });
+      expect(releaseInboxSource).toHaveBeenCalledTimes(1);
+      expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+      expect(bumpInboxRev).not.toHaveBeenCalled();
+    },
+  );
+
+  it("retains processing, release and reopened-origin failures in the same outcome", async () => {
+    const entered = deferred<void>();
+    const cleanup = deferred<void>();
+    startInboxCompilation.mockRejectedValueOnce(
+      new Error("Compilation unavailable"),
+    );
+    releaseInboxSource.mockImplementationOnce(async () => {
+      entered.resolve();
+      await cleanup.promise;
+      throw new Error("Release unavailable");
+    });
+    const pass = runInboxPass("/v", selected);
+    await entered.promise;
+    ui = { ...ui, vaultToken: "synthetic-reopened" };
+    cleanup.resolve();
+    expect(await pass).toMatchObject({
+      ingested: false,
+      error:
+        "Error: Compilation unavailable; Inbox snapshot release failed: Error: Release unavailable; The originating vault opening is no longer active",
+    });
+    expect(releaseInboxSource).toHaveBeenCalledTimes(1);
+    expect(archiveInboxSourceChecked).not.toHaveBeenCalled();
+    expect(bumpInboxRev).not.toHaveBeenCalled();
+  });
+
+  it.each(["hold", "refusal", "pending", "partial", "completed"])(
+    "refuses a successful pass outcome when native release fails after %s",
+    async (branch) => {
+      if (branch === "hold") {
+        scanTextSecrets.mockResolvedValueOnce({
+          secrets: ["synthetic-secret"],
+          pii: [],
+        });
+      } else if (branch === "refusal") {
+        judgeSource.mockResolvedValueOnce({
+          verdict: "drop",
+          reason: "Synthetic refusal",
+          rule: "synthetic",
+        });
+        archiveInboxSourceChecked.mockResolvedValueOnce({
+          archivedPath: "/v/_inbox/.archived/a.md",
+          sourceRevision: revision,
+          harvestCompleted: false,
+        });
+      } else if (branch === "pending") {
+        startInboxCompilation.mockRejectedValueOnce(
+          new WorkflowOperationError(
+            "pending",
+            "unavailable",
+            "Synthetic admission unavailable",
+          ),
+        );
+      } else if (branch === "partial") {
+        startInboxCompilation.mockResolvedValueOnce({
+          context,
+          result: {
+            ...completed,
+            state: "partial",
+            nextPacket: 1,
+            publication: null,
+          },
+        });
+      }
+      releaseInboxSource.mockRejectedValueOnce(
+        new Error("Release unavailable"),
+      );
+      const outcome = await runInboxPass("/v", selected);
+      expect(outcome).toMatchObject({
+        ingested: false,
+        error: expect.stringContaining("Release unavailable"),
+      });
+      expect(outcome.harvestCompleted).not.toBe(true);
+      if (branch === "pending")
+        expect(outcome.error).toContain("Synthetic admission unavailable");
+      expect(releaseInboxSource).toHaveBeenCalledTimes(1);
+      expect(archiveInboxSourceChecked).toHaveBeenCalledTimes(
+        branch === "refusal" || branch === "completed" ? 1 : 0,
+      );
+    },
+  );
+
+  it("holds the shared vault lock through compilation and cleanup", async () => {
+    const gate = deferred<InboxEntry[]>();
+    listInboxEntries.mockReturnValueOnce(gate.promise);
+    const pass = runInboxPass("/v", selected);
+    expect(tryLock("/v")).toBe(false);
+    gate.resolve([]);
+    await pass;
+    expect(tryLock("/v")).toBe(true);
+    unlock("/v");
+  });
+
+  it("does not start while a plan gate or another vault operation holds the lock", async () => {
+    ingestState.stage = "plan-gate";
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      busy: true,
+    });
+    ingestState.stage = "idle";
+    expect(tryLock("/v")).toBe(true);
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      busy: true,
+    });
+    unlock("/v");
+    expect(listInboxEntries).not.toHaveBeenCalled();
+  });
+
+  it("does not relax quarantine on a settings failure", async () => {
+    getSettings.mockRejectedValueOnce(new Error("Settings unavailable"));
+    expect(await runInboxPass("/v", selected)).toMatchObject({
+      ingested: false,
+      error: "Settings unavailable",
+    });
+    expect(inboxSourceSnapshot).not.toHaveBeenCalled();
   });
 });

@@ -7,11 +7,12 @@
 import { create } from "zustand";
 import { createElement } from "react";
 import { runAgent, type AgentStep } from "../lib/agentLoop";
-import { confirmAction } from "./dialogStore";
+import { confirmAction, useDialogStore } from "./dialogStore";
 import { buildWritePreview } from "../lib/agentDiff";
 import DiffView from "../components/DiffView";
 import { ipc, type AgentToolCall, type AgentToolDescriptor } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
+import { useVaultStore } from "./vaultStore";
 
 /** HTTP providers whose API supports the tool-calling loop (see providers.rs). */
 export const AGENT_PROVIDERS = new Set([
@@ -89,27 +90,16 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   async start(opts) {
     if (get().running) return;
-    if (!agentSupported(opts.provider)) {
-      set({
-        error:
-          `Agent mode needs a tool-capable provider (Anthropic API or an ` +
-          `OpenAI-compatible provider). "${opts.provider}" isn't supported — ` +
-          `switch it under Settings → Model.`,
-        answer: "",
-        steps: [],
-        question: opts.question,
-      });
-      return;
-    }
-
-    // Fetch the tool schemas once and cache them.
-    let tools = get().tools;
-    if (tools.length === 0) {
-      tools = await ipc.agentToolsSchema().catch(() => []);
-      set({ tools });
-    }
-
-    abortController = new AbortController();
+    const { currentVault, vaultToken, isOpeningVault } = useVaultStore.getState();
+    if (!currentVault || isOpeningVault || currentVault.path !== opts.vaultPath) return;
+    const controller = new AbortController();
+    abortController = controller;
+    const isCurrent = () => {
+      const state = useVaultStore.getState();
+      return abortController === controller && !controller.signal.aborted && !state.isOpeningVault &&
+        state.currentVault?.path === currentVault.path && state.vaultToken === vaultToken;
+    };
+    // Own the run before the first await, including schema loading.
     set({
       running: true,
       question: opts.question,
@@ -120,24 +110,44 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
 
     try {
+      const origin = Object.freeze(await ipc.agentVaultSession());
+      if (!isCurrent()) return;
+      if (origin.vaultPath !== currentVault.path) {
+        throw new Error("the active vault changed before the agent started");
+      }
+      const roleSnapshot = await ipc.captureModelRole(origin, "agent", "foreground");
+      const { providerId: provider, modelId: model } = roleSnapshot.routeSignature;
+      if (!agentSupported(provider)) throw new Error("Selected Agent model has no verified tool runner; choose a supported optional route explicitly in Settings");
+      // Fetch the tool schemas once and cache them.
+      let tools = get().tools;
+      if (tools.length === 0) {
+        tools = await ipc.agentToolsSchema();
+        if (!isCurrent()) return;
+        set({ tools });
+      }
       const result = await runAgent({
-        provider: opts.provider,
-        model: opts.model,
+        provider,
+        model,
+        roleSnapshot,
         system: opts.systemPrompt || DEFAULT_AGENT_PROMPT,
         question: opts.question,
+        origin,
         tools,
         allowWrite: opts.allowWrite,
-        signal: abortController.signal,
+        signal: controller.signal,
+        isCurrent,
         confirmWrite: async (call: AgentToolCall) => {
+          if (!isCurrent()) return false;
           const path = String(call.input.path ?? "");
           const next = String(call.input.content ?? "");
           // Current on-disk content; missing/unreadable ⇒ treated as a create.
           const current = await ipc
-            .readFile(`${opts.vaultPath}/${path}`)
+            .readFile(`${origin.vaultPath}/${path}`)
             .then((f) => f.raw)
             .catch(() => null);
+          if (!isCurrent()) return false;
           const preview = buildWritePreview(path, current, next);
-          return confirmAction({
+          const confirmation = confirmAction({
             title:
               preview.kind === "create"
                 ? opts.copy.confirmCreateTitle
@@ -161,27 +171,48 @@ export const useAgentStore = create<AgentState>((set, get) => ({
             ),
             danger: true,
           });
+          const request = useDialogStore.getState().request;
+          const closeOwnConfirmation = () => {
+            if (!request) return;
+            if (useDialogStore.getState().request === request) useDialogStore.getState().close(null);
+            else request.resolve(null); // a newer dialog owns the visible UI
+          };
+          controller.signal.addEventListener("abort", closeOwnConfirmation, { once: true });
+          try {
+            if (!isCurrent()) closeOwnConfirmation();
+            const confirmed = await confirmation;
+            return isCurrent() && confirmed;
+          } finally {
+            controller.signal.removeEventListener("abort", closeOwnConfirmation);
+          }
         },
-        onStep: (step) => set((s) => ({ steps: [...s.steps, step] })),
+        onStep: (step) => {
+          if (isCurrent()) set((s) => ({ steps: [...s.steps, step] }));
+        },
       });
+      if (!isCurrent()) return;
       set({
         answer: result.answer,
         stoppedAtLimit: result.stoppedAtLimit,
         running: false,
       });
     } catch (err) {
-      set({ error: String(err), running: false });
+      if (isCurrent()) set({ error: String(err), running: false });
     } finally {
-      abortController = null;
+      // A cancelled run can settle after a newer run has acquired ownership.
+      if (abortController === controller) abortController = null;
     }
   },
 
   cancel() {
     abortController?.abort();
+    abortController = null;
     set({ running: false });
   },
 
   reset() {
+    abortController?.abort();
+    abortController = null;
     set({
       running: false,
       question: "",
@@ -192,3 +223,10 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     });
   },
 }));
+
+useVaultStore.subscribe((state, previous) => {
+  if (state.vaultToken !== previous.vaultToken || state.currentVault?.path !== previous.currentVault?.path ||
+      (state.isOpeningVault && !previous.isOpeningVault)) {
+    useAgentStore.getState().reset();
+  }
+});

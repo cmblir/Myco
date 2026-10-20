@@ -7,6 +7,7 @@
 
 import type { JSX } from "react";
 import type { Channel, DayPoint } from "../lib/board";
+import { escapeHtml } from "../lib/wikilinks";
 
 /** The app's page-type colors in their VALIDATED fixed order (dataviz
  * validator, light #fcfcfb + dark #191919): overview → entity → concept →
@@ -237,3 +238,104 @@ export function CatTable({
   );
 }
 
+
+// ---- Static marks: the same charts as escaped HTML strings -----------------
+// A note's ```chart (lib/blocks/chart.ts) draws where no React root runs:
+// Preview's markdown renderer returns HTML synchronously, and Live's widget
+// sets that same HTML. react-dom/server would add ~23 kB gzip to the
+// renderer's chunk (measured), so these twins write the markup directly —
+// hbarsHtml is byte-identical to <HBars> (lib/blocks/chart.test.ts).
+
+const esc = escapeHtml;
+
+/** Several series, in TYPE_COLORS' validated order; one series takes the
+ *  accent, as the dashboard does. */
+export const SERIES_COLORS: readonly string[] = [
+  ...new Set(Object.values(TYPE_COLORS)),
+];
+
+/** <HBars> as a string; `title` overrides a row's hover text, `num` the
+ *  value as shown (a formatted count). */
+export function hbarsHtml(
+  rows: (HBarRow & { title?: string; num?: string })[],
+): string {
+  const max = Math.max(1, ...rows.map((r) => r.count));
+  return `<div class="dash-hbars">${rows
+    .map(
+      (r) =>
+        `<div class="dash-hbar" title="${esc(r.title ?? `${r.label}: ${r.num ?? r.count}`)}"><span class="dash-hbar__label">${esc(r.label)}</span><span class="dash-hbar__track"><span class="dash-hbar__fill" style="width:${Math.max(2, (r.count / max) * 100)}%;background:${esc(r.color ?? "var(--accent)")}"></span></span><span class="dash-hbar__num">${esc(r.num ?? String(r.count))}</span></div>`,
+    )
+    .join("")}</div>`;
+}
+
+export interface LineSeries {
+  title: string;
+  data: number[];
+  color: string;
+}
+
+/** Category lines — <DayLine>'s 2px path, one per series, over labels
+ *  instead of days; the axis names every label (only the ends past 12).
+ *  Values show as text, never only on hover: the scale's high and low left
+ *  of the plot, and one series' last value at the axis's end, as DayLine
+ *  (several series carry theirs in the legend, chart.ts). `fmt` writes a
+ *  value. */
+export function linesHtml(
+  labels: string[],
+  series: LineSeries[],
+  fmt: (v: number) => string,
+): string {
+  const all = series.flatMap((s) => s.data);
+  const lo = Math.min(0, ...all);
+  const top = Math.max(0, ...all);
+  const hi = top > lo ? top : lo + 1;
+  const W = 100;
+  const H = 40;
+  const x = (i: number) => (labels.length > 1 ? (i / (labels.length - 1)) * W : W / 2);
+  const y = (v: number) => H - 2 - ((v - lo) / (hi - lo)) * (H - 4);
+  const says = (s: LineSeries) =>
+    `${s.title}: ${labels.map((l, i) => `${l} ${s.data[i]}`).join(", ")}`;
+  const lines = series.map(
+    (s) =>
+      `<polyline points="${s.data.map((v, i) => `${x(i).toFixed(2)},${y(v).toFixed(2)}`).join(" ")}" fill="none" stroke="${esc(s.color)}" stroke-width="1.5" vector-effect="non-scaling-stroke"><title>${esc(says(s))}</title></polyline>`,
+  );
+  const axis = labels.length > 12 ? [labels[0], labels[labels.length - 1]] : [...labels];
+  if (series.length === 1 && axis.length)
+    axis[axis.length - 1] += ` · ${fmt(series[0].data[labels.length - 1])}`;
+  const scale = `<div class="dash-lines__scale"><span>${esc(fmt(hi))}</span><span>${esc(fmt(lo))}</span></div>`;
+  return `<div class="dash-lines">${scale}<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="dash-line" role="img" aria-label="${esc(series.map(says).join("; "))}">${lines.join("")}</svg><div class="dash-weeks__axis">${axis.map((l) => `<span>${esc(l)}</span>`).join("")}</div></div>`;
+}
+
+/** The legend of a multi-series chart, as DayBars draws it. */
+export function legendHtml(items: { label: string; color: string }[]): string {
+  return `<div class="dash-legend">${items
+    .map((i) => `<span><i style="background:${esc(i.color)}"></i> ${esc(i.label)}</span>`)
+    .join("")}</div>`;
+}
+
+/** A circle whose circumference is 100: a slice's dash is its percent. */
+const DONUT_R = 50 / Math.PI;
+
+/** Pie as an SVG donut, from 12 o'clock clockwise, with a 0.5% gap between
+ *  slices; the legend carries each value and share as text (a slice is
+ *  never named by its colour alone). Zero and negative values draw none. */
+export function donutHtml(
+  slices: { label: string; value: number; color: string }[],
+): string {
+  const total = slices.reduce((a, s) => a + Math.max(0, s.value), 0);
+  const pct = (v: number) => (total > 0 ? (Math.max(0, v) / total) * 100 : 0);
+  const gap = slices.filter((s) => s.value > 0).length > 1 ? 0.5 : 0;
+  const says = (s: (typeof slices)[number]) =>
+    `${s.label} · ${s.value} (${Math.round(pct(s.value))}%)`;
+  let at = 0;
+  const ring = (stroke: string, extra: string) =>
+    `<circle cx="21" cy="21" r="${DONUT_R.toFixed(4)}" fill="none" stroke="${stroke}" stroke-width="6"${extra}`;
+  const arcs = slices.map((s) => {
+    const p = pct(s.value);
+    if (p <= 0) return "";
+    const arc = `${ring(esc(s.color), ` stroke-dasharray="${(p - gap).toFixed(3)} ${(100 - p + gap).toFixed(3)}" stroke-dashoffset="${(25 - at).toFixed(3)}"`)}><title>${esc(says(s))}</title></circle>`;
+    at += p;
+    return arc;
+  });
+  return `<div class="dash-donut"><svg viewBox="0 0 42 42" role="img" aria-label="${esc(slices.map(says).join(", "))}">${ring("var(--line)", "")}></circle>${arcs.join("")}</svg>${legendHtml(slices.map((s) => ({ label: says(s), color: s.color })))}</div>`;
+}

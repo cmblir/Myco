@@ -320,11 +320,13 @@ fn main() {
         let vecs = embed(EmbedRole::Document, &chunks);
         chunks_total += chunks.len();
         pages += 1;
-        store.upsert_page(
-            &page.rel,
-            &page.stem,
-            hashes.into_iter().zip(vecs).collect(),
-        );
+        store
+            .upsert_page(
+                &page.rel,
+                &page.stem,
+                hashes.into_iter().zip(vecs).collect(),
+            )
+            .expect("valid dense index vectors");
         bm25.upsert_page(&page.rel, &page.stem, &chunks);
         eprint!("\rindexed {pages} pages / {chunks_total} chunks");
     }
@@ -358,7 +360,9 @@ fn main() {
         let mut dense_per_chunk = Vec::with_capacity(chunks.len());
         let mut fused_per_chunk = Vec::with_capacity(chunks.len());
         for (v, chunk_text) in vecs.iter().zip(chunks.iter()) {
-            let dense = store.search(v, pipeline::FUSE_POOL);
+            let dense = store
+                .search(v, pipeline::FUSE_POOL)
+                .expect("valid dense search geometry");
             let lexical = bm25.search(chunk_text, pipeline::FUSE_POOL);
             dense_per_chunk.push(pipeline::dense_chunk_matches(&dense));
             fused_per_chunk.push(pipeline::fuse_chunk_matches(&dense, &lexical));

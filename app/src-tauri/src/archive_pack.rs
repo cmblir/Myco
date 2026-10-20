@@ -1,19 +1,15 @@
 // Archive compaction for the cold tier (Settings → Distill).
 //
-// `sessions/archive/<YYYY-MM>/` and `daily/archive/<YYYY-Www>/` only ever
-// grow: `vector_index::is_cold` keeps them out of the index, the prune drops
-// their records, and nothing ever reclaims the disk. This packs a whole
-// bucket into one deflated zip beside it, and unpacks it again.
+// Cold buckets in sessions/archive, daily/archive, and weekly/archive grow
+// outside the live index. This packs one flat bucket into a deflated ZIP
+// beside it and restores its members when requested.
 //
-// SCOPE, ENFORCED: this module touches `sessions/archive/` and
-// `daily/archive/` and NOTHING else. `raw/` — including `raw/archive/` — is
-// immutable through every path in this app, and it is deliberately absent
-// from `TREES` below, which is the ONLY place a tree name becomes a
-// directory. Both untrusted inputs (`tree`, `bucket`) go through
-// `bucket_paths`, which checks the tree against that closed list and the
-// bucket against its exact `YYYY-MM` / `YYYY-Www` shape before
-// `myco_pro::safe_join` is ever called, so neither `raw` nor `..` is
-// spellable.
+// The closed TREES list and exact bucket shape limit paths relative to an
+// already admitted real vault root. Mutation rechecks reject symbolic
+// descendants and raw/ relative to that root. This helper cannot establish
+// that a caller root is the currently open vault rather than its raw/ child.
+// Product entry points use authority admission and recheck the native opening
+// for every short mutation; filesystem-only controls are test-only.
 //
 // Zip, not tar.gz: `zip` is already a direct dependency (Cargo.toml, used by
 // `extract.rs` and `mcp_native.rs`), so this adds no dependency at all, and
@@ -23,8 +19,13 @@
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-/// The two archive trees this module owns, `(tree name, vault-relative dir)`.
-/// `raw` is NOT here and must never be added: `raw/` is immutable.
+#[path = "archive_pack_authority.rs"]
+mod authority;
+use authority::ArchiveOperation;
+pub(crate) use authority::{compress_for_origin, restore_for_origin, usage_for_origin};
+
+/// The three allowed trees, `(tree name, admitted-vault-relative directory)`.
+/// `raw` is absent; exact vault-root authorization is the caller's responsibility.
 const TREES: [(&str, &str); 3] = [
     ("sessions", "sessions/archive"),
     ("daily", "daily/archive"),
@@ -53,8 +54,8 @@ pub struct PackReport {
     pub files: usize,
     /// Loose bytes that were removed minus the zip bytes written.
     pub reclaimed: u64,
-    /// Buckets that failed, `"<tree>/<bucket>: <error>"`. Their originals are
-    /// untouched — see `pack_bucket`'s ordering.
+    /// Buckets that failed, `"<tree>/<bucket>: <error>"`. Before publication
+    /// originals remain; partial unlink retains the complete ZIP and remaining files.
     pub failed: Vec<String>,
 }
 
@@ -133,7 +134,7 @@ fn loose_files(dir: &Path) -> Result<(Vec<PathBuf>, bool), String> {
     Ok((files, has_subdir))
 }
 
-/// Current size of every archive bucket in both trees. Walks two shallow
+/// Current size of every archive bucket in the three trees. Walks shallow
 /// directories, so it is cheap — but still on demand only (one IPC command,
 /// never a render-time call).
 pub fn usage(root: &Path) -> Vec<BucketUsage> {
@@ -199,148 +200,893 @@ thread_local! {
     static FAIL_VERIFY_FOR_TEST: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
 
-/// Pack one bucket directory into `zip_path` and delete the originals.
-///
-/// ORDERING IS THE SAFETY PROPERTY, in this exact sequence:
-///   1. write every file into `<zip_path>.part` (never the final name, so a
-///      crash mid-write leaves no file that looks like a finished archive);
-///   2. `finish()` + `sync_all()` — the bytes are on the platter;
-///   3. reopen the `.part` as a `ZipArchive` and read EVERY entry back,
-///      comparing against the original file's bytes;
-///   4. only then rename `.part` → `zip_path`;
-///   5. only then delete the loose files and the empty directory.
-///
-/// Any failure before step 4 removes the `.part` and returns `Err` with every
-/// original still in place.
-///
-/// Returns `(files packed, loose bytes, zip bytes)`.
-fn pack_bucket(dir: &Path, zip_path: &Path) -> Result<(usize, u64, u64), String> {
-    if zip_path.exists() {
-        // A zip AND loose files means a previous pack was interrupted between
-        // "archive verified and renamed into place" and "originals removed"
-        // (SIGKILL, a read-only file). Refusing both ways left the bucket
-        // permanently stuck: pack said "restore first", restore said "already
-        // exists". The archive was verified before it got its final name, so
-        // finishing that deletion is the safe move — but re-verify against
-        // what is on disk NOW rather than trusting the earlier run.
-        let (files, has_subdir) = loose_files(dir)?;
-        if has_subdir || files.is_empty() {
-            return Err(format!(
-                "{} already exists — restore it before packing again",
-                zip_path.display()
-            ));
-        }
-        // Only the exact set the archive already holds may be dropped. A
-        // loose file that is NOT in the zip (e.g. a backdated session landed
-        // in a packed month) is new data — refuse and let the user restore.
-        if verify_pack(zip_path, &files).is_err() {
-            return Err(format!(
-                "{} already exists — restore it before packing again",
-                zip_path.display()
-            ));
-        }
-        let loose_bytes = files
-            .iter()
-            .filter_map(|f| std::fs::metadata(f).ok().map(|m| m.len()))
-            .sum();
-        for f in &files {
-            std::fs::remove_file(f).map_err(|e| format!("remove {}: {e}", f.display()))?;
-        }
-        let _ = std::fs::remove_dir(dir);
-        let zip_bytes = std::fs::metadata(zip_path).map(|m| m.len()).unwrap_or(0);
-        return Ok((files.len(), loose_bytes, zip_bytes));
+// Synthetic regression checkpoints only. Production code has no hook registry.
+#[cfg(test)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MutationCheckpoint {
+    PackStageCreated,
+    PackPrepared,
+    PackVerified,
+    PackBeforeDelete(usize),
+    RestoreWrite,
+    RestorePrepared,
+    RestoreFinalize,
+    StagePublishFailed,
+}
+
+#[cfg(test)]
+pub(crate) type MutationHook = Box<dyn Fn(MutationCheckpoint) -> Result<(), String>>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static MUTATION_HOOK: std::cell::RefCell<Option<MutationHook>> = const {
+        std::cell::RefCell::new(None)
+    };
+}
+
+#[cfg(test)]
+fn mutation_checkpoint(phase: MutationCheckpoint) -> Result<(), String> {
+    MUTATION_HOOK.with(|hook| hook.borrow().as_ref().map_or(Ok(()), |hook| hook(phase)))
+}
+
+#[cfg(test)]
+#[path = "archive_pack_mutation_tests.rs"]
+mod mutation_tests;
+
+#[cfg(test)]
+#[path = "archive_pack_safety_tests.rs"]
+mod safety_tests;
+
+// These retained handles are private to one archive operation. They do not
+// authorize arbitrary callers or make external filesystem edits atomic.
+struct RetainedDirectory {
+    path: PathBuf,
+    file: std::fs::File,
+}
+
+fn same_identity(left: &std::fs::Metadata, right: &std::fs::Metadata) -> Result<bool, String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        Ok(left.dev() == right.dev() && left.ino() == right.ino())
     }
-    let (files, has_subdir) = loose_files(dir)?;
+    #[cfg(not(unix))]
+    {
+        let _ = (left, right);
+        Err("archive file identity is unsupported on this platform".into())
+    }
+}
+
+impl RetainedDirectory {
+    fn capture(path: &Path) -> Result<Self, String> {
+        let named = std::fs::symlink_metadata(path)
+            .map_err(|error| format!("inspect archive directory {}: {error}", path.display()))?;
+        if !named.file_type().is_dir() {
+            return Err(format!("archive directory is not real: {}", path.display()));
+        }
+        let retained = Self {
+            path: path.to_path_buf(),
+            file: std::fs::File::open(path)
+                .map_err(|error| format!("open archive directory {}: {error}", path.display()))?,
+        };
+        retained.verify()?;
+        Ok(retained)
+    }
+
+    fn verify(&self) -> Result<(), String> {
+        let held = self
+            .file
+            .metadata()
+            .map_err(|error| format!("inspect held directory: {error}"))?;
+        let named = std::fs::symlink_metadata(&self.path).map_err(|error| {
+            format!(
+                "reinspect archive directory {}: {error}",
+                self.path.display()
+            )
+        })?;
+        if !held.is_dir() || !named.file_type().is_dir() || !same_identity(&held, &named)? {
+            return Err(format!(
+                "archive directory changed: {}",
+                self.path.display()
+            ));
+        }
+        Ok(())
+    }
+}
+
+struct RetainedFile {
+    path: PathBuf,
+    file: std::fs::File,
+    metadata: std::fs::Metadata,
+    revision: String,
+}
+
+fn archive_digest(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    format!("{:x}", Sha256::digest(bytes))
+}
+
+fn read_held(file: &std::fs::File) -> Result<Vec<u8>, String> {
+    use std::io::{Seek, SeekFrom};
+    let mut reader = file
+        .try_clone()
+        .map_err(|error| format!("clone archive handle: {error}"))?;
+    reader
+        .seek(SeekFrom::Start(0))
+        .map_err(|error| format!("seek archive handle: {error}"))?;
+    let mut bytes = Vec::new();
+    reader
+        .read_to_end(&mut bytes)
+        .map_err(|error| format!("read archive handle: {error}"))?;
+    Ok(bytes)
+}
+
+impl RetainedFile {
+    fn capture(path: &Path) -> Result<Self, String> {
+        let named = std::fs::symlink_metadata(path)
+            .map_err(|error| format!("inspect archive file {}: {error}", path.display()))?;
+        if !named.file_type().is_file() {
+            return Err(format!(
+                "archive target is not a regular file: {}",
+                path.display()
+            ));
+        }
+        let file = std::fs::File::open(path)
+            .map_err(|error| format!("open archive file {}: {error}", path.display()))?;
+        if !same_identity(
+            &named,
+            &file
+                .metadata()
+                .map_err(|error| format!("inspect opened file: {error}"))?,
+        )? {
+            return Err(format!(
+                "archive file changed while opening: {}",
+                path.display()
+            ));
+        }
+        Self::from_file(path, file)
+    }
+
+    fn from_file(path: &Path, file: std::fs::File) -> Result<Self, String> {
+        let metadata = file
+            .metadata()
+            .map_err(|error| format!("inspect held archive file: {error}"))?;
+        let mut retained = Self {
+            path: path.to_path_buf(),
+            file,
+            metadata,
+            revision: String::new(),
+        };
+        retained.verify_identity()?;
+        retained.revision = archive_digest(&read_held(&retained.file)?);
+        retained.verify_identity()?;
+        Ok(retained)
+    }
+
+    fn verify_identity(&self) -> Result<(), String> {
+        let held = self
+            .file
+            .metadata()
+            .map_err(|error| format!("inspect held archive file: {error}"))?;
+        let named = std::fs::symlink_metadata(&self.path)
+            .map_err(|error| format!("reinspect archive file {}: {error}", self.path.display()))?;
+        if !held.is_file()
+            || !named.file_type().is_file()
+            || !same_identity(&self.metadata, &held)?
+            || !same_identity(&held, &named)?
+        {
+            return Err(format!(
+                "archive file identity changed: {}",
+                self.path.display()
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if named.nlink() != 1
+                || held.len() != self.metadata.len()
+                || held.ctime() != self.metadata.ctime()
+                || held.ctime_nsec() != self.metadata.ctime_nsec()
+                || named.ctime() != held.ctime()
+                || named.ctime_nsec() != held.ctime_nsec()
+            {
+                return Err(format!(
+                    "archive file changed or has unowned links: {}",
+                    self.path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn read(&self) -> Result<Vec<u8>, String> {
+        self.verify_identity()?;
+        let bytes = read_held(&self.file)?;
+        self.verify_identity()?;
+        if archive_digest(&bytes) != self.revision {
+            return Err(format!(
+                "archive file content changed: {}",
+                self.path.display()
+            ));
+        }
+        Ok(bytes)
+    }
+
+    fn verify(&self) -> Result<(), String> {
+        self.read().map(|_| ())
+    }
+}
+
+// Per-member observations have no descriptors. Reopen and compare one member
+// at a time; this does not prove exclusion of arbitrary external inode ABA.
+struct ObservedFile {
+    path: PathBuf,
+    metadata: std::fs::Metadata,
+    revision: String,
+}
+
+impl ObservedFile {
+    fn from_retained(retained: RetainedFile) -> Self {
+        Self {
+            path: retained.path,
+            metadata: retained.metadata,
+            revision: retained.revision,
+        }
+    }
+
+    fn capture(path: &Path) -> Result<Self, String> {
+        Ok(Self::from_retained(RetainedFile::capture(path)?))
+    }
+
+    fn compare(&self, current: &RetainedFile) -> Result<(), String> {
+        if !same_identity(&self.metadata, &current.metadata)?
+            || self.metadata.len() != current.metadata.len()
+            || self.revision != current.revision
+        {
+            return Err(format!(
+                "archive observation changed: {}",
+                self.path.display()
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if self.metadata.ctime() != current.metadata.ctime()
+                || self.metadata.ctime_nsec() != current.metadata.ctime_nsec()
+            {
+                return Err(format!(
+                    "archive observation changed: {}",
+                    self.path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn read(&self) -> Result<Vec<u8>, String> {
+        let current = RetainedFile::capture(&self.path)?;
+        self.compare(&current)?;
+        current.read()
+    }
+
+    fn verify(&self) -> Result<(), String> {
+        self.read().map(|_| ())
+    }
+}
+
+// Never let TempPath::drop remove a saved pathname after namespace replacement.
+// Cleanup is explicit, under the existing writer or after its transaction ends.
+struct ArchiveStage {
+    temporary: Option<tempfile::NamedTempFile>,
+    path: PathBuf,
+    created: std::fs::Metadata,
+    sealed: Option<ObservedFile>,
+}
+
+fn verify_stage_namespace(
+    canonical_root: &Path,
+    admitted_root: &RetainedDirectory,
+    parent: &RetainedDirectory,
+) -> Result<(), String> {
+    admitted_root.verify()?;
+    parent.verify()?;
+    if admitted_root
+        .path
+        .canonicalize()
+        .map_err(|error| error.to_string())?
+        != canonical_root
+        || crate::vault::confine_parent(canonical_root, &parent.path.to_string_lossy())?
+            != parent.path
+        || crate::vault::is_raw_path(canonical_root, &parent.path)
+    {
+        return Err("archive stage namespace changed; available copies retained".into());
+    }
+    Ok(())
+}
+
+impl ArchiveStage {
+    fn create_locked(
+        _guard: &std::sync::MutexGuard<'_, ()>,
+        canonical_root: &Path,
+        admitted_root: &RetainedDirectory,
+        parent: &RetainedDirectory,
+        prefix: &str,
+        suffix: &str,
+    ) -> Result<Self, String> {
+        verify_stage_namespace(canonical_root, admitted_root, parent)?;
+        let temporary = tempfile::Builder::new()
+            .prefix(prefix)
+            .suffix(suffix)
+            .disable_cleanup(true)
+            .tempfile_in(&parent.path)
+            .map_err(|error| format!("create archive stage: {error}"))?;
+        let path = temporary.path().to_path_buf();
+        let created = temporary.as_file().metadata().map_err(|error| {
+            format!(
+                "inspect archive stage; retained at {}: {error}",
+                path.display()
+            )
+        })?;
+        let stage = Self {
+            temporary: Some(temporary),
+            path,
+            created,
+            sealed: None,
+        };
+        stage.verify_created()?;
+        Ok(stage)
+    }
+
+    fn temporary(&self) -> Result<&tempfile::NamedTempFile, String> {
+        self.temporary
+            .as_ref()
+            .ok_or_else(|| "archive stage is missing".into())
+    }
+
+    fn temporary_mut(&mut self) -> Result<&mut tempfile::NamedTempFile, String> {
+        self.temporary
+            .as_mut()
+            .ok_or_else(|| "archive stage is missing".into())
+    }
+
+    fn verify_created(&self) -> Result<(), String> {
+        let held = self
+            .temporary()?
+            .as_file()
+            .metadata()
+            .map_err(|error| error.to_string())?;
+        let named = std::fs::symlink_metadata(&self.path).map_err(|error| error.to_string())?;
+        if !held.is_file()
+            || !named.file_type().is_file()
+            || !same_identity(&self.created, &held)?
+            || !same_identity(&held, &named)?
+        {
+            return Err(format!(
+                "archive stage identity changed; retained at {}",
+                self.path.display()
+            ));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if held.nlink() != 1
+                || named.nlink() != 1
+                || held.len() != named.len()
+                || held.ctime() != named.ctime()
+                || held.ctime_nsec() != named.ctime_nsec()
+            {
+                return Err(format!(
+                    "archive stage changed or has unowned links; retained at {}",
+                    self.path.display()
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn seal(&mut self) -> Result<(), String> {
+        self.verify_created()?;
+        let file = self
+            .temporary()?
+            .as_file()
+            .try_clone()
+            .map_err(|error| error.to_string())?;
+        self.sealed = Some(ObservedFile::from_retained(RetainedFile::from_file(
+            &self.path, file,
+        )?));
+        Ok(())
+    }
+
+    fn verify_sealed(&self) -> Result<(), String> {
+        self.verify_created()?;
+        let expected = self
+            .sealed
+            .as_ref()
+            .ok_or_else(|| format!("unsealed archive stage retained at {}", self.path.display()))?;
+        let file = self
+            .temporary()?
+            .as_file()
+            .try_clone()
+            .map_err(|error| error.to_string())?;
+        let current = RetainedFile::from_file(&self.path, file)?;
+        expected.compare(&current)
+    }
+
+    fn cleanup_locked(
+        &mut self,
+        _guard: &std::sync::MutexGuard<'_, ()>,
+        canonical_root: &Path,
+        admitted_root: &RetainedDirectory,
+        parent: &RetainedDirectory,
+    ) -> Result<(), String> {
+        if self.temporary.is_none() {
+            return Ok(());
+        }
+        verify_stage_namespace(canonical_root, admitted_root, parent)?;
+        if crate::vault::confine_delete_path(canonical_root, &self.path.to_string_lossy())?
+            != self.path
+            || self.path.parent() != Some(parent.path.as_path())
+        {
+            return Err("archive stage cleanup path changed; available copies retained".into());
+        }
+        // Writes can fail before sealing. The still-open creation handle owns
+        // that inode even if its partial bytes changed during our own writes.
+        // Sealed stages additionally require their immutable revision snapshot.
+        self.verify_created()?;
+        if self.sealed.is_some() {
+            self.verify_sealed()?;
+        }
+        std::fs::remove_file(&self.path)
+            .map_err(|error| format!("remove owned stage {}: {error}", self.path.display()))?;
+        drop(self.temporary.take());
+        Ok(())
+    }
+}
+
+fn cleanup_archive_stage(
+    authority: &ArchiveOperation<'_>,
+    canonical_root: &Path,
+    admitted_root: &RetainedDirectory,
+    parent: &RetainedDirectory,
+    stage: &mut Option<ArchiveStage>,
+) -> Result<(), String> {
+    let Some(stage) = stage.as_mut().filter(|stage| stage.temporary.is_some()) else {
+        return Ok(());
+    };
+    authority
+        .mutate(|rechecked_root, guard| {
+            if rechecked_root != canonical_root {
+                return Err(
+                    "archive root changed before stage cleanup; available copies retained".into(),
+                );
+            }
+            stage.cleanup_locked(guard, canonical_root, admitted_root, parent)
+        })
+        .map_err(|error| {
+            format!(
+                "stage cleanup refused; retained at {}: {error}",
+                stage.path.display()
+            )
+        })
+}
+
+fn checked_archive_paths(
+    root: &Path,
+    requested_root: &Path,
+    dir: &Path,
+    zip_path: &Path,
+) -> Result<(PathBuf, PathBuf), String> {
+    let dir = crate::vault::confine_mutation_path(root, requested_root, &dir.to_string_lossy())?;
+    let zip_path =
+        crate::vault::confine_mutation_path(root, requested_root, &zip_path.to_string_lossy())?;
+    let parent = dir.parent().ok_or("archive bucket has no parent")?;
+    let parent = crate::vault::confine_parent(root, &parent.to_string_lossy())?;
+    if crate::vault::is_raw_path(root, &parent) {
+        return Err("refused: raw/ is immutable".into());
+    }
+    let zip_parent = crate::vault::confine_parent(
+        root,
+        &zip_path
+            .parent()
+            .ok_or("archive zip has no parent")?
+            .to_string_lossy(),
+    )?;
+    if zip_parent != parent {
+        return Err("archive directory and zip have different parents".into());
+    }
+    let bucket = dir
+        .file_name()
+        .and_then(|name| name.to_str())
+        .ok_or("archive bucket is not UTF-8")?;
+    let allowed = TREES.iter().any(|(tree, rel)| {
+        root.join(rel).canonicalize().ok().as_ref() == Some(&parent) && valid_bucket(tree, bucket)
+    });
+    if !allowed
+        || zip_path.file_name().and_then(|name| name.to_str())
+            != Some(format!("{bucket}.zip").as_str())
+    {
+        return Err("archive paths do not name an allowed bucket".into());
+    }
+    Ok((parent.join(bucket), parent.join(format!("{bucket}.zip"))))
+}
+
+fn plain_archive_name(name: &str) -> bool {
+    !name.is_empty()
+        && name != "."
+        && name != ".."
+        && !name.contains(['/', '\\'])
+        && !name.chars().any(char::is_control)
+}
+
+type ArchiveContents = std::collections::BTreeMap<String, (String, u64)>;
+
+// This validates every member exposed by zip 4.6.1. Hidden duplicate central
+// records need a separate container-format gate; this helper does not claim it.
+fn archive_contents(file: &std::fs::File) -> Result<ArchiveContents, String> {
+    #[cfg(test)]
+    if FAIL_VERIFY_FOR_TEST.with(std::cell::Cell::get) {
+        return Err("injected verification failure".into());
+    }
+    let mut archive = zip::ZipArchive::new(
+        file.try_clone()
+            .map_err(|error| format!("clone archive: {error}"))?,
+    )
+    .map_err(|error| format!("archive is not readable: {error}"))?;
+    let mut contents = ArchiveContents::new();
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("entry {index} unreadable: {error}"))?;
+        let name = entry.name().to_string();
+        let file_type = entry.unix_mode().map(|mode| mode & 0o170000).unwrap_or(0);
+        if !plain_archive_name(&name)
+            || !entry.is_file()
+            || (file_type != 0 && file_type != 0o100000)
+        {
+            return Err(format!(
+                "archive entry `{name}` is not a plain regular file"
+            ));
+        }
+        let mut bytes = Vec::new();
+        entry
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("entry {name} unreadable: {error}"))?;
+        if bytes.len() as u64 != entry.size()
+            || contents
+                .insert(name, (archive_digest(&bytes), bytes.len() as u64))
+                .is_some()
+        {
+            return Err("archive entry size or uniqueness differs".into());
+        }
+    }
+    Ok(contents)
+}
+
+fn publish_archive_stage(
+    _guard: &std::sync::MutexGuard<'_, ()>,
+    canonical_root: &Path,
+    admitted_root: &RetainedDirectory,
+    parent: &RetainedDirectory,
+    stage: &mut ArchiveStage,
+    destination: &Path,
+) -> Result<RetainedFile, String> {
+    // persist_noclobber uses a saved path, so validate ownership BEFORE it.
+    // The cooperating writer excludes app edits, not arbitrary external edits.
+    verify_stage_namespace(canonical_root, admitted_root, parent)?;
+    if crate::vault::confine_delete_path(canonical_root, &stage.path.to_string_lossy())?
+        != stage.path
+        || stage.path.parent() != Some(parent.path.as_path())
+        || crate::vault::confine_delete_path(canonical_root, &destination.to_string_lossy())?
+            != destination
+        || crate::vault::is_raw_path(canonical_root, destination)
+    {
+        return Err("archive publication path changed; available copies retained".into());
+    }
+    stage.verify_sealed()?;
+    let expected = stage.sealed.as_ref().ok_or("archive stage is not sealed")?;
+    let expected_identity = expected.metadata.clone();
+    let expected_revision = expected.revision.clone();
+    let temporary = stage.temporary.take().ok_or("archive stage is missing")?;
+    let file = match temporary.persist_noclobber(destination) {
+        Ok(file) => file,
+        Err(error) => {
+            // PersistError owns the disarmed temporary. Return it to the explicit
+            // cleanup path; consuming the error must never unlink its saved path.
+            let message = if error.error.kind() == std::io::ErrorKind::AlreadyExists {
+                format!(
+                    "{} already exists; archive publication refused",
+                    destination.display()
+                )
+            } else {
+                format!("publish {}: {}", destination.display(), error.error)
+            };
+            stage.temporary = Some(error.file);
+            #[cfg(test)]
+            mutation_checkpoint(MutationCheckpoint::StagePublishFailed)?;
+            return Err(message);
+        }
+    };
+    // A successful fallback may leave a second owned link. Only remove that
+    // link after namespace/held-file/named-file checks under this same guard.
+    verify_stage_namespace(canonical_root, admitted_root, parent)?;
+    let held = file
+        .metadata()
+        .map_err(|error| format!("inspect published file: {error}"))?;
+    let named = std::fs::symlink_metadata(destination)
+        .map_err(|error| format!("inspect published destination: {error}"))?;
+    if !held.is_file()
+        || !named.file_type().is_file()
+        || !same_identity(&expected_identity, &held)?
+        || !same_identity(&held, &named)?
+        || archive_digest(&read_held(&file)?) != expected_revision
+    {
+        return Err("publication identity or contents changed; available copies retained".into());
+    }
+    match std::fs::symlink_metadata(&stage.path) {
+        Ok(metadata) => {
+            if !metadata.file_type().is_file()
+                || !same_identity(&held, &metadata)?
+                || crate::vault::confine_delete_path(canonical_root, &stage.path.to_string_lossy())?
+                    != stage.path
+            {
+                return Err("publication persisted but leftover stage identity changed; available copies retained".into());
+            }
+            std::fs::remove_file(&stage.path).map_err(|error| {
+                format!("publication persisted but owned stage cleanup failed: {error}")
+            })?;
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(format!(
+                "publication persisted but stage inspection failed: {error}"
+            ))
+        }
+    }
+    // Rename/link can legitimately change ctime, so record the published
+    // revision after ownership and fallback-link cleanup have been verified.
+    let retained = RetainedFile::from_file(destination, file)?;
+    if retained.revision != expected_revision {
+        return Err("publication contents changed; available copies retained".into());
+    }
+    Ok(retained)
+}
+
+/// Stage a complete bucket outside the cooperating writer. Short transactions
+/// admit the stage and commit after rechecking root/directories/source snapshots.
+/// Partial unlink keeps the complete ZIP; member observations hold no handles.
+#[cfg(test)]
+fn pack_bucket(root: &Path, dir: &Path, zip_path: &Path) -> Result<(usize, u64, u64), String> {
+    pack_bucket_impl(&ArchiveOperation::detached(root), dir, zip_path)
+}
+
+fn pack_bucket_impl(
+    authority: &ArchiveOperation<'_>,
+    requested_dir: &Path,
+    requested_zip: &Path,
+) -> Result<(usize, u64, u64), String> {
+    let root = authority.root.as_path();
+    let admitted_root = RetainedDirectory::capture(root)?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("canonicalize archive root: {error}"))?;
+    let (dir, zip_path) =
+        checked_archive_paths(&canonical_root, root, requested_dir, requested_zip)?;
+    let parent = RetainedDirectory::capture(dir.parent().ok_or("archive bucket has no parent")?)?;
+    let bucket = RetainedDirectory::capture(&dir)?;
+    let (files, has_subdir) = loose_files(&dir)?;
     if has_subdir {
         return Err("bucket contains a subdirectory — packing it would flatten it".into());
     }
     if files.is_empty() {
         return Err("bucket is empty".into());
     }
-
-    let part = zip_path.with_extension("zip.part");
-    let mut loose_bytes = 0u64;
-    let result = (|| -> Result<(), String> {
-        let file =
-            std::fs::File::create(&part).map_err(|e| format!("create {}: {e}", part.display()))?;
-        let mut zw = zip::ZipWriter::new(file);
-        let opts = zip::write::SimpleFileOptions::default()
-            .compression_method(zip::CompressionMethod::Deflated);
-        for f in &files {
-            let name = f
-                .file_name()
-                .and_then(|n| n.to_str())
-                .ok_or_else(|| format!("non-UTF-8 file name in {}", dir.display()))?;
-            let bytes = std::fs::read(f).map_err(|e| format!("read {}: {e}", f.display()))?;
-            loose_bytes += bytes.len() as u64;
-            zw.start_file(name, opts)
-                .map_err(|e| format!("zip entry {name}: {e}"))?;
-            zw.write_all(&bytes)
-                .map_err(|e| format!("write entry {name}: {e}"))?;
+    let sources = files
+        .iter()
+        .map(|path| ObservedFile::capture(path))
+        .collect::<Result<Vec<_>, _>>()?;
+    for source in &sources {
+        let name = source
+            .path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("source filename is not UTF-8")?;
+        if !plain_archive_name(name) {
+            return Err("source filename is not a plain archive name".into());
         }
-        let finished = zw.finish().map_err(|e| format!("finish zip: {e}"))?;
-        finished
-            .sync_all()
-            .map_err(|e| format!("sync {}: {e}", part.display()))?;
-        verify_pack(&part, &files)
+    }
+    let loose_bytes = sources.iter().map(|source| source.metadata.len()).sum();
+    let existing = match std::fs::symlink_metadata(&zip_path) {
+        Ok(_) => Some(RetainedFile::capture(&zip_path)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("inspect archive: {error}")),
+    };
+    let mut staged: Option<ArchiveStage> = None;
+    let preparation = (|| -> Result<(ArchiveContents, u64, String), String> {
+        if let Some(archive) = &existing {
+            let contents = archive_contents(&archive.file)?;
+            archive.verify()?;
+            return Ok((contents, archive.metadata.len(), archive.revision.clone()));
+        }
+        staged = Some(authority.mutate(|rechecked_root, guard| {
+            if rechecked_root != canonical_root {
+                return Err("archive root changed before stage creation".into());
+            }
+            bucket.verify()?;
+            if checked_archive_paths(rechecked_root, root, requested_dir, requested_zip)?
+                != (dir.clone(), zip_path.clone())
+            {
+                return Err("archive paths changed before stage creation".into());
+            }
+            ArchiveStage::create_locked(
+                guard,
+                &canonical_root,
+                &admitted_root,
+                &parent,
+                ".myco-pack-",
+                ".zip.part",
+            )
+        })?);
+        #[cfg(test)]
+        mutation_checkpoint(MutationCheckpoint::PackStageCreated)?;
+        let stage = staged.as_mut().ok_or("archive stage is missing")?;
+        {
+            let mut writer = zip::ZipWriter::new(stage.temporary_mut()?.as_file_mut());
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Deflated);
+            for source in &sources {
+                let name = source
+                    .path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .ok_or("source filename is not UTF-8")?;
+                writer
+                    .start_file(name, options)
+                    .map_err(|error| format!("zip entry {name}: {error}"))?;
+                writer
+                    .write_all(&source.read()?)
+                    .map_err(|error| format!("write entry {name}: {error}"))?;
+            }
+            writer
+                .finish()
+                .map_err(|error| format!("finish zip: {error}"))?
+                .sync_all()
+                .map_err(|error| format!("sync archive stage: {error}"))?;
+        }
+        stage.seal()?;
+        verify_pack(&stage.path, &files)?;
+        let contents = archive_contents(stage.temporary()?.as_file())?;
+        let expected = stage.sealed.as_ref().ok_or("archive stage is not sealed")?;
+        let prepared = (contents, expected.metadata.len(), expected.revision.clone());
+        #[cfg(test)]
+        mutation_checkpoint(MutationCheckpoint::PackPrepared)?;
+        Ok(prepared)
     })();
-
-    if let Err(e) = result {
-        let _ = std::fs::remove_file(&part); // originals untouched
-        return Err(e);
+    let (contents, zip_bytes, expected_zip_revision) = match preparation {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            return Err(
+                match cleanup_archive_stage(
+                    authority,
+                    &canonical_root,
+                    &admitted_root,
+                    &parent,
+                    &mut staged,
+                ) {
+                    Ok(()) => error,
+                    Err(cleanup) => format!("{error}; {cleanup}"),
+                },
+            );
+        }
+    };
+    let operation = authority.mutate(|rechecked_root, guard| {
+        admitted_root.verify()?;
+        parent.verify()?;
+        bucket.verify()?;
+        if rechecked_root != canonical_root
+            || checked_archive_paths(rechecked_root, root, requested_dir, requested_zip)?
+                != (dir.clone(), zip_path.clone())
+        {
+            return Err("archive paths changed during preparation".into());
+        }
+        let (current, subdir) = loose_files(&dir)?;
+        if subdir || current != files {
+            return Err("archive source set changed during preparation".into());
+        }
+        for source in &sources {
+            source.verify()?;
+            let name = source
+                .path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .ok_or("source filename is not UTF-8")?;
+            if contents.get(name) != Some(&(source.revision.clone(), source.metadata.len())) {
+                return Err(format!(
+                    "{} already exists but does not match {}",
+                    zip_path.display(),
+                    source.path.display()
+                ));
+            }
+        }
+        let published;
+        let archive = if let Some(archive) = &existing {
+            archive.verify()?;
+            archive
+        } else {
+            published = publish_archive_stage(
+                guard,
+                &canonical_root,
+                &admitted_root,
+                &parent,
+                staged.as_mut().ok_or("archive stage is missing")?,
+                &zip_path,
+            )?;
+            &published
+        };
+        if archive.revision != expected_zip_revision {
+            return Err(
+                "published archive differs from its verified stage; originals retained".into(),
+            );
+        }
+        archive.verify()?;
+        #[cfg(test)]
+        mutation_checkpoint(MutationCheckpoint::PackVerified)?;
+        for (index, source) in sources.iter().enumerate() {
+            #[cfg(not(test))]
+            let _ = index;
+            #[cfg(test)]
+            mutation_checkpoint(MutationCheckpoint::PackBeforeDelete(index))?;
+            crate::vault::confine_delete_path(rechecked_root, &source.path.to_string_lossy())?;
+            archive.verify_identity()?;
+            source.verify()?;
+            std::fs::remove_file(&source.path)
+                .map_err(|error| format!("remove {}: {error}", source.path.display()))?;
+        }
+        let _ = std::fs::remove_dir(&dir);
+        Ok((sources.len(), loose_bytes, zip_bytes))
+    });
+    // The operation guard is released before cleanup takes the writer again.
+    let cleanup = cleanup_archive_stage(
+        authority,
+        &canonical_root,
+        &admitted_root,
+        &parent,
+        &mut staged,
+    );
+    match (operation, cleanup) {
+        (Ok(result), Ok(())) => Ok(result),
+        (Err(error), Ok(())) => Err(error),
+        (Ok(_), Err(cleanup)) => Err(cleanup),
+        (Err(error), Err(cleanup)) => Err(format!("{error}; {cleanup}")),
     }
-
-    let zip_bytes = std::fs::metadata(&part).map(|m| m.len()).unwrap_or(0);
-    std::fs::rename(&part, zip_path).map_err(|e| {
-        let _ = std::fs::remove_file(&part);
-        format!("rename {}: {e}", part.display())
-    })?;
-
-    // Verified and in place — now, and only now, the originals go.
-    for f in &files {
-        std::fs::remove_file(f).map_err(|e| format!("remove {}: {e}", f.display()))?;
-    }
-    let _ = std::fs::remove_dir(dir); // best effort; a stray dotfile keeps it
-    Ok((files.len(), loose_bytes, zip_bytes))
 }
 
-/// Read the freshly-written archive back and prove every original is in it,
-/// byte for byte. This is what makes the deletion in `pack_bucket` safe.
+/// Fresh packs require all originals by name and bytes. Interrupted resume
+/// separately permits the exact remaining subset of a fully validated ZIP.
 fn verify_pack(zip_path: &Path, originals: &[PathBuf]) -> Result<(), String> {
-    #[cfg(test)]
-    if FAIL_VERIFY_FOR_TEST.with(std::cell::Cell::get) {
-        return Err("injected verification failure".into());
-    }
-    let file =
-        std::fs::File::open(zip_path).map_err(|e| format!("reopen {}: {e}", zip_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("{} is not readable: {e}", zip_path.display()))?;
-    if archive.len() != originals.len() {
+    let retained = RetainedFile::capture(zip_path)?;
+    let contents = archive_contents(&retained.file)?;
+    if contents.len() != originals.len() {
         return Err(format!(
             "archive holds {} entries, expected {}",
-            archive.len(),
+            contents.len(),
             originals.len()
         ));
     }
-    for (i, original) in originals.iter().enumerate() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("entry {i} unreadable: {e}"))?;
-        let name = entry.name().to_string();
-        let mut got = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut got)
-            .map_err(|e| format!("entry {name} unreadable: {e}"))?;
-        let want =
-            std::fs::read(original).map_err(|e| format!("re-read {}: {e}", original.display()))?;
-        if got != want {
+    for original in originals {
+        let name = original
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or("source filename is not UTF-8")?;
+        let bytes = std::fs::read(original)
+            .map_err(|error| format!("re-read {}: {error}", original.display()))?;
+        if contents.get(name) != Some(&(archive_digest(&bytes), bytes.len() as u64)) {
             return Err(format!(
                 "entry {name} does not match {}",
                 original.display()
             ));
         }
     }
-    Ok(())
+    retained.verify()
 }
 
 /// The `(YYYY-MM, YYYY-Www)` cutoff `older_than_months` before `now`. A bucket
@@ -359,10 +1105,16 @@ fn cutoff(now: i64, older_than_months: u32) -> (String, String) {
     (month, week)
 }
 
-/// Pack every `sessions/archive/` and `daily/archive/` bucket older than
+/// Pack every allowed archive-tree bucket older than
 /// `older_than_months`. Never automatic: only ever reached from the explicit
 /// button in Settings → Distill.
+#[cfg(test)]
 pub fn compress(root: &Path, older_than_months: u32, now: i64) -> PackReport {
+    compress_impl(&ArchiveOperation::detached(root), older_than_months, now)
+}
+
+fn compress_impl(authority: &ArchiveOperation<'_>, older_than_months: u32, now: i64) -> PackReport {
+    let root = authority.root.as_path();
     let (cut_month, cut_week) = cutoff(now, older_than_months);
     let mut report = PackReport::default();
     for b in usage(root) {
@@ -384,7 +1136,7 @@ pub fn compress(root: &Path, older_than_months: u32, now: i64) -> PackReport {
         let Ok((dir, zip_path)) = bucket_paths(root, &b.tree, &b.bucket) else {
             continue; // `usage` already validated the shape; unreachable
         };
-        match pack_bucket(&dir, &zip_path) {
+        match pack_bucket_impl(authority, &dir, &zip_path) {
             Ok((files, loose, packed)) => {
                 report.buckets += 1;
                 report.files += files;
@@ -396,91 +1148,231 @@ pub fn compress(root: &Path, older_than_months: u32, now: i64) -> PackReport {
     report
 }
 
-/// Write `bytes` to `path` and fsync the file before returning — the caller
-/// deletes the only other copy right after.
-fn write_synced(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    use std::io::Write;
-    let mut f =
-        std::fs::File::create(path).map_err(|e| format!("write {}: {e}", path.display()))?;
-    f.write_all(bytes)
-        .map_err(|e| format!("write {}: {e}", path.display()))?;
-    f.sync_all()
-        .map_err(|e| format!("sync {}: {e}", path.display()))?;
-    Ok(())
+/// Restore entries with short cooperating-writer transactions. Create stages
+/// under the writer, write outside it, never replace a destination, and retain
+/// the ZIP if any observed destination changes before the final recheck. This is not a power-loss or
+/// arbitrary external filesystem transaction guarantee.
+#[cfg(test)]
+pub fn restore(root: &Path, tree: &str, bucket: &str) -> Result<RestoreReport, String> {
+    restore_impl(&ArchiveOperation::detached(root), tree, bucket)
 }
 
-/// Unpack one bucket back into its directory and drop the zip.
-///
-/// Same ordering discipline as `pack_bucket`, in reverse, and it has to be
-/// real: every entry is written, fsynced, and read back byte-for-byte before
-/// the zip is removed. Without the fsync the unlink is a journaled metadata
-/// op while the file bodies are still in page cache — power loss in that
-/// window leaves zero-length notes and no archive to restore from.
-///
-/// Restore is also RESUMABLE. An entry already on disk with exactly the
-/// archived bytes is treated as done (a retry after a mid-restore failure
-/// must not dead-end); an entry that exists with DIFFERENT bytes stops the
-/// restore rather than clobbering the user's file.
-pub fn restore(root: &Path, tree: &str, bucket: &str) -> Result<RestoreReport, String> {
-    let (dir, zip_path) = bucket_paths(root, tree, bucket)?;
-    let file =
-        std::fs::File::open(&zip_path).map_err(|e| format!("open {}: {e}", zip_path.display()))?;
-    let mut archive = zip::ZipArchive::new(file)
-        .map_err(|e| format!("{} is not readable: {e}", zip_path.display()))?;
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-
-    let mut bytes = 0u64;
-    for i in 0..archive.len() {
+fn restore_impl(
+    authority: &ArchiveOperation<'_>,
+    tree: &str,
+    bucket: &str,
+) -> Result<RestoreReport, String> {
+    let root = authority.root.as_path();
+    let (requested_dir, requested_zip) = bucket_paths(root, tree, bucket)?;
+    let admitted_root = RetainedDirectory::capture(root)?;
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("canonicalize archive root: {error}"))?;
+    let (dir, zip_path) =
+        checked_archive_paths(&canonical_root, root, &requested_dir, &requested_zip)?;
+    let parent = RetainedDirectory::capture(dir.parent().ok_or("archive bucket has no parent")?)?;
+    let admitted_bucket = match std::fs::symlink_metadata(&dir) {
+        Ok(_) => Some(RetainedDirectory::capture(&dir)?),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(error) => return Err(format!("inspect restore bucket: {error}")),
+    };
+    let retained_zip = RetainedFile::capture(&zip_path)?;
+    let contents = archive_contents(&retained_zip.file)?;
+    retained_zip.verify()?;
+    #[cfg(test)]
+    mutation_checkpoint(MutationCheckpoint::RestorePrepared)?;
+    let held_bucket = authority.mutate(|rechecked_root, _guard| {
+        admitted_root.verify()?;
+        parent.verify()?;
+        retained_zip.verify_identity()?;
+        if rechecked_root != canonical_root
+            || checked_archive_paths(rechecked_root, root, &requested_dir, &requested_zip)?
+                != (dir.clone(), zip_path.clone())
+        {
+            return Err("restore paths changed during preparation".into());
+        }
+        if let Some(bucket) = &admitted_bucket {
+            bucket.verify()?;
+        }
+        match std::fs::symlink_metadata(&dir) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                std::fs::create_dir(&dir)
+                    .map_err(|error| format!("create {}: {error}", dir.display()))?;
+            }
+            Err(error) => return Err(format!("inspect restore bucket: {error}")),
+        }
+        RetainedDirectory::capture(&dir)
+    })?;
+    let mut archive = zip::ZipArchive::new(
+        retained_zip
+            .file
+            .try_clone()
+            .map_err(|error| format!("clone restore archive: {error}"))?,
+    )
+    .map_err(|error| format!("archive is not readable: {error}"))?;
+    let mut restored: Vec<ObservedFile> = Vec::new();
+    for index in 0..archive.len() {
         let mut entry = archive
-            .by_index(i)
-            .map_err(|e| format!("entry {i} unreadable: {e}"))?;
+            .by_index(index)
+            .map_err(|error| format!("entry {index} unreadable: {error}"))?;
         let name = entry.name().to_string();
-        // Packs written here are flat file names. Anything else is refused
-        // rather than joined — a zip-slip guard that does not need to reason
-        // about `..` at all.
-        if name.is_empty() || name.contains('/') || name.contains('\\') {
-            return Err(format!("archive entry `{name}` is not a plain file name"));
-        }
-        let dest = dir.join(&name);
-        let mut buf = Vec::with_capacity(entry.size() as usize);
+        let mut bytes = Vec::new();
         entry
-            .read_to_end(&mut buf)
-            .map_err(|e| format!("entry {name} unreadable: {e}"))?;
-        if dest.exists() {
-            match std::fs::read(&dest) {
-                // Already restored (a retry after a partial run) — skip it.
-                Ok(existing) if existing == buf => {
-                    bytes += buf.len() as u64;
-                    continue;
-                }
-                _ => {
-                    return Err(format!(
-                        "{} already exists with different contents",
-                        dest.display()
-                    ))
-                }
-            }
+            .read_to_end(&mut bytes)
+            .map_err(|error| format!("entry {name} unreadable: {error}"))?;
+        if contents.get(&name) != Some(&(archive_digest(&bytes), bytes.len() as u64)) {
+            return Err(format!("archive entry {name} changed during restore"));
         }
-        write_synced(&dest, &buf)?;
-        // Read back: the zip is about to be deleted, so "written" must mean
-        // "readable as these exact bytes", not "the write call returned".
-        match std::fs::read(&dest) {
-            Ok(back) if back == buf => {}
-            _ => {
+        // Create beside the ZIP in a short writer transaction. The loose bucket
+        // never includes temporary notes; writing and sync occur outside writer.
+        let mut stage = Some(authority.mutate(|rechecked_root, guard| {
+            if rechecked_root != canonical_root {
+                return Err("restore root changed before stage creation".into());
+            }
+            held_bucket.verify()?;
+            retained_zip.verify_identity()?;
+            if checked_archive_paths(rechecked_root, root, &requested_dir, &requested_zip)?
+                != (dir.clone(), zip_path.clone())
+            {
+                return Err("restore paths changed before stage creation".into());
+            }
+            ArchiveStage::create_locked(
+                guard,
+                &canonical_root,
+                &admitted_root,
+                &parent,
+                ".myco-restore-",
+                ".part",
+            )
+        })?);
+        let preparation = (|| -> Result<(), String> {
+            let stage = stage.as_mut().ok_or("restore stage is missing")?;
+            stage
+                .temporary_mut()?
+                .write_all(&bytes)
+                .map_err(|error| format!("write restore stage: {error}"))?;
+            stage
+                .temporary()?
+                .as_file()
+                .sync_all()
+                .map_err(|error| format!("sync restore stage: {error}"))?;
+            stage.seal()
+        })();
+        if let Err(error) = preparation {
+            return Err(
+                match cleanup_archive_stage(
+                    authority,
+                    &canonical_root,
+                    &admitted_root,
+                    &parent,
+                    &mut stage,
+                ) {
+                    Ok(()) => error,
+                    Err(cleanup) => format!("{error}; {cleanup}"),
+                },
+            );
+        }
+        let destination = dir.join(&name);
+        let operation = authority.mutate(|rechecked_root, guard| {
+            admitted_root.verify()?;
+            parent.verify()?;
+            held_bucket.verify()?;
+            retained_zip.verify_identity()?;
+            if rechecked_root != canonical_root
+                || checked_archive_paths(rechecked_root, root, &requested_dir, &requested_zip)?
+                    != (dir.clone(), zip_path.clone())
+            {
+                return Err("restore paths changed before publication".into());
+            }
+            crate::vault::confine_delete_path(rechecked_root, &destination.to_string_lossy())?;
+            let retained = match std::fs::symlink_metadata(&destination) {
+                Ok(_) => {
+                    let existing = RetainedFile::capture(&destination)?;
+                    if existing.read()? != bytes {
+                        return Err(format!(
+                            "{} already exists with different contents",
+                            destination.display()
+                        ));
+                    }
+                    existing
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    #[cfg(test)]
+                    mutation_checkpoint(MutationCheckpoint::RestoreWrite)?;
+                    // Recheck held directories after the test checkpoint as well.
+                    // External namespace replacement is refused before path publish.
+                    held_bucket.verify()?;
+                    retained_zip.verify_identity()?;
+                    publish_archive_stage(
+                        guard,
+                        &canonical_root,
+                        &admitted_root,
+                        &parent,
+                        stage.as_mut().ok_or("restore stage is missing")?,
+                        &destination,
+                    )?
+                }
+                Err(error) => return Err(format!("inspect restore target: {error}")),
+            };
+            if retained.read()? != bytes {
                 return Err(format!(
-                    "{} did not read back as written — leaving the archive in place",
-                    dest.display()
-                ))
+                    "{} did not read back as written; archive retained",
+                    destination.display()
+                ));
+            }
+            Ok(ObservedFile::from_retained(retained))
+        });
+        // No locking destructor: release publication guard before explicit cleanup.
+        let cleanup = cleanup_archive_stage(
+            authority,
+            &canonical_root,
+            &admitted_root,
+            &parent,
+            &mut stage,
+        );
+        let observed = match (operation, cleanup) {
+            (Ok(observed), Ok(())) => observed,
+            (Err(error), Ok(())) => return Err(error),
+            (Ok(_), Err(cleanup)) => return Err(cleanup),
+            (Err(error), Err(cleanup)) => return Err(format!("{error}; {cleanup}")),
+        };
+        for previous in &restored {
+            if same_identity(&previous.metadata, &observed.metadata)? {
+                return Err(
+                    "archive entries resolve to the same destination; archive retained".into(),
+                );
             }
         }
-        bytes += buf.len() as u64;
+        restored.push(observed);
     }
-    let files = archive.len();
     drop(archive);
-    // Everything is back on disk AND durable — only now is the archive
-    // redundant.
-    std::fs::remove_file(&zip_path).map_err(|e| format!("remove {}: {e}", zip_path.display()))?;
-    Ok(RestoreReport { files, bytes })
+    // The checkpoint allows a queued legitimate writer to settle before the
+    // final transaction. Holding the writer here would deadlock that witness.
+    #[cfg(test)]
+    mutation_checkpoint(MutationCheckpoint::RestoreFinalize)?;
+    authority.mutate(|rechecked_root, _guard| {
+        admitted_root.verify()?;
+        parent.verify()?;
+        held_bucket.verify()?;
+        if rechecked_root != canonical_root
+            || checked_archive_paths(rechecked_root, root, &requested_dir, &requested_zip)?
+                != (dir.clone(), zip_path.clone())
+        {
+            return Err("restore paths changed before finalization".into());
+        }
+        retained_zip.verify()?;
+        for destination in &restored {
+            crate::vault::confine_delete_path(rechecked_root, &destination.path.to_string_lossy())?;
+            destination.verify()?;
+        }
+        std::fs::remove_file(&zip_path)
+            .map_err(|error| format!("remove {}: {error}", zip_path.display()))?;
+        Ok(RestoreReport {
+            files: contents.len(),
+            bytes: contents.values().map(|(_, size)| size).sum(),
+        })
+    })
 }
 
 #[cfg(test)]
@@ -735,7 +1627,7 @@ mod tests {
             &[("a.md", "one"), ("b.md", "two")],
         );
         let zip = root.join("sessions/archive/2026-01.zip");
-        pack_bucket(&dir, &zip).unwrap();
+        pack_bucket(root, &dir, &zip).unwrap();
         // Re-create exactly the archived files: the interrupted-unlink state.
         seed(
             root,
@@ -744,7 +1636,8 @@ mod tests {
         );
         assert!(zip.is_file() && dir.join("a.md").is_file());
 
-        let (files, _, _) = pack_bucket(&dir, &zip).expect("must finish the interrupted pack");
+        let (files, _, _) =
+            pack_bucket(root, &dir, &zip).expect("must finish the interrupted pack");
         assert_eq!(files, 2);
         assert!(!dir.exists(), "loose files must be gone once verified");
         assert!(zip.is_file());
@@ -766,7 +1659,7 @@ mod tests {
             "sessions/archive/2026-02",
             &[("a.md", "one"), ("b.md", "two")],
         );
-        pack_bucket(&dir, &root.join("sessions/archive/2026-02.zip")).unwrap();
+        pack_bucket(root, &dir, &root.join("sessions/archive/2026-02.zip")).unwrap();
         // Simulate a restore that got one file out before dying.
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("a.md"), "one").unwrap();
@@ -778,7 +1671,7 @@ mod tests {
         // But a file that exists with DIFFERENT bytes is the user's, not ours.
         seed(root, "sessions/archive/2026-03", &[("c.md", "orig")]);
         let dir3 = root.join("sessions/archive/2026-03");
-        pack_bucket(&dir3, &root.join("sessions/archive/2026-03.zip")).unwrap();
+        pack_bucket(root, &dir3, &root.join("sessions/archive/2026-03.zip")).unwrap();
         std::fs::create_dir_all(&dir3).unwrap();
         std::fs::write(dir3.join("c.md"), "edited by hand").unwrap();
         let err = restore(root, "sessions", "2026-03").expect_err("must refuse to clobber");

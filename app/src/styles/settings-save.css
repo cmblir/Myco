@@ -1,0 +1,28 @@
+.settings-save {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  margin-bottom: 1rem;
+  padding: 0.75rem 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: 0.625rem;
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+}
+
+.settings-save--error {
+  align-items: flex-start;
+  color: var(--danger);
+}
+
+.settings-save__details {
+  display: block;
+  margin-top: 0.375rem;
+  overflow-wrap: anywhere;
+  color: var(--ink-2);
+}
+
+.settings-save__retry {
+  min-height: 2.75rem;
+  margin-top: 0.625rem;
+}

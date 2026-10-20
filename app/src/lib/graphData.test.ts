@@ -8,6 +8,7 @@ import {
   computeAllowed,
   countAllNodes,
   fieldStar,
+  findRank,
   flattenMarkdown,
   folderGroups,
   inFolder,
@@ -90,6 +91,11 @@ describe("isNonKnowledgePath", () => {
     for (const folder of ["daily", "sessions", "_inbox", "ingest-reports", "raw"]) {
       expect(isNonKnowledgePath("/vault", `/vault/${folder}/2026-07-12.md`)).toBe(true);
     }
+  });
+
+  it("flags study decks: cards/<stem>.md shares its note's name but is not the note", () => {
+    expect(isNonKnowledgePath("/vault", "/vault/cards/attention.md")).toBe(true);
+    expect(isNonKnowledgePath("/vault", "/vault/wiki/cards.md")).toBe(false);
   });
 
   it("flags structural filenames regardless of folder", () => {
@@ -195,6 +201,60 @@ describe("flattenMarkdown / countAllNodes / collectFolders", () => {
   it("collectFolders lists top-level subfolders under the root", () => {
     const a = adj({ forward: { "/vault/sub/c.md": [], "/vault/top.md": [] } });
     expect(collectFolders(ROOT, a)).toEqual(["sub"]);
+  });
+});
+
+describe("buildGraph node labels", () => {
+  it("labels an opaque session page and its ghost link by display name", () => {
+    const page = "/vault/wiki/source-claude-code-064ddbe4-251d-4da1-8315-da096a5b75ff.md";
+    const g = buildGraph(
+      adj({
+        forward: { [page]: [] },
+        unresolved: { [page]: ["codex-019de763-362b-7613-bcfd-5c5e0e8ff9be"] },
+      }),
+      new Set([page, "/vault/wiki/rrf.md"]),
+      { nodeSize: 1, starDim: "#000000", edgeColor: "#000000", showGhosts: true },
+    );
+    expect(g.getNodeAttribute(page, "label")).toBe("Claude Code · 064ddbe4");
+    expect(
+      g.getNodeAttribute("ghost:codex-019de763-362b-7613-bcfd-5c5e0e8ff9be", "label"),
+    ).toBe("Codex · 019de763");
+    expect(g.getNodeAttribute("/vault/wiki/rrf.md", "label")).toBe("rrf");
+  });
+
+  it("names an opaque page by its readable frontmatter title", () => {
+    const page = "/vault/wiki/source-claude-code-064ddbe4-251d-4da1-8315-da096a5b75ff.md";
+    const g = buildGraph(
+      adj({
+        forward: { [page]: [], "/vault/wiki/rrf.md": [] },
+        meta: {
+          [page]: { title: "서버 띄워봐. · Claude Code · 2026-09-10" },
+          "/vault/wiki/rrf.md": { title: "Reciprocal Rank Fusion" },
+        },
+      }),
+      new Set([page, "/vault/wiki/rrf.md"]),
+      { nodeSize: 1, starDim: "#000000", edgeColor: "#000000", showGhosts: false },
+    );
+    expect(g.getNodeAttribute(page, "label")).toBe("서버 띄워봐. · Claude Code · 2026-09-10");
+    expect(g.getNodeAttribute("/vault/wiki/rrf.md", "label")).toBe("rrf");
+  });
+});
+
+describe("findRank (the graph's find box)", () => {
+  const A = "source-claude-code-3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c";
+  const LABEL = "서버 띄워봐. · Claude Code · 2026-09-12";
+
+  it("finds a node by the name it is drawn with, not only its file name", () => {
+    expect(findRank("서버 띄워봐", [A, LABEL]).score).toBe(2);
+    expect(findRank("3F2A9C1E", [A, LABEL]).score).toBe(1);
+    expect(findRank("rrf", ["rrf", "rrf"])).toEqual({ score: 3, len: 3 });
+    expect(findRank("zzz", [A, LABEL]).score).toBe(0);
+  });
+
+  it("scores a node by its better key, the tie going to the shorter match", () => {
+    // The label is a prefix hit even though the stem only contains the needle.
+    expect(findRank("gan", ["dcgan-notes", "GAN basics"])).toEqual({ score: 2, len: 10 });
+    expect(findRank("gan", ["gan-intro", "gan"])).toEqual({ score: 3, len: 3 });
   });
 });
 
@@ -545,6 +605,18 @@ describe("buildLegend (galaxy → cluster hierarchy)", () => {
     expect(leg).toHaveLength(1);
     expect(leg[0].g).toBe(-1);
     expect(leg[0].clusters).toHaveLength(2);
+  });
+
+  it("names a cluster by its hub's drawn label, so a Tidy title shows there too", () => {
+    const hub = "/v/wiki/source-claude-code-064ddbe4-251d-4da1-8315-da096a5b75ff.md";
+    const nodes = [
+      N("/v/wiki/a.md", 0, 0, 1),
+      { ...N(hub, 0, 0, 9), label: "서버 띄워봐. · Claude Code · 2026-09-10" },
+      N("/v/wiki/b.md", 0, 0, 1),
+    ];
+    const [c] = buildLegend(nodes, "/v")[0].clusters;
+    expect(c.label).toBe("서버 띄워봐. · Claude Code · 2026-09-10");
+    expect(c.hub).toBe(stem(hub));
   });
 
   it("ignores field stars (community < 0)", () => {

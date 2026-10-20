@@ -15,3 +15,15 @@ export function takeQueryPrefill(): string | null {
   pending = null;
   return p;
 }
+
+/** Hand the pending draft to the composer: `fill` it, then `focus` it on the
+ *  next frame (the input has mounted by then), so a keyboard flow begun
+ *  elsewhere (⌘K "Ask the wiki: q") goes on there — the next Enter asks.
+ *  False when there was no draft. */
+export function consumeQueryPrefill(fill: (q: string) => void, focus: () => void): boolean {
+  const draft = takeQueryPrefill();
+  if (!draft) return false;
+  fill(draft);
+  requestAnimationFrame(() => focus());
+  return true;
+}

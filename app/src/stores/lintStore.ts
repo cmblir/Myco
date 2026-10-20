@@ -1,3 +1,4 @@
+import { isBuiltinChatModel } from "../lib/providers";
 // Lint run state, lifted out of PageProvenance so a running lint survives
 // navigating to other pages (same pattern as ingestStore). The Topbar shows
 // a chip while it runs and after it finishes until the user revisits the
@@ -12,11 +13,13 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { complete } from "../lib/chat";
 import { STRINGS } from "../lib/i18n";
-import { ipc, type ClaudeStreamPayload } from "../lib/ipc";
+import { ipc, type AgentVaultSession, type ClaudeStreamPayload } from "../lib/ipc";
+import type { RoleSnapshot } from "../lib/modelRoles";
 import { log } from "../lib/log";
 import { localLint } from "../lib/wikiLint";
 import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
+import HEADS from "../lib/mycoPromptHeads.json";
 
 // The local pass writes OUR prose, not a model's, so it follows the UI
 // language — read off uiStore directly, the reflectStore/ingestStore idiom for
@@ -25,7 +28,7 @@ function t(): (typeof STRINGS)["en"] {
   return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
 }
 
-const LINT_PROMPT = `Run the wiki lint checklist from CLAUDE.md against the current vault:
+const LINT_PROMPT = `${HEADS.lint}
 
 Structure: frontmatter present, type field valid, status superseded → superseded_by exists, status disputed → ## Disputed section present.
 
@@ -73,27 +76,31 @@ export const useLintStore = create<LintState>((set, get) => ({
       seen: true,
     });
     try {
-      const settings = await ipc.getSettings();
+      const origin = Object.freeze(await ipc.agentVaultSession());
+      if (origin.vaultPath !== vault.path) throw new Error("the active vault changed before lint execution");
+      const roleSnapshot = await ipc.captureModelRole(origin, "lint", "foreground");
+      const { providerId: provider, modelId: model, effort } = roleSnapshot.routeSignature;
       // builtin-local bundles no chat model, so complete() used to throw here
       // ("no local chat model is bundled") and the lint button just failed.
       // It now runs the deterministic half of the checklist instead — same
       // move sessionDigest and reflectStore made for the digest and reflect.
       const out =
-        settings.query_provider === "builtin-local"
+        provider === "builtin-local" && !isBuiltinChatModel(model)
           ? await localLint(
               vault.path,
               useVaultStore.getState().fileTree,
               t(),
             )
-          : settings.query_provider === "anthropic-cli"
+          : provider === "anthropic-cli"
           ? await runStreaming(
-              vault.path,
-              settings.query_model,
-              settings.query_effort,
+              origin,
+              roleSnapshot,
+              model,
+              effort,
               (chunk) => set((s) => ({ progress: s.progress + chunk })),
             )
           : await complete({
-              task: "generate",
+              task: "generate", featureRole: "lint", origin, roleSnapshot,
               cwd: vault.path,
               messages: [{ role: "user", content: LINT_PROMPT }],
             });
@@ -132,11 +139,13 @@ export const useLintStore = create<LintState>((set, get) => ({
 // Falls back to the accumulated stream text if the CLI prints nothing after
 // the result event.
 async function runStreaming(
-  cwd: string,
+  origin: AgentVaultSession,
+  roleSnapshot: RoleSnapshot,
   model: string,
   effort: string,
   onChunk: (text: string) => void,
 ): Promise<string> {
+  const cwd = origin.vaultPath;
   const runId = crypto.randomUUID();
   let streamed = "";
   const unlisten = await listen<ClaudeStreamPayload>("claude-stream", (e) => {
@@ -155,6 +164,7 @@ async function runStreaming(
       cwd,
       model || undefined,
       effort,
+      { capability: "read-only", origin, roleSnapshot },
     );
     if (res.status !== 0) {
       throw new Error(res.stderr.trim() || `claude exit ${res.status}`);

@@ -23,8 +23,8 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use myco_lib::embeddings::{cosine, dot, normalize};
 use myco_lib::vector_index::{Record, VectorStore};
 
-/// Embedding width of the bundled Gemma 3 1B — the geometry the real index uses.
-const DIM: usize = 1152;
+/// Embedding width of the bundled E5 Korean encoder.
+const DIM: usize = 384;
 /// Chunks per page in a typical wiki vault, from the karpathy vault's shape.
 const CHUNKS_PER_PAGE: usize = 3;
 
@@ -58,6 +58,7 @@ fn synth_vector(rng: &mut Xorshift) -> Vec<f32> {
 fn synth_store(records: usize) -> VectorStore {
     let mut rng = Xorshift(0x9E3779B97F4A7C15);
     let mut store = VectorStore {
+        signature: String::new(),
         model: "builtin-local:".into(),
         dim: DIM,
         records: Vec::with_capacity(records),
@@ -87,7 +88,10 @@ fn edges_best_chunk(store: &VectorStore, k: usize) -> usize {
         store.records.iter().map(|r| r.page.as_str()).collect();
     let mut count = 0;
     for page in &pages {
-        count += store.related(page, k).len();
+        count += store
+            .related(page, k)
+            .expect("valid synthetic related geometry")
+            .len();
     }
     count
 }
@@ -169,7 +173,13 @@ fn bench_search(c: &mut Criterion) {
         let q = synth_vector(&mut rng);
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new("scan_top10", n), &store, |b, s| {
-            b.iter(|| black_box(s.search(black_box(&q), 10).len()))
+            b.iter(|| {
+                black_box(
+                    s.search(black_box(&q), 10)
+                        .expect("valid synthetic search geometry")
+                        .len(),
+                )
+            })
         });
     }
     group.finish();
@@ -191,7 +201,14 @@ fn bench_edges(c: &mut Criterion) {
             |b, s| b.iter(|| black_box(edges_best_chunk(black_box(s), 5))),
         );
         group.bench_with_input(BenchmarkId::new("centroid", pages), &store, |b, s| {
-            b.iter(|| black_box(black_box(s).centroid_edges(5).len()))
+            b.iter(|| {
+                black_box(
+                    black_box(s)
+                        .centroid_edges(5)
+                        .expect("valid synthetic centroid geometry")
+                        .len(),
+                )
+            })
         });
     }
     group.finish();

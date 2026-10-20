@@ -95,7 +95,7 @@ async function runTheme(browser, theme) {
   await page.screenshot({ path: `${SHOTS}/${theme}-2-distill-live.png` });
   check(
     `${theme}: distill run is named in the bar`,
-    (await bar.textContent()).includes("증류 중"),
+    (await bar.textContent()).includes("정리 중"),
     await bar.textContent(),
   );
 
@@ -110,7 +110,7 @@ async function runTheme(browser, theme) {
   await page.screenshot({ path: `${SHOTS}/${theme}-3-two-runners.png` });
   const pop = await page.locator(".activity-pop, .model-chip-pop").textContent();
   check(`${theme}: popover lists harvest`, pop.includes("수확 중"), pop);
-  check(`${theme}: popover lists distill`, pop.includes("증류 중"));
+  check(`${theme}: popover lists distill`, pop.includes("정리 중"));
   await page.keyboard.press("Escape");
   await page.waitForTimeout(300);
 
@@ -126,7 +126,7 @@ async function runTheme(browser, theme) {
   await page.screenshot({ path: `${SHOTS}/${theme}-4-done-pills.png` });
   const done = await bar.textContent();
   check(`${theme}: harvest leaves a done pill`, done.includes("수확 완료"), done);
-  check(`${theme}: distill leaves a done pill`, done.includes("증류 완료"));
+  check(`${theme}: distill leaves a done pill`, done.includes("정리 완료"));
   check(`${theme}: no spinner once both have finished`, (await spinners()) === 0);
 
   // 5 — visiting the page that explains a run retires its pill.
@@ -140,7 +140,7 @@ async function runTheme(browser, theme) {
   );
   check(
     `${theme}: ...and leaves distill's alone`,
-    after.includes("증류 완료"),
+    after.includes("정리 완료"),
     after,
   );
 

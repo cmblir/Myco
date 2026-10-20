@@ -151,6 +151,26 @@ export function setLineStatus(
   return lines.join("\n");
 }
 
+/** Tick or untick the to-do on line `lineNo` (1-based) of `content`: `[ ]` ↔
+ * `[x]`, in any list (`-`, `*`, `+`, `1.`) and inside quotes and callouts,
+ * as Preview draws them — every other character kept. `null` when that line
+ * holds no to-do any more (the rendered box is stale).
+ *
+ * Lines end at `\r\n`, `\r` or `\n`, as markdown-it and CodeMirror count
+ * them — Preview's box names its line that way — and each separator is kept
+ * as written. */
+export function toggleCheckbox(content: string, lineNo: number): string | null {
+  // Odd indices hold the separators.
+  const parts = content.split(/(\r\n?|\n)/);
+  const idx = (lineNo - 1) * 2;
+  const line = parts[idx];
+  if (lineNo < 1 || line === undefined) return null;
+  const m = /^((?:[ \t]*>[ \t]?)*[ \t]*(?:[-*+]|\d{1,9}[.)])[ \t]+\[)([ xX])(\])/.exec(line);
+  if (!m) return null;
+  parts[idx] = m[1] + (m[2] === " " ? "x" : " ") + m[3] + line.slice(m[0].length);
+  return parts.join("");
+}
+
 /** Append a task line to a note, keeping exactly one trailing newline. */
 export function appendTaskLine(content: string, line: string): string {
   const body = content.replace(/\s*$/, "");

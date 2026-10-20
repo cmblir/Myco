@@ -227,6 +227,12 @@ export class EdgeDensityLayer {
     if (this.mode === "atmo") this.quadMat.uniforms.u_time.value = t;
   }
 
+  /** Apply the same link-visibility control as the ordinary edge material. */
+  setLinkStrength(value: number): void {
+    this.quadMat.uniforms.u_strength.value =
+      (this.mode === "atmo" ? 0.42 : 1.15) * value;
+  }
+
   /** Accumulate this frame's edge splats (call before the main composite).
    * Atmo mode then softens them through two widening Kawase taps. */
   render(renderer: THREE.WebGLRenderer, camera: THREE.Camera): void {

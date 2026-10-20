@@ -1,0 +1,224 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:myco:local-wiki-v1:fixture-receipt",
+  "title": "W00 fixture-integrity receipt; not model acceptance",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "kind",
+    "runId",
+    "startedAt",
+    "finishedAt",
+    "sourceCommit",
+    "sourceTreeDirty",
+    "toolSnapshots",
+    "command",
+    "fixtureStatus",
+    "model",
+    "inferenceExecuted",
+    "modelQuality",
+    "selection",
+    "manifestSha256",
+    "configSha256",
+    "sourceSnapshots",
+    "tests",
+    "networkObservations"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "kind": {
+      "const": "fixture_integrity"
+    },
+    "runId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "startedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "finishedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "sourceCommit": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{40}$"
+    },
+    "sourceTreeDirty": {
+      "type": "boolean"
+    },
+    "toolSnapshots": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/$defs/hash"
+          }
+        }
+      }
+    },
+    "command": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "fixtureStatus": {
+      "enum": [
+        "valid",
+        "invalid"
+      ]
+    },
+    "model": {
+      "type": "null"
+    },
+    "inferenceExecuted": {
+      "const": false
+    },
+    "modelQuality": {
+      "const": "not_evaluated"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "split",
+        "suite",
+        "caseIds"
+      ],
+      "properties": {
+        "split": {
+          "enum": [
+            "development",
+            "calibration",
+            "held_out"
+          ]
+        },
+        "suite": {
+          "enum": [
+            "all",
+            "retrieval",
+            "ask",
+            "compilation",
+            "maps",
+            "study",
+            "resurface"
+          ]
+        },
+        "caseIds": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "manifestSha256": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/hash"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "configSha256": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/hash"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "sourceSnapshots": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "sha256"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "sha256": {
+            "$ref": "#/$defs/hash"
+          }
+        }
+      }
+    },
+    "tests": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "status"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "passed",
+              "failed"
+            ]
+          },
+          "error": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "networkObservations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attempted",
+        "blocked",
+        "successful"
+      ],
+      "properties": {
+        "attempted": {
+          "type": "null"
+        },
+        "blocked": {
+          "type": "null"
+        },
+        "successful": {
+          "type": "null"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hash": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    }
+  }
+}

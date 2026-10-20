@@ -1,10 +1,5 @@
-// Sidebar status strip — the four things that break quietly.
-//
-// The footer this replaces said `Vault linked · 59f` and nothing else, so a
-// stale index, a dead MCP server or an unloadable model showed up only as
-// "the answers got worse". Four glass tiles, each reading a source that
-// already exists; a tile that is unhappy takes an amber dot AND a border AND
-// a reason line (never colour alone), and the strip offers exactly one action.
+// Sidebar health summary. Technical tiles, the current warning and its
+// recovery action open on demand; collapsed, the one line marks the warning.
 
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
@@ -18,6 +13,7 @@ import { PROVIDERS } from "../lib/providers";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
+import type { ReindexStage } from "../stores/reindexStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
 /** Markdown counts behind the vault tile: the sessions/wiki ratio is the
@@ -52,6 +48,31 @@ export function statusWarning(input: {
   return null;
 }
 
+/** Whether the standing note under the strip shows the warning. A stopped
+ *  MCP server always does. A lagging index only once a reindex failed: while
+ *  one runs, or while the live updater (index_updater.rs) catches up, the
+ *  gap is expected and closes on its own, and the index tile still turns
+ *  amber in the details (UX S14). */
+export function noteShown(
+  warning: "mcp" | "index" | null,
+  reindex: ReindexStage,
+): boolean {
+  if (warning === "mcp") return true;
+  return warning === "index" && reindex === "error";
+}
+
+/** The mark the one-line summary carries while the warning note is shown —
+ *  the note itself opens with the details (UX S43). `lag` is how many wiki
+ *  pages the index is missing. */
+export function summaryAlert(
+  warning: "mcp" | "index" | null,
+  shown: boolean,
+  lag: number,
+): string | null {
+  if (!shown || !warning) return null;
+  return warning === "mcp" ? "▲" : `▲ ${lag}`;
+}
+
 function providerName(id: string): string {
   return PROVIDERS.find((p) => p.id === id)?.name ?? id;
 }
@@ -62,6 +83,7 @@ export default function StatusStrip({ t }: { t: Strings }): JSX.Element {
   const setSettingsTab = useUIStore((s) => s.setSettingsTab);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
+  const isOpeningVault = useVaultStore((s) => s.isOpeningVault);
   const settings = useSettingsStore((s) => s.settings);
   const indexedPages = useReindexStore((s) => s.indexedPages);
   const refreshStatus = useReindexStore((s) => s.refreshStatus);
@@ -97,10 +119,19 @@ export default function StatusStrip({ t }: { t: Strings }): JSX.Element {
   const indexed = broken ? 0 : indexedPages;
   const warning = statusWarning({
     mcpRunning: running,
-    wikiPages: split.wiki,
+    wikiPages: isOpeningVault ? 0 : split.wiki,
     indexedPages: indexed,
   });
-  const busy = stage === "loading-model" || stage === "indexing";
+
+  // The warning note opens with the details; the one-line summary carries its
+  // mark, so the strip stays one row tall in a short window (UX S43).
+  const lag = Math.max(0, split.wiki - (indexed ?? 0));
+  const shown = noteShown(warning, stage);
+  const alert = summaryAlert(warning, shown, lag);
+  const noteText =
+    warning === "mcp"
+      ? (t.sb_st_mcp_down ?? "The MCP server is stopped — agents cannot reach this vault.")
+      : t.sb_st_lagging.replace("{n}", nf.format(lag));
 
   const openSettings = (tab: "account" | "model" | "mcp"): void => {
     setSettingsTab(tab);
@@ -135,7 +166,23 @@ export default function StatusStrip({ t }: { t: Strings }): JSX.Element {
   const png = (src: string): JSX.Element => <img src={src} alt="" />;
 
   return (
-    <div className="side-status">
+    <div className="side-status" aria-busy={isOpeningVault}>
+      <details className="status-details">
+        <summary>
+          <span>{t.home_status}</span>
+          <span>
+            {isOpeningVault
+              ? t.st_loading
+              : t.home_notes_count.replace("{n}", nf.format(split.total))}
+            {alert ? (
+              <span className="st-sum-alert">
+                {" · "}
+                <span aria-hidden="true">{alert}</span>
+                <span className="st-sum-alert__sr">{noteText}</span>
+              </span>
+            ) : null}
+          </span>
+        </summary>
       <div className="st-head">
         <span>{t.sb_status ?? "Status"}</span>
         {canSimulate ? (
@@ -152,7 +199,7 @@ export default function StatusStrip({ t }: { t: Strings }): JSX.Element {
         {tile(
           "vault",
           t.sb_st_vault ?? "Vault",
-          currentVault ? nf.format(split.total) : "—",
+          isOpeningVault ? t.st_loading : currentVault ? nf.format(split.total) : "—",
           () => setShowSplit((v) => !v),
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6">
             <ellipse cx="12" cy="6" rx="8" ry="3" />
@@ -163,11 +210,13 @@ export default function StatusStrip({ t }: { t: Strings }): JSX.Element {
         {tile(
           "index",
           t.sb_st_index ?? "Index",
-          indexed === null
-            ? "—"
-            : indexed === 0
-              ? (t.s_embeddings_empty ?? "Not indexed yet")
-              : nf.format(indexed),
+          isOpeningVault
+            ? t.st_loading
+            : indexed === null
+              ? "—"
+              : indexed === 0
+                ? (t.s_embeddings_empty ?? "Not indexed yet")
+                : nf.format(indexed),
           () => openSettings("model"),
           png(indexingPng),
           warning === "index",
@@ -194,35 +243,26 @@ export default function StatusStrip({ t }: { t: Strings }): JSX.Element {
           png(askPng),
         )}
       </div>
-      {showSplit ? (
+      {showSplit && !isOpeningVault ? (
         <div className="st-split">
           sessions <b>{nf.format(split.sessions)}</b> · wiki <b>{nf.format(split.wiki)}</b>
         </div>
       ) : null}
-      {warning ? (
+      {shown ? (
         <div className="st-note" role="status">
           <span aria-hidden="true">▲</span>
           <span>
-            {warning === "mcp"
-              ? (t.sb_st_mcp_down ?? "The MCP server is stopped — agents cannot reach this vault.")
-              : (t.sb_st_lagging ?? "{n} wiki pages are outside the index — Ask cannot find them.").replace(
-                  "{n}",
-                  nf.format(Math.max(0, split.wiki - (indexed ?? 0))),
-                )}
+            {noteText}
             <button
               className="st-fix"
-              disabled={warning === "index" && busy}
               onClick={() => (warning === "mcp" ? openSettings("mcp") : void reindex())}
             >
-              {warning === "mcp"
-                ? (t.nav_settings ?? "Settings")
-                : busy
-                  ? (t.s_embeddings_indexing ?? "Indexing…")
-                  : (t.s_embeddings_reindex ?? "Reindex now")}
+              {warning === "mcp" ? (t.nav_settings ?? "Settings") : t.sb_st_reindex}
             </button>
           </span>
         </div>
       ) : null}
+      </details>
     </div>
   );
 }

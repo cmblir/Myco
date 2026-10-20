@@ -24,13 +24,74 @@ pub mod wikify;
 /// the JSONL session parsers.
 pub(crate) fn parse_iso8601(ts: &str) -> Option<i64> {
     let b = ts.as_bytes();
-    if b.len() < 19 || b[4] != b'-' || b[10] != b'T' {
+    if b.len() < 20
+        || !b[..4].iter().all(u8::is_ascii_digit)
+        || b[4] != b'-'
+        || b[7] != b'-'
+        || !matches!(b[10], b'T' | b't')
+        || b[13] != b':'
+        || b[16] != b':'
+    {
         return None;
     }
-    let num = |r: std::ops::Range<usize>| ts.get(r)?.parse::<i64>().ok();
+    let num = |r: std::ops::Range<usize>| {
+        let digits = ts.get(r)?;
+        digits
+            .as_bytes()
+            .iter()
+            .all(u8::is_ascii_digit)
+            .then_some(())?;
+        digits.parse::<i64>().ok()
+    };
     let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
     let (h, mi, s) = (num(11..13)?, num(14..16)?, num(17..19)?);
-    Some(days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s)
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let days = match mo {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    if !(1..=days).contains(&d)
+        || !(0..=23).contains(&h)
+        || !(0..=59).contains(&mi)
+        || !(0..=59).contains(&s)
+    {
+        return None;
+    }
+    let mut zone_start = 19;
+    if b.get(zone_start) == Some(&b'.') {
+        zone_start += 1;
+        let fraction_start = zone_start;
+        while b.get(zone_start).is_some_and(u8::is_ascii_digit) {
+            zone_start += 1;
+        }
+        if zone_start == fraction_start {
+            return None;
+        }
+    }
+    let zone = ts.get(zone_start..)?;
+    let offset = if zone == "Z" || zone == "z" {
+        0
+    } else {
+        let z = zone.as_bytes();
+        if z.len() != 6
+            || !matches!(z[0], b'+' | b'-')
+            || z[3] != b':'
+            || !z[1..3].iter().all(u8::is_ascii_digit)
+            || !z[4..6].iter().all(u8::is_ascii_digit)
+        {
+            return None;
+        }
+        let zh = zone.get(1..3)?.parse::<i64>().ok()?;
+        let zm = zone.get(4..6)?.parse::<i64>().ok()?;
+        if zh > 23 || zm > 59 {
+            return None;
+        }
+        (zh * 3600 + zm * 60) * if z[0] == b'+' { 1 } else { -1 }
+    };
+    Some(days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s - offset)
 }
 
 /// Days since the Unix epoch for a civil date (Howard Hinnant's algorithm).
@@ -55,6 +116,25 @@ mod time_tests {
             Some(1_784_365_200)
         );
         assert_eq!(parse_iso8601("garbage"), None);
+    }
+
+    #[test]
+    fn parses_original_timezone_and_refuses_invalid_calendar_or_ambiguous_time() {
+        assert_eq!(parse_iso8601("1970-01-01T09:00:00+09:00"), Some(0));
+        assert_eq!(parse_iso8601("1969-12-31T19:00:00-05:00"), Some(0));
+        assert!(parse_iso8601("2024-02-29T12:00:00.123Z").is_some());
+        for invalid in [
+            "2023-02-29T12:00:00Z",
+            "2026-13-01T00:00:00Z",
+            "2026-10-03T24:00:00Z",
+            "2026-10-03T12:00:00",
+            "2026-10-03T12:00:00.Z",
+            "2026-10-03T12:00:00+25:00",
+            "2026-+1-03T12:00:00Z",
+            "2026-10-03T12:00:00+-1:00",
+        ] {
+            assert_eq!(parse_iso8601(invalid), None, "{invalid}");
+        }
     }
 }
 
@@ -249,6 +329,127 @@ mod dispatch_tests {
         assert!(led.seen_body(&ledger::body_hash(&second), "claude-code:b2"));
     }
 
+    /// A synthetic claude-code session: one JSONL line per `(role, text)`.
+    fn cc_session(id: &str, turns: &[(&str, &str)]) -> String {
+        turns
+            .iter()
+            .map(|(role, text)| {
+                serde_json::json!({"type": role, "sessionId": id,
+                    "message": {"role": role, "content": text}})
+                .to_string()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Long enough to clear `MIN_SPOKEN_CHARS`, so only the new check can skip.
+    fn filler() -> String {
+        "the wiki page on attention cites two sources. ".repeat(30)
+    }
+
+    #[test]
+    fn plan_import_skips_a_run_whose_first_turn_is_one_of_mycos_prompts() {
+        let heads: std::collections::BTreeMap<String, String> =
+            serde_json::from_str(include_str!("../../../src/lib/mycoPromptHeads.json")).unwrap();
+        let led = ledger::Ledger::default();
+        for (name, head) in &heads {
+            let jsonl = cc_session(
+                "m1",
+                &[
+                    ("user", &format!("{head} {}", filler())),
+                    ("assistant", "Done."),
+                ],
+            );
+            let plan = plan_import("m1.jsonl", &jsonl, &led).unwrap();
+            assert!(plan.docs.is_empty(), "{name} must not be imported");
+            assert_eq!(plan.skipped, 1, "{name}");
+        }
+        // Codex: the AGENTS.md preamble and the environment block come
+        // before the prompt; they are stripped the way distill strips them.
+        let codex = [
+            serde_json::json!({"type":"session_meta","payload":{"id":"cx1"}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user",
+                "content":[{"type":"input_text","text":"# AGENTS.md instructions for /tmp/v\n\n<INSTRUCTIONS>\nbe brief\n</INSTRUCTIONS>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user",
+                "content":[{"type":"input_text","text":"<environment_context>\n<cwd>/tmp/v</cwd>\n</environment_context>"}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user",
+                "content":[{"type":"input_text","text":format!("{} {}", heads["digest"], filler())}]}}),
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"assistant",
+                "content":[{"type":"output_text","text":"Digest written."}]}}),
+            // Codex's own note after an interrupted turn, not a second prompt.
+            serde_json::json!({"type":"response_item","payload":{"type":"message","role":"user",
+                "content":[{"type":"input_text","text":"<turn_aborted>\nThe user interrupted the previous turn on purpose.\n</turn_aborted>"}]}}),
+        ]
+        .map(|v| v.to_string())
+        .join("\n");
+        let plan = plan_import("rollout-cx1.jsonl", &codex, &led).unwrap();
+        assert!(plan.docs.is_empty());
+        assert_eq!(plan.skipped, 1);
+    }
+
+    #[test]
+    fn plan_import_still_imports_a_person_and_an_agent_task_prompt() {
+        let led = ledger::Ledger::default();
+        // A person who quotes a myco prompt later in the session is a person.
+        let quoting = cc_session(
+            "p1",
+            &[
+                ("user", "Why does the digest come out empty?"),
+                ("assistant", "Let me look."),
+                (
+                    "user",
+                    &format!("It starts: You are myco's digest writer. {}", filler()),
+                ),
+            ],
+        );
+        // A person who opens by quoting a myco prompt and keeps working is a
+        // person too: myco's own runs are one prompt.
+        let opening = cc_session(
+            "p2",
+            &[
+                (
+                    "user",
+                    "You are myco's digest writer. <- this prompt gives an empty digest. Look with me.",
+                ),
+                ("assistant", "Let me look."),
+                ("user", &format!("Go on. {}", filler())),
+                ("assistant", "Found it."),
+                ("user", "Good, fix it."),
+            ],
+        );
+        // An agent task prompt is not myco's own call: decision 1 sets it
+        // aside in distill, the importer keeps it.
+        let agent = cc_session(
+            "a1",
+            &[(
+                "user",
+                &format!("Summarise the run log for the orchestrator. {}", filler()),
+            )],
+        );
+        for (name, jsonl) in [("p1", quoting), ("p2", opening), ("a1", agent)] {
+            let plan = plan_import(&format!("{name}.jsonl"), &jsonl, &led).unwrap();
+            assert_eq!(plan.docs.len(), 1, "{name} must be imported");
+        }
+    }
+
+    #[test]
+    fn plan_import_skips_a_run_carrying_mycos_session_id_marker() {
+        // A prompt myco sends that no head covers yet is still caught by the
+        // session id myco passes the claude CLI.
+        let led = ledger::Ledger::default();
+        let id = crate::claude::myco_session_id();
+        let jsonl = cc_session(&id, &[("user", &filler()), ("assistant", "ok")]);
+        let plan = plan_import("x.jsonl", &jsonl, &led).unwrap();
+        assert!(plan.docs.is_empty());
+        assert_eq!(plan.skipped, 1);
+        // An ordinary session id is imported.
+        let jsonl = cc_session(
+            "2202078e-1c2d-4e5f-8a9b-0c1d2e3f4a5b",
+            &[("user", &filler()), ("assistant", "ok")],
+        );
+        assert_eq!(plan_import("y.jsonl", &jsonl, &led).unwrap().docs.len(), 1);
+    }
+
     #[test]
     fn plan_import_reimports_a_changed_conversation() {
         let led = {
@@ -292,7 +493,7 @@ impl Source {
 }
 
 /// Who authored a turn. Vendor role names are normalized onto these.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Role {
     User,
     Assistant,
@@ -316,6 +517,81 @@ impl Role {
 pub struct Turn {
     pub role: Role,
     pub text: String,
+    pub metadata: TurnMetadata,
+}
+
+/// Original message coordinates and untrusted provider-declared session data.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+pub struct TurnMetadata {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub message_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub phase: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub original_role: Option<String>,
+    /// Ordered provider-declared session data, not a human-speaker or authority grant.
+    /// Present JSON nulls and absent keys remain distinct; only the first retained turn stores it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub session_provenance: Option<Vec<serde_json::Value>>,
+    /// Exact JSONL record, written only to the immutable original sidecar.
+    #[serde(skip)]
+    pub original_record: Option<String>,
+}
+
+impl Turn {
+    pub fn plain(role: Role, text: String) -> Self {
+        Self {
+            role,
+            text,
+            metadata: TurnMetadata::default(),
+        }
+    }
+}
+
+/// Render provider observations as source data, never as prompt instructions.
+pub(crate) fn session_provenance_preamble(records: &[serde_json::Value]) -> String {
+    format!(
+        "{}\n\n",
+        serde_json::json!({"providerSessionProvenance": records})
+    )
+}
+
+/// Strip only a leading, recognizable harness wrapper. Quoted instructions or
+/// tag names in ordinary prose are user content and must survive unchanged.
+pub(crate) fn strip_session_harness(text: &str) -> String {
+    let mut rest = text.trim();
+    if rest.starts_with("# AGENTS.md instructions") {
+        let Some((_, after_header)) = rest.split_once('\n') else {
+            return rest.to_string();
+        };
+        let block = after_header.trim_start();
+        if !block.starts_with("<INSTRUCTIONS>") {
+            return rest.to_string();
+        }
+        let Some(end) = block.find("</INSTRUCTIONS>") else {
+            return rest.to_string();
+        };
+        rest = block[end + "</INSTRUCTIONS>".len()..].trim_start();
+    }
+    loop {
+        let tag = [
+            "environment_context",
+            "permissions",
+            "recommended_plugins",
+            "turn_aborted",
+        ]
+        .into_iter()
+        .find(|tag| rest.starts_with(&format!("<{tag}>")) || rest.starts_with(&format!("<{tag} ")));
+        let Some(tag) = tag else { break };
+        let close = format!("</{tag}>");
+        let Some(end) = rest.find(&close) else { break };
+        rest = rest[end + close.len()..].trim_start();
+    }
+    rest.trim().to_string()
 }
 
 /// A single conversation, independent of which vendor it came from.
@@ -369,12 +645,37 @@ impl Conversation {
         let mut out = String::new();
         out.push_str("---\n");
         out.push_str(&format!("source: {}\n", self.source.slug()));
-        out.push_str(&format!("conversation_id: {}\n", self.id));
+        out.push_str(&format!(
+            "conversation_id: {}\n",
+            serde_json::to_string(&self.id).expect("serializable conversation id")
+        ));
         if let Some(ts) = self.created {
             out.push_str(&format!("created: {ts}\n"));
         }
+        let metadata: Vec<_> = self.turns.iter().map(|t| &t.metadata).collect();
+        if metadata.iter().any(|m| *m != &TurnMetadata::default()) {
+            out.push_str(&format!(
+                "turn_metadata: {}\n",
+                serde_json::to_string(&metadata).expect("serializable metadata")
+            ));
+        }
+        if let Some(ts) = self
+            .turns
+            .iter()
+            .filter_map(|t| t.metadata.timestamp.as_deref().and_then(parse_iso8601))
+            .max()
+        {
+            out.push_str(&format!("last_activity: {ts}\n"));
+        }
         out.push_str("---\n\n");
         out.push_str(&format!("# {}\n\n", self.title.trim()));
+        if let Some(records) = self
+            .turns
+            .first()
+            .and_then(|turn| turn.metadata.session_provenance.as_ref())
+        {
+            out.push_str(&session_provenance_preamble(records));
+        }
         for turn in &self.turns {
             out.push_str(&format!(
                 "**{}:**\n\n{}\n\n",
@@ -463,6 +764,7 @@ pub struct InboxDoc {
     pub key: String,
     pub fingerprint: String,
     pub body_hash: String,
+    pub original_records: String,
 }
 
 /// A conversation held back from import because its text matched a secret shape.
@@ -501,6 +803,12 @@ pub fn plan_import(
     ledger: &ledger::Ledger,
 ) -> Result<ImportPlan, String> {
     let convs = detect_and_parse(filename, content)?;
+    Ok(plan_conversations(&convs, ledger))
+}
+
+/// Apply current admission rules to already parsed source bytes. Native callers
+/// parse before taking the opening/publication locks, then use the fresh ledger.
+pub(crate) fn plan_conversations(convs: &[Conversation], ledger: &ledger::Ledger) -> ImportPlan {
     let source = convs
         .first()
         .map(|c| c.source.slug().to_string())
@@ -518,6 +826,10 @@ pub fn plan_import(
             continue;
         }
         let body = c.to_inbox_doc();
+        if is_mycos_own_run(c, &body) {
+            skipped += 1;
+            continue;
+        }
         let key = format!("{}:{}", c.source.slug(), c.id);
         let fp = ledger::fingerprint(&body);
         if ledger.seen(&key, &fp) {
@@ -530,6 +842,18 @@ pub fn plan_import(
             continue;
         }
         let hits = secrets_scan::scan(&body);
+        let original_records = c
+            .turns
+            .iter()
+            .filter_map(|t| t.metadata.original_record.as_deref())
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut hits = hits;
+        for hit in secrets_scan::scan(&original_records) {
+            if !hits.contains(&hit) {
+                hits.push(hit);
+            }
+        }
         if hits.is_empty() {
             planned_bodies.insert(body_hash.clone());
             docs.push(InboxDoc {
@@ -538,28 +862,50 @@ pub fn plan_import(
                 key,
                 fingerprint: fp,
                 body_hash,
+                original_records,
             });
         } else {
             // Not recorded: a quarantined conversation is re-checked next time,
             // in case the user removed the secret at the source.
             quarantined.push(Quarantined {
-                title: c.title,
+                title: c.title.clone(),
                 secrets: hits,
             });
         }
     }
-    Ok(ImportPlan {
+    ImportPlan {
         source,
         docs,
         quarantined,
         skipped,
         duplicates,
-    })
+    }
+}
+
+/// A CLI run myco launched itself, which is not the owner's session: its id
+/// carries the marker myco passes the claude CLI, or it is one prompt whose
+/// first human turn opens with one of myco's own — the check distill
+/// quarantines by, read off the doc as it would land. A person who opens by
+/// quoting a myco prompt and keeps talking is imported. `codex exec` takes no
+/// flag that lands in its rollout, so only the prompt check covers codex.
+/// Spec 2026-10-02-machine-session-quarantine, decision 3.
+fn is_mycos_own_run(c: &Conversation, body: &str) -> bool {
+    use crate::machine_session::{first_human_turn, is_myco_prompt, strip_harness};
+    let one_prompt = || {
+        c.turns
+            .iter()
+            .filter(|t| t.role == Role::User && !strip_harness(&t.text).is_empty())
+            .count()
+            == 1
+    };
+    (c.source == Source::ClaudeCode && crate::claude::is_myco_session_id(&c.id))
+        || (first_human_turn(body).is_some_and(|t| is_myco_prompt(&t)) && one_prompt())
 }
 
 /// Keep only characters that are safe and stable in a filename.
 fn sanitize(s: &str) -> String {
-    s.chars()
+    let safe: String = s
+        .chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
                 c
@@ -567,5 +913,14 @@ fn sanitize(s: &str) -> String {
                 '-'
             }
         })
-        .collect()
+        .collect();
+    if safe == s && safe.len() <= 180 {
+        safe
+    } else {
+        format!(
+            "{}-{}",
+            safe.chars().take(120).collect::<String>(),
+            ledger::fingerprint(s)
+        )
+    }
 }

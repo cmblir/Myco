@@ -2,6 +2,8 @@
 // `[[target|display]]`. Targets are matched case-insensitively against file
 // stems to mirror Obsidian's resolution behavior.
 
+import type { FileNode } from "./ipc";
+
 export interface ParsedWikilink {
   target: string;
   display: string;
@@ -45,6 +47,51 @@ export function matchWikilinkAt(
  */
 export function wikilinkBase(target: string): string {
   return target.split("#")[0].trim();
+}
+
+/**
+ * The file a link to `target` opens: the first file in tree order whose name
+ * without its extension is `target`, case-insensitively. Top-level templates/
+ * holds scaffolds, not notes (index.rs is_staging_dir skips it too): a note
+ * titled "note" must not resolve to templates/note.md. cards/ likewise: a
+ * deck is saved under its note's own name.
+ */
+export function resolveStem(tree: FileNode[], target: string): string | null {
+  if (target.includes("/")) {
+    const parts = target.normalize("NFC").split("/");
+    if (parts.some((part) => !part || part === "." || part === "..")) return null;
+    return findFileByPath(tree, parts.map((part) => part.toLowerCase()));
+  }
+  return findFileByStem(
+    tree.filter((n) => !(n.kind === "directory" && (n.name === "templates" || n.name === "cards"))),
+    target.toLowerCase(),
+  );
+}
+
+function findFileByPath(nodes: FileNode[], parts: string[]): string | null {
+  for (const node of nodes) {
+    const name = node.name.normalize("NFC").toLowerCase();
+    if (parts.length === 1 && node.kind === "file" &&
+        (name === parts[0] || name.replace(/\.md$/, "") === parts[0])) return node.path;
+    if (node.kind === "directory" && name === parts[0] && parts.length > 1) {
+      return findFileByPath(node.children, parts.slice(1));
+    }
+  }
+  return null;
+}
+
+function findFileByStem(nodes: FileNode[], lowerStem: string): string | null {
+  for (const node of nodes) {
+    if (node.kind === "file") {
+      const dot = node.name.lastIndexOf(".");
+      const stem = (dot > 0 ? node.name.slice(0, dot) : node.name).toLowerCase();
+      if (stem === lowerStem) return node.path;
+    } else {
+      const found = findFileByStem(node.children, lowerStem);
+      if (found) return found;
+    }
+  }
+  return null;
 }
 
 // --- PDF pinpoint links (Feature 6) ----------------------------------------

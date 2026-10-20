@@ -15,6 +15,7 @@
 import type { JSX } from "react";
 import { Check, Chip, Segment } from "./ui";
 import type { Question, SizeBy } from "../lib/graphEncoding";
+import { activeFilterChips } from "../lib/graphFilters";
 import type { GraphSettings } from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
 
@@ -50,12 +51,19 @@ function fill(tpl: string, vals: Record<string, string | number>): string {
 }
 
 /**
- * The honesty disclosure as ONE line for the frame's `note`: what the picture
- * draws, how much of it is first-run sample, and what is structurally absent.
- * It used to be a bordered box with a stacked bar; the numbers are the point,
- * not the frame around them.
+ * The frame's `note`: one plain line, your notes and the links they miss
+ * (UX S14). The rest of the honesty disclosure is {@link honestyDetails}.
  */
-export function honestyNote(t: Strings, counts: SurveyCounts, edges: number): string {
+export function honestyNote(t: Strings, counts: SurveyCounts): string {
+  return fill(t.gr_summary, { own: counts.own, gaps: counts.gaps });
+}
+
+/**
+ * The legend's 자세히: what the picture draws, how much of it is first-run
+ * sample, and what is structurally absent. It used to be the frame's note,
+ * a paragraph of counts above the picture.
+ */
+export function honestyDetails(t: Strings, counts: SurveyCounts, edges: number): string[] {
   const pct = counts.total > 0 ? Math.round((counts.sample / counts.total) * 100) : 0;
   const drawn = `${counts.total} ${t.gr_node_count} · ${edges} ${t.gr_edge_count}`;
   return [
@@ -69,7 +77,7 @@ export function honestyNote(t: Strings, counts: SurveyCounts, edges: number): st
       cited: counts.cited,
     }),
     fill(t.gr_honest_sessions, { n: counts.sessions.toLocaleString() }),
-  ].join(" · ");
+  ];
 }
 
 export default function GraphQuestions({
@@ -127,11 +135,29 @@ export default function GraphQuestions({
         onChange={(show) => onChange({ existingOnly: !show })}
         label={t.gr_show_unresolved}
       />
-      {/* Pushed right, and live: the number the user watches to confirm that
-          typing in the find field does NOT rebuild the scene. */}
-      <span className="graph-rebuilds" aria-live="polite">
-        <Chip label={fill(t.gr_rebuilds, { n: build.builds, ms: build.ms.toFixed(1) })} />
-      </span>
+      {/* The drawer's narrowing filters persist across launches; with the
+          drawer closed they are visible only here, each one removable. */}
+      {activeFilterChips(settings, t).map((c) => (
+        <button
+          key={c.key}
+          type="button"
+          className="graph-chip graph-chip--filter"
+          aria-label={fill(t.gr_filter_remove, { f: c.label })}
+          title={fill(t.gr_filter_remove, { f: c.label })}
+          onClick={() => onChange(c.clear)}
+        >
+          {c.label}
+          <span aria-hidden="true">×</span>
+        </button>
+      ))}
+      {/* Pushed right, and live: the number a developer watches to confirm
+          that typing in the find field does NOT rebuild the scene. Dev builds
+          only, like the sidebar's simulate-failure pill (UX S14). */}
+      {import.meta.env.DEV ? (
+        <span className="graph-rebuilds" aria-live="polite">
+          <Chip label={fill(t.gr_rebuilds, { n: build.builds, ms: build.ms.toFixed(1) })} />
+        </span>
+      ) : null}
     </>
   );
 }

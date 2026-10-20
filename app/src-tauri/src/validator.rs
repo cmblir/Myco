@@ -7,7 +7,7 @@
 use crate::local_llm::WIKI_TYPES;
 use crate::{index, parser, provenance};
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 // Structural/meta page exemption — mirrors mcp_native's LINT_SKIP_NAMES /
@@ -41,6 +41,153 @@ impl ValidationReport {
 const CONFIDENCE: [&str; 3] = ["high", "medium", "low"];
 const STATUS: [&str; 3] = ["active", "superseded", "disputed"];
 
+/// Definitions and references share one visible-body pass. Fence length and
+/// marker must match so a shorter example fence cannot expose forged sources.
+fn source_citations(text: &str) -> (BTreeSet<String>, BTreeMap<String, Vec<String>>) {
+    let mut slugs = BTreeSet::new();
+    let mut definitions = BTreeMap::<String, Vec<String>>::new();
+    let (mut seen_content, mut frontmatter) = (false, false);
+    let mut fence: Option<(u8, usize)> = None;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !seen_content && !trimmed.is_empty() {
+            seen_content = true;
+            if trimmed == "---" {
+                frontmatter = true;
+                continue;
+            }
+        }
+        if frontmatter {
+            if trimmed == "---" {
+                frontmatter = false;
+            }
+            continue;
+        }
+        let indentation = line.bytes().take_while(|byte| *byte == b' ').count();
+        if indentation >= 4 || line[indentation..].starts_with('\t') {
+            continue;
+        }
+        let bytes = trimmed.as_bytes();
+        let marker = bytes.first().copied();
+        let length = marker
+            .map(|marker| bytes.iter().take_while(|byte| **byte == marker).count())
+            .unwrap_or(0);
+        if let Some((open_marker, open_length)) = fence {
+            if marker == Some(open_marker)
+                && length >= open_length
+                && trimmed[length..].trim().is_empty()
+            {
+                fence = None;
+            }
+            continue;
+        }
+        if matches!(marker, Some(b'`' | b'~')) && length >= 3 {
+            fence = Some((marker.unwrap_or_default(), length));
+            continue;
+        }
+        provenance::extract_src_slugs(line, &mut slugs);
+        if let Some((slug, definition)) = trimmed
+            .strip_prefix("[^src-")
+            .and_then(|rest| rest.split_once("]:"))
+        {
+            let token = definition.split_whitespace().next().unwrap_or("");
+            let token = token
+                .strip_prefix('`')
+                .and_then(|rest| rest.strip_suffix('`'))
+                .or_else(|| {
+                    token
+                        .strip_prefix('<')
+                        .and_then(|rest| rest.strip_suffix('>'))
+                })
+                .unwrap_or(token);
+            definitions
+                .entry(slug.to_string())
+                .or_default()
+                .push(token.to_string());
+        }
+    }
+    (slugs, definitions)
+}
+
+fn is_explicit_source_path(token: &str) -> bool {
+    !token.starts_with("[[")
+        && (token.contains(['/', '\\']) || Path::new(token).extension().is_some())
+}
+
+/// An alias is valid only for the exact immutable Markdown source it names.
+/// Reuse the vault's no-symlink component guard and canonical confinement.
+fn exact_raw_source_exists(root: &Path, token: &str) -> bool {
+    if !token.starts_with("raw/")
+        || token.contains('\\')
+        || token.chars().any(char::is_control)
+        || token
+            .split('/')
+            .any(|component| component.is_empty() || matches!(component, "." | ".."))
+        || Path::new(token)
+            .extension()
+            .and_then(|extension| extension.to_str())
+            != Some("md")
+    {
+        return false;
+    }
+    let path = root.join(token);
+    let Ok(guarded) = crate::vault::confine_delete_path(root, &path.to_string_lossy()) else {
+        return false;
+    };
+    let Ok(confined) = crate::vault::confine_path(root, &guarded.to_string_lossy()) else {
+        return false;
+    };
+    confined.starts_with(root.join("raw")) && confined.is_file()
+}
+
+/// Only absent legacy flat citations may follow one unambiguous archive move.
+/// Explicit aliases and revision paths retain their exact-source contract.
+fn explicit_raw_source_exists(root: &Path, slug: &str, token: &str) -> bool {
+    if exact_raw_source_exists(root, token) {
+        return true;
+    }
+    if token != format!("raw/{slug}.md")
+        || slug.contains(['/', '\\'])
+        || slug.chars().any(char::is_control)
+        || !matches!(std::fs::symlink_metadata(root.join(token)), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+        || crate::vault::confine_delete_path(root, &root.join(token).to_string_lossy()).is_err()
+    {
+        return false;
+    }
+    let archive = root.join("raw/archive");
+    if crate::vault::confine_delete_path(root, &archive.to_string_lossy()).is_err()
+        || !archive.is_dir()
+    {
+        return false;
+    }
+    let name = Path::new(token).file_name();
+    let mut matches = 0;
+    let mut stack = vec![archive];
+    while let Some(dir) = stack.pop() {
+        if crate::vault::confine_delete_path(root, &dir.to_string_lossy()).is_err() {
+            return false;
+        }
+        for (entry, kind) in crate::vault::vault_entries(&dir) {
+            let path = entry.path();
+            if kind.is_dir() {
+                stack.push(path);
+            } else if path.file_name() == name {
+                let Ok(relative) = path.strip_prefix(root) else {
+                    return false;
+                };
+                if !exact_raw_source_exists(root, &relative.to_string_lossy()) {
+                    return false;
+                }
+                matches += 1;
+                if matches > 1 {
+                    return false;
+                }
+            }
+        }
+    }
+    matches == 1
+}
+
 /// Validate the given vault-relative pages against the Balanced ingest policy.
 /// `root` must already be the vault's canonical root (callers confine it).
 /// Non-`wiki/` paths, `index.md`/`log.md`, and `type: overview`/`type: meta`
@@ -52,7 +199,7 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
     // Recursive raw/ index (dangling-citation lookup) and the vault-wide
     // wikilink name index — both built once, over the whole vault, not just
     // the changed set, since a changed page may cite/link anywhere.
-    let raw = provenance::build_raw_index(root);
+    let mut raw = None;
     let (_sources, linkables): (Vec<PathBuf>, Vec<PathBuf>) =
         index::collect_files(root).unwrap_or_default();
     let names = index::build_name_index(&linkables);
@@ -149,10 +296,7 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
                 }
 
                 // source_count vs distinct [^src-*] citations.
-                let mut slugs = BTreeSet::new();
-                for line in text.lines() {
-                    provenance::extract_src_slugs(line, &mut slugs);
-                }
+                let (slugs, definitions) = source_citations(&text);
                 if let Some(n) = v.get("source_count").and_then(|x| x.as_u64()) {
                     if n as usize != slugs.len() {
                         rep.warnings.push(Issue {
@@ -167,11 +311,30 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
                 }
                 // Citations must resolve to an immutable raw/ source (ERROR).
                 for s in &slugs {
-                    if !raw.contains_key(s) {
+                    let definition = definitions.get(s);
+                    let duplicate = definition.is_some_and(|definitions| definitions.len() != 1);
+                    let explicit = definition
+                        .and_then(|definitions| definitions.first())
+                        .filter(|token| is_explicit_source_path(token));
+                    let resolves = if duplicate {
+                        false
+                    } else if let Some(token) = explicit {
+                        explicit_raw_source_exists(root, s, token)
+                    } else {
+                        raw.get_or_insert_with(|| provenance::build_raw_index(root))
+                            .contains_key(s)
+                    };
+                    if !resolves {
                         rep.errors.push(Issue {
                             page: rel.clone(),
                             kind: "dangling_citation".into(),
-                            detail: format!("[^src-{s}] has no raw/{s}.md"),
+                            detail: if duplicate {
+                                format!("[^src-{s}] has multiple footnote definitions")
+                            } else if explicit.is_some() {
+                                format!("[^src-{s}] names no valid exact raw/ Markdown source")
+                            } else {
+                                format!("[^src-{s}] has no raw/{s}.md")
+                            },
                         });
                     }
                 }
@@ -387,6 +550,60 @@ _Extractive summary — every line below is quoted verbatim from `raw/retrieval-
         );
     }
 
+    // The same function over a SESSION transcript: the title is the
+    // transcript's first heading + agent + date (lib/sessionTitle.ts), and a
+    // transcript candidate is linked through its `source-` summary, never by
+    // its own stem, which resolves to nothing in wiki/.
+    const OFFLINE_INGEST_SESSION_PAGE: &str = r#"---
+title: "Source: 그래프 범례를 접을 수 있게 해줘 · Codex · 2026-07-27"
+type: source-summary
+tags:
+  - source-summary
+created: 2026-09-06
+last_updated: 2026-09-06
+source_count: 1
+confidence: low
+status: active
+---
+
+# Source: 그래프 범례를 접을 수 있게 해줘 · Codex · 2026-07-27
+
+_Extractive summary — every line below is quoted verbatim from `raw/codex-019de763-362b-7613-bcfd-5c5e0e8ff9be.md`. No model read this source, so nothing here is paraphrased and nothing is inferred._
+
+- 그래프 범례를 접을 수 있게 해줘. 왼쪽 갭 레일도 같이 접히면 좋겠어. [^src-codex-019de763-362b-7613-bcfd-5c5e0e8ff9be]
+- The legend rail now collapses to a thin edge tab, and the canvas resizes to take the freed width. [^src-codex-019de763-362b-7613-bcfd-5c5e0e8ff9be]
+
+## Related
+
+- [[attention-mechanism]]
+- [[source-claude-code-064ddbe4-251d-4da1-8315-da096a5b75ff]]
+
+[^src-codex-019de763-362b-7613-bcfd-5c5e0e8ff9be]: [[source-codex-019de763-362b-7613-bcfd-5c5e0e8ff9be]]
+"#;
+
+    #[test]
+    fn offline_ingest_session_page_passes_validation_with_no_dangling_link() {
+        let cc = "wiki/source-claude-code-064ddbe4-251d-4da1-8315-da096a5b75ff.md";
+        let page = "wiki/source-codex-019de763-362b-7613-bcfd-5c5e0e8ff9be.md";
+        let (_d, root) = vault(&[
+            (
+                "raw/codex-019de763-362b-7613-bcfd-5c5e0e8ff9be.md",
+                "# codex\n\nbody\n",
+            ),
+            ("wiki/attention-mechanism.md", GOOD_FM),
+            (cc, GOOD_FM),
+            (page, OFFLINE_INGEST_SESSION_PAGE),
+        ]);
+        let rep = validate_pages(&root, &[page.to_string()]);
+        assert!(rep.errors.is_empty(), "got {:?}", rep.errors);
+        let unresolved: Vec<_> = rep
+            .warnings
+            .iter()
+            .filter(|w| w.kind == "unresolved_wikilink")
+            .collect();
+        assert!(unresolved.is_empty(), "got {unresolved:?}");
+    }
+
     // Returns the TempDir (kept alive so its Drop doesn't delete the vault out
     // from under a test) alongside its CANONICAL root. `confine_path` (used by
     // `validate_pages` since the path-traversal fix) canonicalizes and compares
@@ -422,6 +639,266 @@ _Extractive summary — every line below is quoted verbatim from `raw/retrieval-
             .iter()
             .any(|e| e.kind == "dangling_citation" && e.detail.contains("ghost")));
         assert!(!r.errors.iter().any(|e| e.detail.contains("real"))); // real resolves
+    }
+
+    #[test]
+    fn explicit_raw_revision_resolves_a_stable_session_citation_alias() {
+        let (_d, root) = vault(&[
+            ("raw/conversations/codex/synthetic.r1.md", "Synthetic revised source."),
+            ("raw/conversations/claude/synthetic.r1.md", "Another namespace."),
+            ("wiki/source-session.md", &format!("{GOOD_FM}\nA supported claim.[^src-session-codex-stable-revision]\n\n[^src-session-codex-stable-revision]: raw/conversations/codex/synthetic.r1.md · [[source-session]]\n")),
+        ]);
+        let report = validate_pages(&root, &["wiki/source-session.md".into()]);
+        assert!(
+            report.errors.is_empty(),
+            "valid exact revision alias must resolve: {:?}",
+            report.errors
+        );
+    }
+
+    #[test]
+    fn legacy_flat_citation_resolves_one_unique_archived_source() {
+        let (_d, root) = vault(&[
+            (
+                "raw/archive/2026-08/nested/paper.md",
+                "Synthetic archived source.",
+            ),
+            (
+                "wiki/check.md",
+                &format!("{GOOD_FM}\nClaim.[^src-paper]\n\n[^src-paper]: raw/paper.md\n"),
+            ),
+        ]);
+        assert!(validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[test]
+    fn legacy_flat_citation_refuses_ambiguous_archived_sources() {
+        let (_d, root) = vault(&[
+            ("raw/archive/2026-08/paper.md", "First synthetic source."),
+            ("raw/archive/2026-09/paper.md", "Second synthetic source."),
+            (
+                "wiki/check.md",
+                &format!("{GOOD_FM}\nClaim.[^src-paper]\n\n[^src-paper]: raw/paper.md\n"),
+            ),
+        ]);
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+        fs::write(root.join("raw/paper.md"), "Current exact source.").unwrap();
+        assert!(validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[test]
+    fn archived_sources_never_redirect_explicit_revisions_or_invalid_tokens() {
+        let (_d, root) = vault(&[
+            ("raw/archive/2026-08/paper.md", "Synthetic archived source."),
+            (
+                "raw/archive/2026-08/paper.r1.md",
+                "Synthetic archived revision.",
+            ),
+            ("wiki/check.md", GOOD_FM),
+        ]);
+        for token in [
+            "raw/conversations/codex/paper.r1.md",
+            "raw/conversations/codex/paper.md",
+            "raw/archive/missing/paper.md",
+            "raw/other.md",
+            "raw/./paper.md",
+            "raw/../raw/paper.md",
+            "raw/paper.jsonl",
+            "raw\\paper.md",
+        ] {
+            fs::write(
+                root.join("wiki/check.md"),
+                format!("{GOOD_FM}\nClaim.[^src-paper]\n\n[^src-paper]: {token}\n"),
+            )
+            .unwrap();
+            assert!(
+                !validate_pages(&root, &["wiki/check.md".into()]).ok(),
+                "invalid or nested explicit token must not redirect: {token}"
+            );
+        }
+        fs::write(
+            root.join("wiki/check.md"),
+            format!("{GOOD_FM}\nClaim.[^src-other]\n\n[^src-other]: raw/paper.md\n"),
+        )
+        .unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[test]
+    fn legacy_flat_citation_requires_absence_and_an_archive_source() {
+        let (_d, root) = vault(&[
+            (
+                "raw/conversations/codex/paper.md",
+                "Another source namespace.",
+            ),
+            (
+                "wiki/check.md",
+                &format!("{GOOD_FM}\nClaim.[^src-paper]\n\n[^src-paper]: raw/paper.md\n"),
+            ),
+        ]);
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+        fs::create_dir_all(root.join("raw/archive/2026-08")).unwrap();
+        fs::write(
+            root.join("raw/archive/2026-08/paper.md"),
+            "Archived source.",
+        )
+        .unwrap();
+        fs::create_dir(root.join("raw/paper.md")).unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn legacy_archive_fallback_refuses_direct_and_archived_symlinks() {
+        let (_d, root) = vault(&[
+            ("raw/archive/2026-08/paper.md", "Archived source."),
+            (
+                "wiki/check.md",
+                &format!("{GOOD_FM}\nClaim.[^src-paper]\n\n[^src-paper]: raw/paper.md\n"),
+            ),
+        ]);
+        std::os::unix::fs::symlink(
+            root.join("raw/archive/2026-08/paper.md"),
+            root.join("raw/paper.md"),
+        )
+        .unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+        fs::remove_file(root.join("raw/paper.md")).unwrap();
+        fs::rename(
+            root.join("raw/archive/2026-08/paper.md"),
+            root.join("raw/source.md"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            root.join("raw/source.md"),
+            root.join("raw/archive/2026-08/paper.md"),
+        )
+        .unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+        fs::remove_file(root.join("raw/archive/2026-08/paper.md")).unwrap();
+        fs::create_dir_all(root.join("raw/elsewhere")).unwrap();
+        fs::write(
+            root.join("raw/elsewhere/paper.md"),
+            "Linked directory source.",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(root.join("raw/elsewhere"), root.join("raw/archive/linked"))
+            .unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+        fs::remove_file(root.join("raw/archive/linked")).unwrap();
+        fs::remove_dir_all(root.join("raw/archive")).unwrap();
+        std::os::unix::fs::symlink(root.join("raw/elsewhere"), root.join("raw/archive")).unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[test]
+    fn invalid_explicit_source_paths_cannot_fall_back_to_the_label_basename() {
+        let (directory, root) = vault(&[
+            ("raw/real.md", "Legacy source with matching label."),
+            (
+                "raw/conversations/codex/same.md",
+                "Source in another namespace.",
+            ),
+            ("raw/real.jsonl", "Synthetic original records."),
+            ("wiki/real.md", GOOD_FM),
+            ("sessions/real.md", "A mutable projection."),
+        ]);
+        for token in [
+            "raw/../wiki/real.md",
+            "raw/./real.md",
+            "raw/missing.md",
+            "raw/real.jsonl",
+            "wiki/real.md",
+            "sessions/real.md",
+            "/raw/real.md",
+            "../raw/real.md",
+            "raw\\real.md",
+            "raw/conversations/claude/same.md",
+            "https://invalid.example/raw/real.md",
+        ] {
+            fs::write(
+                directory.path().join("wiki/check.md"),
+                format!("{GOOD_FM}\nClaim.[^src-real]\n\n[^src-real]: {token}\n"),
+            )
+            .unwrap();
+            let report = validate_pages(&root, &["wiki/check.md".into()]);
+            assert!(
+                report
+                    .errors
+                    .iter()
+                    .any(|error| error.kind == "dangling_citation"),
+                "invalid explicit token {token} must fail: {:?}",
+                report.errors
+            );
+        }
+        fs::create_dir_all(root.join("raw/not-a-file.md")).unwrap();
+        fs::write(
+            root.join("wiki/check.md"),
+            format!("{GOOD_FM}\nClaim.[^src-real]\n\n[^src-real]: raw/not-a-file.md\n"),
+        )
+        .unwrap();
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[test]
+    fn duplicate_source_definitions_are_an_error_even_when_both_paths_exist() {
+        let (_d, root) = vault(&[
+            ("raw/real.md", "Legacy source."), ("raw/other.md", "Other source."),
+            ("wiki/check.md", &format!("{GOOD_FM}\nClaim.[^src-real]\n\n[^src-real]: raw/real.md\n[^src-real]: raw/other.md\n")),
+        ]);
+        assert!(!validate_pages(&root, &["wiki/check.md".into()]).ok());
+    }
+
+    #[test]
+    fn fenced_definitions_never_resolve_an_alias_and_fenced_references_are_not_citations() {
+        for (opening, closing, interior) in [
+            ("```", "```", ""),
+            ("~~~", "~~~", ""),
+            ("````", "````", "```\n"),
+        ] {
+            let (_d, root) = vault(&[
+                ("raw/real.md", "Synthetic source."),
+                ("wiki/check.md", &format!("{GOOD_FM}\nClaim.[^src-session-alias]\n\n{opening}\n{interior}[^src-session-alias]: raw/real.md\n[^src-fenced-missing]\n{closing}\n")),
+            ]);
+            let report = validate_pages(&root, &["wiki/check.md".into()]);
+            assert_eq!(
+                report
+                    .errors
+                    .iter()
+                    .filter(|error| error.kind == "dangling_citation")
+                    .count(),
+                1,
+                "only the visible unresolved alias must be counted: {:?}",
+                report.errors
+            );
+            assert!(!report
+                .warnings
+                .iter()
+                .any(|warning| warning.kind == "source_count_mismatch"));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn explicit_sources_reject_file_and_parent_symlinks_even_inside_raw() {
+        let (_d, root) = vault(&[
+            ("raw/real.md", "Synthetic source."),
+            ("raw/nested/source.md", "Synthetic nested source."),
+        ]);
+        std::os::unix::fs::symlink(root.join("raw/real.md"), root.join("raw/alias.md")).unwrap();
+        std::os::unix::fs::symlink(root.join("raw/nested"), root.join("raw/linked")).unwrap();
+        for token in ["raw/alias.md", "raw/linked/source.md"] {
+            fs::create_dir_all(root.join("wiki")).unwrap();
+            fs::write(
+                root.join("wiki/check.md"),
+                format!("{GOOD_FM}\nClaim.[^src-real]\n\n[^src-real]: {token}\n"),
+            )
+            .unwrap();
+            assert!(
+                !validate_pages(&root, &["wiki/check.md".into()]).ok(),
+                "symbolic source must fail: {token}"
+            );
+        }
     }
     #[test]
     fn missing_type_and_bad_enum_are_errors() {

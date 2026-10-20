@@ -1,0 +1,31 @@
+.vault-access {
+  margin: 0.75rem 1rem;
+  padding: 1rem;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  background: var(--bg);
+  font-size: 0.875rem;
+  overflow-wrap: anywhere;
+}
+.vault-access p {
+  margin: 0.5rem 0;
+}
+.vault-access__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.vault-access__actions .u-btn {
+  min-height: 2.75rem;
+}
+.vault-access details {
+  margin-top: 0.5rem;
+}
+.vault-access summary {
+  cursor: pointer;
+  padding: 0.5rem 0;
+}
+.vault-access summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

@@ -1,0 +1,15 @@
+{
+  "reflect": "You are reviewing a personal knowledge wiki (markdown files in the current directory).",
+  "lint": "Run the wiki lint checklist from CLAUDE.md against the current vault:",
+  "ingestPlan": "You are planning how to ingest a new source into an existing wiki.",
+  "ingest": "New source has been added at `raw/",
+  "sessionDigest": "Extract only decisions, facts and outcomes from these agent session logs.",
+  "ask": "You are myco, the wiki maintainer for the user's local markdown vault.",
+  "studyCards": "You are myco's study-card generator.",
+  "studyQuiz": "You are myco's quiz generator.",
+  "digest": "You are myco's digest writer.",
+  "audioOverview": "You are myco's audio-overview writer.",
+  "map": "Write a topic map (Map of Content) for the '",
+  "weeklyRollup": "These are one week's daily digests of an engineer's work.",
+  "monthlyRollup": "These are one month's weekly rollups of an engineer's work."
+}

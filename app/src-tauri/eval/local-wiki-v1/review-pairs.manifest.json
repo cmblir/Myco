@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "id": "local-wiki-review-pairs-v1",
+  "syntheticOnly": true,
+  "labelStatus": "frozen_before_inference",
+  "semanticReviewStatus": "source_review_required",
+  "base": {
+    "manifestSha256": "445b06f5ca5664042edf9f26a5ed549ce619aa0e1c8c9301db87ec801da88b2b",
+    "artifacts": [
+      {
+        "path": "corpus.json",
+        "sha256": "8df85a87dd350a5320617829aeae230af8ee5a4c3ea0ec29b69fbb35d2e0ee74",
+        "bytes": 709655
+      },
+      {
+        "path": "queries.json",
+        "sha256": "30799e59e8776e4f50d55d6ecbaf4cc3acbadb80554659f00ae35243cb94ae56",
+        "bytes": 332883
+      },
+      {
+        "path": "labels.json",
+        "sha256": "dbf7d5ce10bd8343b86895b7a78cd6b7483c4e1399d405b5d8d53bd687c4c8ed",
+        "bytes": 270655
+      },
+      {
+        "path": "config.json",
+        "sha256": "322a939050c8bc8281865a73812998a63d2985231c6971f0aa056917a89c5945",
+        "bytes": 1068
+      },
+      {
+        "path": "scenarios.json",
+        "sha256": "84c06d79c7ba59f7d9e23ad299b885e105c808e938ad57fafda474c5d5435234",
+        "bytes": 2814
+      },
+      {
+        "path": "receipt.schema.json",
+        "sha256": "f38e4f8375b85e9dbdb335a6dc7d283e3af3142927471f5eec41ae55c4f14154",
+        "bytes": 4236
+      }
+    ]
+  },
+  "artifact": {
+    "path": "review-pairs.json",
+    "bytes": 178028,
+    "sha256": "10e426ade4721950c3e0180992e70c86f93a63241d7f8c36992a6c7c5143c559"
+  },
+  "counts": {
+    "projects": 20,
+    "pairs": 40,
+    "verdictCases": 80,
+    "mutations": {
+      "actor": 10,
+      "action": 10,
+      "eventTime": 10,
+      "status": 10
+    }
+  }
+}

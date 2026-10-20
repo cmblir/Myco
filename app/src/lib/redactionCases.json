@@ -1,0 +1,34 @@
+[
+  {
+    "name": "clean prose",
+    "text": "plain prose, nothing sensitive",
+    "secrets": [],
+    "pii": [],
+    "promote_warn": true,
+    "promote_quarantine": true
+  },
+  {
+    "name": "a secret",
+    "text": "key: sk-abcdefghijklmnopqrstuvwxyz012345",
+    "secrets": ["OpenAI/Anthropic-style API key"],
+    "pii": [],
+    "promote_warn": false,
+    "promote_quarantine": false
+  },
+  {
+    "name": "PII",
+    "text": "reach me at someone@example.com",
+    "secrets": [],
+    "pii": ["Email address"],
+    "promote_warn": true,
+    "promote_quarantine": false
+  },
+  {
+    "name": "a secret and PII",
+    "text": "key: sk-abcdefghijklmnopqrstuvwxyz012345, reach me at someone@example.com",
+    "secrets": ["OpenAI/Anthropic-style API key"],
+    "pii": ["Email address"],
+    "promote_warn": false,
+    "promote_quarantine": false
+  }
+]

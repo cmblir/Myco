@@ -7,7 +7,7 @@
 // debounced (trailing 300 ms) and progress ticks are throttled to at most one
 // send per second, so a reindex over hundreds of pages never floods the menu.
 
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { ipc } from "./ipc";
 import type {
   InflowStats,
@@ -20,16 +20,18 @@ import type {
 import { STRINGS } from "./i18n";
 import type { Strings } from "./i18n";
 import { inflowLines } from "./inflow";
-import { getLastSweepAt } from "./autoImport";
+import { getLastSweepAt, getLastSweepReceipt } from "./autoImport";
+import type { WorkflowStatus } from "./workflowOutcome";
 import { buildDigest } from "./taskNotify";
 import {
-  acceptAll,
-  acceptSuggestion,
   pendingLinkCount,
   suggestLinks,
 } from "./linkSuggestions";
+import { applyLinkSuggestions } from "./linkActions";
 import type { LinkSuggestion } from "./linkSuggestions";
 import { runInboxPass } from "./autoIngest";
+import { harvestSelected } from "./harvest";
+import { isTrayActionEnvelope, isVaultTrayAction, TRAY_ACTION_RESULT_EVENT, vaultActionScopeKey, type TrayActionEnvelope, type VaultActionScope } from "./notchAction";
 import { stem } from "./graphData";
 import { notchAgenda } from "./notchAgenda";
 import type { AgendaItem, NotchAgenda } from "./notchAgenda";
@@ -46,9 +48,17 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useHarvestStore } from "../stores/harvestStore";
+import type { HarvestRun, RunOutcome } from "../stores/harvestStore";
+import { useNoticeStore } from "../stores/noticeStore";
+import type { NoticeProgress } from "../stores/noticeStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useReflectStore } from "../stores/reflectStore";
-import { useDistillStore, pendingMapProposals } from "../stores/distillStore";
+import type { ReflectStage } from "../stores/reflectStore";
+import {
+  useDistillStore,
+  pendingMapProposals,
+  settingsNeedWriter,
+} from "../stores/distillStore";
 import type { ProposalMeta } from "../stores/distillStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -58,6 +68,7 @@ export const TRAY_ACTION_EVENT = "myco://tray-action";
 /** Everything the payload is derived from, decoupled from the stores so the
  * pure builders below are unit-testable. */
 export interface TraySnapshot {
+  actionScope?: VaultActionScope | null;
   askBusy: boolean;
   distillRunning: boolean;
   distillStep: DistillRunStep | null;
@@ -79,14 +90,15 @@ export interface TraySnapshot {
    *  A RUNNING state: counted in the title, shown as a running row, and the
    *  notch lip narrates it like any other runner. */
   applyingProposals: number;
-  /** Active query provider; "builtin-local" can't draft a map, which the rows
-   *  say out loud instead of letting an approval sit there silently. */
-  queryProvider: string;
+  /** No role can write a map (`settingsNeedWriter`), which the rows say out
+   *  loud: an approve then writes nothing. */
+  mapsNeedWriter: boolean;
   mcpRunning: boolean;
   /** Today's inflow, or null before/without a probe — hides the section. */
   inflow: InflowStats | null;
   /** Last session-sweep completion (ms epoch) for the sessions sub-line. */
   sweepAt: number | null;
+  sweepStatus?: WorkflowStatus;
   /** Auto-import interval (minutes) when enabled; null when off. */
   autoImportMin: number | null;
   /** Open tasks due today / overdue (throttled scan; 0/0 before a probe). */
@@ -95,6 +107,33 @@ export interface TraySnapshot {
   /** Decisions waiting, for the notch (lib/notchAgenda). A STANDING state,
    *  like pendingLinks: never part of the tray title. */
   agenda: NotchAgenda;
+  /** A harvest batch in flight (harvestStore's run slice). */
+  harvest: HarvestRun;
+  /** The chip's determinate job slot (noticeStore): a link "accept all". */
+  progress: NoticeProgress | null;
+  /** Kinds whose last run failed (`failedKinds`). */
+  failed: TrayRunningRow["kind"][];
+}
+
+/** The running-row kinds whose last run ended in a failure, off each job's
+ *  own store. Each clears when its job starts again; `linksFailed` is the
+ *  tray's own latch over noticeStore (see initTrayIntegration). */
+export function failedKinds(s: {
+  harvest: RunOutcome;
+  distill: RunOutcome;
+  reflect: ReflectStage;
+  reindex: TraySnapshot["reindexStage"];
+  linksFailed: boolean;
+}): TrayRunningRow["kind"][] {
+  const out: TrayRunningRow["kind"][] = [];
+  if (s.harvest === "error") out.push("ingest");
+  // ponytail: "distill" rows also carry proposal applies, which report no
+  // failure here; a failed chain marks them until the next chain starts.
+  if (s.distill === "error") out.push("distill");
+  if (s.reflect === "error") out.push("reflect");
+  if (s.reindex === "error") out.push("index");
+  if (s.linksFailed) out.push("links");
+  return out;
 }
 
 /** Icon-side title: nothing when idle, the reindex percent when indexing is
@@ -109,7 +148,9 @@ export function trayTitle(s: TraySnapshot): string | null {
     (s.distillRunning ? 1 : 0) +
     (s.reflectRunning ? 1 : 0) +
     (s.applyingProposals > 0 ? 1 : 0) +
-    (reindexBusy ? 1 : 0);
+    (reindexBusy ? 1 : 0) +
+    (s.harvest.phase !== null ? 1 : 0) +
+    (s.progress ? 1 : 0);
   if (count === 0) return null;
   if (count >= 2) return String(count);
   if (s.reindexStage === "indexing" && s.reindexTotal > 0) {
@@ -158,14 +199,34 @@ export function buildTrayStatus(
       text: `${t.s_embeddings_indexing ?? "Indexing…"} ${s.reindexDone}/${s.reindexTotal}`,
     });
   }
+  // The steps ride the text as "11/20", which the notch reads for its bar
+  // and for the count beside myco while it roams.
+  if (s.harvest.phase !== null) {
+    running.push({
+      kind: "ingest",
+      text:
+        s.harvest.phase === "copying"
+          ? `${t.tb_harvest_running} · ${t.tb_harvest_copying}`
+          : `${t.tb_harvest_running} ${s.harvest.done}/${s.harvest.total}`,
+    });
+  }
+  if (s.progress) {
+    // The slot's one job today is a link "accept all" (noticeStore).
+    running.push({
+      kind: "links",
+      text: `${s.progress.label} ${s.progress.done}/${s.progress.total}`,
+    });
+  }
   const lines = s.inflow
     ? inflowLines(s.inflow, t, {
         sweepAt: s.sweepAt,
+        sweepStatus: s.sweepStatus,
         autoImportMin: s.autoImportMin,
       })
     : null;
   return {
     running,
+    failed: s.failed,
     title: trayTitle(s),
     suggested: (t.tb_activity_links ?? "{n} suggested links").replace(
       "{n}",
@@ -176,11 +237,9 @@ export function buildTrayStatus(
       .map((p) => mapRowContent(p, t)),
     proposalApprove: t.pf_approve ?? "Approve",
     proposalReject: t.pf_dismiss ?? "Dismiss",
-    proposalNote:
-      s.queryProvider === "builtin-local"
-        ? (t.tb_activity_map_wait ??
-          "Approving is saved, but the draft needs a query model.")
-        : "",
+    proposalNote: s.mapsNeedWriter
+      ? (t.pf_map_needs_writer ?? "Writing a topic map needs a model that can write")
+      : "",
     inflow:
       lines && s.inflow
         ? {
@@ -294,6 +353,7 @@ export function agendaPayload(
  * cannot do. Rust passes this block through untouched. */
 export function trayPanel(s: TraySnapshot, t: Strings): TrayPanelPayload {
   return {
+    actionScope: s.actionScope ?? null,
     mcpRunning: s.mcpRunning,
     agenda: agendaPayload(s.agenda, t),
     counts: {
@@ -324,6 +384,8 @@ export function trayPanel(s: TraySnapshot, t: Strings): TrayPanelPayload {
       hourly: t.tray_legend_hourly ?? "by hour",
       nowEyebrow: t.tray_now_eyebrow ?? "Awaiting approval",
       toastApproved: t.tray_toast_approved ?? "{name} approved",
+      actionPending: t.st_loading,
+      actionFailed: t.notch_failed,
       view: t.tb_inflow_view ?? "View →",
     },
   };
@@ -410,14 +472,7 @@ let mcpRunning = false;
  * EVERY send meant a ~1 Hz vault scan for the whole length of a reindex
  * (whose progress ticks change the tray title every send). Throttled hard:
  * inflow moves at file-arrival speed, not progress-tick speed. */
-let inflowStats: InflowStats | null = null;
-let inflowProbedAt = 0;
 const INFLOW_PROBE_MIN_MS = 120_000;
-
-/** Due-task counts, same throttle story as inflow: `scan_tasks` walks the
- * vault, so it rides the send loop no more than once per window. */
-let dueCounts = { dueToday: 0, overdue: 0 };
-let dueProbedAt = 0;
 
 /** Accept one suggested link by its pair key. The pair is re-derived from the
  * stores rather than carried in the action string: a key that is no longer
@@ -434,67 +489,99 @@ function pendingLinks(): LinkSuggestion[] {
 
 /** Accept the whole set through the same writer the Overview's 모두 수락 uses,
  * so a partial failure leaves the rest pending rather than half-applied. */
-async function acceptAllLinks(): Promise<void> {
+async function acceptAllLinks(): Promise<boolean> {
   const pending = pendingLinks();
-  if (pending.length === 0) return;
-  const { accepted } = await acceptAll(pending, ipc);
-  if (accepted.length > 0)
-    useLinkSuggestStore.getState().dismiss(accepted.map((a) => a.key));
-  await useVaultStore.getState().refreshLinkGraph();
+  return applyLinkSuggestions(pending, { bulk: true });
 }
 
-async function acceptLinkByKey(key: string): Promise<void> {
+async function acceptLinkByKey(key: string): Promise<boolean> {
   const { adjacency } = useVaultStore.getState();
   const { sem, dismissed } = useLinkSuggestStore.getState();
-  if (!adjacency || !sem) return;
+  if (!adjacency || !sem) return false;
   const pair = suggestLinks(
     adjacency,
     sem,
     dismissed,
     Number.POSITIVE_INFINITY,
   ).find((s) => s.key === key);
-  if (!pair) return;
-  await acceptSuggestion(pair, ipc);
-  useLinkSuggestStore.getState().dismiss([pair.key]);
-  await useVaultStore.getState().refreshLinkGraph();
+  if (!pair) return false;
+  return applyLinkSuggestions([pair]);
 }
 
-/** Harvest every listed candidate — the notch's "N개 수확". Copy the sessions
- * into `_inbox/`, then walk them through one inbox pass each, reporting on
+/** Harvest every listed candidate — the notch's "N개 수확". Prepare the copies
+ * in `_inbox/`, then resume their bounded evidence passes, reporting on
  * harvestStore's run slice so the Topbar's activity chip narrates it exactly
  * as it does for a run started from Overview's queue. The queue component
- * owns the selectable variant; this one is deliberately all-or-nothing —
- * there is no way to tick boxes on a 252px surface. */
-async function harvestListed(): Promise<void> {
+ * owns the selectable variant; the notch processes its current listed batch. */
+function isCurrentActionScope(scope: VaultActionScope | undefined): boolean {
+  const vault = useVaultStore.getState();
+  return !!scope && !vault.isOpeningVault && vault.currentVault?.path === scope.vaultPath && vault.vaultToken === scope.vaultToken;
+}
+
+async function harvestListed(scope: VaultActionScope): Promise<boolean> {
   const harvest = useHarvestStore.getState();
   const root = useVaultStore.getState().currentVault?.path;
   const paths = harvest.data?.items.map((c) => c.path) ?? [];
-  if (!root || paths.length === 0 || harvest.run.phase !== null) return;
+  if (
+    !root ||
+    harvest.scannedPath !== root ||
+    harvest.scannedToken !== scope.vaultToken ||
+    paths.length === 0 ||
+    harvest.run.phase !== null
+  )
+    return false;
   harvest.startRun(paths.length);
+  let ownedRun = useHarvestStore.getState().run;
+  const isCurrent = (): boolean =>
+    isCurrentActionScope(scope) && useHarvestStore.getState().run === ownedRun;
   try {
-    const res = await ipc.harvestRun(paths);
-    harvest.setRun(0, res.copied);
-    // One pass ingests ONE source and archives it; the loop stops early when
-    // a pass ingests nothing (another run busy, a held source) and the rest
-    // simply wait in `_inbox/` for the scheduler.
-    for (let i = 0; i < res.copied; i++) {
-      const out = await runInboxPass(root);
-      if (!out.ingested) break;
-      harvest.setRun(i + 1, res.copied);
+    const origin = Object.freeze(await ipc.agentVaultSession());
+    if (!isCurrent()) return false;
+    if (origin.vaultPath !== root || !origin.openingToken)
+      throw new Error(
+        "The native harvest opening differs from the selected vault",
+      );
+    const res = await harvestSelected(root, paths, {
+      origin,
+      expectedVaultToken: scope.vaultToken,
+      copy: ipc.harvestRun,
+      pass: runInboxPass,
+      isCurrentVault: (path) => path === scope.vaultPath && isCurrent(),
+      onProgress: (done, total) => {
+        if (isCurrent()) {
+          harvest.setRun(done, total);
+          ownedRun = useHarvestStore.getState().run;
+        }
+      },
+    });
+    const ok =
+      res.completed > 0 &&
+      res.pending === 0 &&
+      res.failed.length === 0 &&
+      res.skipped.length === 0 &&
+      !res.cancelled;
+    if (isCurrent()) {
+      harvest.endRun(ok);
+      ownedRun = useHarvestStore.getState().run;
     }
-    harvest.endRun(true);
+    return ok;
   } catch {
-    harvest.endRun(false);
+    if (isCurrent()) {
+      harvest.endRun(false);
+      ownedRun = useHarvestStore.getState().run;
+    }
+    return false;
   } finally {
     // Refetch so the harvested sessions leave the queue — and the notch's
     // agenda row with them.
-    await useHarvestStore.getState().load(root, true);
+    if (isCurrent()) await useHarvestStore.getState().load(root, true);
   }
 }
 
 /** A tray menu / panel action, expanded into store calls. Exported for the
  *  tests: the listener above is a one-liner around it. */
-export function applyTrayAction(action: string): void {
+export async function applyTrayAction(action: string, scope?: VaultActionScope): Promise<void> {
+  if (isVaultTrayAction(action) && !isCurrentActionScope(scope)) throw new Error("Vault action scope is no longer active");
   if (
     action === "overview" ||
     action === "settings" ||
@@ -520,40 +607,40 @@ export function applyTrayAction(action: string): void {
   // page, never a second one.
   const approve = action.match(/^proposal-approve:(.+)$/);
   if (approve) {
-    void useDistillStore.getState().apply(approve[1]);
+    if (await useDistillStore.getState().apply(approve[1]) === null) throw new Error("Proposal action did not complete");
     return;
   }
   const reject = action.match(/^proposal-reject:(.+)$/);
   if (reject) {
-    void useDistillStore.getState().dismiss(reject[1]);
+    if (!(await useDistillStore.getState().dismiss(reject[1]))) throw new Error("Proposal dismissal did not complete");
     return;
   }
   // The notch's other two decisions, same contract as the proposal pair: the
   // secondary surface sends an identity, the main window does the write.
   const acceptLink = action.match(/^links-accept:(.+)$/);
   if (acceptLink) {
-    void acceptLinkByKey(acceptLink[1]);
+    if (!(await acceptLinkByKey(acceptLink[1]))) throw new Error("Link action did not complete");
     return;
   }
   const dismissLink = action.match(/^links-dismiss:(.+)$/);
   if (dismissLink) {
-    useLinkSuggestStore.getState().dismiss([dismissLink[1]]);
+    if (useLinkSuggestStore.getState().busy || !useLinkSuggestStore.getState().dismiss([dismissLink[1]])) throw new Error("Link dismissal did not complete");
     return;
   }
   // The set as one decision — the same two writers the single-row pair uses,
   // over every pending suggestion rather than one key.
   if (action === "links-accept-all") {
-    void acceptAllLinks();
+    if (!(await acceptAllLinks())) throw new Error("Link action did not complete");
     return;
   }
   if (action === "links-dismiss-all") {
+    if (useLinkSuggestStore.getState().busy) throw new Error("Link action is busy");
     const pending = pendingLinks();
-    if (pending.length > 0)
-      useLinkSuggestStore.getState().dismiss(pending.map((p) => p.key));
+    if (pending.length === 0 || !useLinkSuggestStore.getState().dismiss(pending.map((p) => p.key))) throw new Error("Link dismissal did not complete");
     return;
   }
   if (action === "harvest-run") {
-    void harvestListed();
+    if (!(await harvestListed(scope!))) throw new Error("Harvest did not complete");
     return;
   }
   if (action === "proposals") {
@@ -572,17 +659,31 @@ export function applyTrayAction(action: string): void {
     const path = useVaultStore.getState().currentVault?.path;
     // Same single entry as the schedule/idle/manual triggers; the guard
     // makes a click during a run a no-op.
-    if (path) void runDistillGuarded(path);
+    if (!path || await runDistillGuarded(path) === null || useDistillRunStore.getState().outcome === "error") throw new Error("Distill did not complete");
   }
 }
 
 /** Wire the tray: store subscriptions → debounced update_tray_status calls,
  * plus the menu-action listener. Returns a cleanup. Call once from App. */
 export function initTrayIntegration(): () => void {
+  let cancelled = false;
+  let inflowStats: InflowStats | null = null;
+  let inflowProbedAt = 0;
+  let dueCounts = { dueToday: 0, overdue: 0 };
+  let dueProbedAt = 0;
+  const inflowFlights = new Map<string, object>();
+  const dueFlights = new Map<string, object>();
+  const probeScope = (): VaultActionScope | null => {
+    const vault = useVaultStore.getState();
+    return vault.currentVault && !vault.isOpeningVault
+      ? { vaultPath: vault.currentVault.path, vaultToken: vault.vaultToken } : null;
+  };
+  let probeScopeKey = vaultActionScopeKey(probeScope());
   const sender = new TraySender((p) => {
     void ipc
       .updateTrayStatus(p)
       .then(() => {
+        if (cancelled) return;
         probeMcp();
         if (Date.now() - inflowProbedAt >= INFLOW_PROBE_MIN_MS) probeInflow();
         if (Date.now() - dueProbedAt >= INFLOW_PROBE_MIN_MS) probeDue();
@@ -592,7 +693,16 @@ export function initTrayIntegration(): () => void {
       });
   });
 
+  // A link batch's failure, held until the next batch starts: ActivityChip
+  // resets noticeStore.lastProgressOk right after showing it, and the push
+  // that carries the run's end is debounced past that reset.
+  let linksFailed = false;
+
   const recompute = (): void => {
+    if (cancelled) return;
+    const notice = useNoticeStore.getState();
+    if (notice.progress) linksFailed = false;
+    else if (!notice.lastProgressOk) linksFailed = true;
     const distill = useDistillRunStore.getState();
     const reindex = useReindexStore.getState();
     const query = useQueryStore.getState();
@@ -613,11 +723,14 @@ export function initTrayIntegration(): () => void {
       adjacency: vault.adjacency,
       sem: links.sem,
       dismissed: links.dismissed,
-      harvestItems: useHarvestStore.getState().data?.items.length ?? 0,
+      harvestItems: useHarvestStore.getState().scannedPath === vault.currentVault?.path && useHarvestStore.getState().scannedToken === vault.vaultToken
+        ? useHarvestStore.getState().data?.items.length ?? 0 : 0,
     });
     sender.push(
       buildTrayStatus(
         {
+          actionScope: vault.currentVault && !vault.isOpeningVault
+            ? { vaultPath: vault.currentVault.path, vaultToken: vault.vaultToken } : null,
           askBusy: query.busy,
           distillRunning: distill.running,
           distillStep: distill.step,
@@ -631,16 +744,26 @@ export function initTrayIntegration(): () => void {
             useDistillStore.getState().proposals,
           ),
           applyingProposals: useDistillStore.getState().applying.size,
-          queryProvider: settings?.query_provider ?? "",
+          mapsNeedWriter: settingsNeedWriter(settings),
           mcpRunning,
           inflow: inflowStats,
           sweepAt: getLastSweepAt(),
+          sweepStatus: getLastSweepReceipt()?.finishedAt ? getLastSweepReceipt()?.status : undefined,
           autoImportMin: settings?.auto_import_enabled
             ? settings.auto_import_interval_min
             : null,
           dueToday: dueCounts.dueToday,
           overdue: dueCounts.overdue,
           agenda,
+          harvest: useHarvestStore.getState().run,
+          progress: notice.progress,
+          failed: failedKinds({
+            harvest: useHarvestStore.getState().outcome,
+            distill: distill.outcome,
+            reflect: reflect.stage,
+            reindex: reindex.stage,
+            linksFailed,
+          }),
         },
         t,
       ),
@@ -662,12 +785,17 @@ export function initTrayIntegration(): () => void {
   };
 
   const probeDue = (): void => {
-    const path = useVaultStore.getState().currentVault?.path;
-    if (!path) return;
+    const scope = probeScope();
+    if (!scope || cancelled) return;
+    const key = vaultActionScopeKey(scope);
+    if (dueFlights.has(key)) return;
+    const owner = {};
+    dueFlights.set(key, owner);
     dueProbedAt = Date.now();
     void ipc
-      .scanTasks(path)
+      .scanTasks(scope.vaultPath)
       .then((tasks) => {
+        if (cancelled || !isCurrentActionScope(scope)) return;
         const digest = buildDigest(tasks);
         const next = {
           dueToday: digest?.dueToday ?? 0,
@@ -682,24 +810,37 @@ export function initTrayIntegration(): () => void {
         }
       })
       .catch(() => {
-        /* plain-browser dev: no Tauri backend */
+        if (!cancelled && isCurrentActionScope(scope)) {
+          console.warn("Tray due-task read failed; a later status update can retry.");
+        }
+      }).finally(() => {
+        if (dueFlights.get(key) === owner) dueFlights.delete(key);
       });
   };
 
   const probeInflow = (): void => {
-    const path = useVaultStore.getState().currentVault?.path;
-    if (!path) return;
+    const scope = probeScope();
+    if (!scope || cancelled) return;
+    const key = vaultActionScopeKey(scope);
+    if (inflowFlights.has(key)) return;
+    const owner = {};
+    inflowFlights.set(key, owner);
     inflowProbedAt = Date.now();
     void ipc
-      .inflowStats(path)
+      .inflowStats(scope.vaultPath)
       .then((s) => {
+        if (cancelled || !isCurrentActionScope(scope)) return;
         if (JSON.stringify(s) !== JSON.stringify(inflowStats)) {
           inflowStats = s;
           recompute();
         }
       })
       .catch(() => {
-        /* plain-browser dev: no Tauri backend */
+        if (!cancelled && isCurrentActionScope(scope)) {
+          console.warn("Tray inflow read failed; a later status update can retry.");
+        }
+      }).finally(() => {
+        if (inflowFlights.get(key) === owner) inflowFlights.delete(key);
       });
   };
 
@@ -709,6 +850,14 @@ export function initTrayIntegration(): () => void {
     useQueryStore.subscribe(recompute),
     useUIStore.subscribe(recompute),
     useVaultStore.subscribe(() => {
+      const key = vaultActionScopeKey(probeScope());
+      if (key !== probeScopeKey) {
+        probeScopeKey = key;
+        inflowStats = null;
+        inflowProbedAt = 0;
+        dueCounts = { dueToday: 0, overdue: 0 };
+        dueProbedAt = 0;
+      }
       // The vault opens AFTER init — the init-time probe returned early with
       // no path, so the first open must trigger the real one immediately or
       // the panel's inflow section sits empty for the whole throttle window.
@@ -719,15 +868,30 @@ export function initTrayIntegration(): () => void {
     useLinkSuggestStore.subscribe(recompute),
     useReflectStore.subscribe(recompute),
     useDistillStore.subscribe(recompute),
-    // The harvest queue's candidate count is the notch agenda's third source.
+    // The harvest queue's candidate count is the notch agenda's third source,
+    // and its run slice a running row.
     useHarvestStore.subscribe(recompute),
+    useNoticeStore.subscribe(recompute),
   ];
 
   // Tray menu actions: route jumps and the guarded distill entry. Rust has
   // already shown/focused the window before emitting.
   let unlisten: (() => void) | null = null;
-  let cancelled = false;
-  void listen<string>(TRAY_ACTION_EVENT, (e) => applyTrayAction(e.payload))
+  void listen<string | TrayActionEnvelope>(TRAY_ACTION_EVENT, (e) => {
+    const request = e.payload;
+    if (typeof request !== "string" && !isTrayActionEnvelope(request)) {
+      console.error("tray: invalid action message");
+      return;
+    }
+    const action = typeof request === "string" ? request : request.action;
+    void applyTrayAction(action, typeof request === "string" ? undefined : request.scope).then(() => {
+      if (isVaultTrayAction(action) && (typeof request === "string" || !isCurrentActionScope(request.scope))) throw new Error("Vault action scope changed before completion");
+      if (typeof request !== "string" && request.requestId) return emit(TRAY_ACTION_RESULT_EVENT, { requestId: request.requestId, ok: true });
+    }).catch(() => {
+      if (typeof request !== "string" && request.requestId) void emit(TRAY_ACTION_RESULT_EVENT, { requestId: request.requestId, ok: false }).catch(() => console.error("tray: action acknowledgement failed"));
+      else console.error("tray: action did not complete");
+    });
+  })
     .then((u) => {
       if (cancelled) u();
       else unlisten = u;

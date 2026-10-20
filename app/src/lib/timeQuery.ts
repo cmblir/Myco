@@ -21,6 +21,24 @@ const pad = (n: number): string => String(n).padStart(2, "0");
  * (same pitfall as queryIntent.ts `localDate`). */
 const fmt = (d: Date): string => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 
+/** Serialize local calendar days to UTC seconds at the retrieval boundary.
+ * The exclusive end is the next local midnight, including 23/25-hour DST days. */
+export function queryDateRange(range: DateRange): DateRange & { startEpoch: number; endEpoch: number } {
+  const [start, end] = [range.start, range.end].map((day) => {
+    const parts = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
+    if (!parts) throw new Error("invalid query date range");
+    const date = new Date(+parts[1], +parts[2] - 1, +parts[3]);
+    if (fmt(date) !== day) throw new Error("invalid query date range");
+    return date;
+  });
+  if (start > end) throw new Error("invalid query date range");
+  return {
+    ...range,
+    startEpoch: start.getTime() / 1000,
+    endEpoch: new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1).getTime() / 1000,
+  };
+}
+
 const startOfDay = (d: Date): Date => new Date(d.getFullYear(), d.getMonth(), d.getDate());
 const shiftDays = (d: Date, n: number): Date =>
   new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
@@ -40,6 +58,12 @@ const namedMonth = (now: Date, month1: number): DateRange | null =>
 const prevMonth = (now: Date): DateRange => {
   const d = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   return monthRange(d.getFullYear(), d.getMonth() + 1);
+};
+/** Same local date one month earlier through today; clamp to the prior month's last day. */
+const rollingMonth = (now: Date): DateRange => {
+  const lastDay = new Date(now.getFullYear(), now.getMonth(), 0).getDate();
+  const start = new Date(now.getFullYear(), now.getMonth() - 1, Math.min(now.getDate(), lastDay));
+  return span(start, startOfDay(now));
 };
 const thisWeek = (now: Date): DateRange => span(monday(startOfDay(now)), startOfDay(now));
 const lastWeek = (now: Date): DateRange => {
@@ -61,6 +85,14 @@ const explicitDay = (y: number, mo: number, d: number): DateRange | null => {
 
 // Explicit tokens beat relative words, so they sit ahead of every lang table.
 const EXPLICIT: Rule[] = [
+  {
+    re: /(?:\bfrom\s+|\bbetween\s+)?(\d{4})-(\d{2})-(\d{2})\s*(?:부터|から|to\b|through\b|until\b|and\b|\.\.|~|–|—)\s*(\d{4})-(\d{2})-(\d{2})(?:까지|まで)?/i,
+    build: (_n, m) => {
+      const start = explicitDay(+m[1], +m[2], +m[3]);
+      const end = explicitDay(+m[4], +m[5], +m[6]);
+      return start && end && start.start <= end.end ? { start: start.start, end: end.end } : null;
+    },
+  },
   { re: /\b(\d{4})-(\d{2})-(\d{2})\b/, build: (_n, m) => explicitDay(+m[1], +m[2], +m[3]) },
   {
     re: /\b(\d{4})-(\d{2})\b(?!-)/,
@@ -72,6 +104,14 @@ const EXPLICIT: Rule[] = [
 // 주말(weekend) out; 매주/주간 never match because 이번/지난/저번 is required.
 const KO_P = "(?:에는|엔|에)?";
 const KO: Rule[] = [
+  {
+    re: /(?:최근|지난)\s*(?:한\s*달|1\s*(?:달|개월))\s*(?:동안|간)?(?:에는|엔|에)?/,
+    build: rollingMonth,
+  },
+  {
+    re: /(?:최근|지난)\s*(?:일\s*주일|1\s*주일|7\s*일)\s*(?:동안|간)?(?:에는|엔|에)?/,
+    build: (n) => span(shiftDays(n, -6), startOfDay(n)),
+  },
   { re: /오늘/, build: (n) => dayRange(startOfDay(n)) },
   { re: /어제/, build: (n) => dayRange(shiftDays(n, -1)) },
   { re: /그저께/, build: (n) => dayRange(shiftDays(n, -2)) },
@@ -136,15 +176,26 @@ const TABLE: Record<Lang, Rule[]> = { ko: KO, en: EN, ja: JA };
 /** First matching rule wins (explicit YYYY-MM(-DD) first, then `lang`'s table).
  * No match: `range: null` and `cleaned` is the question byte-for-byte. */
 export function parseTimeQuery(question: string, now: Date, lang: Lang): TimeParse {
+  const literals = [...question.matchAll(/`[^`]*`|"[^"\n]*"/g)]
+    .map((match) => [match.index!, match.index! + match[0].length]);
   for (const rule of [...EXPLICIT, ...TABLE[lang]]) {
-    const m = rule.re.exec(question);
-    if (!m) continue;
-    const range = rule.build(now, m);
-    if (!range) continue;
-    const cleaned = `${question.slice(0, m.index)} ${question.slice(m.index + m[0].length)}`
-      .replace(/\s+/g, " ")
-      .trim();
-    return { range, cleaned };
+    // Rejected literals must not hide a later time anchor of the same shape.
+    const matcher = new RegExp(rule.re.source, `${rule.re.flags}g`);
+    for (const m of question.matchAll(matcher)) {
+      if (literals.some(([start, end]) => m.index >= start && m.index < end)) continue;
+      // A date inside an identifier, filename or path is an exact search term,
+      // not a request to filter by when the record was written.
+      const before = question[m.index - 1] ?? "";
+      const after = question.slice(m.index + m[0].length);
+      if (EXPLICIT.includes(rule) &&
+          (/[A-Za-z0-9_./-]/.test(before) || /^[A-Za-z0-9_/-]|^\.[A-Za-z]/.test(after))) continue;
+      const range = rule.build(now, m);
+      if (!range) continue;
+      const cleaned = `${question.slice(0, m.index)} ${question.slice(m.index + m[0].length)}`
+        .replace(/\s+/g, " ")
+        .trim();
+      return { range, cleaned };
+    }
   }
   return { range: null, cleaned: question };
 }

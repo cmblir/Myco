@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "defaultSplit": "development",
+  "defaultRoute": "local",
+  "networkPolicy": "external_egress_denied_after_artifact_preparation",
+  "modelQualityStatus": "not_evaluated",
+  "inferenceExecuted": false,
+  "sharedTrack": {
+    "evidenceTokens": 2048,
+    "visibleAnswerTokens": 768,
+    "contextTokens": 4096,
+    "tokenizerFitRequired": true
+  },
+  "extendedTrack": {
+    "requiredForCore": false,
+    "contextTokens": 16384,
+    "evidenceTokens": 12000,
+    "visibleAnswerTokens": 3072
+  },
+  "criticalRepeatCaseIds": [
+    "ask:p13:t2",
+    "ask:p14:t2",
+    "ask:p15:t2",
+    "ask:p16:t2",
+    "ask:p17:t2",
+    "ask:p18:t2",
+    "ask:p19:t2",
+    "ask:p20:t2"
+  ],
+  "criticalRepeats": 3,
+  "splits": {
+    "development": [
+      "p01",
+      "p02",
+      "p03",
+      "p04",
+      "p05",
+      "p06",
+      "p07",
+      "p08"
+    ],
+    "calibration": [
+      "p09",
+      "p10",
+      "p11",
+      "p12"
+    ],
+    "held_out": [
+      "p13",
+      "p14",
+      "p15",
+      "p16",
+      "p17",
+      "p18",
+      "p19",
+      "p20"
+    ]
+  }
+}

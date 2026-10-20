@@ -5,6 +5,7 @@
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import type { Adjacency, FileNode } from "./ipc";
+import { displayName, listedName } from "./displayName";
 
 // Field-star colour for orphans / tiny clusters. On the dark void a soft cool
 // blue-white reads clearly; on a light (white-skin) background that would vanish
@@ -210,7 +211,8 @@ export function folderGroups(
 export interface LegendCluster {
   cm: number; // community (cluster) id — the isolate key
   color: string;
-  label: string;
+  label: string; // the hub note's display name (its drawn label when given)
+  hub: string; // the hub note's stem (tooltip)
   count: number;
 }
 export interface LegendGalaxy {
@@ -233,6 +235,8 @@ export function buildLegend(
     galaxy: number;
     color: string;
     deg: number;
+    /** The node's drawn label (buildGraph's listedName, so a Tidy title). */
+    label?: string;
   }[],
   vaultRoot: string,
   opts?: { maxGalaxies?: number; maxClusters?: number },
@@ -249,7 +253,8 @@ export function buildLegend(
   interface CAcc {
     count: number;
     color: string;
-    label: string;
+    hub: string;
+    label?: string;
     topDeg: number;
   }
   interface GAcc {
@@ -268,7 +273,7 @@ export function buildLegend(
     G.count += 1;
     let c = G.clusters.get(n.community);
     if (!c) {
-      c = { count: 0, color: n.color, label: stem(n.id), topDeg: -1 };
+      c = { count: 0, color: n.color, hub: stem(n.id), topDeg: -1 };
       G.clusters.set(n.community, c);
     }
     c.count += 1;
@@ -276,14 +281,21 @@ export function buildLegend(
     // galaxy-core hub) — the demo's topic hubs (quantization, gan, …) surface.
     if (n.deg > c.topDeg) {
       c.topDeg = n.deg;
-      c.label = stem(n.id);
+      c.hub = stem(n.id);
+      c.label = n.label;
       c.color = n.color;
     }
   }
   return [...gal.entries()]
     .map(([g, G]) => {
       const clusters = [...G.clusters.entries()]
-        .map(([cm, c]) => ({ cm, color: c.color, label: c.label, count: c.count }))
+        .map(([cm, c]) => ({
+          cm,
+          color: c.color,
+          label: c.label ?? displayName(c.hub),
+          hub: c.hub,
+          count: c.count,
+        }))
         .sort((a, b) => b.count - a.count);
       const shown = clusters.slice(0, maxClusters);
       return {
@@ -417,6 +429,26 @@ export function stem(path: string): string {
   return dot > 0 ? name.slice(0, dot) : name;
 }
 
+/** How well the graph's find box `needle` names a node, over its keys (its
+ *  file stem and the label it is drawn with, which Tidy may have made a
+ *  readable title): 3 exact, 2 prefix, 1 substring, 0 none — the better key
+ *  wins, and `len` (that key's length) breaks ties, shorter being closer. */
+export function findRank(
+  needle: string,
+  keys: readonly string[],
+): { score: number; len: number } {
+  const n = needle.trim().toLowerCase();
+  let best = { score: 0, len: Infinity };
+  if (!n) return best;
+  for (const key of keys) {
+    const k = key.toLowerCase();
+    const score = k === n ? 3 : k.startsWith(n) ? 2 : k.includes(n) ? 1 : 0;
+    if (score > best.score || (score > 0 && score === best.score && k.length < best.len))
+      best = { score, len: k.length };
+  }
+  return best;
+}
+
 export function inFolder(root: string, path: string, folder: string): boolean {
   const trimmed = root.replace(/[\\/]+$/, "");
   if (!path.startsWith(trimmed)) return false;
@@ -439,6 +471,8 @@ const NON_KNOWLEDGE_FOLDERS = new Set([
   "_inbox",
   "ingest-reports",
   "raw",
+  // Study decks: cards/<stem>.md is named after the note it quotes.
+  "cards",
 ]);
 // Generic structural pages, by stem (case-insensitive) — not knowledge notes
 // regardless of which folder they sit in.
@@ -799,7 +833,7 @@ export function buildGraph(
     const i = g.order;
     const { x, y, z } = seededXYZ(id, i);
     g.addNode(id, {
-      label: stem(id),
+      label: listedName(stem(id), adjacency.meta?.[id]?.title),
       x,
       y,
       z,
@@ -844,7 +878,7 @@ export function buildGraph(
           const i = g.order;
           const { x, y, z } = seededXYZ(gid, i);
           g.addNode(gid, {
-            label: t,
+            label: displayName(t),
             x,
             y,
             z,

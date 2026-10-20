@@ -96,13 +96,14 @@ pub fn descriptors() -> Vec<ToolDescriptor> {
         },
         ToolDescriptor {
             name: "update_page",
-            description: "Overwrite an existing wiki page with new markdown content. Never writes under raw/.",
+            description: "Update an existing wiki page only if its full-file SHA256 from read_page still matches. Never writes under raw/.",
             input_schema: schema(
                 json!({
                     "path": { "type": "string", "description": "existing page path" },
-                    "content": { "type": "string", "description": "full markdown body to write" }
+                    "content": { "type": "string", "description": "full markdown body to write" },
+                    "expected_sha256": { "type": "string", "description": "exact SHA256 returned by read_page", "pattern": "^[0-9a-f]{64}$" }
                 }),
-                &["path", "content"],
+                &["path", "content", "expected_sha256"],
             ),
             write: true,
         },
@@ -163,7 +164,11 @@ pub fn dispatch(
             let path = arg_str(args, "path")?;
             let confined = vault::confine_path(root, &resolve(root, &path))?;
             let file = vault::read_file(&confined.to_string_lossy())?;
-            Ok(json!({ "path": file.path, "content": file.content }))
+            use sha2::{Digest, Sha256};
+            let sha256 = format!("{:x}", Sha256::digest(file.raw.as_bytes()));
+            Ok(
+                json!({ "path": file.path, "content": file.content, "raw": file.raw, "sha256": sha256 }),
+            )
         }
         "list_pages" => {
             let graph = index::build_link_graph(&root.to_string_lossy())?;
@@ -211,10 +216,19 @@ pub fn dispatch(
             if name == "update_page" && !exists {
                 return Err(format!("refused: {path} does not exist (use create_page)"));
             }
-            vault::write_file(&confined.to_string_lossy(), &content)?;
+            let expected_sha256 = if name == "update_page" {
+                Some(arg_str(args, "expected_sha256")?)
+            } else {
+                None
+            };
+            vault::write_file_if_unchanged(
+                &confined.to_string_lossy(),
+                &content,
+                expected_sha256.as_deref(),
+            )?;
             if let Some(u) = crate::INDEX_UPDATER.get() {
                 if let Ok(rel) = confined.strip_prefix(root) {
-                    u.mark_dirty(rel.to_string_lossy().replace('\\', "/"));
+                    u.mark_dirty(root, rel.to_string_lossy().replace('\\', "/"));
                 }
             }
             Ok(json!({ "written": confined.to_string_lossy(), "bytes": content.len() }))
@@ -361,5 +375,54 @@ mod tests {
         )
         .is_err());
         fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
+    fn agent_cas_update_rejects_missing_or_stale_hash_and_retains_human_text() {
+        use sha2::{Digest, Sha256};
+        let vault = tempfile::tempdir().unwrap();
+        fs::create_dir(vault.path().join("wiki")).unwrap();
+        let page = vault.path().join("wiki/note.md");
+        fs::write(&page, "Original synthetic text").unwrap();
+        let observed = format!("{:x}", Sha256::digest(fs::read(&page).unwrap()));
+        fs::write(&page, "New human text").unwrap();
+        let canonical_root = vault.path().canonicalize().unwrap();
+        let root = canonical_root.to_string_lossy();
+        for args in [
+            json!({"path": "wiki/note.md", "content": "Stale proposal"}),
+            json!({"path": "wiki/note.md", "content": "Stale proposal", "expected_sha256": observed}),
+        ] {
+            assert!(dispatch(&root, "update_page", &args, true).is_err());
+            assert_eq!(fs::read_to_string(&page).unwrap(), "New human text");
+        }
+        let current = format!("{:x}", Sha256::digest(fs::read(&page).unwrap()));
+        dispatch(&root, "update_page", &json!({
+            "path": "wiki/note.md", "content": "Approved current proposal", "expected_sha256": current
+        }), true).unwrap();
+        assert_eq!(
+            fs::read_to_string(&page).unwrap(),
+            "Approved current proposal"
+        );
+    }
+
+    #[test]
+    fn agent_cas_read_exposes_the_hash_of_the_exact_full_markdown() {
+        use sha2::{Digest, Sha256};
+        let vault = tempfile::tempdir().unwrap();
+        fs::create_dir(vault.path().join("wiki")).unwrap();
+        let raw = "---\ntitle: Synthetic\n---\n\nBody\n";
+        fs::write(vault.path().join("wiki/note.md"), raw).unwrap();
+        let result = dispatch(
+            &vault.path().canonicalize().unwrap().to_string_lossy(),
+            "read_page",
+            &json!({"path": "wiki/note.md"}),
+            false,
+        )
+        .unwrap();
+        assert_eq!(result["raw"], raw);
+        assert_eq!(
+            result["sha256"],
+            format!("{:x}", Sha256::digest(raw.as_bytes()))
+        );
     }
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   nextOccurrence,
+  normalizeRecurrence,
   parseRecurrence,
   setLineStatusWithRecurrence,
 } from "./taskRecurrence";
@@ -29,6 +30,26 @@ describe("parseRecurrence", () => {
     ]) {
       expect(parseRecurrence(rule), rule).toBeNull();
     }
+  });
+});
+
+describe("normalizeRecurrence", () => {
+  it("turns 매일/매주/매달/매년 into the stored rule", () => {
+    expect(normalizeRecurrence("매일")).toBe("every day");
+    expect(normalizeRecurrence(" 매주 ")).toBe("every week");
+    expect(normalizeRecurrence("매달")).toBe("every month");
+    expect(normalizeRecurrence("매월")).toBe("every month");
+    expect(normalizeRecurrence("매년")).toBe("every year");
+  });
+  it("turns N주마다 and the like into every N units", () => {
+    expect(normalizeRecurrence("2주마다")).toBe("every 2 weeks");
+    expect(normalizeRecurrence("3일마다")).toBe("every 3 days");
+    expect(normalizeRecurrence("6개월마다")).toBe("every 6 months");
+    expect(normalizeRecurrence("1년마다")).toBe("every year");
+  });
+  it("leaves an English rule, and anything it cannot read, as typed", () => {
+    expect(normalizeRecurrence(" every 2 weeks ")).toBe("every 2 weeks");
+    expect(normalizeRecurrence("격주 화요일")).toBe("격주 화요일");
   });
 });
 

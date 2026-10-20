@@ -21,11 +21,13 @@ import {
   type TaskMeta,
   type TaskStatus,
 } from "../lib/taskLine";
-import { parseDuration } from "../lib/taskDuration";
+import { normalizeDuration, parseDuration } from "../lib/taskDuration";
 import { extractLinks, extractTags, stripTokens } from "../lib/taskTokens";
-import { parseRecurrence } from "../lib/taskRecurrence";
+import { normalizeRecurrence, parseRecurrence } from "../lib/taskRecurrence";
 
-const STATUSES: {
+/** The four statuses in the order work moves through them: the detail's
+ *  buttons, the board's columns and its cards' status sheet. */
+export const STATUSES: {
   status: TaskStatus;
   labelKey: keyof Strings;
   fallback: string;
@@ -83,9 +85,11 @@ export default function TaskDetail({
   const scheduledLabel = t.tasks_detail_scheduled ?? "Scheduled";
   const dueLabel = t.tasks_due ?? "Due date";
 
+  // Korean ("2일", "매주") is read too, and saved as the stored token.
   const estimateBad =
-    estimate.trim() !== "" && parseDuration(estimate) === null;
-  const recurBad = recur.trim() !== "" && parseRecurrence(recur) === null;
+    estimate.trim() !== "" && parseDuration(normalizeDuration(estimate)) === null;
+  const recurBad =
+    recur.trim() !== "" && parseRecurrence(normalizeRecurrence(recur)) === null;
   const startAfterDue =
     meta.start !== "" && meta.due !== "" && meta.start > meta.due.slice(0, 10);
 
@@ -94,7 +98,8 @@ export default function TaskDetail({
     value: string,
     bad: boolean,
   ): void => {
-    const next = value.trim();
+    const next =
+      field === "estimate" ? normalizeDuration(value) : normalizeRecurrence(value);
     // An unreadable estimate would become a token nothing can read back, so it
     // is held in the field until it parses. An unreadable recurrence rule IS
     // written: Obsidian Tasks understands rules myco does not, and dropping the
@@ -252,7 +257,13 @@ export default function TaskDetail({
 
       <label className="task-detail-field">
         <span>{t.tasks_detail_estimate ?? "Estimate"}</span>
-        {textField("estimate", estimate, setEstimate, estimateBad, "2d")}
+        {textField(
+          "estimate",
+          estimate,
+          setEstimate,
+          estimateBad,
+          t.tasks_detail_estimate_ph ?? "e.g. 2d",
+        )}
       </label>
       {estimateBad ? (
         <p className="task-detail-warn">
@@ -263,7 +274,13 @@ export default function TaskDetail({
 
       <label className="task-detail-field">
         <span>{t.tasks_detail_recur ?? "Repeat"}</span>
-        {textField("recur", recur, setRecur, recurBad, "every week")}
+        {textField(
+          "recur",
+          recur,
+          setRecur,
+          recurBad,
+          t.tasks_detail_recur_ph ?? "e.g. every week",
+        )}
       </label>
       {recurBad ? (
         <p className="task-detail-warn">

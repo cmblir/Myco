@@ -3,7 +3,7 @@
 
 The claude CLI call is injected (run_claude), so these exercise the full
 orchestration — extraction dispatch, raw/ creation, change detection, archiving,
-and rollback — with no network and no real model.
+and partial-source preservation — with no network and no real model.
 """
 
 import sys
@@ -65,7 +65,7 @@ class TestAutoIngest(unittest.TestCase):
         self.assertFalse(src.exists())
         self.assertTrue((v / "_inbox" / ".archived" / "my-source.md").is_file())
 
-    def test_ingest_one_noop_rolls_back_and_keeps_source(self):
+    def test_ingest_one_noop_preserves_raw_and_pending_source(self):
         v = make_vault()
         src = v / "_inbox" / "dud.md"
         src.write_text("text", encoding="utf-8")
@@ -75,8 +75,9 @@ class TestAutoIngest(unittest.TestCase):
 
         res = ai.ingest_one(v, src, run_claude=fake_claude)
         self.assertFalse(res["ok"])
-        # The raw/ file we created is rolled back; the source stays for retry.
-        self.assertFalse((v / "raw" / "dud.md").exists())
+        # Raw is immutable even on a no-op; pending input remains retryable.
+        self.assertEqual((v / "raw" / "dud.md").read_text("utf-8"), "text")
+        self.assertEqual(res["raw"], "raw/dud.md")
         self.assertTrue(src.exists())
 
     def test_ingest_one_unsupported_binary(self):

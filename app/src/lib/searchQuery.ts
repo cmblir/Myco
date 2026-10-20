@@ -4,6 +4,7 @@
 // client-side.
 
 import type { NodeMeta } from "./ipc";
+import { tagCandidates } from "./tagIndex";
 
 /** The frontmatter facets a query can pin, all string-valued in NodeMeta. */
 export type MetaKey = "type" | "status" | "confidence";
@@ -82,4 +83,45 @@ export function hitPassesFilters(
     if ((meta?.[hitAbsPath]?.[key] ?? "").toLowerCase() !== want) return false;
   }
   return true;
+}
+
+/** What the box can offer for an operator value: the vault's tags, its
+ *  folders (vault-relative, no trailing slash) and frontmatter. */
+export interface SuggestSources {
+  tags: Record<string, string[]>;
+  meta?: Record<string, NodeMeta>;
+  folders: readonly string[];
+}
+
+// The operator whose value is being typed at the end of the box.
+const PENDING_OP = /(?:^|\s)(tag|path|type):(\S*)$/;
+
+/** The values for the `tag:` / `path:` / `type:` being typed at the end of
+ *  `q` (UX backlog S23): `head` is `q` up to the value, so a pick is
+ *  `head + value + " "`. Null when no such operator is open (a space ended
+ *  it) or nothing in the vault matches what was typed. */
+export function operatorSuggestions(
+  q: string,
+  sources: SuggestSources,
+  limit = 30,
+): { op: "tag" | "path" | "type"; head: string; values: string[] } | null {
+  const m = PENDING_OP.exec(q);
+  if (!m) return null;
+  const value = m[2];
+  const op = m[1] as "tag" | "path" | "type";
+  let values: string[];
+  if (op === "tag") values = tagCandidates(sources.tags, value, limit);
+  else if (op === "type") {
+    const types: Record<string, string[]> = {};
+    for (const [path, meta] of Object.entries(sources.meta ?? {}))
+      if (meta.type) types[path] = [meta.type];
+    values = tagCandidates(types, value, limit);
+  } else {
+    const v = value.toLowerCase();
+    values = sources.folders
+      .map((f) => `${f}/`)
+      .filter((f) => f.toLowerCase().includes(v))
+      .slice(0, limit);
+  }
+  return values.length > 0 ? { op, head: q.slice(0, q.length - value.length), values } : null;
 }

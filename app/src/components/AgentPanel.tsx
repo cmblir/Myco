@@ -35,6 +35,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
   const resolveWikilink = useVaultStore((s) => s.resolveWikilink);
   const openWikilink = useVaultStore((s) => s.openWikilink);
   const setRoute = useUIStore((s) => s.setRoute);
+  const setSettingsTab = useUIStore((s) => s.setSettingsTab);
   const settings = useSettingsStore((s) => s.settings);
 
   const running = useAgentStore((s) => s.running);
@@ -51,9 +52,10 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
   const [presets, setPresets] = useState<TaskAgent[]>([]);
   const [presetSlug, setPresetSlug] = useState<string>("");
 
-  const provider = settings?.query_provider ?? "";
-  const model = settings?.query_model ?? "";
-  const supported = agentSupported(provider);
+  const selection = settings?.model_roles?.roles?.agent;
+  const provider = selection?.providerId ?? "";
+  const model = selection?.modelId ?? "";
+  const supported = !!selection && agentSupported(provider);
 
   // Load task-agent presets from the vault whenever its files change.
   useEffect(() => {
@@ -67,7 +69,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
 
   async function run(): Promise<void> {
     const question = q.trim();
-    if (!question || !currentVault || running) return;
+    if (!question || !currentVault || running || !supported) return;
     await start({
       provider,
       model,
@@ -124,10 +126,21 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
           <div className="agent-unsupported muted" style={{ fontSize: 13 }}>
             <Icon name="info" size={14} />{" "}
             {(t.ag_unsupported ??
-              "Agent mode needs the Anthropic API or an OpenAI-compatible provider. Current: {provider}.").replace(
+              "The selected Agent route has no verified tool runner ({provider}). Check Model settings; external models are optional.").replace(
               "{provider}",
               provider || "—",
-            )}
+            )}{" "}
+            {/* Agent selection is independent of Query and connection metadata. */}
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 12, padding: "2px 8px" }}
+              onClick={() => {
+                setSettingsTab("model");
+                setRoute("settings");
+              }}
+            >
+              {t.ag_open_providers} →
+            </button>
           </div>
         ) : null}
 
@@ -216,7 +229,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
           <AgentTrace t={t} steps={steps} running={running} />
 
           {error ? (
-            <p style={{ color: "#dc2626", marginTop: 10 }}>{error}</p>
+            <p style={{ color: "var(--danger)", marginTop: 10 }}>{error}</p>
           ) : answer ? (
             <div className="prose agent-answer" style={{ marginTop: 12 }}>
               {stoppedAtLimit ? (
@@ -224,7 +237,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
                   <Icon name="info" size={12} /> {t.ag_stopped_limit ?? "Stopped at the step limit — partial answer."}
                 </div>
               ) : null}
-              <Viewer content={answer} onLinkClick={openByStem} />
+              <Viewer content={answer} onLinkClick={openByStem} displayNames />
             </div>
           ) : null}
         </div>

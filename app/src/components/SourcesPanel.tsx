@@ -8,7 +8,7 @@ import { useEffect } from "react";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import Rail from "./Rail";
-import { sourcesView } from "../lib/readerRail";
+import { sourceCreated, sourcesView } from "../lib/readerRail";
 import { useProvenanceStore } from "../stores/provenanceStore";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -26,6 +26,7 @@ export default function SourcesPanel({
   const scan = useProvenanceStore((s) => s.scan);
   const setRoute = useUIStore((s) => s.setRoute);
   const weights = useUIStore((s) => s.askTierWeights);
+  const lang = useUIStore((s) => s.lang);
 
   // ponytail: the whole vault is scanned to answer one note's coverage. The
   // store caches per vault, so it is one scan a session; a per-page command
@@ -88,7 +89,7 @@ export default function SourcesPanel({
                       ) : (
                         <>
                           {s.ref.kind || (t.rd_src_hand ?? "hand-written")}
-                          {s.ref.created ? ` · ${s.ref.created}` : ""}
+                          {s.ref.created ? ` · ${sourceCreated(s.ref.created, lang)}` : ""}
                           {" · "}
                           <span
                             className="rail-w"

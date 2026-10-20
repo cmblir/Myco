@@ -6,13 +6,15 @@
 // All data comes from the already-loaded adjacency + the graphology graph; the
 // frontmatter is fetched lazily per node via readFile (no backend change).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import { ipc } from "../lib/ipc";
 import type { Adjacency } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
+import { displayName, listedName } from "../lib/displayName";
 import { stem, type VaultGraph } from "../lib/graphData";
+import { useReturnFocus } from "../lib/returnFocus";
 import type { GapAction } from "./GraphGaps";
 
 const GHOST = "ghost:";
@@ -32,6 +34,7 @@ export default function GraphInspector({
   onClearAnchor,
   onSelect,
   onOpen,
+  origin,
   onClose,
   isSample,
   onAction,
@@ -51,6 +54,8 @@ export default function GraphInspector({
   onSelect: (id: string) => void;
   /** Open the node in the full reader. */
   onOpen: (id: string) => void;
+  /** The note a deep link arrived from (the reader's "그래프에서 보기"). */
+  origin: string | null;
   onClose: () => void;
   /** Seeded first-run note (graphSample) rather than the owner's own writing. */
   isSample: (id: string) => boolean;
@@ -61,6 +66,10 @@ export default function GraphInspector({
 }): JSX.Element {
   const isGhost = nodeId.startsWith(GHOST);
   const [fm, setFm] = useState<Record<string, unknown> | null>(null);
+  // Closing (Esc, ×, a void click) hands focus back to the gap row, find box
+  // or link that opened the inspector instead of dropping it to <body>.
+  const panelRef = useRef<HTMLElement>(null);
+  useReturnFocus(panelRef);
 
   // Lazily fetch the page's frontmatter (real files only; ghosts have none).
   useEffect(() => {
@@ -86,7 +95,7 @@ export default function GraphInspector({
   }, [nodeId, isGhost]);
 
   const label = isGhost ? nodeId.slice(GHOST.length) : stem(nodeId);
-  const title = str(fm?.title) ?? label;
+  const title = displayName(label, str(fm?.title));
   const outlinks = adjacency.forward[nodeId] ?? [];
   const backlinks = adjacency.backward[nodeId] ?? [];
   const tags = adjacency.tags[nodeId] ?? [];
@@ -123,7 +132,7 @@ export default function GraphInspector({
               title={id}
               onClick={() => onSelect(id)}
             >
-              {stem(id)}
+              {listedName(stem(id), adjacency.meta?.[id]?.title)}
             </button>
           </li>
         ))}
@@ -131,7 +140,13 @@ export default function GraphInspector({
     );
 
   return (
-    <aside className="graph-inspector" role="region" aria-label={title}>
+    <aside ref={panelRef} className="graph-inspector" role="region" aria-label={title}>
+      {/* The way back to the note the user came from, wherever the walk led. */}
+      {origin ? (
+        <button type="button" className="graph-insp__back" onClick={() => onOpen(origin)}>
+          ← {t.gr_insp_back.split("{n}").join(stem(origin))}
+        </button>
+      ) : null}
       <div className="graph-insp__head">
         <span className="graph-insp__title" title={nodeId}>
           {title}
@@ -243,7 +258,7 @@ export default function GraphInspector({
                       title={id}
                       onClick={() => onSelect(id)}
                     >
-                      {stem(id)}
+                      {listedName(stem(id), adjacency.meta?.[id]?.title)}
                     </button>
                   </li>
                 ))}

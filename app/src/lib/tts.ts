@@ -6,6 +6,8 @@
 
 import type { DialogueTurn } from "./audioOverview";
 
+export const LOCAL_SPEECH_UNAVAILABLE = "local_speech_unavailable";
+
 export function ttsAvailable(): boolean {
   return (
     typeof window !== "undefined" &&
@@ -34,14 +36,15 @@ export function loadVoices(): Promise<SpeechSynthesisVoice[]> {
   });
 }
 
-/** Pick two distinct voices, preferring ones matching `lang` (e.g. "ko", "ja"). */
+/** Pick two explicit local voices, preferring `lang` (e.g. "ko", "ja"). */
 export function pickVoices(
   voices: SpeechSynthesisVoice[],
   lang: string,
 ): { a: SpeechSynthesisVoice | null; b: SpeechSynthesisVoice | null } {
-  if (voices.length === 0) return { a: null, b: null };
-  const matching = voices.filter((v) => v.lang?.toLowerCase().startsWith(lang.toLowerCase()));
-  const pool = matching.length ? matching : voices;
+  const local = voices.filter((v) => v.localService === true);
+  if (local.length === 0) return { a: null, b: null };
+  const matching = local.filter((v) => v.lang?.toLowerCase().startsWith(lang.toLowerCase()));
+  const pool = matching.length ? matching : local;
   const a = pool[0] ?? null;
   const b = pool.find((v) => v !== a) ?? pool[0] ?? null;
   return { a, b };
@@ -69,7 +72,8 @@ export function speakTurns(
   opts: SpeakOpts = {},
 ): SpeechController {
   if (!ttsAvailable() || turns.length === 0) {
-    opts.onDone?.();
+    if (!ttsAvailable()) opts.onError?.(LOCAL_SPEECH_UNAVAILABLE);
+    else opts.onDone?.();
     const noop = (): void => undefined;
     return { pause: noop, resume: noop, cancel: noop };
   }
@@ -94,10 +98,14 @@ export function speakTurns(
       return;
     }
     const turn = turns[i];
+    const voice = turn.speaker === "B" ? picked.b : picked.a;
+    if (voice?.localService !== true) {
+      opts.onError?.(LOCAL_SPEECH_UNAVAILABLE);
+      return;
+    }
     opts.onTurn?.(i);
     const u = new SpeechSynthesisUtterance(turn.text);
-    const voice = turn.speaker === "B" ? picked.b : picked.a;
-    if (voice) u.voice = voice;
+    u.voice = voice;
     u.rate = 1.02;
     u.onend = () => {
       i += 1;

@@ -59,6 +59,21 @@ describe("inflowLines", () => {
     expect(lines?.sessionsSub).toBe("");
   });
 
+  it("shows an incomplete attempt alongside the earlier clean sweep time", () => {
+    const lines = inflowLines(stats(), STRINGS.ko, {
+      sweepAt: 1_790_000_000_000, autoImportMin: null, sweepStatus: "partial",
+    });
+    expect(lines.sessionsSub).toContain(STRINGS.ko.tb_inflow_sweep_incomplete);
+    expect(lines.sessionsSub).toContain("마지막 수집");
+  });
+
+  it("shows a failed attempt even when no clean sweep exists", () => {
+    const lines = inflowLines(stats(), STRINGS.en, {
+      sweepAt: null, autoImportMin: null, sweepStatus: "failed",
+    });
+    expect(lines.sessionsSub).toBe(STRINGS.en.tb_inflow_sweep_failed);
+  });
+
   it("renders zeros instead of hiding when nothing arrived today", () => {
     const lines = inflowLines(
       stats({ sessionsToday: 0, inboxToday: 0, mcpCallsToday: 0, mcpTopTool: null }),

@@ -4,13 +4,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
+import { reportName } from "../lib/displayName";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc, type RunSummary } from "../lib/ipc";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { confirmAction } from "../stores/dialogStore";
+import { notice } from "../lib/notice";
 import { flattenMarkdown } from "../lib/graphData";
-import { formatRunLine } from "../lib/runList";
+import { formatRunLine, runTitle } from "../lib/runList";
 import { buildRunRows, type RunRows } from "../lib/runDetailView";
 import DiffView from "../components/DiffView";
 import Viewer from "../components/Viewer";
@@ -132,12 +135,22 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
     };
   }, [openRun, currentVault]);
 
+  // The one button on this page that rewrites the vault: it asks first, and
+  // says how much it reversed.
   const undoRun = async (id: string): Promise<void> => {
     if (!currentVault) return;
+    const ok = await confirmAction({
+      title: t.history_undo_q,
+      message: t.history_undo_msg,
+      danger: true,
+      confirmLabel: t.set_distill_undo,
+    });
+    if (!ok) return;
     setUndoingRun(id);
     setRunError(null);
     try {
-      await ipc.undoDistillRun(currentVault.path, id);
+      const n = await ipc.undoDistillRun(currentVault.path, id);
+      notice.ok(t.set_distill_undo_result.replace("{n}", String(n)));
       setOpenRun(null);
       setRuns(await ipc.listDistillRuns(currentVault.path, 20));
       void refreshTree();
@@ -158,7 +171,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
   );
 
   return (
-    <AppPage eyebrow={t.nav_history} title={t.h_title} note={t.h_lede}>
+    <AppPage eyebrow={t.nav_tools} title={t.h_title} note={t.h_lede}>
 
       {/* Distill runs (W3–6 item 6): expand → file rows + word diff; WHY →
           the run's ingest report; undo → existing undo_distill_run. */}
@@ -166,7 +179,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
         <section style={{ marginTop: 16 }} data-testid="history-runs">
           <div className="page-eyebrow">{t.history_runs_title}</div>
           {runError ? (
-            <div style={{ color: "#dc2626", fontSize: 12.5, margin: "4px 0 8px" }}>
+            <div style={{ color: "var(--danger)", fontSize: 12.5, margin: "4px 0 8px" }}>
               {runError}
             </div>
           ) : null}
@@ -183,20 +196,13 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                 >
                   {/* Same three-sibling disclosure pattern as the report rows
                       below — separately named buttons, no nesting. */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto auto auto",
-                      gap: 12,
-                      alignItems: "center",
-                      padding: "12px 16px",
-                    }}
-                  >
+                  <div className="history-run__head">
                     <button
                       type="button"
+                      className="history-run__title"
                       onClick={() => setOpenRun(open ? null : r.id)}
                       aria-expanded={open}
-                      aria-label={r.id}
+                      title={r.id}
                       style={{
                         background: "transparent",
                         border: 0,
@@ -205,14 +211,8 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                         padding: 0,
                       }}
                     >
-                      <div
-                        style={{
-                          fontWeight: 600,
-                          fontSize: 13.5,
-                          fontFamily: "var(--font-mono)",
-                        }}
-                      >
-                        {r.id}
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>
+                        {runTitle(r, lang, t)}
                       </div>
                       <div className="muted" style={{ fontSize: 12 }}>
                         {formatRunLine(r, lang)}
@@ -221,7 +221,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                     {whyShown ? (
                       <button
                         type="button"
-                        className="btn"
+                        className="btn history-run__why"
                         onClick={() =>
                           setRoute(
                             `page:${currentVault.path}/ingest-reports/distill-${r.id}.md`,
@@ -233,7 +233,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                     ) : null}
                     <button
                       type="button"
-                      className="btn"
+                      className="btn btn-danger history-run__undo"
                       onClick={() => void undoRun(r.id)}
                       disabled={undoingRun !== null}
                       aria-busy={undoingRun === r.id}
@@ -244,6 +244,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                     </button>
                     <button
                       type="button"
+                      className="history-run__toggle"
                       onClick={() => setOpenRun(open ? null : r.id)}
                       aria-expanded={open}
                       aria-label={
@@ -349,22 +350,14 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                     read as one polluted name ("report, date, Open report,
                     collapsed, button"). Same 4-column layout, now three real,
                     separately-named buttons. */}
-                <div
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "auto 1fr auto auto",
-                    gap: 16,
-                    alignItems: "center",
-                    padding: 16,
-                  }}
-                >
+                <div className="history-report__head">
                   <button
                     type="button"
+                    className="history-report__title"
                     onClick={() => setOpenPath(open ? null : r.path)}
                     aria-expanded={open}
-                    aria-label={r.name}
+                    aria-label={reportName(r.name)}
                     style={{
-                      gridColumn: "1 / 3",
                       display: "grid",
                       gridTemplateColumns: "auto 1fr",
                       gap: 16,
@@ -390,8 +383,8 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                       <Icon name={i === 0 ? "spark" : "upload"} size={16} />
                     </div>
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 15 }}>
-                        {r.name}
+                      <div style={{ fontWeight: 600, fontSize: 15 }} title={r.name}>
+                        {reportName(r.name)}
                       </div>
                       {r.mtime > 0 ? (
                         <div className="muted" style={{ fontSize: 12.5 }}>
@@ -402,13 +395,14 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                   </button>
                   <button
                     type="button"
-                    className="btn"
+                    className="btn history-report__open"
                     onClick={() => setRoute(`page:${r.path}`)}
                   >
                     {t.ing_open_report}
                   </button>
                   <button
                     type="button"
+                    className="history-report__toggle"
                     onClick={() => setOpenPath(open ? null : r.path)}
                     aria-expanded={open}
                     aria-label={

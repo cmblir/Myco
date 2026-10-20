@@ -1,25 +1,20 @@
 #!/usr/bin/env python3
-"""Memex auto-ingest — scheduled inbox watcher.
+"""Legacy auto-ingest orchestration; the unchecked CLI route is unavailable.
 
-Watches a vault's `_inbox/` folder and ingests pending source files into the
-wiki on a schedule, using the user's own `claude` CLI (their Pro/Max
-subscription — no API key, no per-token billing). Drop a file into `_inbox/`,
-and the next pass turns it into wiki pages with citations following CLAUDE.md.
+Use myco's local import workflow. These helpers retain an injected runner for
+synthetic regression tests; they are not a checked native publication adapter.
 
 Design:
 - `_inbox/` is the drop zone (separate from `raw/`, which stays immutable).
-- Each source is written to `raw/<slug>.md` (a NEW file — raw/ is never
-  modified), then the claude CLI is run with cwd = vault to ingest it.
-- Ingest tools are Read/Write/Edit/Glob/Grep — NOT Bash — matching the app's
-  hardened default, since `_inbox/` content is untrusted.
-- On success the original is moved to `_inbox/.archived/` (never deleted), so
-  nothing is lost. On failure it stays in `_inbox/` to retry next pass, and the
-  raw/ file this run created is rolled back.
+- With an explicitly injected test runner, each source gets a new raw file.
+- Every created raw file is retained after failure, including partial wiki
+  writes, timeout and missing transport; references must keep source backing.
+- Injected success/change checks do not prove meaning or native authority.
 
 Usage:
     python automation/autoingest.py --vault ~/Documents/Memex --once
     python automation/autoingest.py --vault ~/Documents/Memex --interval 3600
-See automation/README.md for crontab / launchd setup.
+These historical commands now report unavailable. See automation/README.md.
 """
 
 from __future__ import annotations
@@ -69,6 +64,10 @@ def scan_pii(text: str) -> "list[str]":
 DEFAULT_TOOLS = "Read,Write,Edit,Glob,Grep"
 DEFAULT_MODEL = "haiku"
 DEFAULT_TIMEOUT = 600
+LEGACY_UNAVAILABLE = (
+    "Legacy CLI auto-ingest is unavailable until a checked publisher is implemented. "
+    "Use the local import workflow in myco."
+)
 
 # Read straight through; extract via the app binary; or skip.
 TEXT_EXTS = {".md", ".txt", ".markdown", ".csv", ".tsv", ".json", ".yaml", ".yml", ".html", ""}
@@ -123,16 +122,8 @@ def unique_raw_path(vault: Path, slug: str) -> Path:
 def default_run_claude(
     vault: Path, prompt: str, model: str, tools: str, timeout: int
 ) -> "tuple[int, str, str]":
-    """The proven CLI ingest path (matches the desktop app)."""
-    proc = subprocess.run(
-        ["claude", "--print", "--allowedTools", tools, "--model", model],
-        input=prompt,
-        cwd=str(vault),
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
-    return proc.returncode, proc.stdout, proc.stderr
+    """Reject the deprecated unchecked route without spawning a process."""
+    return 126, "", LEGACY_UNAVAILABLE
 
 
 def _read_source(source: Path, app_bin: str | None) -> str | None:
@@ -182,6 +173,8 @@ def ingest_one(
     pii_quarantine: bool = False,
 ) -> dict:
     """Ingest one inbox source. Returns a result dict (ok / error + details)."""
+    if run_claude is default_run_claude:
+        return {"ok": False, "source": source.name, "status": "unavailable", "error": LEGACY_UNAVAILABLE}
     text = _read_source(source, app_bin)
     if text is None:
         return {"ok": False, "source": source.name, "error": f"unsupported or unreadable: {source.name}"}
@@ -216,9 +209,10 @@ def ingest_one(
     except subprocess.TimeoutExpired:
         rc, out, err = 124, "", f"timed out after {timeout}s"
     except FileNotFoundError:
-        # roll back our raw/ write so nothing is left dangling
-        _safe_unlink(raw_path)
-        return {"ok": False, "source": source.name, "error": "claude CLI not found on PATH"}
+        return {
+            "ok": False, "source": source.name, "raw": str(raw_path.relative_to(vault)),
+            "error": "claude CLI not found on PATH",
+        }
     after = _wiki_signature(vault)
     changed = after != before
 
@@ -226,11 +220,13 @@ def ingest_one(
         _archive(source)
         return {"ok": True, "source": source.name, "slug": slug, "raw": str(raw_path.relative_to(vault))}
 
-    # Failed or no-op: roll back the raw/ file WE created and leave the source
-    # in _inbox for the next pass.
-    _safe_unlink(raw_path)
+    # A failed runner can already have cited this raw file in partial writes.
+    # Preserve both the immutable backing and the pending inbox source.
     detail = (err or out or "ingest produced no wiki change").strip()
-    return {"ok": False, "source": source.name, "error": detail[:200]}
+    return {
+        "ok": False, "source": source.name, "raw": str(raw_path.relative_to(vault)),
+        "error": detail[:200],
+    }
 
 
 def _archive(source: Path) -> None:
@@ -257,15 +253,10 @@ def _quarantine(source: Path) -> Path:
     return dest
 
 
-def _safe_unlink(p: Path) -> None:
-    try:
-        p.unlink()
-    except OSError:
-        pass
-
-
 def run_once(vault: Path, *, logger: Callable[[str], None] | None = None, **kw) -> list[dict]:
     """One pass: ingest every pending source. Returns per-source results."""
+    if kw.get("run_claude", default_run_claude) is default_run_claude:
+        raise RuntimeError(LEGACY_UNAVAILABLE)
     log = logger or (lambda _m: None)
     results: list[dict] = []
     pending = find_pending(vault)
@@ -287,6 +278,8 @@ def run_once(vault: Path, *, logger: Callable[[str], None] | None = None, **kw) 
 
 def run_daemon(vault: Path, interval: int, *, logger: Callable[[str], None] | None = None, **kw) -> None:
     """Loop forever: run a pass, then sleep `interval` seconds."""
+    if kw.get("run_claude", default_run_claude) is default_run_claude:
+        raise RuntimeError(LEGACY_UNAVAILABLE)
     log = logger or print
     log(f"{_now()} auto-ingest watching {vault / INBOX_DIRNAME} every {interval}s")
     while True:
@@ -328,28 +321,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("--interval", type=int, default=0, help="Seconds between passes (0 or --once = one pass)")
     ap.add_argument("--once", action="store_true", help="Run a single pass and exit")
-    args = ap.parse_args(argv)
-
-    vault = Path(args.vault).expanduser()
-    if not vault.is_dir():
-        print(f"error: vault is not a directory: {vault}", file=sys.stderr)
-        return 2
-    (vault / INBOX_DIRNAME).mkdir(exist_ok=True)
-
-    kw = dict(
-        model=args.model,
-        tools=args.tools,
-        app_bin=args.app_bin,
-        timeout=args.timeout,
-        pii_quarantine=args.pii_quarantine,
-    )
-    if args.once or args.interval <= 0:
-        results = run_once(vault, logger=print, **kw)
-        ok = sum(1 for r in results if r["ok"])
-        print(f"{_now()} done: {ok}/{len(results)} ingested")
-        return 0
-    run_daemon(vault, args.interval, logger=print, **kw)
-    return 0
+    ap.parse_args(argv)
+    print(f"error: {LEGACY_UNAVAILABLE}", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

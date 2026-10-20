@@ -103,6 +103,8 @@ pub(crate) fn frontmatter_key(text: &str) -> String {
             id = Some(v.trim());
         }
     }
+    let id =
+        id.map(|value| serde_json::from_str::<String>(value).unwrap_or_else(|_| value.to_string()));
     match (source, id) {
         (Some(s), Some(i)) if !s.is_empty() && !i.is_empty() => format!("{s}:{i}"),
         _ => String::new(),
@@ -245,6 +247,45 @@ mod tests {
         assert_eq!(judge_against(&bare, 9_000, &ledger).rule, "duplicate");
         // A body the ledger has never seen.
         assert_eq!(judge_against(&prose(9_500), 9_500, &ledger).rule, "ok");
+    }
+
+    #[test]
+    fn quoted_original_vendor_ids_keep_the_same_duplicate_owner() {
+        let original_id = "session/one\nwith a \"quoted\" coordinate";
+        let conversation = crate::importers::Conversation {
+            id: original_id.into(),
+            source: crate::importers::Source::Codex,
+            title: "A synthetic session".into(),
+            created: None,
+            turns: vec![crate::importers::Turn::plain(
+                crate::importers::Role::User,
+                prose(9_000),
+            )],
+        };
+        let doc = conversation.to_inbox_doc();
+        let key = format!("codex:{original_id}");
+        assert_eq!(frontmatter_key(&doc), key);
+        assert_eq!(
+            doc.lines()
+                .filter(|line| line.starts_with("conversation_id:"))
+                .count(),
+            1
+        );
+        let mut ledger = Ledger::default();
+        ledger.record_body(body_hash(&doc), &key);
+        assert_eq!(judge_against(&doc, 9_000, &ledger).rule, "ok");
+        let exported_again = doc.replace(
+            &serde_json::to_string(original_id).unwrap(),
+            "\"different-session\"",
+        );
+        assert_eq!(
+            judge_against(&exported_again, 9_000, &ledger).rule,
+            "duplicate"
+        );
+        assert_eq!(
+            frontmatter_key("---\nsource: codex\nconversation_id: \"stable\"\n---\nbody"),
+            "codex:stable"
+        );
     }
 
     #[test]

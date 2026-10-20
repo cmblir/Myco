@@ -31,6 +31,12 @@ export interface GraphSettings {
   /** Hide the first-run sample notes (src-tauri/src/sample_vault.rs) so the
    * picture is only what the owner actually wrote. Corpus filter — rebuilds. */
   hideSample: boolean;
+  /** Page chrome, not appearance: whether the gaps (left) and legend (right)
+   * rails stand open or fold to an edge tab that gives the stage their width.
+   * Kept out of every look (VibeAppearance, saveLook), so switching or
+   * recalling a look never reopens a rail the user folded away. */
+  gapsRailOpen: boolean;
+  legendRailOpen: boolean;
 
   // Filters
   search: string;
@@ -58,7 +64,7 @@ export interface GraphSettings {
   // "spiral" = a static log-spiral galaxy (the cosmic-refs Andromeda/M101
   // form): communities along the arms, biggest at the core. "strata" = a
   // static 2D time chart: x = last-modified (oldest left), y = community band.
-  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial" | "walrus" | "mycelium";
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial" | "walrus" | "mycelium" | "terrain" | "ribbon" | "city";
   // Mycelium view only: "3d" orbits freely; "2d" flattens the layout to a
   // plane and locks the camera to a front-on, pan/zoom-only view.
   myceliumDim: "2d" | "3d";
@@ -188,6 +194,8 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   question: "orphans",
   sizeBy: "backlinks",
   hideSample: false,
+  gapsRailOpen: true,
+  legendRailOpen: true,
   search: "",
   showOrphans: true,
   existingOnly: false,
@@ -386,8 +394,8 @@ export const LAYOUT_RECOMMENDED: Record<
   },
   // The static layouts never run the worker sim, so the force tuple is
   // deliberately absent (the FA2-purity rule: never write a value only OTHER
-  // layouts read). cosmicEvents stay off everywhere positions are baked — a
-  // wormhole would yank nodes with no sim to pull them home.
+  // layouts read). cosmicEvents start off on these calm baked layouts; the
+  // events only draw their own FX (no note moves), so the drawer offers them.
   //
   // Spiral — a 3D galactic disc whose ARMS are the topics (whole communities
   // laid contiguously along each arm). Hue is what makes an arm read as one
@@ -469,9 +477,9 @@ export const LAYOUT_RECOMMENDED: Record<
     cosmicEvents: false,
   },
   // Walrus hyperbolic tree: the spanning-tree spokes ARE the picture, so keep
-  // edges as plain grey structure (no bundling, no community-web wash) and pin
-  // the baked positions (cosmic events would yank the tree apart). Community
-  // colour lets each sub-burst read as its own topic.
+  // edges as plain grey structure (no bundling, no community-web wash) on a
+  // still void (cosmic events start off). Community colour lets each sub-burst
+  // read as its own topic.
   walrus: {
     folderGalaxies: false,
     edgeTint: "grey",
@@ -494,14 +502,33 @@ export const LAYOUT_RECOMMENDED: Record<
     neuralFiring: false,
     cosmicEvents: false,
   },
+  terrain: {
+    linkDistance: 70, folderGalaxies: false, nodeColor: "community",
+    edgeTint: "grey", edgeBundles: false, pixelNodes: false,
+    cosmicEvents: false, clickBurst: false, neuralFiring: false,
+  },
+  // Woven draws the default look's pixel notes (graph-visual-rules R6): as
+  // glow stars only a core 0.375 of each sprite showed, so with the landing
+  // question dimming them its leaves read as 1–3 px points beside the default
+  // look's ~10 px discs at the same sprite size.
+  ribbon: {
+    linkDistance: 70, folderGalaxies: false, nodeColor: "community",
+    edgeTint: "grey", edgeBundles: false, pixelNodes: true,
+    cosmicEvents: false, clickBurst: true, neuralFiring: true,
+  },
+  city: {
+    linkDistance: 70, folderGalaxies: false, nodeColor: "community",
+    edgeTint: "grey", edgeBundles: false, pixelNodes: false,
+    cosmicEvents: false, clickBurst: false, neuralFiring: false,
+  },
 };
 
 // ── One-click looks ("vibes") ────────────────────────────────────────────
-// A vibe bundles skin + layout + that layout's recommended settings into a
-// single toggle, so the whole personality of the graph changes with one tap.
-// Each spreads LAYOUT_RECOMMENDED so a vibe never drifts from the per-layout
-// research; the few extra overrides are the vibe's own signature.
+// A vibe replaces the entire appearance, including settings its own layout
+// does not read. Unlike Recommend's targeted patch, switching looks must not
+// inherit pixels, sky, motion or forces from the previously selected look.
 export type VibeKey =
+  | "default"
   | "living"
   | "sigma"
   | "cosmicweb"
@@ -511,51 +538,174 @@ export type VibeKey =
   | "chronicle"
   | "nebula"
   | "walrus"
-  | "mycelium";
+  | "mycelium"
+  | "terrain"
+  | "ribbon"
+  | "city";
 
-export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
-  // The default identity: the living galaxy.
-  living: { skin: "auto", layout: "galaxy", ...LAYOUT_RECOMMENDED.galaxy },
-  // The classic sigma.js / Gephi hairball: a flat ForceAtlas2 continent of
-  // vivid community colour, curved coloured edges over a charcoal board. The
-  // reference is a SPREAD 2D map (distinct colour regions joined by arcs), not
-  // a collapsed galaxy ball — so it rides the atlas layout, and the community
-  // hue carries both nodes and the edge veil (edgeTint: community).
-  sigma: {
-    skin: "sigma",
-    layout: "atlas",
-    ...LAYOUT_RECOMMENDED.atlas,
-    edgeTint: "community",
-    cosmicEvents: false,
-    neuralFiring: false,
-  },
-  // Dark-matter simulation: filaments carry the picture.
-  cosmicweb: { skin: "web", layout: "galaxy", ...LAYOUT_RECOMMENDED.galaxy, cosmicEvents: false },
-  // Firing nervous system in space, on the void-black board.
-  neural: { skin: "black", layout: "synapse3d", ...LAYOUT_RECOMMENDED.synapse3d },
-  // Inside the star globe: constellations per topic, full deep-space dressing.
-  planetarium: { skin: "galaxy", layout: "celestial", ...LAYOUT_RECOMMENDED.celestial },
-  // A settled print-like territory map on paper.
-  paper: { skin: "white", layout: "atlas", ...LAYOUT_RECOMMENDED.atlas },
-  // The vault as readable history — time strata on paper.
-  chronicle: { skin: "white", layout: "strata", ...LAYOUT_RECOMMENDED.strata },
-  // The meaning-nebula: notes cluster by EMBEDDING, wrapped in glowing nebula
-  // gas. It must ride a skin that actually renders the nebula — the old "black"
-  // skin stripped ALL ambience (skinAmbience black = no starfield/nebula/atmo),
-  // so "의미 성운" showed as bare faint dots on an AgX-blued void, no nebula at
-  // all. "galaxy" turns on the living-nebula atmo field + starfield so the
-  // meaning-clusters read as luminous clouds on a clean dark cosmos.
-  nebula: { skin: "galaxy", layout: "semantic", ...LAYOUT_RECOMMENDED.semantic },
-  // The CAIDA Walrus: a hyperbolic spanning tree filling a boundary sphere.
-  // Rides the galaxy skin for a clean dark cosmos (the black skin's AgX haze
-  // muddies the void the tree needs) — the tree spokes and boundary sphere are
-  // the picture, so structural grey edges and no nebula-competing extras.
-  walrus: { skin: "galaxy", layout: "walrus", ...LAYOUT_RECOMMENDED.walrus },
-  // The fungal mat: hyphae grown by space colonization, then the notes hung on
-  // them. Galaxy skin for the same reason walrus uses it — the threads need a
-  // clean void to read against.
-  mycelium: { skin: "mycelium", layout: "mycelium", ...LAYOUT_RECOMMENDED.mycelium },
+type VibeAppearance = Omit<
+  GraphSettings,
+  | "question" | "sizeBy" | "hideSample" | "search" | "showOrphans"
+  | "existingOnly" | "tagFilter" | "folderFilter" | "multiverse"
+  | "gapsRailOpen" | "legendRailOpen"
+>;
+
+const VIBE_BASELINE: VibeAppearance = {
+  skin: "galaxy",
+  layout: "spiral",
+  folderGalaxies: false,
+  myceliumDim: "3d",
+  myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
+  myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
+  myceliumBackground: DEFAULT_GRAPH_SETTINGS.myceliumBackground,
+  skyStyle: "void",
+  nodeColor: "community",
+  monoBelow: 200,
+  nodeColorDepth: 1,
+  edgeTint: "grey",
+  arrows: false,
+  arrowSize: 1,
+  semanticEdges: false,
+  edgeBundles: false,
+  textFadeThreshold: 1.8,
+  nodeSize: 0.85,
+  linkThickness: 0.7,
+  brightness: 0.9,
+  ambientMotion: false,
+  recencyGlow: false,
+  minimap: true,
+  cinematic: false,
+  edgeFlow: false,
+  mascotCameo: false,
+  cosmicEvents: false,
+  cosmicFrequency: 1,
+  clickBurst: false,
+  neuralFiring: false,
+  nearFieldPlanets: false,
+  pixelNodes: false,
+  tlSpeed: 1,
+  ...LAYOUT_PRESETS.galaxy,
 };
+
+// The app's own look (theme-following sky, live force galaxy) as a card, so
+// Reset lands on something the picker names and there is a way back to it.
+const {
+  question: _question, sizeBy: _sizeBy, hideSample: _hideSample, search: _search,
+  showOrphans: _showOrphans, existingOnly: _existingOnly, tagFilter: _tagFilter,
+  folderFilter: _folderFilter, multiverse: _multiverse,
+  gapsRailOpen: _gapsRailOpen, legendRailOpen: _legendRailOpen,
+  ...DEFAULT_LOOK
+} = DEFAULT_GRAPH_SETTINGS;
+
+export const VIBE_PRESETS: Record<VibeKey, VibeAppearance> = {
+  default: DEFAULT_LOOK,
+  // Real note positions form the arms; distant glow keeps the silhouette calm.
+  living: {
+    ...VIBE_BASELINE,
+    skin: "galaxy", layout: "spiral", skyStyle: "stars",
+    nodeSize: 0.8, linkThickness: 0.45, textFadeThreshold: 2.2,
+    brightness: 0.95, ambientMotion: true, cinematic: true,
+  },
+  // Community colour and curved links on a still, flat charcoal map.
+  sigma: {
+    ...VIBE_BASELINE,
+    skin: "sigma", layout: "atlas", linkDistance: 90,
+    edgeTint: "community", nodeColorDepth: 1.4,
+    nodeSize: 0.75, linkThickness: 0.5, textFadeThreshold: 1.4,
+  },
+  // Small points leave room for the accumulated filament field.
+  cosmicweb: {
+    ...VIBE_BASELINE,
+    skin: "web", layout: "galaxy", folderGalaxies: true,
+    skyStyle: "stars", nodeColor: "white",
+    nodeSize: 0.55, linkThickness: 0.8, textFadeThreshold: 2.3,
+    brightness: 0.9, ambientMotion: true, cinematic: true,
+  },
+  // Signals travel the nerve fibres; cosmic events stay out of their way.
+  neural: {
+    ...VIBE_BASELINE,
+    skin: "black", layout: "synapse3d", folderGalaxies: true,
+    centerForce: 0.45, repelForce: 10, linkForce: 0.4,
+    linkDistance: 70, clusterForce: 0.45,
+    edgeBundles: true, nodeColorDepth: 1.15,
+    nodeSize: 0.65, linkThickness: 0.65, textFadeThreshold: 2,
+    brightness: 0.9, ambientMotion: true, edgeFlow: true,
+    neuralFiring: true, clickBurst: true,
+  },
+  // Constellations remain distinct on the spherical sky.
+  planetarium: {
+    ...VIBE_BASELINE,
+    skin: "galaxy", layout: "celestial", skyStyle: "stars",
+    nodeSize: 0.7, linkThickness: 0.4, textFadeThreshold: 2,
+    brightness: 0.9, ambientMotion: true, cinematic: false,
+  },
+  paper: {
+    ...VIBE_BASELINE,
+    skin: "white", layout: "atlas", linkDistance: 90,
+    nodeColorDepth: 1.4, nodeSize: 0.8, linkThickness: 0.45, textFadeThreshold: 1.5,
+  },
+  chronicle: {
+    ...VIBE_BASELINE,
+    skin: "white", layout: "strata", linkDistance: 70,
+    nodeColorDepth: 1.3, nodeSize: 1, textFadeThreshold: 1.3,
+  },
+  // Meaning occupies the cloud; sparse links and names leave it visible.
+  nebula: {
+    ...VIBE_BASELINE,
+    skin: "galaxy", layout: "semantic", skyStyle: "stars",
+    nodeColorDepth: 1.15, nodeSize: 0.65, linkThickness: 0.35,
+    textFadeThreshold: 2.4, brightness: 1.05,
+    ambientMotion: true, cinematic: true,
+  },
+  // The tree and its boundary sphere carry the picture on a quiet void.
+  walrus: {
+    ...VIBE_BASELINE,
+    skin: "black", layout: "walrus", linkDistance: 55,
+    nodeSize: 0.8, linkThickness: 1.15,
+  },
+  // Reset the substrate, both inks and branching knobs together.
+  mycelium: {
+    ...VIBE_BASELINE,
+    skin: "mycelium", layout: "mycelium",
+    myceliumNodeColor: "#eadcff", myceliumHyphaColor: "#a593bf",
+    myceliumBackground: "#0d0a13",
+    nodeSize: 0.8, linkThickness: 0.8, brightness: 1,
+  },
+  terrain: {
+    ...VIBE_BASELINE,
+    skin: "white", layout: "terrain", linkDistance: 70,
+    nodeSize: 0.9, linkThickness: 0.7, textFadeThreshold: 1.4,
+    brightness: 1, minimap: false,
+  },
+  // The default look with its links woven into strands: the same skin, sky,
+  // glow, motion and effects, cosmic events included (they never move a
+  // note). No folder galaxies and no bundle arcs (the strands are its
+  // bundles). Its camera frames the web closer than the default look frames
+  // its mass, so smaller notes land at the same screen size. Pixel notes: see
+  // LAYOUT_RECOMMENDED.ribbon.
+  ribbon: {
+    ...DEFAULT_LOOK,
+    layout: "ribbon", linkDistance: 70, folderGalaxies: false,
+    edgeBundles: false, nodeSize: 0.8,
+  },
+  city: {
+    ...VIBE_BASELINE,
+    skin: "black", layout: "city", linkDistance: 70,
+    nodeSize: 1, linkThickness: 0.7, textFadeThreshold: 1.5,
+    brightness: 1, minimap: false,
+  },
+};
+
+/** The unchanged built-in look, ignoring the user's data filters and question. */
+export function matchVibe(settings: GraphSettings): VibeKey | null {
+  for (const key of Object.keys(VIBE_PRESETS) as VibeKey[]) {
+    const preset = VIBE_PRESETS[key];
+    if ((Object.keys(preset) as (keyof VibeAppearance)[]).every(
+      (field) => settings[field] === preset[field],
+    )) return key;
+  }
+  return null;
+}
 
 // Which preset (if any) the current force values correspond to — drives the
 // active state on the preset chips.
@@ -651,8 +801,9 @@ export function writeSavedLooks(looks: SavedLook[]): SavedLook[] {
  * look is the VISUAL configuration (skin / layout / colours / effects / forces)
  * — the transient VIEW state is dropped so applying a look never yanks the mode
  * or re-applies a stale filter: `search`, the active `tagFilter`/`folderFilter`,
- * and `multiverse` mode (baking multiverse:true would bounce the user to the
- * bubble field on recall). Returns the updated list. */
+ * `multiverse` mode (baking multiverse:true would bounce the user to the
+ * bubble field on recall) and the rails' open state (page chrome). Returns the
+ * updated list. */
 export function saveLook(name: string, s: GraphSettings): SavedLook[] {
   const trimmed = name.trim();
   if (!trimmed) return loadSavedLooks();
@@ -661,12 +812,16 @@ export function saveLook(name: string, s: GraphSettings): SavedLook[] {
     tagFilter: _t,
     folderFilter: _f,
     multiverse: _m,
+    gapsRailOpen: _g,
+    legendRailOpen: _l,
     ...settings
   } = s;
   void _s;
   void _t;
   void _f;
   void _m;
+  void _g;
+  void _l;
   const looks = loadSavedLooks().filter(
     (l) => l.name.toLowerCase() !== trimmed.toLowerCase(),
   );

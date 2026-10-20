@@ -15,9 +15,21 @@ import type {
   ScoredChunk,
   SemanticSearchResult,
   TierWeights,
+  AudioOverviewDraft,
+  AudioOverviewJobContext,
+  AudioOverviewPublication,
+  StudyDeckContext,
 } from "./ipc";
 import { DEFAULT_TIER_WEIGHTS, hitTier, sourceTier } from "./extractive";
+import { serializeDeck } from "./cards";
+import { BLANK, cardsFromNote } from "./extractiveCards";
+import { STRINGS } from "./i18n";
 import { today } from "./taskLine";
+import { appendCapture } from "./dailyNote";
+import { loadDayLinks, saveDayLinks, snapshot } from "./dayConnections";
+import { getValue, parseFrontmatter } from "./frontmatter";
+import { sha256 } from "./tidyRun";
+import { BUILTIN_CHAT_MODEL } from "./providers";
 
 interface Node {
   s: string; // slug
@@ -106,6 +118,10 @@ function mockParam(name: string): string | null {
 // ?mock=1&slow=1 stretches the paced mocks (reindex, distill) far enough to
 // inspect mid-run UI by hand — the Topbar activity chip/popover in particular.
 const MOCK_SLOW = mockParam("slow") === "1";
+
+// ?mock=1&quiet=1 is a vault with nothing to report: no pages to check, no
+// runs, no disputed pages — Home's notices bell with no badge.
+const MOCK_QUIET = mockParam("quiet") === "1";
 
 /// Walk the sample pages the way the real reindex does, with the same events.
 ///
@@ -544,8 +560,94 @@ function synthNodes(target: number): Node[] {
 }
 
 const VAULT = "/myco";
+let mockOpeningToken = 1;
+let mockVaultOpen = true;
+// Synthetic browser checkpoints only; these maps do not survive process exit.
+const mockEditorBaselines = new Map<string, string>();
+interface MockEditorDraft {
+  path: string;
+  baselineRaw: string;
+  baselineRevision: string;
+  draftRaw: string;
+  revision: string;
+  origin: { vaultPath: string; openingToken: string };
+  mockOnly: true;
+}
+const mockEditorDrafts = new Map<string, MockEditorDraft>();
+let mockEditorDraftRevision = 0;
+// Explicit UI fixtures only: no native grant, inference, process drain, or disk
+// receipt is established by these in-memory Audio command lookalikes.
+const mockAudioJobs = new Map<string, {
+  context: AudioOverviewJobContext;
+  title: string;
+  pages: string[];
+  dateIso: string;
+  cancelled: boolean;
+  draft?: AudioOverviewDraft;
+  publication?: AudioOverviewPublication;
+}>();
+let mockAudioJobId = 0;
+// Browser-demo baselines only: this map proves no native file/directory identity.
+const mockStudyDeckSnapshots = new Map<string, {
+  context: StudyDeckContext;
+  raw: string | null;
+}>();
+let mockStudyDeckSnapshotId = 0;
+const MAX_MOCK_STUDY_BYTES = 1024 * 1024;
+
+function assertMockStudyOpening(origin: StudyDeckContext["origin"]): void {
+  if (!mockVaultOpen || origin?.vaultPath !== VAULT || origin.openingToken !== String(mockOpeningToken)) {
+    throw new Error("MOCK_STUDY_STALE_OPENING: browser demo opening changed");
+  }
+}
+
+function assertMockStudyPath(path: string): void {
+  const name = path.startsWith(`${VAULT}/cards/`) ? path.slice(`${VAULT}/cards/`.length) : "";
+  const hasControl = Array.from(name).some((character) => {
+    const scalar = character.codePointAt(0) ?? 0;
+    return scalar < 32 || scalar === 127;
+  });
+  if (!name || name.startsWith(".") || /[/\\]/.test(name) || hasControl || !/\.md$/i.test(name)) {
+    throw new Error("MOCK_STUDY_PATH_REFUSED: only direct demo cards/*.md files are allowed");
+  }
+}
+
+function mockStudyBaseline(context: StudyDeckContext) {
+  const baseline = context && mockStudyDeckSnapshots.get(context.snapshotId);
+  if (!baseline || context.path !== baseline.context.path ||
+    context.origin?.vaultPath !== baseline.context.origin.vaultPath ||
+    context.origin.openingToken !== baseline.context.origin.openingToken) {
+    throw new Error("MOCK_STUDY_SNAPSHOT_REFUSED: an exact issued demo snapshot is required");
+  }
+  return baseline;
+}
 const SLUGS = new Set(NODES.map((d) => d.s));
 const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
+
+/** Match the native root/raw guard after resolving virtual dot components. */
+function protectedMutation(path: string, isDestination = false): Error | null {
+  const parts: string[] = [];
+  for (const part of path.split("/")) {
+    if (part === "..") parts.pop();
+    else if (part && part !== ".") parts.push(part);
+  }
+  const canonical = `/${parts.join("/")}`;
+  if (canonical === VAULT && !isDestination) return new Error("refused: the open vault root cannot be mutated");
+  if (canonical === `${VAULT}/raw` || canonical.startsWith(`${VAULT}/raw/`)) {
+    return new Error("refused: raw/ is immutable");
+  }
+  return null;
+}
+
+const MOCK_ASK_HISTORY_KEY = "myco.mock.askHistory";
+function mockAskHistory(): unknown[] {
+  try {
+    const turns: unknown = JSON.parse(localStorage.getItem(MOCK_ASK_HISTORY_KEY) ?? "[]");
+    return Array.isArray(turns) ? turns : [];
+  } catch {
+    return [];
+  }
+}
 
 // ?mock=1&agent=1 flips the active query provider to an HTTP tool-capable one so
 // the in-app agent loop (Feature 4) can be exercised end-to-end in the browser
@@ -579,6 +681,79 @@ const mockDecks = new Map<string, string>([
 ]);
 const isCardsPath = (p: string): boolean => p.startsWith(`${VAULT}/cards/`);
 
+// A concept note worth studying (lead with bold and wikilinked terms,
+// citations, H2 sections) — the mock's generated pages are one generic
+// sentence each, which gives Make cards nothing to show. Synthetic text.
+const STUDY_NOTE = [
+  "---",
+  'title: "Attention Mechanism"',
+  "type: technique",
+  "tags:",
+  "  - technique",
+  "confidence: high",
+  "status: active",
+  "---",
+  "",
+  "# Attention Mechanism",
+  "",
+  "The **attention mechanism** lets a model weigh how relevant every input token is to every other token, building each output as a weighted sum of value vectors.[^src-attention-is-all-you-need] In the [[transformer-architecture|Transformer]] it appears as [[self-attention]], where queries, keys and values all come from the same sequence.",
+  "",
+  "## Scaling",
+  "",
+  "Attention cost grows with the square of the sequence length, which is why long contexts are expensive.[^src-attention-is-all-you-need] During generation a [[kv-cache]] keeps earlier keys and values so they are not recomputed at every step.",
+  "",
+  "## Many heads",
+  "",
+  "Running several attention heads side by side lets each one follow a different relation between tokens, and their outputs are concatenated.[^src-attention-is-all-you-need] This form is called [[multi-head-attention]] in most papers.",
+  "",
+  "## Related",
+  "",
+  "- [[embeddings]]",
+  "- [[positional-encoding]]",
+  "",
+  "[^src-attention-is-all-you-need]: [[source-attention-is-all-you-need]]",
+  "",
+].join("\n");
+
+// Its deck, as Make cards saves it: a section card and a cloze card (both
+// framed the same in every language, so a re-run shows them as already in
+// the deck), scheduled in the past so they are due.
+{
+  const made = cardsFromNote(STUDY_NOTE, "attention-mechanism", STRINGS.en);
+  const pick = [
+    made.find((c) => c.front.includes(" › Scaling"))!,
+    made.find((c) => c.front.includes(BLANK))!,
+  ];
+  const past = {
+    due: "2024-01-01",
+    stability: 2.5,
+    difficulty: 5,
+    reps: 1,
+    lapses: 0,
+    lastReview: "2024-01-01",
+  };
+  mockDecks.set(
+    `${VAULT}/cards/attention-mechanism.md`,
+    serializeDeck(pick.map((c) => ({ ...c, state: past }))),
+  );
+}
+
+// A junk deck like the one the small model wrote into a real vault: generic
+// prose about "the tool", no source. Study flags it and offers to archive it.
+mockDecks.set(
+  `${VAULT}/cards/2026-07-12.md`,
+  [
+    "What is the main idea of this page? ?? It explains a helpful tool that lets people learn faster with cards.",
+    "<!--SR:!2024-01-01|3.1262|5.3146|1|0|2023-12-29|-->",
+    "",
+    "How is it used? ?? You run it with a few options and it prints the results as a list.",
+    "<!--SR:!2024-01-01|3.1262|5.3146|1|0|2023-12-29|-->",
+    "",
+    "What are its strengths? ?? It is simple, fast and flexible for many kinds of documents.",
+    "",
+  ].join("\n"),
+);
+
 // Feature 6 (PDF annotation) — a seeded raw PDF + a sidecar highlight so the
 // viewer, highlight overlay, and click-through are exercisable in ?mock. The
 // bytes are a real minimal one-page PDF (generated with a correct xref) so
@@ -603,9 +778,6 @@ const MOCK_SIDECAR = JSON.stringify({
     },
   ],
 });
-
-// Feature 7 — in-memory schedules so the Schedules route + Run now work in mock.
-let mockSchedules: { id: string }[] = [];
 
 // Task 2 — in-memory distill config with defaults so ontology features work in mock.
 let mockDistillConfig: DistillConfig = {
@@ -708,6 +880,7 @@ let mockQuarantine: QuarantineItem[] = [
     reason:
       "nearest topic 'transformers' similarity 0.31 < quarantine 0.38 (p5) -> quarantine; 0 known entities",
     expires: NOW_SECS + 12 * 86400,
+    asks_on_expiry: false,
     preview:
       "Notes from the bank call: 30-year fixed at 6.1%, points buy-down math, and the refinance break-even table I sketched on the back of the letter.",
   },
@@ -719,6 +892,7 @@ let mockQuarantine: QuarantineItem[] = [
     reason:
       "nearest topic 'rope' similarity 0.22 < quarantine 0.35 (p5) -> quarantine; 1 known entity",
     expires: NOW_SECS - 3600,
+    asks_on_expiry: false,
     preview:
       "Day 9: starter doubles in 5h at 24C. Hydration 78% was too slack for the banneton, dropping to 72% next bake.",
   },
@@ -729,8 +903,37 @@ let mockQuarantine: QuarantineItem[] = [
     nearest_cluster: "",
     reason: "",
     expires: 0,
+    asks_on_expiry: true,
     preview: "half a paste, no frontmatter, no verdict sidecar worth parsing",
   },
+  // Machine-made sessions (spec 2026-10-02 결정 1), one or more per kind so
+  // every 격리-tab group renders. Synthetic names and bodies.
+  ...(
+    [
+      ["myco", "claude-code-00000000-0000-4000-8000-000000000101", 26,
+        "You are reviewing a personal knowledge wiki (markdown files in the current directory). Find contradictions, stale claims and missing links."],
+      ["myco", "claude-code-00000000-0000-4000-8000-000000000102", 27,
+        "You are planning how to ingest a new source into an existing wiki. Reply with a JSON plan of pages to create or update."],
+      ["myco", "claude-code-00000000-0000-4000-8000-000000000103", 28,
+        "New source has been added at raw/2026-09-14-clip.md. Read it and update the wiki pages it touches."],
+      ["agent", "codex-00000000-0000-4000-8000-000000000201", 25,
+        "Work only in the worktree for this task. Read the spec fully first, write a failing test, implement, run the gates, then report what was verified."],
+      ["agent", "codex-00000000-0000-4000-8000-000000000202", 29,
+        "Work only in the worktree for this task. Read the spec fully first, write a failing test, implement, run the gates, then report what was verified."],
+      ["hello", "claude-code-00000000-0000-4000-8000-000000000301", 24, "hello"],
+      ["hello", "codex-00000000-0000-4000-8000-000000000302", 24, "hello-from-daemon"],
+      ["empty", "claude-code-00000000-0000-4000-8000-000000000401", 23, ""],
+    ] as const
+  ).map(([kind, stem, days, preview]): QuarantineItem => ({
+    path: `_inbox/quarantine/${stem}.md`,
+    name: `${stem}.md`,
+    s_knn: 0,
+    nearest_cluster: "",
+    reason: `machine:${kind}`,
+    expires: NOW_SECS + days * 86400,
+    asks_on_expiry: true,
+    preview,
+  })),
 ];
 
 // Task 9 — three pending work/feedback/*.md proposals, so PageFeedback and the
@@ -964,17 +1167,17 @@ function buildBigAdjacency(n: number) {
   for (let i = 0; i < n; i++) {
     const src = bigPath(i);
     tags[src] = ["concept"];
-    const links: string[] = [];
+    const links = new Set<string>();
     const folderStart = i - (i % 12); // rough hub within the same slice
     const hub = folderStart + (folderStart % 7); // deterministic hub target
-    if (hub !== i && hub < n) links.push(bigPath(hub));
+    if (hub !== i && hub < n) links.add(bigPath(hub));
     const peers = 1 + Math.floor(bigRand(i) * 3);
     for (let k = 0; k < peers; k++) {
       const t = Math.floor(bigRand(i * 31 + k) * n);
-      if (t !== i) links.push(bigPath(t));
+      if (t !== i) links.add(bigPath(t));
     }
-    if (links.length) {
-      forward[src] = links;
+    if (links.size) {
+      forward[src] = [...links];
       for (const t of links) (backward[t] ||= []).push(src);
     }
   }
@@ -1005,6 +1208,20 @@ function rerootAdjacency(
   };
 }
 
+// Home's "today's connections" line (UX S40) needs yesterday's links, which a
+// mock that never changes cannot produce. Seed a baseline without most of the
+// first note's pairs and two of its citations; that note is saved "today" in
+// mtimes(), so its links read as new.
+function seedDayLinks(adj: ReturnType<typeof buildAdjacency>): void {
+  if (loadDayLinks(VAULT)?.day === today()) return;
+  const base = snapshot(adj, VAULT);
+  const rel = pathOf(NODES[0].s).slice(VAULT.length + 1);
+  const kept = pathOf(NODES[0].l[0]).slice(VAULT.length + 1);
+  base.pairs = base.pairs.filter((k) => !k.includes(rel) || k.includes(kept));
+  base.cites[rel] = Math.max(0, (base.cites[rel] ?? 0) - 2);
+  saveDayLinks(VAULT, { day: today(), base, last: base });
+}
+
 function buildAdjacency() {
   const big = bigCount();
   if (big > 0) return buildBigAdjacency(big);
@@ -1027,7 +1244,7 @@ function buildAdjacency() {
     "reasoning",
     "compute-budget",
   ]);
-  const disputed = new Set(["scaling-laws", "dpo"]);
+  const disputed = new Set(MOCK_QUIET ? [] : ["scaling-laws", "dpo"]);
   const meta: Record<
     string,
     { type: string; confidence: string; status: string; sourceCount: number }
@@ -1057,13 +1274,51 @@ function buildAdjacency() {
     ],
     [pathOf("scaling-laws")]: ["chinchilla-optimal"],
   };
-  return { forward, backward, unresolved, tags, meta };
+  // The Tidy fixtures' links and title come from their CURRENT text, so a Tidy
+  // rewrite shows in the graph (names, the missing-pages count) on the next
+  // rebuild.
+  const summaries = new Set(MOCK_SESSION_STEMS.map((s) => `source-${s}`));
+  for (const s of MOCK_SESSION_STEMS) {
+    const from = mockSummaryPath(s);
+    tags[from] = ["source-summary"];
+    const text = mockNotes.get(from) ?? "";
+    const title = getValue(parseFrontmatter(text), "title");
+    meta[from] = {
+      type: "source-summary",
+      confidence: "low",
+      status: "active",
+      sourceCount: 1,
+      ...(typeof title === "string" ? { title } : {}),
+    };
+    for (const [, target] of text.matchAll(/\[\[([^\]|#]+)/g)) {
+      if (target === `source-${s}`) continue; // its own footnote definition
+      const to = SLUGS.has(target)
+        ? pathOf(target)
+        : summaries.has(target)
+          ? mockSummaryPath(target.slice("source-".length))
+          : null;
+      if (!to) (unresolved[from] ||= []).push(target);
+      else {
+        (forward[from] ||= []).push(to);
+        (backward[to] ||= []).push(from);
+      }
+    }
+  }
+  // Two notes "not downloaded yet" (iCloud), so Settings › Storage shows a
+  // count and its list in ?mock=1. Still in the graph: a cached parse stays.
+  const unread = [pathOf("dpo"), pathOf("planning")];
+  return { forward, backward, unresolved, tags, meta, unread };
 }
 
 function body(d: Node): string {
   const links = d.l.filter((x) => SLUGS.has(x));
   const linkText = links.map((x) => `[[${x}]]`).join(", ");
   return `${d.n} is a core topic in this sample knowledge graph[^src-attention-is-all-you-need]. It connects to ${linkText}. This page ships as starter content so the graph is populated.\n\n[^src-attention-is-all-you-need]: [[source-attention-is-all-you-need]]\n`;
+}
+
+/** A mock note's file text, as read_file returns it and the index chunks it. */
+function noteText(d: Node): string {
+  return `# ${d.n}\n\n${body(d)}`;
 }
 
 function frontmatter(d: Node): Record<string, unknown> {
@@ -1112,6 +1367,11 @@ function fileTree() {
       name: `${d.s}.md`,
       path: pathOf(d.s),
     })),
+    ...MOCK_SESSION_STEMS.map((s) => ({
+      kind: "file",
+      name: `source-${s}.md`,
+      path: mockSummaryPath(s),
+    })),
   ];
   const roadmapChildren = [...mockNotes.keys()]
     .filter((p) => p.includes("/wiki/roadmaps/"))
@@ -1130,18 +1390,35 @@ function fileTree() {
         },
       ]
     : [];
-  const cardsChildren = [...mockDecks.keys()].map((p) => ({
+  const deckNode = (p: string) => ({
     kind: "file" as const,
     name: p.split("/").pop() ?? "deck.md",
     path: p,
-  }));
+  });
+  const archived = [...mockDecks.keys()].filter((p) =>
+    p.startsWith(`${VAULT}/cards/archive/`),
+  );
+  const cardsChildren = [
+    ...[...mockDecks.keys()].filter((p) => !archived.includes(p)).map(deckNode),
+    ...(archived.length
+      ? [
+          {
+            kind: "directory" as const,
+            name: "archive",
+            path: `${VAULT}/cards/archive`,
+            children: archived.map(deckNode),
+          },
+        ]
+      : []),
+  ];
   const inboxChildren = [...mockInbox.keys()].map((p) => ({
     kind: "file" as const,
     name: p.split("/").pop() ?? "clip.md",
     path: p,
   }));
-  // Starts empty so the template picker's empty state → create → list flow is
-  // exercisable; createStarterTemplates writes into mockNotes.
+  // Holds only the `/meeting` slash template seeded below; createStarterTemplates
+  // writes into mockNotes too. (With it, the picker's empty state shows only in
+  // a vault without templates/.)
   const templatesChildren = [...mockNotes.keys()]
     .filter((p) => p.startsWith(`${VAULT}/templates/`))
     .map((p) => ({
@@ -1193,6 +1470,23 @@ function fileTree() {
         { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
       ],
     },
+    {
+      kind: "directory",
+      name: "sessions",
+      path: `${VAULT}/sessions`,
+      children: [
+        {
+          kind: "directory",
+          name: "2026-09",
+          path: `${VAULT}/sessions/2026-09`,
+          children: MOCK_SESSION_STEMS.map((s) => ({
+            kind: "file" as const,
+            name: `${s}.md`,
+            path: mockSessionPath(s),
+          })),
+        },
+      ],
+    },
     ...(templatesChildren.length
       ? [
           {
@@ -1231,11 +1525,19 @@ function fileTree() {
   ];
 }
 
+// Seconds added to the recent files' mtimes, one per writing-agent run
+// (claude_run_stream) and one per write_file (the offline extractive ingest
+// writes its pages that way). startIngest diffs file_mtimes around the run,
+// and a mock run is fast enough to finish inside the second its snapshot was
+// taken — wall-clock seconds alone made it read "no wiki pages changed" at
+// random.
+let mockAgentWrites = 0;
+
 function mtimes(): [string, number][] {
   // A handful of recent files (so the recency glow has something to light) on
   // top of an old baseline (so timelapse ordering still spans a real range).
   const base = 1_700_000_000;
-  const now = Math.floor(Date.now() / 1000);
+  const now = Math.floor(Date.now() / 1000) + mockAgentWrites;
   return [
     ...NODES.map(
       (d, i) =>
@@ -1356,22 +1658,59 @@ const SETTINGS = {
   notch_enabled: false,
 };
 
+// ?mock=1&nowriter=1: no role can write prose (both on the extractive
+// built-in), plus a map proposal approved before that, the stuck card the
+// owner saw. Without it the proposals page's needs-writer state is unreachable
+// in a browser run. SETTINGS is changed rather than overridden on read, so
+// picking a writer under Settings → Model brings the usual retry back.
+if (mockParam("nowriter") === "1") {
+  Object.assign(SETTINGS, {
+    query_provider: "builtin-local",
+    query_model: "",
+    ingest_provider: "builtin-local",
+    ingest_model: "",
+  });
+  MOCK_PROPOSALS.set(
+    `${VAULT}/work/feedback/2026-10-02-map-candidate-attention-mechanism.md`,
+    [
+      "---",
+      "type: distill-proposal",
+      "action: draft-map",
+      "status: approved",
+      "created: 2026-10-02",
+      'payload: {"cluster":"attention-mechanism","members":["wiki/attention-mechanism.md","wiki/transformer.md","wiki/embeddings.md"]}',
+      "---",
+      "",
+      "# Map candidate: attention-mechanism",
+      "",
+      "3 wiki pages cluster tightly enough to deserve a topic map.",
+      "",
+    ].join("\n"),
+  );
+}
+
 /// What the main window would emit back for a spotlight question: the
-/// extractive Ask format (page header + relevance + verbatim quote), so the
-/// citation links and the blockquote styling are both exercised.
+/// extractive Ask format (page header + verbatim quote), so the citation
+/// links and the blockquote styling are both exercised; the similarity rides
+/// beside it for the details (MOCK_SPOTLIGHT_RELEVANCE).
 const MOCK_SPOTLIGHT_ANSWER = [
-  "**[[rotary-position-embedding]]** · 71%",
+  "**[[rotary-position-embedding]]**",
   "",
   "> RoPE encodes absolute position by rotating the query and key vectors in",
   "> 2-D subspaces, so the dot product between them depends only on their",
   "> relative offset. That is why it extrapolates further than learned",
   "> absolute embeddings.",
   "",
-  "**[[attention-is-all-you-need]]** · 58%",
+  "**[[attention-is-all-you-need]]**",
   "",
   "> Positional information has to be injected explicitly: self-attention is",
   "> permutation-invariant on its own.",
 ].join("\n");
+
+const MOCK_SPOTLIGHT_RELEVANCE = [
+  { stem: "rotary-position-embedding", similarity: 0.71 },
+  { stem: "attention-is-all-you-need", similarity: 0.58 },
+];
 
 const bySlug = new Map(NODES.map((d) => [d.s, d]));
 
@@ -1516,18 +1855,192 @@ function mockInvoke(
   args: Record<string, unknown> = {},
 ): Promise<unknown> {
   switch (cmd) {
+    // Native private grants and checked compiler/publication receipts cannot
+    // be established by this browser-only demo. Preserve explicit failure.
+    case "capture_model_role":
+    case "select_model_role":
+    case "set_role_automatic_use":
+    case "publish_distill_note":
+    case "session_compile_begin":
+    case "session_compile_read":
+    case "session_compile_publish":
+    case "session_compile_step":
+    case "session_compile_stop":
+    case "inbox_source_snapshot":
+    case "inbox_compile_begin":
+    case "archive_inbox_source_checked":
+    case "release_inbox_source":
+      return Promise.reject(new Error("NATIVE_CAPABILITY_UNAVAILABLE: browser mock cannot issue role, compilation, or publication authority"));
     case "ensure_default_vault":
       return Promise.resolve(VAULT);
     case "seed_sample_vault":
       return Promise.resolve(null);
     case "open_vault":
+      mockOpeningToken++;
+      mockVaultOpen = true;
       return Promise.resolve({ path: VAULT, name: "myco" });
+    case "close_vault":
+      mockOpeningToken++;
+      mockVaultOpen = false;
+      return Promise.resolve(null);
+    case "read_study_deck": {
+      return (async () => {
+        const path = String(args.path ?? "");
+        const origin = args.origin as StudyDeckContext["origin"];
+        assertMockStudyOpening(origin);
+        assertMockStudyPath(path);
+        const raw = mockDecks.get(path) ?? null;
+        if (raw !== null && new TextEncoder().encode(raw).length > MAX_MOCK_STUDY_BYTES) {
+          throw new Error("MOCK_STUDY_SIZE_REFUSED: demo deck exceeds one MiB");
+        }
+        const revision = raw === null ? null : await sha256(raw);
+        assertMockStudyOpening(origin);
+        if ((mockDecks.get(path) ?? null) !== raw) throw new Error("write conflict: demo deck changed during read");
+        for (const [id, baseline] of mockStudyDeckSnapshots) {
+          if (baseline.context.origin.openingToken !== origin.openingToken) mockStudyDeckSnapshots.delete(id);
+        }
+        if (mockStudyDeckSnapshots.size >= 64) throw new Error("MOCK_STUDY_CAPACITY_REFUSED: release existing demo snapshots");
+        const context = { snapshotId: `mock-study-${++mockStudyDeckSnapshotId}`, origin: { ...origin }, path };
+        mockStudyDeckSnapshots.set(context.snapshotId, { context, raw });
+        return { context, raw: raw ?? "", revision, mockOnly: true };
+      })();
+    }
+    case "write_study_deck": {
+      return (async () => {
+        const context = args.context as StudyDeckContext;
+        assertMockStudyOpening(context?.origin);
+        const baseline = mockStudyBaseline(context);
+        const content = args.content;
+        if (typeof content !== "string" || new TextEncoder().encode(content).length > MAX_MOCK_STUDY_BYTES) {
+          throw new Error("MOCK_STUDY_SIZE_REFUSED: demo deck content must fit one MiB");
+        }
+        const revision = await sha256(content);
+        assertMockStudyOpening(context.origin);
+        if (mockStudyBaseline(context) !== baseline || (mockDecks.get(context.path) ?? null) !== baseline.raw) {
+          throw new Error("write conflict: demo deck changed since its snapshot");
+        }
+        mockDecks.set(context.path, content);
+        mockStudyDeckSnapshots.delete(context.snapshotId);
+        return { path: context.path, origin: context.origin, state: "persisted", revision, error: null, mockOnly: true };
+      })();
+    }
+    case "discard_study_deck_snapshot": {
+      const context = args.context as StudyDeckContext;
+      if (!context || !mockStudyDeckSnapshots.has(context.snapshotId)) return Promise.resolve(false);
+      try { mockStudyBaseline(context); }
+      catch (error) { return Promise.reject(error); }
+      mockStudyDeckSnapshots.delete(context.snapshotId);
+      return Promise.resolve(true);
+    }
+    case "agent_vault_session":
+      return mockVaultOpen
+        ? Promise.resolve({ vaultPath: VAULT, openingToken: String(mockOpeningToken) })
+        : Promise.reject(new Error("no vault is open"));
+    case "audio_overview_begin": {
+      if (mockParam("audioFixture") !== "1") {
+        return Promise.reject(new Error("NATIVE_CAPABILITY_UNAVAILABLE: Audio browser fixtures require explicit opt-in"));
+      }
+      const origin = args.origin as AudioOverviewJobContext["origin"] | undefined;
+      const pagePaths = args.pagePaths;
+      if (!mockVaultOpen || origin?.vaultPath !== VAULT || origin.openingToken !== String(mockOpeningToken) ||
+        !Array.isArray(pagePaths) || pagePaths.length === 0 || pagePaths.some((path) =>
+          typeof path !== "string" || !path.startsWith(`${VAULT}/`) || !path.endsWith(".md") ||
+          path.split("/").some((segment) => segment === "." || segment === ".."))) {
+        return Promise.reject(new Error("MOCK_AUDIO_SOURCE_REFUSED"));
+      }
+      const context = { jobId: `mock-audio-${++mockAudioJobId}`, origin: { ...origin } };
+      mockAudioJobs.set(context.jobId, {
+        context, pages: [...pagePaths], title: String(args.title ?? "Audio fixture"),
+        dateIso: String(args.dateIso ?? ""), cancelled: false,
+      });
+      return Promise.resolve({ ...context, mockOnly: true });
+    }
+    case "audio_overview_generate": {
+      return (async () => {
+        const context = args.context as AudioOverviewJobContext | undefined;
+        const job = context && mockAudioJobs.get(context.jobId);
+        const isCurrent = () => job && !job.cancelled && mockVaultOpen &&
+          context?.origin?.vaultPath === job.context.origin.vaultPath &&
+          context.origin.openingToken === job.context.origin.openingToken &&
+          job.context.origin.openingToken === String(mockOpeningToken);
+        if (!job || !isCurrent()) throw new Error("MOCK_AUDIO_STALE_JOB");
+        await sleep(Math.min(5_000, Math.max(0, Number(mockParam("audioDelayMs") ?? 200))));
+        if (!isCurrent()) throw new Error("MOCK_AUDIO_CANCELLED");
+        const first = job.pages[0];
+        const stem = first.split("/").pop()?.replace(/\.md$/, "") ?? "source";
+        const draft: AudioOverviewDraft = {
+          title: job.title,
+          turns: [
+            { speaker: "A", text: "Synthetic browser dialogue; no model ran.", cites: [`[[${stem}]]`] },
+            { speaker: "B", text: "This fixture checks player and cancellation UI only.", cites: [`[[${stem}]]`] },
+          ],
+          sourcePages: [first],
+          context: { ...job.context, draftId: `mock-draft-${job.context.jobId}` },
+          coverage: {
+            selectedPages: [...job.pages], includedPages: [first], omittedPages: job.pages.slice(1),
+            includedBodyRanges: [{ path: first, startByte: 0, endByte: 1 }],
+            budgetBytes: 24_000, includedBodiesOnly: true,
+          },
+        };
+        job.draft = draft;
+        return { ...draft, mockOnly: true };
+      })();
+    }
+    case "audio_overview_publish": {
+      return (async () => {
+        const context = args.context as AudioOverviewDraft["context"] | undefined;
+        const job = context && mockAudioJobs.get(context.jobId);
+        if (!job?.draft || job.cancelled || !mockVaultOpen ||
+          context?.origin?.vaultPath !== job.context.origin.vaultPath ||
+          context.origin.openingToken !== job.context.origin.openingToken ||
+          context.draftId !== job.draft.context.draftId ||
+          job.context.origin.openingToken !== String(mockOpeningToken)) {
+          throw new Error("MOCK_AUDIO_DRAFT_REFUSED");
+        }
+        if (job.publication) return { ...job.publication, mockOnly: true };
+        const slug = job.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "overview";
+        const path = `${VAULT}/audio/${slug}-${job.dateIso.slice(0, 10)}.md`;
+        if (mockNotes.has(path)) throw new Error("MOCK_AUDIO_TARGET_CONFLICT");
+        const content = [`# Audio Overview — ${job.title}`, "", "> Synthetic browser fixture; no model inference or native publication.", "",
+          ...job.draft.turns.map((turn) => `**${turn.speaker === "A" ? "Host" : "Guest"}:** ${turn.text} ${turn.cites.join(" ")}`), ""].join("\n\n");
+        const revision = await sha256(content);
+        if (job.cancelled || !mockVaultOpen || job.context.origin.openingToken !== String(mockOpeningToken) || mockNotes.has(path)) {
+          throw new Error("MOCK_AUDIO_PUBLICATION_REFUSED");
+        }
+        mockNotes.set(path, content);
+        job.publication = { ...job.draft.context, path, revision, state: "persisted", error: null };
+        return { ...job.publication, mockOnly: true };
+      })();
+    }
+    case "audio_overview_cancel": {
+      const context = args.context as AudioOverviewJobContext | undefined;
+      const job = context && mockAudioJobs.get(context.jobId);
+      if (!job || context?.origin?.vaultPath !== job.context.origin.vaultPath ||
+        context.origin.openingToken !== job.context.origin.openingToken) return Promise.resolve(false);
+      job.cancelled = true;
+      return Promise.resolve(true);
+    }
+    case "reflect_create_missing_page": {
+      const origin = args.origin as { vaultPath?: string; openingToken?: string } | undefined;
+      if (!mockVaultOpen || origin?.vaultPath !== VAULT || origin.openingToken !== String(mockOpeningToken)) {
+        return Promise.reject(new Error("the active vault changed before the action started"));
+      }
+      const target = String(args.target ?? "");
+      const path = `${VAULT}/wiki/${target.replace(/[\\/]/g, "-")}.md`;
+      if (!mockNotes.has(path)) {
+        mockNotes.set(path, `---\ntype: concept\ntags:\ncreated: ${today()}\nconfidence: medium\nstatus: active\n---\n\n# ${target}\n`);
+      }
+      return Promise.resolve(path);
+    }
     case "list_files":
       return Promise.resolve(fileTree());
     case "file_mtimes":
       return Promise.resolve(mtimes());
-    case "build_link_graph":
-      return Promise.resolve(buildAdjacency());
+    case "build_link_graph": {
+      const adj = buildAdjacency();
+      seedDayLinks(adj);
+      return Promise.resolve(adj);
+    }
     // The vault fingerprint. Constant here because the mock vault is in-memory
     // and never changes on disk — which is exactly right: it makes the poll's
     // steady state (revision unmoved -> skip the rebuild) the path a mock run
@@ -1674,26 +2187,6 @@ function mockInvoke(
           },
         ],
       });
-    case "list_schedules":
-      return Promise.resolve(mockSchedules);
-    case "upsert_schedule": {
-      const s = args.schedule as { id: string };
-      const i = mockSchedules.findIndex((x) => x.id === s.id);
-      if (i >= 0) mockSchedules[i] = s;
-      else mockSchedules.push(s);
-      return Promise.resolve([...mockSchedules]);
-    }
-    case "delete_schedule": {
-      const id = String(args.id ?? "");
-      mockSchedules = mockSchedules.filter((x) => x.id !== id);
-      return Promise.resolve([...mockSchedules]);
-    }
-    case "install_background_schedule":
-      return Promise.resolve(
-        args.on
-          ? "(mock) background schedule installed"
-          : "(mock) background schedule removed",
-      );
     case "get_distill_config":
       return Promise.resolve({ ...mockDistillConfig });
     case "set_distill_config": {
@@ -1716,7 +2209,6 @@ function mockInvoke(
           skipped_immature: 0,
           gate_wiki_pages: null,
         },
-        archived: 0,
         trashed: 0,
         proposals: 0,
         backlog_after: 0,
@@ -1724,6 +2216,7 @@ function mockInvoke(
     case "undo_distill_run":
       return Promise.resolve(0);
     case "list_distill_runs":
+      if (MOCK_QUIET) return Promise.resolve([]);
       return Promise.resolve([
         {
           id: "digest-1755740000",
@@ -1787,7 +2280,10 @@ function mockInvoke(
     case "commit_human_edit":
       return Promise.resolve(false);
     // Authorship (Q4 item 16): no git in a browser — the fixture drives the
-    // 62/38 badge; the empty index means the human-only filter keeps everything.
+    // 62/38 badge. The index marks one page as the agent's and one as a
+    // person's, so the "by myco" mark, the palette's order (UX backlog S15) and
+    // the human-only filter have something true to show; every other page has
+    // no row — unknown, as in a vault without history.
     case "page_authorship":
       return Promise.resolve({
         agent_lines: 38,
@@ -1805,7 +2301,10 @@ function mockInvoke(
         ],
       });
     case "authorship_index":
-      return Promise.resolve({});
+      return Promise.resolve({
+        "wiki/attention-mechanism.md": true,
+        "wiki/self-attention.md": false,
+      });
     // The parent revision the reader's revert restores. No git in a browser:
     // return the mock page with the agent's line swapped for a plausible
     // earlier one, so the gutter's revert has something to put back.
@@ -1820,6 +2319,19 @@ function mockInvoke(
       return Promise.resolve(null);
     case "record_page_open":
       return Promise.resolve(null);
+    // Ask history (UX S36): the real log lives in the app data dir; here it
+    // is localStorage, so ?mock=1 keeps the questions across reloads.
+    case "ask_history_load":
+      return Promise.resolve(mockAskHistory());
+    case "ask_history_append": {
+      const turns = [...mockAskHistory(), args.turn].slice(-500);
+      try {
+        localStorage.setItem(MOCK_ASK_HISTORY_KEY, JSON.stringify(turns));
+      } catch {
+        return Promise.reject(new Error("(mock) localStorage unavailable"));
+      }
+      return Promise.resolve(null);
+    }
     // Redaction scan (Q4 item 13): the mock vault holds no secrets or PII, so
     // a clean report keeps the promotion paths flowing under ?mock=1.
     case "scan_text_secrets":
@@ -1856,6 +2368,7 @@ function mockInvoke(
         },
       ]);
     case "suspect_pages":
+      if (MOCK_QUIET) return Promise.resolve({ pages_checked: 12, suspects: [] });
       return Promise.resolve({
         pages_checked: 12,
         suspects: [
@@ -1918,9 +2431,10 @@ function mockInvoke(
       );
       return Promise.resolve({ files: target.files, bytes: target.bytes * 4 });
     }
-    // Quarantine review (ROADMAP P0). Three items on purpose: a normal verdict,
-    // one already past its TTL, and one whose sidecar is malformed (no reason,
-    // no expiry) — the three states the tab has to render differently.
+    // Quarantine review (ROADMAP P0). Three similarity items on purpose: a
+    // normal verdict, one already past its TTL, and one whose sidecar is
+    // malformed (no reason, no expiry) — the three states the tab has to
+    // render differently — plus machine sessions for every group.
     case "list_quarantine":
       return Promise.resolve(mockQuarantine);
     case "restore_quarantine": {
@@ -1931,6 +2445,10 @@ function mockInvoke(
       );
     }
     case "extend_quarantine": {
+      const origin = args.origin as { vaultPath?: string; openingToken?: string } | undefined;
+      if (!mockVaultOpen || args.vault !== VAULT || origin?.vaultPath !== VAULT || origin.openingToken !== String(mockOpeningToken)) {
+        return Promise.reject(new Error("Keep requires the current vault opening"));
+      }
       const files = (args.files as string[]) ?? [];
       const days = (args.days as number) ?? 0;
       mockQuarantine = mockQuarantine.map((q) =>
@@ -1956,6 +2474,13 @@ function mockInvoke(
     // digestable_session_days: the real ledger is Rust-side and unit-tested there.
     case "full_tier_items":
       return Promise.resolve([]);
+    case "list_wikify_pending":
+      return Promise.resolve({ pendingTotal: 0, items: [] });
+    case "session_summary_path":
+      return Promise.resolve(null);
+    case "wikify_complete_source":
+      // The demo vault has no pending imported source revisions.
+      return Promise.reject(new Error("No pending source revision in the demo vault"));
     // TS-side LLM-step manifest bookkeeping (Important 4, Phase B whole-
     // branch review) — no real undo manifest to extend under ?mock=1.
     case "append_distill_manifest":
@@ -2061,6 +2586,8 @@ function mockInvoke(
     case "backfill_status":
       // Mirrors the real buckets so the Ingest card renders in a browser.
       return Promise.resolve({
+        read_status: "complete",
+        read_issues: [],
         total: 1428,
         promoted: 0,
         eligible: 175,
@@ -2085,18 +2612,50 @@ function mockInvoke(
     case "notch_resize":
       return Promise.resolve(null);
     case "capture_note": {
-      // Mirrors the real command's contract: empty text is refused, and the
-      // return is the local day's vault-relative daily-note path.
-      if (String(args.text ?? "").trim() === "") {
+      // Mirrors the real command's contract (commands.rs capture_note_at):
+      // whitespace collapsed, empty text refused, a missing note seeded with
+      // its heading, one `- HH:MM text` line appended, and the local day's
+      // vault-relative daily-note path returned with the line.
+      const text = String(args.text ?? "").split(/\s+/).filter(Boolean).join(" ");
+      if (text === "") {
         return Promise.reject(new Error("empty capture"));
       }
-      return Promise.resolve(`daily/${today()}.md`);
+      const now = new Date();
+      const rel = `daily/${today(now)}.md`;
+      const body = (mockNotes.get(`${VAULT}/${rel}`) ?? `# ${today(now)}\n\n`).trimEnd();
+      const line = `- ${now.toTimeString().slice(0, 5)} ${text}`;
+      // A quote's footnote definition, once per note (quote_footnote; the
+      // mock skips its file-exists check, having no raw/ files to check).
+      const source = typeof args.source === "string" ? args.source : "";
+      const name = (source.split("/").pop() ?? "").replace(/(.)\.[^.]*$/, "$1");
+      const label = `[^src-${name}]`;
+      const footnote =
+        source.startsWith("raw/") &&
+        !/\p{Cc}/u.test(source) &&
+        !source.split("/").includes("..") &&
+        /^[\p{L}\p{N}_-]+$/u.test(name) &&
+        text.includes(label) &&
+        !body.split("\n").some((l) => l.startsWith(`${label}:`))
+          ? `${label}: ${source}`
+          : undefined;
+      mockNotes.set(`${VAULT}/${rel}`, appendCapture(`${body}\n`, line, footnote));
+      const captured = footnote ? { rel, line, footnote } : { rel, line };
+      emitMock("myco://daily-captured", captured);
+      return Promise.resolve(captured);
     }
     // No NSPanel in a browser; claim key so the capture flow proceeds.
     case "notch_focus_capture":
       return Promise.resolve(true);
     case "update_notch_enabled":
       SETTINGS.notch_enabled = Boolean(args.enabled);
+      return Promise.resolve(null);
+    // The roam panel is its own OS window; a browser has none to order in.
+    // `?window=roam&roamMock=1` previews what it draws instead.
+    case "roam_show":
+      return Promise.resolve(false);
+    case "roam_hide":
+      return Promise.resolve(null);
+    case "roam_place":
       return Promise.resolve(null);
     case "get_settings":
       if (AGENT_MODE) {
@@ -2116,8 +2675,13 @@ function mockInvoke(
       return Promise.resolve({ ...SETTINGS });
     case "agent_tools_schema":
       return Promise.resolve(MOCK_AGENT_TOOLS);
-    case "agent_tool_call":
+    case "agent_tool_call": {
+      const origin = args.origin as { vaultPath?: string; openingToken?: string } | undefined;
+      if (!mockVaultOpen || origin?.vaultPath !== VAULT || origin.openingToken !== String(mockOpeningToken)) {
+        return Promise.reject(new Error("the active vault changed before the action started"));
+      }
       return Promise.resolve(mockAgentToolCall(cmd, args));
+    }
     case "agent_chat":
       return Promise.resolve(mockAgentChat(args));
     case "myco_pro_ingest":
@@ -2219,6 +2783,7 @@ function mockInvoke(
     // Emits a plausible claude-stream transcript so the mission-control panel
     // has something to render, then returns the same result claude_run does.
     case "claude_run_stream": {
+      mockAgentWrites++;
       const runId = String(args.runId ?? args.run_id ?? "");
       const emit = (kind: string, extra: Record<string, unknown>) =>
         emitMock("claude-stream", {
@@ -2326,10 +2891,22 @@ function mockInvoke(
       if (/\/wiki\/tasks\/\d{4}-\d{2}\.md$/.test(p)) {
         return Promise.reject(new Error(`no such file: ${p}`));
       }
+      // Same for a daily note: openDailyNote creates a missing day with its
+      // heading, and the sample body would hide that. A day that was written
+      // or captured was already found in mockNotes above.
+      if (/\/daily\/\d{4}-\d{2}-\d{2}\.md$/.test(p)) {
+        return Promise.reject(new Error(`no such file: ${p}`));
+      }
+      // And an unwritten topic map: maps.ts freeMapPath probes
+      // wiki/maps/<slug>[-N].md until a read misses, so a hit on every name
+      // spun that loop forever and hung the page on a map approve.
+      if (/\/wiki\/maps\/[^/]+\.md$/.test(p)) {
+        return Promise.reject(new Error(`no such file: ${p}`));
+      }
       const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
       const d = bySlug.get(slug);
       if (d) {
-        const content = `# ${d.n}\n\n${body(d)}`;
+        const content = noteText(d);
         return Promise.resolve({
           path: p,
           raw: content,
@@ -2367,11 +2944,25 @@ function mockInvoke(
             ]
           : ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
       );
-    // Mirrors the real command: no chat GGUF ships (Ask is extractive), so the
-    // mock answers false too — the fast-fail path in chat.ts behaves the same
-    // under ?mock=1 as in the app.
+    // MOCK: the browser has no native GGUF runtime or downloaded weights.
     case "local_chat_model_available":
       return Promise.resolve(false);
+    case "local_chat_status":
+      // MOCK: this browser has no GGUF file or native inference runtime.
+      return Promise.resolve({ model_id: args?.modelId ?? BUILTIN_CHAT_MODEL, state: "missing", bytes: 0 });
+    case "download_local_chat_model":
+      // MOCK: never represent a browser preview as a completed model download.
+      return Promise.resolve({ model_id: args?.modelId ?? BUILTIN_CHAT_MODEL, state: "error", bytes: 0, reason: "mock_download_unavailable" });
+    case "cancel_local_chat_model_download":
+    case "cancel_local_synthesis":
+      return Promise.resolve(false);
+    case "local_synthesize":
+    case "local_transform":
+      // MOCK: Ask keeps its actual sample-note quotes; no fake model prose.
+      return Promise.resolve({ answer: "", model_id: (args?.request as Record<string, unknown> | undefined)?.modelId ?? BUILTIN_CHAT_MODEL, used_sources: [], fallback_reason: "mock_inference_unavailable" });
+    case "local_query_plan":
+      // MOCK: period selection requires a real local model; never fake its judgment.
+      return Promise.reject(new Error("mock_inference_unavailable"));
     // Semantic layer (Feature 1) — mock the embedding index with the sample graph:
     // "similarity" stands in as a node's declared links + a couple of siblings.
     case "reindex_embeddings":
@@ -2384,6 +2975,17 @@ function mockInvoke(
         // in every ?mock=1 flow (Ask, CLI injection, Related).
         model: "builtin-local:e5-small-ko",
       });
+    case "temporal_recall":
+      // MOCK: the sample graph has no original turn-date evidence. Browser
+      // recall tests supply explicit dated fixtures through their IPC override.
+      return Promise.resolve({
+        events: [], indexed_pages: 0, scanned_pages: 0,
+        matched_events: 0, incomplete: true,
+      });
+    case "activity_recall":
+      // MOCK: this preview does not scan real date-grounded activity records.
+      return Promise.resolve({ hits: [], indexed_pages: 0, scanned_pages: 0,
+        matched_chunks: 0, incomplete: true });
     // Retrieval costs a query embedding against the real model (~460 ms for a
     // chunk-sized text), so it is not free here either.
     case "semantic_search": {
@@ -2408,7 +3010,9 @@ function mockInvoke(
         page: `wiki/${d.s}.md`,
         stem: d.s,
         section: 0,
-        text: `passage from ${d.s}`,
+        // The chunk the real index would return: a mock note is one heading
+        // and a short body, so its only chunk is the whole (trimmed) file.
+        text: noteText(d).trim(),
         score: 0.9 - i * 0.05,
         // A keyword match stands in for a confident hit here, so these sit
         // above RELEVANCE_FLOOR (0.42) and survive filtering.
@@ -2476,12 +3080,18 @@ function mockInvoke(
               : []),
           ]
         : [];
-      const pool =
+      // "Ask this note": the backend keeps only these pages, before the cut.
+      const only = args.paths as string[] | undefined;
+      const inPaths = (h: ScoredChunk): boolean => !only || only.includes(h.page);
+      const pool = (
         scope === "sessions"
           ? sessionHits
           : scope === "all"
             ? [...wikiHits, ...sessionHits]
-            : wikiHits;
+            : scope === "pages"
+              ? wikiHits.filter((h) => h.page.startsWith("wiki/"))
+              : wikiHits
+      ).filter(inPaths);
       // No keyword match: return weak hits the way the real backend does for an
       // off-vault question — below the floor, so they come back as near-misses
       // and the abstention card (not the answer) is what a nonsense query shows.
@@ -2494,7 +3104,7 @@ function mockInvoke(
               text: `passage from ${d.s}`,
               score: 0.6 - i * 0.05,
               similarity: i === 3 ? null : 0.4 - i * 0.03,
-            }))
+            })).filter(inPaths)
           : [];
       // Tier prior, applied after the per-page cap exactly like the backend:
       // final = rrf × prior, re-sorted, rank change measured against the
@@ -2560,6 +3170,21 @@ function mockInvoke(
       );
     }
     case "semantic_map": {
+      const count = bigCount();
+      if (count > 0) {
+        // MOCK: keep every large-vault note represented in the synthetic PCA.
+        // Returning only the small fixture parked all other notes on a ring.
+        return Promise.resolve(Array.from({ length: count }, (_, i) => {
+          const group = i % BIG_FOLDERS.length;
+          const angle = group / BIG_FOLDERS.length * Math.PI * 2;
+          return {
+            page: bigPath(i),
+            x: Math.cos(angle) * 0.6 + (bigRand(i * 13 + 1) - 0.5) * 0.5,
+            y: Math.sin(angle) * 0.6 + (bigRand(i * 17 + 2) - 0.5) * 0.5,
+            z: Math.sin(angle * 2) * 0.4 + (bigRand(i * 23 + 3) - 0.5) * 0.5,
+          };
+        }));
+      }
       // Structured fake PCA: one 2D cluster per node TYPE, deterministic
       // per-index jitter — the semantic layout shows meaning-clusters in mock.
       const types = [...new Set(NODES.map((d) => d.t))];
@@ -2604,10 +3229,14 @@ function mockInvoke(
       return sleep(500).then(() => scored);
     }
     case "describe_image":
-      return Promise.resolve(
-        "(mock) Image description: a labeled diagram of the transformer architecture — " +
-          "encoder/decoder stacks, multi-head attention blocks, and positional encodings.",
-      );
+      // Browser fixtures may override this command with clearly synthetic IPC;
+      // the demo itself cannot issue a native Compilation/vision grant.
+      return Promise.reject({
+        version: "ImageIngestFailureV1",
+        code: "capability_unavailable",
+      });
+    case "cancel_image_ingest":
+      return Promise.resolve(false);
     case "whisper_check":
       return Promise.resolve({
         installed: true,
@@ -2619,6 +3248,7 @@ function mockInvoke(
     case "save_voice_capture":
       return sleep(600).then(() => ({
         rel: "_inbox/voice-2026-08-22-0912.md",
+        first_line: "오늘 회의에서 정리한 내용을 잊기 전에 짧게 메모로 남겨 둡니다",
       }));
     case "transcribe_partial": {
       // The raw body IS the WAV (16 kHz mono 16-bit = 32 kB/s); one more word
@@ -2631,6 +3261,21 @@ function mockInvoke(
       return Promise.resolve(
         "(mock) Transcript: today we cover attention and how scaled dot-product attention works.",
       );
+    // S38: a private-network host refuses like the Rust guard does, so the
+    // error line is reachable under ?mock=1; anything else is one article.
+    case "fetch_web_page": {
+      const url = String(args.url ?? "");
+      if (/^https?:\/\/(localhost|127\.|10\.|192\.168\.|169\.254\.)/.test(url)) {
+        return sleep(300).then(() => Promise.reject("blocked"));
+      }
+      return sleep(600).then(() => ({
+        url,
+        title: "How attention works",
+        markdown:
+          "# How attention works\n\nAttention lets a model weigh every token against every other.\n\n" +
+          "Scaled dot-product attention divides by the square root of the key size.",
+      }));
+    }
     case "fetch_youtube_transcript":
       return Promise.resolve(
         "hello and welcome to this talk\ntoday we cover transformers and attention\n" +
@@ -2686,9 +3331,124 @@ function mockInvoke(
         })),
       );
     }
+    // Explicit browser-demo editor receipts. These implement synthetic CAS
+    // for the demo UI and never grant native/model/compiler authority.
+    case "editor_recovery_supported":
+      return Promise.resolve(true);
+    case "read_editor_file": {
+      return (async () => {
+        const path = String(args.path ?? "");
+        if (!path.startsWith(`${VAULT}/`) || path.split("/").some((part) => part === "." || part === "..")) {
+          throw new Error("MOCK_EDITOR_PATH_REFUSED: file must be inside the browser demo vault");
+        }
+        const origin = args.origin as { vaultPath?: string; openingToken?: string } | undefined;
+        const isCurrent = () => mockVaultOpen && origin?.vaultPath === VAULT &&
+          origin.openingToken === String(mockOpeningToken);
+        if (!isCurrent()) throw new Error("MOCK_EDITOR_STALE_OPENING: browser demo opening changed");
+        const file = await mockInvoke("read_file", { path }) as { path: string; raw: string };
+        const revision = await sha256(file.raw);
+        if (!isCurrent()) throw new Error("MOCK_EDITOR_STALE_OPENING: browser demo opening changed");
+        mockEditorBaselines.set(`${origin!.openingToken}:${path}:${revision}`, file.raw);
+        return { file, origin, revision, mockOnly: true };
+      })();
+    }
+    case "stage_editor_draft":
+    case "read_editor_draft":
+    case "retire_editor_draft": {
+      return (async () => {
+        const path = String(args.path ?? "");
+        if (!path.startsWith(`${VAULT}/`) || path.split("/").some((part) => part === "." || part === "..")) {
+          throw new Error("MOCK_EDITOR_PATH_REFUSED: file must be inside the browser demo vault");
+        }
+        const protection = protectedMutation(path);
+        if (protection) throw protection;
+        const origin = args.origin as { vaultPath?: string; openingToken?: string } | undefined;
+        if (!mockVaultOpen || origin?.vaultPath !== VAULT || origin.openingToken !== String(mockOpeningToken)) {
+          throw new Error("MOCK_EDITOR_STALE_OPENING: browser demo opening changed");
+        }
+        const current = mockEditorDrafts.get(path);
+        if (cmd === "read_editor_draft") return current ? { ...current, origin: { ...current.origin } } : null;
+        if (args.expectedJournalRevision !== (current?.revision ?? null)) {
+          throw new Error("MOCK_EDITOR_JOURNAL_CONFLICT: checkpoint changed");
+        }
+        if (cmd === "retire_editor_draft") {
+          if (!current) throw new Error("MOCK_EDITOR_JOURNAL_MISSING: checkpoint is absent");
+          mockEditorDrafts.delete(path);
+          return null;
+        }
+        const expected = args.expectedSha256;
+        if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected) || typeof args.draft !== "string") {
+          throw new Error("MOCK_EDITOR_BASELINE_REQUIRED: exact native-read-like baseline is required");
+        }
+        const baselineRaw = mockEditorBaselines.get(`${origin.openingToken}:${path}:${expected}`);
+        if (baselineRaw === undefined || (current && (current.baselineRevision !== expected ||
+          current.origin.openingToken !== origin.openingToken))) {
+          throw new Error("MOCK_EDITOR_BASELINE_REQUIRED: checkpoint cannot rebind an original baseline");
+        }
+        const checkpoint: MockEditorDraft = {
+          path, baselineRaw, baselineRevision: expected, draftRaw: args.draft,
+          revision: (++mockEditorDraftRevision).toString(16).padStart(32, "0"),
+          origin: { vaultPath: VAULT, openingToken: origin.openingToken }, mockOnly: true,
+        };
+        mockEditorDrafts.set(path, checkpoint);
+        return { ...checkpoint, origin: { ...checkpoint.origin } };
+      })();
+    }
+    case "write_editor_file": {
+      return (async () => {
+        const path = String(args.path ?? "");
+        if (!path.startsWith(`${VAULT}/`) || path.split("/").some((part) => part === "." || part === "..")) {
+          throw new Error("MOCK_EDITOR_PATH_REFUSED: file must be inside the browser demo vault");
+        }
+        const protection = protectedMutation(path);
+        if (protection) throw protection;
+        const origin = args.origin as { vaultPath?: string; openingToken?: string } | undefined;
+        const isCurrent = () => mockVaultOpen && origin?.vaultPath === VAULT &&
+          origin.openingToken === String(mockOpeningToken);
+        if (!isCurrent()) throw new Error("MOCK_EDITOR_STALE_OPENING: browser demo opening changed");
+        const expected = args.expectedSha256;
+        if (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected)) {
+          throw new Error("MOCK_EDITOR_BASELINE_REQUIRED: exact first-read revision is required");
+        }
+        await mockInvoke("write_file_if_unchanged", { path, content: args.content, expectedSha256: expected, editorOrigin: origin });
+        const file = await mockInvoke("read_file", { path }) as { path: string; raw: string };
+        const revision = await sha256(file.raw);
+        if (!isCurrent()) throw new Error("MOCK_EDITOR_STALE_OPENING: browser demo opening changed after persisted write");
+        mockEditorBaselines.set(`${origin!.openingToken}:${file.path}:${revision}`, file.raw);
+        return { path: file.path, origin, revision, mockOnly: true };
+      })();
+    }
+    case "write_file_if_unchanged": {
+      return (async () => {
+        const p = String(args.path ?? "");
+        if (/\/raw\//.test(p)) throw new Error("refused: raw/ is immutable");
+        const readCurrent = async (): Promise<string | null> => {
+          try { return ((await mockInvoke("read_file", { path: p })) as { raw: string }).raw; }
+          catch (error) {
+            if (!/ENOENT|no such file:/i.test(String(error))) throw error;
+            return null;
+          }
+        };
+        const current = await readCurrent();
+        const expected = args.expectedSha256;
+        if (expected !== null && (typeof expected !== "string" || !/^[a-f0-9]{64}$/.test(expected))) {
+          throw new Error("expected SHA256 must be 64 lowercase hexadecimal characters");
+        }
+        const actual = current === null ? null : await sha256(current);
+        if (expected !== actual || current !== await readCurrent()) {
+          throw new Error("write conflict: file changed before save");
+        }
+        const editorOrigin = args.editorOrigin as { vaultPath?: string; openingToken?: string } | undefined;
+        if (editorOrigin && (!mockVaultOpen || editorOrigin.vaultPath !== VAULT || editorOrigin.openingToken !== String(mockOpeningToken))) {
+          throw new Error("MOCK_EDITOR_STALE_OPENING: browser demo opening changed before save");
+        }
+        return mockInvoke("write_file", { path: p, content: args.content });
+      })();
+    }
     case "write_file": {
       const p = String(args.path ?? "");
       const content = String(args.content ?? "");
+      mockAgentWrites++;
       // A proposal write (approve/dismiss rewrites its `status:` line) has to
       // land back in MOCK_PROPOSALS — read_file checks that map first, so
       // writing into mockNotes would leave the row stuck at `pending`.
@@ -2701,20 +3461,46 @@ function mockInvoke(
       // Consuming an inbox source removes it, which is how auto-ingest avoids
       // ingesting the same clip forever.
       const target = String(args.path ?? "");
+      const error = protectedMutation(target);
+      if (error) return Promise.reject(error);
       mockInbox.delete(target);
-      // Quarantine delete goes through this same command (OS trash), so the
-      // mock list has to lose the item too — paths arrive absolute here.
+      // A quarantined file deleted from the sidebar comes through here, so
+      // the mock list has to lose the item too — paths arrive absolute here.
       const rel = target.startsWith(`${VAULT}/`)
         ? target.slice(VAULT.length + 1)
         : target;
       mockQuarantine = mockQuarantine.filter((q) => q.path !== rel);
       return Promise.resolve(null);
     }
+    case "trash_paths": {
+      // delete_path for a list (the 격리 tab's trash); absolute paths.
+      const targets = (args.paths as string[]) ?? [];
+      for (const path of targets) {
+        const error = protectedMutation(path);
+        if (error) return Promise.reject(error);
+      }
+      targets.forEach((p) => mockInbox.delete(p));
+      const rels = targets.map((p) =>
+        p.startsWith(`${VAULT}/`) ? p.slice(VAULT.length + 1) : p,
+      );
+      mockQuarantine = mockQuarantine.filter((q) => !rels.includes(q.path));
+      return Promise.resolve(null);
+    }
     case "archive_inbox_source": {
       // Same effect on the inbox as delete_path — the source leaves the tray —
       // but it moves to .archived/ instead of vanishing.
       const p = String(args.path ?? "");
+      const inboxPrefix = `${VAULT}/_inbox/`;
+      if (!p.startsWith(inboxPrefix) || p.slice(inboxPrefix.length).split("/").some((part) => !part || part === "." || part === "..")) {
+        return Promise.reject(new Error("refused: only _inbox sources can be archived"));
+      }
+      if (!mockInbox.has(p)) return Promise.reject(new Error(`not a file: ${p}`));
       mockInbox.delete(p);
+      if (args.completeHarvest === true) {
+        const source = mockHarvestCopies.get(p);
+        if (source) mockHarvested.add(source);
+        mockHarvestCopies.delete(p);
+      }
       const name = p.split("/").pop() ?? "source.md";
       return Promise.resolve(`${VAULT}/_inbox/.archived/${name}`);
     }
@@ -2743,6 +3529,17 @@ function mockInvoke(
       const stem = String(args.stem ?? "source");
       return Promise.resolve(`raw/${stem}.md`);
     }
+    case "find_raw_copy":
+      // Same fixed fixture: no ingested body to match. (The byte match is
+      // Rust-side and unit-tested there.)
+      return Promise.resolve(null);
+    case "derived_raw_copy":
+      // No marked raw copy either; the hash and the header scan are
+      // Rust-side and unit-tested there.
+      return Promise.resolve({
+        marker: `<!-- myco:source-sha256 ${"0".repeat(64)} -->`,
+        copy: null,
+      });
     case "import_conversations": {
       // The real parse/scan/write is Rust; the mock can't read the picked file,
       // so it returns a plausible outcome (one imported, one quarantined) so the
@@ -2796,17 +3593,53 @@ function mockInvoke(
     case "delete_provider_key":
     case "open_external":
       return Promise.resolve(null);
-    case "create_file":
+    case "create_file": {
       // Echo the real path back so the create-note flow routes to the note the
-      // user actually named (read_file serves a sample body for unknown paths).
-      return Promise.resolve(`${String(args.parent)}/${String(args.name)}`);
+      // user actually named, holding what vault.rs wiki_page_stub seeds — not
+      // read_file's sample body, so a new note opens empty as it really does.
+      const path = `${String(args.parent)}/${String(args.name)}`;
+      if (!mockNotes.has(path)) {
+        const title = String(args.name).replace(/\.md$/, "").replace(/[-_]/g, " ");
+        mockNotes.set(
+          path,
+          `---\ntype: concept\ntags:\ncreated: ${today()}\nconfidence: medium\nstatus: active\n---\n\n# ${title}\n`,
+        );
+      }
+      return Promise.resolve(path);
+    }
     case "create_folder":
-    case "rename_path":
       return Promise.resolve(`${VAULT}/wiki/new.md`);
-    case "move_path":
-      return Promise.resolve(
-        `${String(args.toDir)}/${String(args.from).split("/").pop()}`,
-      );
+    case "rename_path": {
+      // Land on the name asked for, carrying a written note's text along, so a
+      // rename opens the note it named (the tree stays the fixed fixture).
+      const from = String(args.from);
+      const to = `${from.slice(0, from.lastIndexOf("/"))}/${String(args.toName)}`;
+      const error = protectedMutation(from) ?? protectedMutation(to);
+      if (error) return Promise.reject(error);
+      const text = mockNotes.get(from);
+      if (text !== undefined) {
+        mockNotes.delete(from);
+        mockNotes.set(to, text);
+      }
+      return Promise.resolve(to);
+    }
+    case "move_path": {
+      const from = String(args.from);
+      const error = protectedMutation(from) ?? protectedMutation(String(args.toDir), true);
+      if (error) return Promise.reject(error);
+      const to = `${String(args.toDir)}/${from.split("/").pop()}`;
+      // Decks really move (Study's archive), and refuse to overwrite, like
+      // vault::move_path; other paths stay the echo they always were.
+      const deck = mockDecks.get(from);
+      if (deck !== undefined) {
+        if (mockDecks.has(to)) {
+          return Promise.reject(new Error(`destination exists: ${to}`));
+        }
+        mockDecks.delete(from);
+        mockDecks.set(to, deck);
+      }
+      return Promise.resolve(to);
+    }
     case "save_favorites":
       mockFavorites = args.paths as string[];
       return Promise.resolve(null);
@@ -2819,7 +3652,13 @@ function mockInvoke(
       // The native file/folder picker. Return a fixed path so the picker-driven
       // flows (import a conversation, pick a vault) are exercisable in the mock;
       // a real dialog can't open headless anyway.
-      const opts = (args.options ?? {}) as { directory?: boolean };
+      const opts = (args.options ?? {}) as {
+        directory?: boolean;
+        filters?: { name: string }[];
+      };
+      // `/image` asks for images only (ipc.pickImageFile).
+      if (opts.filters?.[0]?.name === "Images")
+        return Promise.resolve("/tmp/picked-shot.png");
       return Promise.resolve(
         opts.directory ? `${VAULT}` : `${VAULT}/_inbox/picked-export.jsonl`,
       );
@@ -2848,12 +3687,25 @@ function mockInvoke(
       emitMock(name, args.payload);
       if (name === "myco://spotlight-ask") {
         const question = String(args.payload ?? "");
+        // A question no sample note mentions abstains, as the main window's
+        // extractive path would (same token match as semantic_search below).
+        const terms = question.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
+        const known = NODES.some((d) => {
+          const hay = `${d.n} ${body(d)}`.toLowerCase();
+          return terms.some((w) => hay.includes(w));
+        });
         void sleep(600).then(() =>
-          emitMock("myco://spotlight-answer", {
-            question,
-            answer: MOCK_SPOTLIGHT_ANSWER,
-            extractive: true,
-          }),
+          emitMock(
+            "myco://spotlight-answer",
+            known
+              ? {
+                  question,
+                  answer: MOCK_SPOTLIGHT_ANSWER,
+                  extractive: true,
+                  relevance: MOCK_SPOTLIGHT_RELEVANCE,
+                }
+              : { question, answer: "", abstained: true },
+          ),
         );
       }
       return Promise.resolve(undefined);
@@ -2937,6 +3789,18 @@ function mockInvoke(
     case "delete_view":
       mockNotes.delete(`${VAULT}/.myco/views/${String(args.name)}.json`);
       return Promise.resolve(null);
+    // Plugin manifests live in mockNotes as `.myco/plugins/<dir>/manifest.json`.
+    case "list_plugins": {
+      const re = /^\/myco\/\.myco\/plugins\/([^/]+)\/manifest\.json$/;
+      return Promise.resolve(
+        [...mockNotes]
+          .flatMap(([path, raw]) => {
+            const m = re.exec(path);
+            return m ? [{ dir: m[1], raw, error: null }] : [];
+          })
+          .sort((a, b) => (a.dir < b.dir ? -1 : 1)),
+      );
+    }
     case "inflow_daily": {
       // Deterministic-ish seeded ledger so the board's inflow charts render
       // in the mock browser: activity clusters on recent weekdays.
@@ -3009,9 +3873,12 @@ function mockInvoke(
     // ranker refused. Copies already harvested drop out of `items` so the
     // queue shrinks after a run, the way the real ledger makes it.
     case "harvest_candidates": {
+      if (args.vaultPath && args.vaultPath !== VAULT) return Promise.reject(new Error("the active vault changed"));
       const limit = Number(args.limit ?? 20);
       const items = MOCK_HARVEST.filter((c) => !mockHarvested.has(c.path));
       return Promise.resolve({
+        read_status: "complete",
+        read_issues: [],
         items: items.slice(0, limit),
         excluded: {
           ...MOCK_HARVEST_EXCLUDED,
@@ -3019,10 +3886,11 @@ function mockInvoke(
         },
         total_scanned: 1473,
         distinct_bodies: 719,
-        eligible: 137,
+        eligible: items.length,
       });
     }
     case "harvest_run": {
+      if (args.vaultPath && args.vaultPath !== VAULT) return Promise.reject(new Error("the active vault changed"));
       // COPY into the mock inbox (never touch the "original"), so the inbox
       // pass that follows has something real to ingest.
       const paths = Array.isArray(args.paths) ? (args.paths as string[]) : [];
@@ -3035,11 +3903,9 @@ function mockInvoke(
           continue;
         }
         const name = p.split("/").pop() ?? "session.md";
-        mockInbox.set(
-          `${VAULT}/_inbox/${name}`,
-          `# ${c.title}\n\n${c.preview.join("\n")}\n`,
-        );
-        mockHarvested.add(p);
+        const target = `${VAULT}/_inbox/${name}`;
+        if (!mockInbox.has(target)) mockInbox.set(target, mockHarvestBody(c));
+        mockHarvestCopies.set(target, p);
         inbox_rels.push(`_inbox/${name}`);
       }
       return Promise.resolve({ copied: inbox_rels.length, inbox_rels, skipped });
@@ -3118,6 +3984,73 @@ mockInbox.set(
 /// scan returned the same seeded list, making a working feature look broken.
 const mockNotes = new Map<string, string>();
 
+// Tidy fixtures (app/docs/specs/2026-09-28-tidy-and-graph-rails.md): two
+// imported session transcripts, and the summaries the pre-fix extractive
+// ingest wrote of them — `Source: <stem>` titles, `## Related` links to
+// transcript stems that resolve to nothing in wiki/ (one of them a session
+// nobody summarised). The real vault's gaps rail, in miniature.
+const MOCK_SESSION_A = "claude-code-3f2a9c1e-7b4d-4e8a-9c21-5d6e7f8a9b0c";
+const MOCK_SESSION_B = "codex-019e2b7c-4d1a-7c3e-9f5b-2a8d6c4e1f07";
+const MOCK_SESSION_UNSUMMARISED = "claude-code-e4649b3c-c5ca-4d83-a0a7-e2f41c540fe6";
+const MOCK_SESSION_STEMS = [MOCK_SESSION_A, MOCK_SESSION_B];
+const mockSessionPath = (s: string): string => `${VAULT}/sessions/2026-09/${s}.md`;
+const mockSummaryPath = (s: string): string => `${VAULT}/wiki/source-${s}.md`;
+
+function mockTranscript(stem: string, created: number, ask: string, reply: string): string {
+  const [, source, id] = /^(claude-code|codex)-(.+)$/.exec(stem) ?? [];
+  return (
+    `---\nsource: ${source}\nconversation_id: ${id}\ncreated: ${created}\n---\n\n` +
+    `# ${ask}\n\n**User:**\n\n${ask}\n\n**Assistant:**\n\n${reply}\n`
+  );
+}
+
+function mockOpaqueSummary(stem: string, quote: string, related: string[]): string {
+  return (
+    `---\ntitle: "Source: ${stem}"\ntype: source-summary\ntags:\n  - source-summary\n` +
+    `created: 2026-09-20\nlast_updated: 2026-09-20\nsource_count: 1\nconfidence: low\n` +
+    `status: active\n---\n\n# Source: ${stem}\n\n` +
+    `_발췌 요약 — 아래 문장은 모두 \`raw/${stem}.md\`에서 그대로 인용한 것입니다._\n\n` +
+    `- ${quote} [^src-${stem}]\n\n## Related\n\n` +
+    related.map((r) => `- [[${r}]]\n`).join("") +
+    `\n[^src-${stem}]: [[source-${stem}]]\n`
+  );
+}
+
+mockNotes.set(
+  mockSessionPath(MOCK_SESSION_A),
+  mockTranscript(
+    MOCK_SESSION_A,
+    1789182000,
+    "서버 띄워봐.",
+    "The dev server is up on port 5620; the graph page renders the mock vault.",
+  ),
+);
+mockNotes.set(
+  mockSessionPath(MOCK_SESSION_B),
+  mockTranscript(
+    MOCK_SESSION_B,
+    1789797600,
+    "그래프 범례를 접을 수 있게 해줘",
+    "The legend rail now collapses to a thin edge tab and the canvas takes the freed width.",
+  ),
+);
+mockNotes.set(
+  mockSummaryPath(MOCK_SESSION_A),
+  mockOpaqueSummary(
+    MOCK_SESSION_A,
+    "The dev server is up on port 5620; the graph page renders the mock vault.",
+    [MOCK_SESSION_B, MOCK_SESSION_UNSUMMARISED],
+  ),
+);
+mockNotes.set(
+  mockSummaryPath(MOCK_SESSION_B),
+  mockOpaqueSummary(
+    MOCK_SESSION_B,
+    "The legend rail now collapses to a thin edge tab and the canvas takes the freed width.",
+    ["attention-mechanism", MOCK_SESSION_A],
+  ),
+);
+
 /// Starred paths (vault-relative) as `save_favorites` last wrote them; served
 /// back by `read_file` of `.myco/favorites.json` so a star survives a vault reopen.
 let mockFavorites: string[] = [];
@@ -3127,6 +4060,101 @@ let mockFavorites: string[] = [];
 // serves mockNotes, checking one off actually round-trips through
 // writeTaskStatus's line rewrite instead of hitting the stale guard.
 const day = (n: number): string => today(new Date(Date.now() + n * 86_400_000));
+// The rich concept note behind the seeded attention-mechanism deck.
+mockNotes.set(pathOf("attention-mechanism"), STUDY_NOTE);
+// A `slash:` template: `/meeting` (`/회의록`) in the editor inserts its body.
+// No `- [ ]` lines — tasksFromMockNotes would list them as tasks.
+mockNotes.set(
+  `${VAULT}/templates/회의록.md`,
+  [
+    "---",
+    "slash: meeting",
+    "slash_label: 회의록",
+    "---",
+    "",
+    "## {{title}} — {{date}} {{time}}",
+    "",
+    "**참석자:** ${}",
+    "",
+    "### 안건",
+    "- ",
+    "",
+    "### 결정",
+    "- ",
+    "",
+  ].join("\n"),
+);
+// Two declarative plugins (lib/plugins.ts), off until the vault is trusted
+// in Settings → Plugins: one valid (a template and a fence item; ```graph
+// drawn by builtin:mermaid, ```dataview as code), one the guard refuses.
+mockNotes.set(
+  `${VAULT}/.myco/plugins/meeting-kit/manifest.json`,
+  JSON.stringify(
+    {
+      id: "meeting-kit",
+      name: "회의 키트",
+      version: "1.0.0",
+      contributes: {
+        slash: [
+          {
+            label: "agenda",
+            detail: "회의 안건",
+            template: "### 안건\n- ${}\n\n### 결정\n- ",
+          },
+          { label: "graph", detail: "그래프 블록", fence: "graph" },
+        ],
+        fences: [
+          { lang: "graph", renderer: "builtin:mermaid" },
+          { lang: "dataview", renderer: "builtin:code" },
+        ],
+      },
+    },
+    null,
+    2,
+  ),
+);
+mockNotes.set(
+  `${VAULT}/.myco/plugins/web-embed/manifest.json`,
+  JSON.stringify({
+    id: "web-embed",
+    name: "Web embed",
+    version: "0.1.0",
+    contributes: { fences: [{ lang: "iframe", renderer: "builtin:iframe" }] },
+  }),
+);
+// A code plugin (stage 6, lib/pluginSandbox): main.js runs in a worker once
+// its two calls are allowed in Settings → Plugins. `/wordcount` counts the
+// words selected, or with none (the `/` command leaves none) those on the
+// caret's line, and inserts the count at the caret.
+mockNotes.set(
+  `${VAULT}/.myco/plugins/word-count/manifest.json`,
+  JSON.stringify(
+    {
+      id: "word-count",
+      name: "단어 수",
+      version: "1.0.0",
+      permissions: ["editor.selection", "editor.insertAtCursor"],
+      contributes: {
+        slash: [
+          { label: "wordcount", detail: "단어 수 세기", command: "count" },
+        ],
+      },
+    },
+    null,
+    2,
+  ),
+);
+mockNotes.set(
+  `${VAULT}/.myco/plugins/word-count/main.js`,
+  [
+    'myco.command("count", async () => {',
+    "  const { text, line } = await myco.editor.selection();",
+    "  const words = (text || line).split(/\\s+/).filter(Boolean).length;",
+    "  await myco.editor.insertAtCursor(`(단어 ${words}개)`);",
+    "});",
+    "",
+  ].join("\n"),
+);
 // A roadmap page (wiki/roadmaps/) so the Roadmap tab, the composer's target
 // picker and MCP task tools have something real to bite on in mock mode.
 mockNotes.set(
@@ -3224,7 +4252,7 @@ export function emitClipSaved(title = "clipped-article"): void {
       "Multi-head attention runs several of these in parallel over learned projections and concatenates the results, which lets one layer attend to positional, syntactic and semantic relations at once. " +
       "Residual connections and layer normalization around each sublayer keep the deep stack trainable; positional encodings supply the order the attention itself ignores.\n",
   );
-  emitMock("myco://clip-saved", {});
+  emitMock("myco://clip-saved", { rel: `_inbox/${title}.md`, title });
 }
 
 export function installTauriMock(): void {
@@ -3313,6 +4341,16 @@ const MOCK_HARVEST_EXCLUDED = {
 
 /** Paths harvested this browser session — they leave the queue for good. */
 const mockHarvested = new Set<string>();
+const mockHarvestCopies = new Map<string, string>();
+
+/** Full synthetic transcripts exercise bounded passes, rather than tiny previews. */
+function mockHarvestBody(row: { title: string; preview: string[]; size_bytes: number }): string {
+  let body = `# ${row.title}\n\n${row.preview.join("\n")}\n`;
+  for (let block = 1; body.length < row.size_bytes; block++) {
+    body += `\nUser: Synthetic session evidence block ${block}. ${row.preview.join(" ")}\n`;
+  }
+  return body;
+}
 /** Runs from BEFORE this session (`__mycoMock.harvestedBefore`). A vault
  *  mid-harvest is otherwise unreachable in the mock: the Overview collapses
  *  the queue once anything has ever been harvested, and a fresh mock has not. */

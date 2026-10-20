@@ -9,6 +9,7 @@
 
 import type { CandidatePage } from "./ipc";
 import { extractJsonArray } from "./study";
+import HEADS from "./mycoPromptHeads.json";
 
 export type PlanDecision = "ADD" | "UPDATE" | "MERGE" | "NOOP";
 
@@ -24,6 +25,11 @@ const DECISIONS = new Set<PlanDecision>(["ADD", "UPDATE", "MERGE", "NOOP"]);
 const SOURCE_BUDGET = 6000; // chars of the source shown to the planner
 const MAX_ITEMS = 12;
 
+/** A prefix-only plan cannot prove that the unseen source needs no changes. */
+export function isPlanSourceComplete(sourceText: string): boolean {
+  return sourceText.length <= SOURCE_BUDGET;
+}
+
 /** The read-only prompt that asks the model to plan the ingest as decisions. */
 export function buildIngestPlanPrompt(
   sourceText: string,
@@ -37,7 +43,7 @@ export function buildIngestPlanPrompt(
           .join("\n")
       : "(none — the vault has no matching pages yet)";
   return [
-    "You are planning how to ingest a new source into an existing wiki. Do NOT create or edit any files — only produce a plan.",
+    `${HEADS.ingestPlan} Do NOT create or edit any files — only produce a plan.`,
     "",
     "For each distinct topic or claim worth recording from the source, decide ONE:",
     "- ADD: a new page is needed (nothing existing covers it)",
@@ -49,6 +55,9 @@ export function buildIngestPlanPrompt(
     pages,
     "",
     "Source:",
+    ...(isPlanSourceComplete(sourceText) ? [] : [
+      `Partial preview: ${src.length} of ${sourceText.length} characters. The writer must read the complete source; NOOP here applies only to this preview.`,
+    ]),
     '"""',
     src,
     '"""',

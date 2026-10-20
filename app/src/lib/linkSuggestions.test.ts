@@ -2,10 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { Adjacency } from "./ipc";
 import {
   acceptAll,
+  acceptSuggestion,
   appendWikilink,
+  loadDismissed,
   pairKey,
   pendingLinkCount,
   suggestLinks,
+  saveDismissed,
+  suggestionRelativePath,
   type LinkSuggestion,
 } from "./linkSuggestions";
 
@@ -49,6 +53,15 @@ describe("suggestLinks", () => {
     );
     expect(out).toHaveLength(1);
     expect(out[0].key).toBe(pairKey(A, C));
+  });
+
+  it("reuses a full immutable snapshot and invalidates on a dismissal", () => {
+    const empty: Adjacency = { forward: {}, backward: {}, unresolved: {}, tags: {} };
+    const sem = [{ source: A, target: C, score: 0.9 }];
+    const dismissed = new Set<string>();
+    const first = suggestLinks(empty, sem, dismissed, Infinity);
+    expect(suggestLinks(empty, sem, dismissed, Infinity)).toBe(first);
+    expect(suggestLinks(empty, sem, new Set([pairKey(A, C)]), Infinity)).toHaveLength(0);
   });
 });
 
@@ -97,6 +110,21 @@ describe("appendWikilink", () => {
     const src = "# Alpha\n\nSee [[beta]].\n";
     expect(appendWikilink(src, "/v/beta.md")).toBe(src);
   });
+
+  it("recognizes aliases and uses exact paths for duplicate filenames", () => {
+    expect(appendWikilink("See [[beta|a label]].", "/v/beta.md")).toBe("See [[beta|a label]].");
+    const src = "See [[wiki/one/beta|a label]].";
+    const next = appendWikilink(src, "/v/wiki/two/beta.md", "/v");
+    expect(next).toContain("[[wiki/two/beta|beta]]");
+    expect(appendWikilink(next, "/v/wiki/two/beta.md", "/v")).toBe(next);
+    const unicode = "See [[wiki/café|café]].";
+    expect(appendWikilink(unicode, "/v/wiki/café.md", "/v")).toBe(unicode);
+  });
+
+  it("accepts native Windows separators and rejects raw case variants", () => {
+    expect(suggestionRelativePath("C:\\vault\\wiki\\beta.md", "C:\\vault")).toBe("wiki/beta.md");
+    expect(() => suggestionRelativePath("C:\\vault\\Raw\\source.md", "C:\\vault")).toThrow("not link suggestions");
+  });
 });
 
 describe("acceptAll", () => {
@@ -140,5 +168,58 @@ describe("acceptAll", () => {
     expect(result.error).toBe("Error: disk full");
     // the third and fourth suggestion were never attempted
     expect(readFile).toHaveBeenCalledTimes(2);
+  });
+
+  it("reads and writes a shared source once for the whole batch", async () => {
+    const suggestions = mk(100).map((s) => ({ ...s, source: A }));
+    const readFile = vi.fn().mockResolvedValue({ raw: "# doc\n" });
+    const writeFile = vi.fn().mockResolvedValue(null);
+    const result = await acceptAll(suggestions, { readFile, writeFile });
+    expect(result.accepted).toHaveLength(100);
+    expect(readFile).toHaveBeenCalledTimes(1);
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(writeFile.mock.calls[0][1]).toContain("[[t99]]");
+  });
+
+  it("rebuilds the append after a concurrent-write conflict", async () => {
+    const readFile = vi.fn().mockResolvedValueOnce({ raw: "# original\n" })
+      .mockResolvedValueOnce({ raw: "# original\n\nConcurrent edit.\n" });
+    const writeFile = vi.fn().mockResolvedValue(null);
+    const writeFileIfUnchanged = vi.fn().mockRejectedValueOnce(new Error("write conflict: changed"))
+      .mockResolvedValue(null);
+    await acceptSuggestion(mk(1)[0], { readFile, writeFile, writeFileIfUnchanged });
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(writeFileIfUnchanged).toHaveBeenCalledTimes(2);
+    expect(writeFileIfUnchanged.mock.calls[1][1]).toContain("Concurrent edit.");
+    expect(writeFileIfUnchanged.mock.calls[1][2]).toMatch(/^[a-f0-9]{64}$/);
+  });
+
+  it("keeps every pair for a failed shared-source group pending", async () => {
+    const suggestions = mk(4).map((s, i) => ({ ...s, source: i === 3 ? B : A }));
+    const readFile = vi.fn().mockResolvedValue({ raw: "# doc\n" });
+    const writeFile = vi.fn().mockRejectedValue(new Error("disk full"));
+    const result = await acceptAll(suggestions, { readFile, writeFile });
+    expect(result.accepted).toEqual([]);
+    expect(result.remaining).toEqual(suggestions);
+    expect(readFile).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("dismissal persistence", () => {
+  it("retains a 28,189-pair dismissal across a reload without truncation", () => {
+    const storage = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => storage.get(key) ?? null,
+      setItem: (key: string, value: string) => storage.set(key, value),
+    });
+    const dismissed = new Set(Array.from({ length: 28_189 }, (_, i) => pairKey(
+      `/synthetic-vault/wiki/p${Math.floor(i / 4)}.md`,
+      `/synthetic-vault/wiki/p${(Math.floor(i / 4) + i % 4 + 1) % 8_000}.md`,
+    )));
+    saveDismissed(dismissed);
+    const restored = loadDismissed();
+    expect(restored.size).toBe(dismissed.size);
+    expect([...dismissed].every((key) => restored.has(key))).toBe(true);
+    vi.unstubAllGlobals();
   });
 });

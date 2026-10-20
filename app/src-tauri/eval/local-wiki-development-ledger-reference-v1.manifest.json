@@ -1,0 +1,128 @@
+{
+  "version": 1,
+  "id": "local-wiki-development-ledger-reference-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "labelStatus": "frozen_before_current_inference_pending_root_source_review",
+  "artifact": {
+    "path": "local-wiki-development-ledger-reference-v1.json",
+    "bytes": 157143,
+    "sha256": "0fedd5fbb4a55efc444b15c2763986efd19f3555f3527abecbd8731c6ab63c36"
+  },
+  "inputBindings": [
+    {
+      "path": "local-wiki-v1/review-pairs.json",
+      "bytes": 178028,
+      "sha256": "10e426ade4721950c3e0180992e70c86f93a63241d7f8c36992a6c7c5143c559"
+    },
+    {
+      "path": "local-wiki-v1/review-pairs.manifest.json",
+      "bytes": 1605,
+      "sha256": "c811026389593175765195105d4e3e3d7c0986b1cc699469c908478ccb11bc55"
+    },
+    {
+      "path": "local-wiki-v1/corpus.json",
+      "bytes": 709655,
+      "sha256": "8df85a87dd350a5320617829aeae230af8ee5a4c3ea0ec29b69fbb35d2e0ee74"
+    },
+    {
+      "path": "local-wiki-development-meaning-v1.json",
+      "bytes": 20012,
+      "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+    },
+    {
+      "path": "local-wiki-development-meaning-v1.manifest.json",
+      "bytes": 830,
+      "sha256": "a27e437a81bb4ad4acbe569044191f3d82964df890d119d2005914fd3f958ba5"
+    },
+    {
+      "path": "local-wiki-development-review-packets-v1.json",
+      "bytes": 98226,
+      "sha256": "208f70a7c653e9c38ba3b1d4a4a39a09cc38d5f4be1c4fd7bd8dfabd0c005e31"
+    },
+    {
+      "path": "local-wiki-development-review-packets-v1.manifest.json",
+      "bytes": 1120,
+      "sha256": "470fed90af029cc5e900f680734a3567f24c7c4b95b6c2a5457d02338a305732"
+    }
+  ],
+  "counts": {
+    "packets": 20,
+    "singleSpanPackets": 16,
+    "wholePackets": 4,
+    "nativeSpanInstances": 25,
+    "requiredFactInstances": 47
+  },
+  "sourceReview": {
+    "status": "automated_agent_original_source_read_before_current_inference",
+    "method": "selected_original_sources_and_prior_source_audit_with_declared_incidental_non_target_role_case_exposure",
+    "humanReviewed": false,
+    "modelOutputsInspected": false,
+    "candidateRawOutputsInspected": false,
+    "proposalBodiesInspected": true,
+    "priorTrialSummaryKnown": true,
+    "heldOutSourceMeaningInspected": false,
+    "rootSourceReviewRequiredBeforeInference": true,
+    "evaluatedPacketProposalBodiesInspected": false,
+    "incidentalNonTargetRoleAuditExposure": {
+      "auditPath": "single_span-source-audit.json",
+      "auditSha256": "397fe8f43d2c69ec163982359d0158e66e30b2f9dfc308501a0bd7976e510316",
+      "field": "roleCases",
+      "description": "An overbroad top-level audit read emitted non-target historical role-case inputs, proposal/reference-label text, and source judgments. The tool output was truncated, so not all emitted content was reviewed. This was not a current or prior raw model-output artifact; the 16 single-span and 4 whole-packet proposal bodies being graded were not inspected.",
+      "currentRawModelOutputsInspected": false,
+      "priorRawModelOutputsInspected": false,
+      "evaluatedPacketProposalBodiesInspected": false
+    }
+  },
+  "priorSourceAuditBindings": [
+    {
+      "scope": "single_span_development",
+      "sha256": "397fe8f43d2c69ec163982359d0158e66e30b2f9dfc308501a0bd7976e510316",
+      "path": "single_span-source-audit.json"
+    },
+    {
+      "scope": "whole_packet_development",
+      "sha256": "8fe7e07c348451275d30aa7b79723fda485b2e0c21e4a011b98c2fe8ad5ccbc9",
+      "path": "whole_packet-source-audit.json"
+    }
+  ],
+  "preflight": {
+    "jsonParsed": true,
+    "packetIdsUnique": true,
+    "nativeSpanPrimitiveHashesAndByteWidthsMatch": true,
+    "factIdsAndSupportIdsBound": true,
+    "coverageExactlySelectedSpans": true,
+    "excludedSpansNotImported": true,
+    "originalInputArtifactsUnchanged": true,
+    "nativeSerializationExecuted": false,
+    "tokenizerOrModelFitExecuted": false,
+    "wholePriorAuditedNativeSpanObjectsExact": true,
+    "priorSourceAuditHashesMatch": true,
+    "literalSingleSpanUtteranceInstantsMatchOriginalText": true,
+    "onlySingleSpanTemporalExplanationsAndReviewProvenanceChanged": true,
+    "allOriginalSpansAndNonTemporalFactsUnchanged": true,
+    "originalFrozenReferenceBytesPreserved": true,
+    "rootFactSemanticsReviewComplete": false
+  },
+  "humanReviewed": false,
+  "modelOutputsInspected": false,
+  "nativeAuthority": false,
+  "semanticAcceptance": false,
+  "installedVerified": false,
+  "runtimePromptOverride": false,
+  "referenceSuppliesModelPrompt": false,
+  "originalReviewGatesUnchanged": true,
+  "rootSourceReviewRequiredBeforeInference": true,
+  "preInferenceFreezeHistory": [
+    {
+      "reason": "Before any current inference, preserve literal request/report timestamp scope and disclose incidental non-target historical role-case audit exposure. Existing input artifacts and frozen review gates are unchanged.",
+      "referencePath": "local-wiki-development-ledger-reference-v1.json",
+      "referenceBytes": 122650,
+      "referenceSha256": "3387425cb1294aa3b53d0b54a85ff4ae782c1d8a1ca1cd895e3198e481452e6c",
+      "manifestPath": "local-wiki-development-ledger-reference-v1.manifest.json",
+      "manifestBytes": 3602,
+      "manifestSha256": "ce3f438bb666affb784beef22f3a19ce4bb236e4d68f1d83f39ea87d5adfff3d",
+      "inferenceOccurredBeforeRevision": false
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { AppPage, pageGridTemplate } from "./AppPage";
+import { AppPage, focusIsIdle, focusPageHeading, PAGE_EDITOR, pageGridTemplate } from "./AppPage";
 import { Rail, RailGroup, RailRow } from "./Rail";
 
 describe("pageGridTemplate", () => {
@@ -52,6 +52,83 @@ describe("AppPage", () => {
     expect(html.match(/<h1/g)).toHaveLength(1);
     expect(html).toContain("Provenance");
     expect(html).toContain("body");
+  });
+
+  // UX S28 rule 2: a route change whose control unmounted (Home's ask box,
+  // the wizard's last step) left focus on <body>; the page starts at its
+  // title instead of the top of the document.
+  it("lets a route change hand focus to the page title when it was on <body>", () => {
+    const html = renderToStaticMarkup(h(AppPage, { title: "Ask" }));
+    expect(html).toContain('<h1 class="u-page__title" tabindex="-1">');
+    const title = { focused: 0, focus: () => void (title.focused += 1) };
+    const body = {};
+    const doc = (active: unknown) =>
+      ({ activeElement: active, body, querySelector: () => title }) as unknown as Document;
+    const el = (tagName: string, extra: object = {}) => ({
+      tagName,
+      isContentEditable: false,
+      closest: () => null,
+      ...extra,
+    });
+    focusPageHeading(doc(body));
+    expect(title.focused).toBe(1);
+    // A field being typed in keeps its focus.
+    for (const tag of ["INPUT", "TEXTAREA", "SELECT"]) focusPageHeading(doc(el(tag)));
+    focusPageHeading(doc(el("DIV", { isContentEditable: true })));
+    expect(title.focused).toBe(1);
+  });
+
+  // ⌘K to the graph handed focus back to the sidebar button that opened the
+  // palette, so the next Tab walked the sidebar again (audit flow13 "GRAPH TAB").
+  it("takes focus off the control that moved the page, but never out of a dialog", () => {
+    const title = { focused: 0, focus: () => void (title.focused += 1) };
+    const doc = (active: unknown) =>
+      ({ activeElement: active, body: {}, querySelector: () => title }) as unknown as Document;
+    const button = (inDialog: boolean) => ({
+      tagName: "BUTTON",
+      isContentEditable: false,
+      closest: (sel: string) => (inDialog && sel.includes("dialog") ? {} : null),
+    });
+    focusPageHeading(doc(button(false)));
+    expect(title.focused).toBe(1);
+    focusPageHeading(doc(button(true)));
+    expect(title.focused).toBe(1);
+  });
+
+  it("says when the page has no title yet, so a lazy route can be waited for", () => {
+    const doc = (heading: unknown) =>
+      ({ activeElement: null, body: {}, querySelector: () => heading }) as unknown as Document;
+    expect(focusPageHeading(doc(null))).toBe(false);
+    expect(focusPageHeading(doc({ focus: () => undefined }))).toBe(true);
+  });
+
+  // Opening a note from Home unmounts the clicked row, the route change parks
+  // focus on the reader's title, and the editor mounting a moment later must
+  // still take it, or the first keystrokes go nowhere (review of 4fd01986).
+  it("counts focus parked on the page title as idle, so the editor can take it", () => {
+    const body = {};
+    const doc = (active: unknown) => ({ activeElement: active, body }) as unknown as Document;
+    const el = (isHeading: boolean) => ({ matches: (sel: string) => isHeading && sel === ".route-fade h1" });
+    expect(focusIsIdle(doc(body))).toBe(true);
+    expect(focusIsIdle(doc(null))).toBe(true);
+    expect(focusIsIdle(doc(el(true)))).toBe(true);
+    expect(focusIsIdle(doc(el(false)))).toBe(false);
+  });
+
+  // Enter on a tree row: when the note editor mounts before the route change
+  // runs, it finds focus still on the row and leaves it, so the route change
+  // must hand focus to the editor itself, not park it on the title.
+  it("hands focus to a note editor already on the page instead of the title", () => {
+    const editor = { focused: 0, focus: () => void (editor.focused += 1) };
+    const title = { focused: 0, focus: () => void (title.focused += 1) };
+    const doc = {
+      activeElement: null,
+      body: {},
+      querySelector: (sel: string) => (sel === PAGE_EDITOR ? editor : title),
+    } as unknown as Document;
+    expect(focusPageHeading(doc)).toBe(true);
+    expect(editor.focused).toBe(1);
+    expect(title.focused).toBe(0);
   });
 
   it("omits every optional slot rather than rendering an empty one", () => {
@@ -106,6 +183,34 @@ describe("AppPage", () => {
     );
     expect(html.indexOf("L")).toBeLessThan(html.indexOf("MID"));
     expect(html.indexOf("MID")).toBeLessThan(html.indexOf("R"));
+  });
+
+  it("puts a wide page's stage right after the header in source order (UX S44)", () => {
+    // Tab order follows the DOM: the graph's canvas sat behind the question
+    // bar and every gaps-rail row, 40 Tabs from the find field.
+    const html = renderToStaticMarkup(
+      h(AppPage, {
+        title: "T",
+        wide: true,
+        tools: "TOOLS",
+        bar: "BAR",
+        note: "NOTE",
+        leftRail: "LEFT",
+        rightRail: "RIGHT",
+        children: "STAGE",
+      }),
+    );
+    const at = (s: string) => html.indexOf(s);
+    expect(at("TOOLS")).toBeLessThan(at("STAGE"));
+    expect(at("STAGE")).toBeLessThan(at("LEFT"));
+    expect(at("LEFT")).toBeLessThan(at("BAR"));
+    expect(at("STAGE")).toBeLessThan(at("NOTE"));
+  });
+
+  it("keeps a wide page's visual order with CSS order, not source order", () => {
+    const css = readFileSync(new URL("../styles/ui.css", import.meta.url), "utf8");
+    expect(css).toMatch(/\.u-page--wide \.u-page__body \{[^}]*order: 1;/);
+    expect(css).toMatch(/\.u-page--wide \.u-page__rail:not\(\.u-page__rail--right\) \{[^}]*order: -1;/);
   });
 
   it("reuses the app's existing page shells, so a migrated page keeps its column", () => {

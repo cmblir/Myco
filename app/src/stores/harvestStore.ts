@@ -9,6 +9,7 @@
 
 import { create } from "zustand";
 import { ipc, type HarvestCandidates } from "../lib/ipc";
+import { useVaultStore } from "./vaultStore";
 
 export const QUEUE_LIMIT = 20;
 
@@ -17,9 +18,8 @@ export const QUEUE_LIMIT = 20;
 export type RunOutcome = "done" | "error" | null;
 
 /** Live progress of a harvest run. A run first copies the selected sessions
- * into _inbox/ ("copying"), then walks them through one ingest pass each
- * ("ingesting") — twenty passes is normal, and the bar used to show nothing
- * whatsoever for the whole stretch. */
+ * into _inbox/ ("copying"), then resumes their evidence passes ("ingesting").
+ * Sources count as done only once full coverage and archiving succeed. */
 export interface HarvestRun {
   /** Sources this run is walking through. */
   total: number;
@@ -32,6 +32,7 @@ export interface HarvestRun {
 /** No run has ever started — and never will, in a session where nobody
  * harvests. Every Topbar reader is a no-op against this. */
 const IDLE_RUN: HarvestRun = { total: 0, done: 0, phase: null };
+let scanRequest = 0;
 
 interface HarvestState {
   data: HarvestCandidates | null;
@@ -39,6 +40,7 @@ interface HarvestState {
   loading: boolean;
   /** Vault the cached result belongs to — a vault switch invalidates it. */
   scannedPath: string | null;
+  scannedToken: string | null;
   /** Fetch the queue for `path` unless the cache already holds it.
    * `force` refetches (after a harvest run, or the retry button). */
   load: (path: string, force?: boolean) => Promise<void>;
@@ -63,6 +65,7 @@ export const useHarvestStore = create<HarvestState>((set, get) => ({
   error: null,
   loading: false,
   scannedPath: null,
+  scannedToken: null,
   run: IDLE_RUN,
   outcome: null,
   // Nothing to report until a run actually ends, so the pill starts silent.
@@ -70,13 +73,18 @@ export const useHarvestStore = create<HarvestState>((set, get) => ({
 
   async load(path, force = false) {
     const s = get();
-    if (s.loading) return;
-    if (!force && s.scannedPath === path && s.data !== null) return;
-    set({ loading: true, error: null });
+    const token = useVaultStore.getState().vaultToken;
+    if (s.loading && s.scannedPath === path && s.scannedToken === token && !force) return;
+    if (!force && s.scannedPath === path && s.scannedToken === token && s.data !== null) return;
+    const request = ++scanRequest;
+    set({ loading: true, error: null, scannedPath: path, scannedToken: token,
+      ...(s.scannedPath !== path || s.scannedToken !== token ? { data: null } : {}) });
     try {
-      const data = await ipc.harvestCandidates(QUEUE_LIMIT);
+      const data = await ipc.harvestCandidates(QUEUE_LIMIT, path);
+      if (request !== scanRequest || useVaultStore.getState().vaultToken !== token) return;
       set({ data, scannedPath: path, loading: false });
     } catch (e) {
+      if (request !== scanRequest || useVaultStore.getState().vaultToken !== token) return;
       set({ data: null, error: String(e), loading: false });
     }
   },
@@ -98,3 +106,10 @@ export const useHarvestStore = create<HarvestState>((set, get) => ({
     set({ seen: true });
   },
 }));
+
+// A retained queue must never be re-labelled as the next vault-open session.
+useVaultStore.subscribe((state, previous) => {
+  if (state.vaultToken === previous.vaultToken && state.currentVault?.path === previous.currentVault?.path) return;
+  scanRequest++;
+  useHarvestStore.setState({ data: null, error: null, loading: false, scannedPath: null, scannedToken: null, run: IDLE_RUN, outcome: null, seen: true });
+});

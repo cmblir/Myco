@@ -9,7 +9,8 @@ import {
   type AskStage,
 } from "./chat";
 import { ipc, type ScoredChunk } from "./ipc";
-import { BUILTIN_EMBED_MODEL } from "./providers";
+import { BUILTIN_CHAT_MODEL, BUILTIN_EMBED_MODEL } from "./providers";
+import { roleFixture, selectedRolesFixture } from "./modelRoles.testSupport";
 import { log } from "./log";
 
 // The id a healthy (non-stale) index is tagged with today — matches
@@ -33,22 +34,180 @@ const found = (hits: ScoredChunk[]) => ({
 const VAULT = "/v";
 const SETTINGS = {
   query_provider: "builtin-local",
-  query_model: "gemma-3-1b",
+  query_model: BUILTIN_CHAT_MODEL,
   ingest_provider: "anthropic-cli",
   ingest_model: "",
+  model_roles: selectedRolesFixture({ ask: { providerId: "builtin-local", modelId: BUILTIN_CHAT_MODEL }, compilation: { providerId: "anthropic-cli", modelId: "haiku" } }),
 } as never;
+
+function mockCapturedRoles(): void {
+  vi.spyOn(ipc, "captureModelRole").mockImplementation(async (origin, role, usage) => {
+    const selected = roleFor(role, await ipc.getSettings());
+    return roleFixture(role, selected.provider, selected.model, origin, usage, selected.effort);
+  });
+  vi.spyOn(ipc, "localChatStatus").mockImplementation(async (model) => ({ model_id: model ?? BUILTIN_CHAT_MODEL, state: "ready", bytes: 0 }));
+}
 
 function stages(): { seen: AskStage[]; onStage: (s: AskStage) => void } {
   const seen: AskStage[] = [];
   return { seen, onStage: (s) => seen.push(s) };
 }
 
+describe("complete() selected-source generation", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(ipc, "localChatStatus").mockResolvedValue({
+      model_id: BUILTIN_CHAT_MODEL,
+      state: "ready",
+      bytes: 0,
+    });
+  });
+
+  it.each(["audio", "study"] as const)(
+    "keeps supplied %s source messages without searching or reading another vault context",
+    async (role) => {
+      const origin = {
+        vaultPath: VAULT,
+        openingToken: "synthetic-generated-opening",
+      };
+      const snapshot = roleFixture(
+        role,
+        "builtin-local",
+        BUILTIN_CHAT_MODEL,
+        origin,
+      );
+      const supplied = [
+        {
+          role: "system" as const,
+          content:
+            "Return a synthetic cited JSON artifact from the supplied text.",
+        },
+        {
+          role: "user" as const,
+          content: "Selected fictional mosaic source: blue tiles only.",
+        },
+      ];
+      const status = vi
+        .spyOn(ipc, "embeddingsStatus")
+        .mockRejectedValue(new Error("no index should be inspected"));
+      const search = vi.spyOn(ipc, "semanticSearch");
+      const context = vi
+        .spyOn(ipc, "readVaultContext")
+        .mockResolvedValue("Unselected synthetic red tiles.");
+      const read = vi.spyOn(ipc, "readFile");
+      const opening = vi.spyOn(ipc, "agentVaultSession");
+      const capture = vi.spyOn(ipc, "captureModelRole");
+      const generate = vi
+        .spyOn(ipc, "localQuery")
+        .mockResolvedValue("synthetic generation");
+      const { seen, onStage } = stages();
+      expect(
+        await complete({
+          task: "generate",
+          featureRole: role,
+          cwd: VAULT,
+          origin,
+          roleSnapshot: snapshot,
+          paths: role === "audio" ? ["wiki/mosaic.md"] : [],
+          messages: supplied,
+          onStage,
+        }),
+      ).toBe("synthetic generation");
+      expect(status).not.toHaveBeenCalled();
+      expect(search).not.toHaveBeenCalled();
+      expect(context).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalled();
+      expect(opening).not.toHaveBeenCalled();
+      expect(capture).not.toHaveBeenCalled();
+      expect(generate).toHaveBeenCalledWith(
+        supplied.map((message) => message.content).join("\n\n"),
+        320,
+        origin,
+        snapshot,
+        expect.any(String),
+      );
+      expect(seen).toEqual([{ kind: "thinking", stems: [] }]);
+    },
+  );
+
+  it.each(["reflect", "lint"] as const)(
+    "retrieves source passages for instruction-only %s generation",
+    async (role) => {
+      const origin = {
+        vaultPath: VAULT,
+        openingToken: "synthetic-generated-opening",
+      };
+      const snapshot = roleFixture(
+        role,
+        "builtin-local",
+        BUILTIN_CHAT_MODEL,
+        origin,
+      );
+      vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+        indexed_pages: 1,
+        model: CURRENT_INDEX_MODEL,
+      });
+      const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(
+        found([
+          {
+            page: "wiki/mosaic.md",
+            stem: "mosaic",
+            section: 0,
+            text: "The synthetic mosaic has blue tiles and one missing source citation.",
+            score: 0.9,
+            similarity: 0.7,
+          },
+        ]),
+      );
+      const context = vi.spyOn(ipc, "readVaultContext");
+      const generate = vi
+        .spyOn(ipc, "localQuery")
+        .mockResolvedValue("synthetic findings");
+      const instruction =
+        "Inspect the vault and propose source-grounded improvements.";
+      const { seen, onStage } = stages();
+
+      expect(
+        await complete({
+          task: "generate",
+          featureRole: role,
+          cwd: VAULT,
+          origin,
+          roleSnapshot: snapshot,
+          messages: [{ role: "user", content: instruction }],
+          onStage,
+        }),
+      ).toBe("synthetic findings");
+
+      expect(search).toHaveBeenCalledOnce();
+      expect(context).not.toHaveBeenCalled();
+      expect(generate).toHaveBeenCalledWith(
+        expect.stringContaining(
+          "The synthetic mosaic has blue tiles and one missing source citation.",
+        ),
+        320,
+        origin,
+        snapshot,
+        expect.any(String),
+      );
+      expect(generate.mock.calls[0][0]).toContain(instruction);
+      expect(seen).toEqual([
+        { kind: "retrieving" },
+        { kind: "thinking", stems: ["mosaic"] },
+      ]);
+    },
+  );
+});
+
 describe("complete() ask stages", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: VAULT, openingToken: "synthetic-opening" });
     vi.spyOn(ipc, "getSettings").mockResolvedValue(SETTINGS);
     vi.spyOn(ipc, "localQuery").mockResolvedValue("an answer");
     vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
     // Existing tests exercise the generate path, so default to "available" —
     // the fast-fail itself gets its own test below.
     vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(true);
@@ -146,9 +305,9 @@ describe("complete() ask stages", () => {
     expect(thinking.stems.length).toBeLessThan(12);
   });
 
-  it("names no pages when there is no index", async () => {
-    // Without an index the whole vault is concatenated instead — no page was
-    // chosen, so nothing may be named.
+  it("names no pages when dense and lexical retrieval find nothing", async () => {
+    // A fresh dense index still searches the lexical arm; an empty result
+    // names no source and never claims an IPC failure.
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
     const search = vi.spyOn(ipc, "semanticSearch");
 
@@ -159,8 +318,26 @@ describe("complete() ask stages", () => {
       messages: [{ role: "user", content: "q" }],
       onStage,
     });
-    expect(search).not.toHaveBeenCalled();
-    expect(seen).toEqual([{ kind: "thinking", stems: [] }]);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
+  });
+
+  it.each([0, 10])("uses verified lexical context with %i dense pages without a whole-vault dump", async (indexedPages) => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: indexedPages,
+      model: indexedPages === 0 ? "" : "builtin-local:gemma-3-1b",
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([
+      { page: "wiki/id.md", stem: "id", section: 0, text: "SYN-4719 was accepted.", score: 0.02, similarity: null, exact_match: true },
+    ]));
+    const fallback = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("unrelated whole vault");
+    const query = vi.spyOn(ipc, "localQuery");
+    const { seen, onStage } = stages();
+    await complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "SYN-4719" }], onStage });
+    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: ["id"] }]);
+    expect(fallback).not.toHaveBeenCalled();
+    expect(query.mock.calls[0][0]).toContain("SYN-4719 was accepted.");
+    expect(query.mock.calls[0][0]).not.toContain("unrelated whole vault");
   });
 
   it("names no pages when retrieval finds nothing", async () => {
@@ -201,7 +378,7 @@ describe("complete() ask stages", () => {
     ]);
     expect(warn).toHaveBeenCalledWith(
       "retrieve_chunks.embeddings_status_failed",
-      expect.objectContaining({ error: expect.stringContaining("index gone") }),
+      { code: "embeddings_status_failed" },
     );
   });
 
@@ -230,7 +407,7 @@ describe("complete() ask stages", () => {
     ]);
     expect(warn).toHaveBeenCalledWith(
       "retrieve_chunks.semantic_search_failed",
-      expect.objectContaining({ error: expect.stringContaining("search backend down") }),
+      { code: "semantic_search_failed" },
     );
   });
 
@@ -249,8 +426,8 @@ describe("complete() ask stages", () => {
       onStage,
     });
 
-    expect(search).not.toHaveBeenCalled();
-    expect(seen).toEqual([{ kind: "thinking", stems: [] }]);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
   });
 
   it("does NOT flag retrievalFailed when semantic_search legitimately resolves to no hits", async () => {
@@ -271,6 +448,29 @@ describe("complete() ask stages", () => {
     expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
   });
 
+  it("does not replace a healthy empty search with unfiltered vault content", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 3, model: CURRENT_INDEX_MODEL });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    const fallback = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("Unrelated private notes.");
+    const generate = vi.spyOn(ipc, "localQuery").mockResolvedValue("No evidence.");
+    await complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "unknown fact" }] });
+    expect(fallback).not.toHaveBeenCalled();
+    expect(generate.mock.calls[0][0]).toContain("No matching source passages");
+    expect(generate.mock.calls[0][0]).not.toContain("Unrelated private notes.");
+  });
+
+  it("uses the supplied retrieval question and date window instead of the raw follow-up", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 3, model: CURRENT_INDEX_MODEL });
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    const fallback = vi.spyOn(ipc, "readVaultContext");
+    const range = { start: "2026-08-01", end: "2026-08-05" };
+    await complete({ task: "query", cwd: VAULT, range, scope: "all", retrievalQuery: "caching decision why",
+      messages: [{ role: "user", content: "why last week?" }] });
+    expect(search.mock.calls[0][0]).toBe("caching decision why");
+    expect(search.mock.calls[0][4]).toEqual(range);
+    expect(fallback).not.toHaveBeenCalled();
+  });
+
   it("a stale index still sets `stale`, not `retrievalFailed` (they are distinct signals)", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
@@ -287,8 +487,25 @@ describe("complete() ask stages", () => {
       onStage,
     });
 
-    expect(search).not.toHaveBeenCalled();
-    expect(seen).toEqual([{ kind: "thinking", stems: [], stale: true }]);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [], stale: true }]);
+  });
+
+  it("an Ask over one note searches only its pages and never falls back to the whole vault", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    const fallback = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("whole vault");
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+      paths: ["wiki/a.md"],
+    });
+    expect(search.mock.calls[0][7]).toEqual(["wiki/a.md"]);
+    expect(fallback).not.toHaveBeenCalled();
   });
 
   it("works without an onStage callback", async () => {
@@ -328,15 +545,11 @@ describe("complete() ask stages", () => {
     expect(seenPrompt).toContain("AAA passage one");
     expect(seenPrompt).toContain("AAA passage two");
     expect(seenPrompt).toContain("BBB passage");
-    expect(seenPrompt).toContain("[[a]]");
-    expect(seenPrompt).toContain("[[b]]");
+    expect(seenPrompt).toContain("[[wiki/a|a]]");
+    expect(seenPrompt).toContain("[[wiki/b|b]]");
   });
 
-  it("front-loads wiki/maps/ pages' blocks ahead of other pages within the same budget (ordering only)", async () => {
-    // The map page ranks 2nd by score but must be assembled FIRST — a map
-    // summarizes its cluster, so front-loading it gives the model the topic
-    // map before the details. Scoring/ranking (and which hits made the top-k
-    // cut) is untouched; only assembly order changes.
+  it("keeps ranked evidence ahead of a lower-ranked map", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
       model: CURRENT_INDEX_MODEL,
@@ -360,15 +573,14 @@ describe("complete() ask stages", () => {
       onStage,
     });
 
-    expect(seenPrompt.indexOf("[[m]]")).toBeGreaterThanOrEqual(0);
-    expect(seenPrompt.indexOf("[[m]]")).toBeLessThan(seenPrompt.indexOf("[[a]]"));
-    expect(seenPrompt.indexOf("[[m]]")).toBeLessThan(seenPrompt.indexOf("[[b]]"));
+    expect(seenPrompt.indexOf("[[wiki/maps/m|m]]")).toBeGreaterThanOrEqual(0);
+    expect(seenPrompt.indexOf("[[wiki/a|a]]")).toBeLessThan(seenPrompt.indexOf("[[wiki/maps/m|m]]"));
+    expect(seenPrompt.indexOf("[[wiki/maps/m|m]]")).toBeLessThan(seenPrompt.indexOf("[[wiki/b|b]]"));
   });
 
-  it("signals stale and skips retrieval when the index predates a bundled embed-model swap", async () => {
-    // The bge-m3 swap (Task 4) leaves a pre-existing index tagged with the
-    // retired model id — cosining a fresh query against it would be
-    // meaningless, so retrieval must not even be attempted.
+  it("signals stale after lexical search finds no evidence for a retired dense index", async () => {
+    // The backend skips incompatible dense vectors but searches the lexical
+    // arm. No accepted source leaves the existing reindex warning visible.
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
       model: "builtin-local:gemma-3-1b",
@@ -384,31 +596,25 @@ describe("complete() ask stages", () => {
       onStage,
     });
 
-    expect(search).not.toHaveBeenCalled();
+    expect(search).toHaveBeenCalledTimes(1);
     expect(fallback).toHaveBeenCalled(); // the fallback must still run
-    expect(seen).toEqual([{ kind: "thinking", stems: [], stale: true }]);
+    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [], stale: true }]);
     expect(out).toBe("an answer");
   });
 
-  it("skips retrieval entirely when no chat model is bundled (builtin-local)", async () => {
-    // No chat GGUF ships anymore (Ask went extractive) — a builtin-local
-    // "query" task's generate() call is unconditionally doomed. Retrieval
-    // (which loads the ~418 MB embed model) must not run just to hit that
-    // error at the end: reflectStore's scheduler fires this automatically a
-    // few seconds after every launch, so a wasted load here means a wasted
-    // load on every launch.
-    vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(false);
+  it("skips retrieval entirely when the selected local model requires preparation", async () => {
+    vi.spyOn(ipc, "localChatStatus").mockResolvedValue({ model_id: BUILTIN_CHAT_MODEL, state: "missing", bytes: 0 });
     const status = vi.spyOn(ipc, "embeddingsStatus");
     const search = vi.spyOn(ipc, "semanticSearch");
     const localQuery = vi.spyOn(ipc, "localQuery");
 
-    await expect(
-      complete({
-        task: "query",
-        cwd: VAULT,
-        messages: [{ role: "user", content: "q" }],
-      }),
-    ).rejects.toThrow("no local chat model is bundled");
+    const completion = complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+    });
+    await expect(completion).rejects.toThrow("local_model_preparation_required");
+    await expect(completion).rejects.toThrow("install the selected model explicitly");
 
     expect(status).not.toHaveBeenCalled();
     expect(search).not.toHaveBeenCalled();
@@ -427,10 +633,13 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
     query_model: "sonnet",
     ingest_provider: "anthropic-cli",
     ingest_model: "haiku",
+    model_roles: selectedRolesFixture({ ask: { providerId: "anthropic-cli", modelId: "sonnet" }, compilation: { providerId: "anthropic-cli", modelId: "haiku" }, organization: { providerId: "anthropic-cli", modelId: "sonnet" } }),
   } as never;
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: VAULT, openingToken: "synthetic-opening" });
     vi.spyOn(ipc, "getSettings").mockResolvedValue(CLI_SETTINGS);
   });
 
@@ -462,7 +671,7 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
     const [prompt] = claudeRun.mock.calls[0];
     expect(prompt).toContain("Relevant wiki context");
     expect(prompt).toContain("attention body passage");
-    expect(prompt).toContain("[[attention-mechanism]]");
+    expect(prompt).toContain("[[wiki/attention-mechanism|attention-mechanism]]");
     // Retrieval block must land between the system content and the user turn.
     expect(prompt.indexOf("You are myco.")).toBeLessThan(
       prompt.indexOf("Relevant wiki context"),
@@ -571,9 +780,12 @@ describe("complete() profile injection (Phase B, Task 6)", () => {
 
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: VAULT, openingToken: "synthetic-opening" });
     vi.spyOn(ipc, "getSettings").mockResolvedValue(SETTINGS);
     vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(true);
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
     vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
   });
 
@@ -642,6 +854,72 @@ describe("complete() profile injection (Phase B, Task 6)", () => {
   });
 });
 
+// Decisions 1 and 3 of the 2026-10-02 machine-session spec tell myco's own CLI
+// runs apart by how the prompt opens (mycoPromptHeads.json; each sender's side
+// is pinned in mycoPromptHeads.test.ts). So whatever complete() adds to a CLI
+// prompt, retrieval or the profile paragraph, must come after the sender's
+// first message. task:"query" is only ever sent with a system message (Ask),
+// so its user-only shape is left out.
+describe("complete() CLI prompt opens with the sender's first message", () => {
+  const PROFILE_MD = "## Role\nBackend engineer\n\n## Interests\n- rust\n";
+  const cases = (["anthropic-cli", "gemini-cli", "codex-cli"] as const).flatMap((provider) =>
+    (["query", "generate", "ingest"] as const).flatMap((task) =>
+      [true, false].flatMap((profile) =>
+        [true, false]
+          .filter((system) => system || task !== "query")
+          .map((system) => ({ provider, task, profile, system })),
+      ),
+    ),
+  );
+
+  it.each(cases)(
+    "$provider $task profile=$profile system=$system",
+    async ({ provider, task, profile, system }) => {
+      vi.restoreAllMocks();
+    mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: VAULT, openingToken: "synthetic-opening" });
+      vi.spyOn(ipc, "getSettings").mockResolvedValue({
+        query_provider: provider,
+        query_model: "",
+        ingest_provider: provider,
+        ingest_model: "",
+        model_roles: selectedRolesFixture({ ask: { providerId: provider, modelId: "synthetic-explicit" }, compilation: { providerId: provider, modelId: "synthetic-explicit" }, organization: { providerId: provider, modelId: "synthetic-explicit" } }),
+      } as never);
+      vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({ profile_injection: profile } as never);
+      vi.spyOn(ipc, "readFile").mockResolvedValue({ raw: PROFILE_MD } as never);
+      vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+        indexed_pages: 51,
+        model: CURRENT_INDEX_MODEL,
+      });
+      vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([
+        { page: "wiki/a.md", stem: "a", section: 0, text: "a body", score: 0.9, similarity: 0.7 },
+      ]));
+      const ok = { stdout: "done", stderr: "", status: 0 };
+      const claudeRun = vi.spyOn(ipc, "claudeRun").mockResolvedValue(ok);
+      const agentRun = vi.spyOn(ipc, "agentRun").mockResolvedValue(ok);
+
+      const first = system ? "You are myco's digest writer. Write it." : "Plan the ingest.";
+      await complete({
+        task,
+        cwd: VAULT,
+        messages: [
+          ...(system ? [{ role: "system" as const, content: first }] : []),
+          { role: "user", content: system ? "the day's logs" : first },
+        ],
+        // Ask passes onStage, which turns retrieval on.
+        onStage: () => undefined,
+      });
+
+      const prompt =
+        provider === "anthropic-cli" ? claudeRun.mock.calls[0][0] : agentRun.mock.calls[0][2];
+      expect(prompt.startsWith(first)).toBe(true);
+      // The additions did happen, so it is their place that is checked.
+      if (task === "query") expect(prompt).toContain("Relevant wiki context");
+      if (task === "query" && profile) expect(prompt).toContain("User profile:");
+    },
+  );
+});
+
 describe("isIndexStale", () => {
   it("flags an index whose model no longer matches the current builtin embed id", () => {
     expect(
@@ -671,6 +949,67 @@ describe("isIndexStale", () => {
 describe("retrieveChunks", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: VAULT, openingToken: "synthetic-opening" });
+  });
+
+  const lexicalStatuses = [
+    { indexed_pages: 0, model: "" },
+    { indexed_pages: 10, model: "builtin-local:gemma-3-1b" },
+  ];
+
+  it.each(lexicalStatuses)("searches verified lexical evidence with dense status %j", async (status) => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue(status);
+    const hit: ScoredChunk = { page: "sessions/id.md", stem: "id", section: 0, text: "SYN-4719 was accepted.", score: 0.02, similarity: null, exact_match: true };
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([hit]));
+    const retrieving = vi.fn();
+    const range = { start: "2026-08-21", end: "2026-08-21" };
+    const weights = { note: 1, map: 1, digest: 1, rollup: 1, session: 1, source: 1 };
+    const r = await retrieveChunks("SYN-4719", 6, retrieving, range, "sessions", weights, ["sessions/id.md"]);
+    expect(search).toHaveBeenCalledWith("SYN-4719", 6, "builtin-local", BUILTIN_EMBED_MODEL, range, "sessions", weights, ["sessions/id.md"]);
+    expect(retrieving).toHaveBeenCalledTimes(1);
+    expect(r.hits).toEqual([hit]);
+    expect(r.indexedPages).toBe(status.indexed_pages);
+    expect(r.stale).toBe(false);
+    expect(r.retrievalFailed).toBe(false);
+  });
+
+  it.each(lexicalStatuses)("rejects unverified lexical and unavailable dense evidence with status %j", async (status) => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue(status);
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([
+      { page: "wiki/noise.md", stem: "noise", section: 0, text: "A generic idea.", score: 0.02, similarity: null, exact_match: false },
+      { page: "wiki/retired.md", stem: "retired", section: 0, text: "Unverified old dense result.", score: 0.01, similarity: 0.9, exact_match: false },
+    ]));
+    const r = await retrieveChunks("SYN-4719");
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(r.hits).toEqual([]);
+    expect(r.nearMisses.map((hit) => hit.page)).toEqual(["wiki/noise.md", "wiki/retired.md"]);
+    expect(r.stale).toBe(status.indexed_pages > 0);
+    expect(r.retrievalFailed).toBe(false);
+  });
+
+  it.each(lexicalStatuses)("reports lexical search errors with dense status %j", async (status) => {
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue(status);
+    vi.spyOn(ipc, "semanticSearch").mockRejectedValue(new Error("lexical backend unavailable"));
+    const r = await retrieveChunks("SYN-4719");
+    expect(r.retrievalFailed).toBe(true);
+    expect(r.stale).toBe(false);
+    expect(r.hits).toEqual([]);
+    expect(warn).toHaveBeenCalledWith("retrieve_chunks.semantic_search_failed", { code: "semantic_search_failed" });
+  });
+
+  it("reports a status IPC failure without pretending to search", async () => {
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    vi.spyOn(ipc, "embeddingsStatus").mockRejectedValue(new Error("status unavailable"));
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    const retrieving = vi.fn();
+    const r = await retrieveChunks("SYN-4719", 12, retrieving);
+    expect(search).not.toHaveBeenCalled();
+    expect(retrieving).not.toHaveBeenCalled();
+    expect(r.retrievalFailed).toBe(true);
+    expect(r.stale).toBe(false);
+    expect(warn).toHaveBeenCalledWith("retrieve_chunks.embeddings_status_failed", { code: "embeddings_status_failed" });
   });
 
   it("returns hits from a healthy index", async () => {
@@ -687,16 +1026,16 @@ describe("retrieveChunks", () => {
     expect(r.retrievalFailed).toBe(false);
   });
 
-  it("flags a stale index and never searches", async () => {
+  it("flags a stale index only after lexical search has no accepted evidence", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 10,
       model: "builtin-local:gemma-3-1b", // pre-swap model id
     });
-    const search = vi.spyOn(ipc, "semanticSearch");
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
     const r = await retrieveChunks("q");
     expect(r.stale).toBe(true);
     expect(r.hits).toEqual([]);
-    expect(search).not.toHaveBeenCalled();
+    expect(search).toHaveBeenCalledTimes(1);
   });
 
   it("flags retrievalFailed when semantic_search rejects", async () => {
@@ -715,12 +1054,13 @@ describe("retrieveChunks", () => {
       indexed_pages: 0,
       model: "",
     });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
     const r = await retrieveChunks("q");
     expect(r).toEqual({
       hits: [],
       nearMisses: [],
       floor: RELEVANCE_FLOOR,
-      indexedPages: null,
+      indexedPages: 0,
       stale: false,
       retrievalFailed: false,
     });
@@ -791,14 +1131,14 @@ describe("retrieveChunks", () => {
     expect(r.floor).toBe(RELEVANCE_FLOOR);
   });
 
-  it("threads scope and tier weights through to semantic_search", async () => {
+  it("threads scope, tier weights and note paths through to semantic_search", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 10,
       model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
     });
     const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
     const weights = { note: 1, map: 1, digest: 1, rollup: 1, session: 1, source: 1 };
-    await retrieveChunks("q", 12, undefined, undefined, "sessions", weights);
+    await retrieveChunks("q", 12, undefined, undefined, "sessions", weights, ["wiki/a.md"]);
     expect(search).toHaveBeenCalledWith(
       "q",
       12,
@@ -807,6 +1147,7 @@ describe("retrieveChunks", () => {
       undefined,
       "sessions",
       weights,
+      ["wiki/a.md"],
     );
   });
 
@@ -827,16 +1168,27 @@ describe("retrieveChunks", () => {
     expect(r.retrievalFailed).toBe(false);
   });
 
-  it("keeps a lexical-only hit, which has no dense cosine to judge", async () => {
+  it("keeps a verified exact lexical hit without a dense cosine", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 10,
       model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([
-      { page: "wiki/bpe.md", stem: "bpe", section: 0, text: "BPE", score: 0.9, similarity: null },
+      { page: "wiki/bpe.md", stem: "bpe", section: 0, text: "BPE", score: 0.9, similarity: null, exact_match: true },
     ]));
     const r = await retrieveChunks("BPE");
     expect(r.hits.map((h) => h.stem)).toEqual(["bpe"]);
+  });
+
+  it("rejects an unverified lexical coincidence and accepts a low-cosine exact ID", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 10, model: CURRENT_INDEX_MODEL });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([
+      { page: "wiki/noise.md", stem: "noise", section: 0, text: "ID", score: 0.02, similarity: null },
+      { page: "sessions/id.md", stem: "id", section: 0, text: "SYN-4719", score: 0.015, similarity: 0.31, exact_match: true },
+    ]));
+    const r = await retrieveChunks("SYN-4719");
+    expect(r.hits.map((h) => h.page)).toEqual(["sessions/id.md"]);
+    expect(r.nearMisses.map((h) => h.page)).toEqual(["wiki/noise.md"]);
   });
 });
 
@@ -848,6 +1200,7 @@ describe("roleFor", () => {
     ingest_provider: "anthropic-cli",
     ingest_model: "haiku",
     ingest_effort: "medium",
+    model_roles: selectedRolesFixture({ ask: { providerId: "builtin-local", modelId: "extractive-retrieval", effort: "low" }, compilation: { providerId: "anthropic-cli", modelId: "haiku", effort: "medium" } }),
   } as unknown as Parameters<typeof roleFor>[1];
 
   it("leaves interactive Ask on the query role even when it cannot generate", () => {
@@ -855,24 +1208,24 @@ describe("roleFor", () => {
     expect(roleFor("query", settings).provider).toBe("builtin-local");
   });
 
-  it("sends generation to the ingest role when the query role is extractive", () => {
+  it("keeps organization local when Ask is quote-only and compilation explicitly external", () => {
     const r = roleFor("generate", settings);
-    expect(r.provider).toBe("anthropic-cli");
-    expect(r.model).toBe("haiku");
-    expect(r.effort).toBe("medium");
+    expect(r.provider).toBe("builtin-local");
+    expect(r.model).toBe(BUILTIN_CHAT_MODEL);
+    expect(r.effort).toBe("(default)");
   });
 
-  it("prefers the query role for generation when it can generate", () => {
+  it("does not inherit a changed legacy external Ask display value for organization", () => {
     const s = { ...settings, query_provider: "anthropic-api", query_model: "sonnet" };
-    expect(roleFor("generate", s).provider).toBe("anthropic-api");
-    expect(roleFor("generate", s).model).toBe("sonnet");
+    expect(roleFor("generate", s).provider).toBe("builtin-local");
+    expect(roleFor("generate", s).model).toBe(BUILTIN_CHAT_MODEL);
   });
 
-  it("falls back to the query role when nothing can generate", () => {
-    // complete() then raises CHAT_MODEL_MISSING — the honest answer when no
-    // generation provider is connected anywhere.
-    const s = { ...settings, ingest_provider: "builtin-local" };
-    expect(roleFor("generate", s).provider).toBe("builtin-local");
+  it("uses only an explicit organization choice and rejects missing native role settings", () => {
+    const s = { ...settings, model_roles: selectedRolesFixture({ organization: { providerId: "anthropic-api", modelId: "synthetic-selected" } }) };
+    expect(roleFor("generate", s).provider).toBe("anthropic-api");
+    expect(roleFor("generate", s).model).toBe("synthetic-selected");
+    expect(() => roleFor("generate", { ...settings, model_roles: undefined })).toThrow("native feature selections are unavailable");
   });
 
   it("ingest always takes the ingest role", () => {
@@ -884,5 +1237,144 @@ describe("roleFor", () => {
     expect(canGenerate("")).toBe(false);
     expect(canGenerate("ollama")).toBe(true);
     expect(canGenerate("anthropic-cli")).toBe(true);
+  });
+});
+
+describe("retrieveChunks private failure logging", () => {
+  beforeEach(() => vi.restoreAllMocks());
+
+  it.each([
+    ["embeddings_status", "error"], ["embeddings_status", "string"], ["embeddings_status", "object"],
+    ["semantic_search", "error"], ["semantic_search", "string"], ["semantic_search", "object"],
+  ] as const)("keeps %s %s failure observable without exception payload or coercion", async (stage, kind) => {
+    const privateDetail = `SYN_PRIVATE_DETAIL_${stage}_${kind}`;
+    const coerce = vi.fn(() => { throw new Error(privateDetail); });
+    const serialize = vi.fn(() => { throw new Error(privateDetail); });
+    const rejection = kind === "error" ? new Error(privateDetail)
+      : kind === "string" ? privateDetail
+        : { detail: privateDetail, toString: coerce, toJSON: serialize };
+    // Exercise the real JSON logger; only the console sink and IPC are mocked.
+    const output = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const status = vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 10, model: CURRENT_INDEX_MODEL });
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    if (stage === "embeddings_status") status.mockRejectedValue(rejection);
+    else search.mockRejectedValue(rejection);
+    const retrieving = vi.fn();
+    const result = await retrieveChunks("SYN_PUBLIC_QUERY", 12, retrieving);
+
+    expect(result).toEqual({ hits: [], nearMisses: [], floor: RELEVANCE_FLOOR,
+      indexedPages: null, stale: false, retrievalFailed: true });
+    expect(status).toHaveBeenCalledTimes(1);
+    expect(search).toHaveBeenCalledTimes(stage === "embeddings_status" ? 0 : 1);
+    expect(retrieving).toHaveBeenCalledTimes(stage === "embeddings_status" ? 0 : 1);
+    expect(coerce).not.toHaveBeenCalled();
+    expect(serialize).not.toHaveBeenCalled();
+    expect(output).toHaveBeenCalledTimes(1);
+    const line: unknown = output.mock.calls[0][0];
+    expect(typeof line).toBe("string");
+    expect(line).not.toContain(privateDetail);
+    expect(line).not.toContain("SYN_PUBLIC_QUERY");
+    expect(JSON.parse(String(line))).toEqual({ ts: expect.any(String), level: "warn",
+      event: `retrieve_chunks.${stage}_failed`, code: `${stage}_failed` });
+  });
+
+  it.each([false, true])("keeps a healthy %s result free of failure events", async (hasHit) => {
+    const output = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 10, model: CURRENT_INDEX_MODEL });
+    const hit: ScoredChunk = { page: "wiki/synthetic.md", stem: "synthetic", section: 0,
+      text: "SYN_PUBLIC_EVIDENCE", score: 0.9, similarity: 0.9, exact_match: true };
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found(hasHit ? [hit] : []));
+    const retrieving = vi.fn();
+    const result = await retrieveChunks("SYN_PUBLIC_QUERY", 12, retrieving);
+    expect(result.hits).toEqual(hasHit ? [hit] : []);
+    expect(result.indexedPages).toBe(10);
+    expect(result.retrievalFailed).toBe(false);
+    expect(result.stale).toBe(false);
+    expect(search).toHaveBeenCalledTimes(1);
+    expect(retrieving).toHaveBeenCalledTimes(1);
+    expect(output).not.toHaveBeenCalled();
+  });
+});
+
+// ■ on the Ask page (UX S36): a question stopped while retrieval ran must not
+// go on to the model — a paid call nobody will read.
+describe("complete() stopped", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: VAULT, openingToken: "synthetic-opening" });
+    vi.spyOn(ipc, "getDistillConfig").mockRejectedValue(new Error("no config"));
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+  });
+  const stopped = (): AbortSignal => {
+    const c = new AbortController();
+    c.abort();
+    return c.signal;
+  };
+  const ask = (signal: AbortSignal) =>
+    complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "what is attention?" }],
+      onStage: () => undefined,
+      signal,
+    });
+
+  it("never calls an HTTP provider (Ollama)", async () => {
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      query_provider: "ollama",
+      query_model: "llama3",
+      model_roles: selectedRolesFixture({ ask: { providerId: "ollama", modelId: "llama3" } }),
+    } as never);
+    const chat = vi.spyOn(ipc, "chatComplete");
+    await expect(ask(stopped())).rejects.toThrow();
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("never runs a CLI provider", async () => {
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      query_provider: "anthropic-cli",
+      query_model: "sonnet",
+      model_roles: selectedRolesFixture({ ask: { providerId: "anthropic-cli", modelId: "sonnet" } }),
+    } as never);
+    const run = vi.spyOn(ipc, "claudeRun");
+    const stream = vi.spyOn(ipc, "claudeRunStream");
+    await expect(ask(stopped())).rejects.toThrow();
+    expect(run).not.toHaveBeenCalled();
+    expect(stream).not.toHaveBeenCalled();
+  });
+
+  // A stop that only drops the answer would leave `claude` running on the
+  // user's quota behind a card that says it stopped.
+  it("■ during a Claude Code run kills that run", async () => {
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      query_provider: "anthropic-cli",
+      query_model: "sonnet",
+      model_roles: selectedRolesFixture({ ask: { providerId: "anthropic-cli", modelId: "sonnet" } }),
+    } as never);
+    const stream = vi.spyOn(ipc, "claudeRunStream").mockImplementation(() => new Promise(() => undefined));
+    const cancel = vi.spyOn(ipc, "claudeCancel").mockResolvedValue(true);
+    const c = new AbortController();
+    void ask(c.signal).catch(() => undefined);
+    await vi.waitFor(() => expect(stream).toHaveBeenCalledTimes(1));
+    expect(cancel).not.toHaveBeenCalled();
+    c.abort();
+    expect(cancel).toHaveBeenCalledWith(stream.mock.calls[0][0]);
+  });
+
+  it("a finished Claude Code run is not cancelled by a later stop", async () => {
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      query_provider: "anthropic-cli",
+      query_model: "sonnet",
+      model_roles: selectedRolesFixture({ ask: { providerId: "anthropic-cli", modelId: "sonnet" } }),
+    } as never);
+    vi.spyOn(ipc, "claudeRunStream").mockResolvedValue({ stdout: "an answer", stderr: "", status: 0 });
+    const cancel = vi.spyOn(ipc, "claudeCancel").mockResolvedValue(true);
+    const c = new AbortController();
+    await expect(ask(c.signal)).resolves.toBe("an answer");
+    c.abort();
+    expect(cancel).not.toHaveBeenCalled();
   });
 });

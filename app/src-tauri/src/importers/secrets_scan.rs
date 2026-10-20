@@ -93,6 +93,41 @@ pub fn scan_pii(text: &str) -> Vec<&'static str> {
         .collect()
 }
 
+/// Scan-before-write gate for every Rust path into raw/ (Q4 item 13; the MCP
+/// tools and distill's summary-tier move): secrets always refuse; PII refuses
+/// when quarantine mode is on, otherwise
+/// `Ok(Some(warning))` — the write proceeds and the warning is attached as
+/// `pii_warning`. Refusal strings kept in sync with automation/autoingest.py
+/// (quarantine move). The verdict is pinned to auto-ingest's `shouldPromote`
+/// (redaction.ts) by the shared fixture `src/lib/redactionCases.json`.
+pub(crate) fn raw_source_guard(
+    content: &str,
+    pii_quarantine: bool,
+) -> Result<Option<String>, String> {
+    let secrets = scan(content);
+    if !secrets.is_empty() {
+        return Err(format!(
+            "refused: possible secrets ({}) — redact and re-add. Nothing was written.",
+            secrets.join(", ")
+        ));
+    }
+    let pii = scan_pii(content);
+    if pii.is_empty() {
+        return Ok(None);
+    }
+    if pii_quarantine {
+        return Err(format!(
+            "refused: possible PII ({}) — redact and re-add. Nothing was written.",
+            pii.join(", ")
+        ));
+    }
+    Ok(Some(format!(
+        "possible PII detected: {} — raw/ is immutable and committed to git; \
+         redact and re-add if unintended.",
+        pii.join(", ")
+    )))
+}
+
 #[cfg(test)]
 mod tests {
     use super::scan;
@@ -137,5 +172,36 @@ mod tests {
         assert!(scan_pii("meeting on 2026-08-23 at 10:00").is_empty());
         assert!(scan_pii("shipped 20260823 as release 1.2.3").is_empty());
         assert!(scan_pii("").is_empty());
+    }
+
+    // Auto-ingest decides TS-side (redaction.ts `shouldPromote`, fed this
+    // scan); the Rust raw/ entry paths decide with `raw_source_guard`. The
+    // same fixture drives redaction.test.ts, so the two cannot drift apart.
+    #[test]
+    fn the_promotion_rule_matches_the_shared_fixture() {
+        use super::{raw_source_guard, scan_pii};
+        let cases: Vec<serde_json::Value> =
+            serde_json::from_str(include_str!("../../../src/lib/redactionCases.json")).unwrap();
+        assert!(!cases.is_empty());
+        let names = |v: &serde_json::Value| -> Vec<String> {
+            v.as_array()
+                .unwrap()
+                .iter()
+                .map(|n| n.as_str().unwrap().to_string())
+                .collect()
+        };
+        for c in &cases {
+            let name = c["name"].as_str().unwrap();
+            let text = c["text"].as_str().unwrap();
+            assert_eq!(scan(text), names(&c["secrets"]), "{name}");
+            assert_eq!(scan_pii(text), names(&c["pii"]), "{name}");
+            for (pii_quarantine, key) in [(false, "promote_warn"), (true, "promote_quarantine")] {
+                assert_eq!(
+                    raw_source_guard(text, pii_quarantine).is_ok(),
+                    c[key].as_bool().unwrap(),
+                    "{name} / {key}"
+                );
+            }
+        }
     }
 }

@@ -19,6 +19,19 @@ import {
   sourceTextFor,
   IMAGE_INGEST_PROMPT,
 } from "./mediaIngest";
+import { roleFixture } from "./modelRoles.testSupport";
+
+const origin = { vaultPath: "/synthetic", openingToken: "synthetic-opening" };
+const imageContext = {
+  origin,
+  roleSnapshot: roleFixture(
+    "compilation",
+    "openai-api",
+    "synthetic-vision",
+    origin,
+  ),
+  requestId: "synthetic-image-request",
+};
 
 beforeEach(() => {
   describeImage.mockReset();
@@ -66,20 +79,61 @@ describe("classifyInboxEntry", () => {
 });
 
 describe("sourceTextFor dispatch", () => {
-  const deps = { provider: "anthropic-api", model: "claude" };
+  const deps = imageContext;
 
-  it("routes images to the vision provider", async () => {
+  // The legacy Query provider/model arguments granted an unrelated route.
+  // Images now require the initiating Compilation foreground context.
+  it("forwards only the exact captured Compilation context to image ingest", async () => {
     describeImage.mockResolvedValue("a described chart");
     const text = await sourceTextFor("/x/fig.png", deps);
     expect(text).toBe("a described chart");
-    expect(describeImage).toHaveBeenCalledWith(
-      "anthropic-api",
-      "claude",
-      "/x/fig.png",
-      IMAGE_INGEST_PROMPT,
-    );
+    expect(describeImage).toHaveBeenCalledWith({
+      ...imageContext,
+      path: "/x/fig.png",
+      prompt: IMAGE_INGEST_PROMPT,
+    });
     expect(readExternalText).not.toHaveBeenCalled();
   });
+
+  it.each([
+    undefined,
+    { provider: "openai-api", model: "synthetic-legacy-query" },
+    {
+      ...imageContext,
+      roleSnapshot: roleFixture(
+        "ask",
+        "openai-api",
+        "synthetic-vision",
+        origin,
+      ),
+    },
+    {
+      ...imageContext,
+      roleSnapshot: roleFixture(
+        "compilation",
+        "openai-api",
+        "synthetic-vision",
+        origin,
+        "automatic",
+      ),
+    },
+    {
+      ...imageContext,
+      origin: { ...origin, openingToken: "different-opening" },
+    },
+    { ...imageContext, requestId: "" },
+  ])(
+    "rejects a missing or unrelated image context before any extraction: %j",
+    async (context) => {
+      describeImage.mockResolvedValue("Synthetic unauthorized description");
+      await expect(
+        sourceTextFor("/synthetic/image.png", context as never),
+      ).rejects.toThrow();
+      expect(describeImage).not.toHaveBeenCalled();
+      expect(readExternalText).not.toHaveBeenCalled();
+      expect(transcribeMedia).not.toHaveBeenCalled();
+    },
+  );
 
   it("routes audio/video to whisper", async () => {
     transcribeMedia.mockResolvedValue("spoken transcript");

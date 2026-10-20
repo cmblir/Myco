@@ -12,6 +12,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct Settings {
     #[serde(default)]
     pub providers: ProviderFlags,
+    /// Independent feature selections; legacy fields remain migration/display data.
+    #[serde(default)]
+    pub model_roles: crate::role_authorization::ModelRoleSettings,
+    /// Runtime CAS revision; ignored when reading persisted JSON.
+    #[serde(default, skip_deserializing, skip_serializing_if = "String::is_empty")]
+    pub role_authorization_revision: String,
     #[serde(default = "default_query_provider")]
     pub query_provider: String,
     #[serde(default = "default_query_model")]
@@ -97,6 +103,10 @@ pub struct Settings {
     /// effect on the next reindex/reconcile (`vector_index::is_cold`).
     #[serde(default)]
     pub search_archived_sessions: bool,
+    /// Explicit opt-in: deletion bypasses recoverable trash. Existing installs
+    /// keep the recoverable policy until the user selects this setting.
+    #[serde(default)]
+    pub permanent_delete: bool,
 }
 
 /// Process-wide mirror of `search_archived_sessions`, refreshed on every
@@ -109,10 +119,26 @@ pub fn search_archived_sessions() -> bool {
     SEARCH_ARCHIVED_SESSIONS.load(Ordering::Relaxed)
 }
 
+#[cfg(test)]
+#[path = "role_authorization_baseline_tests.rs"]
+mod role_authorization_baseline_tests;
+
+/// Keep a destructive operation on the policy the user confirmed. Legacy
+/// callers without a confirmation snapshot retain the persisted policy.
+pub(crate) fn confirmed_deletion_policy(expected_permanent: Option<bool>) -> Result<bool, String> {
+    let permanent = read_checked()?.permanent_delete;
+    if expected_permanent.is_some_and(|expected| expected != permanent) {
+        return Err("deletion policy changed; review and confirm deletion again".into());
+    }
+    Ok(permanent)
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {
             providers: ProviderFlags::default(),
+            model_roles: crate::role_authorization::ModelRoleSettings::default(),
+            role_authorization_revision: String::new(),
             query_provider: default_query_provider(),
             query_model: default_query_model(),
             ingest_provider: default_ingest_provider(),
@@ -134,16 +160,15 @@ impl Default for Settings {
             pii_quarantine_enabled: false,
             notch_enabled: false,
             search_archived_sessions: false,
+            permanent_delete: false,
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderFlags {
-    // anthropic_cli defaults to true: it's the app's primary path and was
-    // implicitly always-on before flags existed for CLIs, so existing
-    // installs keep working after upgrade.
-    #[serde(default = "default_true")]
+    // Detection and historical defaults never establish an external connection.
+    #[serde(default)]
     pub anthropic_cli: bool,
     #[serde(default)]
     pub gemini_cli: bool,
@@ -169,7 +194,7 @@ pub struct ProviderFlags {
 impl Default for ProviderFlags {
     fn default() -> Self {
         Self {
-            anthropic_cli: true,
+            anthropic_cli: false,
             gemini_cli: false,
             codex_cli: false,
             anthropic_api: false,
@@ -192,19 +217,16 @@ fn default_spotlight_shortcut() -> String {
 }
 
 fn default_query_provider() -> String {
-    "anthropic-cli".to_string()
+    "builtin-local".into()
 }
 fn default_query_model() -> String {
-    // CLI alias (the default provider is the claude CLI). Sonnet balances quality
-    // and cost for answering; ingest defaults to the cheaper Haiku below.
-    "sonnet".to_string()
+    crate::local_model::MODEL.id.into()
 }
 fn default_ingest_provider() -> String {
-    "anthropic-cli".to_string()
+    "builtin-local".into()
 }
 fn default_ingest_model() -> String {
-    // Cheapest CLI alias — ingest is high-volume, so default to Haiku.
-    "haiku".to_string()
+    crate::local_model::SMALL_MODEL.id.into()
 }
 fn default_effort() -> String {
     crate::claude::CLI_DEFAULT.to_string()
@@ -461,24 +483,41 @@ pub fn load() -> Settings {
 }
 
 fn read() -> Settings {
-    let path = match settings_dir() {
-        Ok(p) => p.join("settings.json"),
-        // Loud, because this is the amplifier: every failure to resolve the data
-        // dir otherwise ends as a silently default-looking app — indistinguishable
-        // from a factory reset — and the user has no other signal.
-        Err(e) => {
-            eprintln!("settings: cannot resolve data dir ({e}); using defaults THIS SESSION ONLY");
-            return Settings::default();
+    match read_checked() {
+        Ok(settings) => settings,
+        Err(error) => {
+            eprintln!(
+                "settings unavailable: {error}; using unauthorised local defaults for display only"
+            );
+            Settings::default()
         }
-    };
+    }
+}
+
+/// Admission never turns corrupt or inaccessible stored settings into defaults.
+/// Ordinary reads remain lock-free to preserve origin -> role -> import ordering.
+pub(crate) fn read_checked() -> Result<Settings, String> {
+    let path = settings_dir()?.join("settings.json");
     let raw = match std::fs::read_to_string(&path) {
-        Ok(s) => s,
-        Err(_) => return Settings::default(),
+        Ok(raw) => raw,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok(Settings::default())
+        }
+        Err(error) => return Err(format!("read settings: {error}")),
     };
-    let mut settings: Settings = serde_json::from_str(&raw).unwrap_or_default();
+    let value: serde_json::Value =
+        serde_json::from_str(&raw).map_err(|error| format!("parse settings: {error}"))?;
+    let had_roles = value.get("model_roles").is_some();
+    let mut settings: Settings =
+        serde_json::from_value(value).map_err(|error| format!("parse settings: {error}"))?;
     settings.rename_legacy_provider_ids();
     settings.rename_legacy_builtin_model();
-    settings
+    if !had_roles {
+        settings.model_roles = crate::role_authorization::ModelRoleSettings::migrate(&settings);
+    }
+    settings.model_roles.validate()?;
+    SEARCH_ARCHIVED_SESSIONS.store(settings.search_archived_sessions, Ordering::Relaxed);
+    Ok(settings)
 }
 
 /// The `memex-pro` provider id became `myco-pro`. Unlike the struct fields
@@ -543,8 +582,15 @@ pub(crate) fn atomic_write(target: &std::path::Path, content: &[u8]) -> Result<(
 }
 
 pub fn save(settings: &Settings) -> Result<(), String> {
+    crate::role_authorization::save_settings(settings)
+}
+
+/// Only native authorization transactions may bypass the common guard.
+pub(crate) fn save_unlocked(settings: &Settings) -> Result<(), String> {
     let path = settings_dir()?.join("settings.json");
-    let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
+    let mut persisted = settings.clone();
+    persisted.role_authorization_revision.clear();
+    let raw = serde_json::to_string_pretty(&persisted).map_err(|e| e.to_string())?;
     atomic_write(&path, raw.as_bytes()).map_err(|e| format!("write settings: {e}"))?;
     SEARCH_ARCHIVED_SESSIONS.store(settings.search_archived_sessions, Ordering::Relaxed);
     Ok(())
@@ -677,11 +723,11 @@ mod tests {
     }
 
     #[test]
-    fn defaults_use_claude_cli() {
+    fn defaults_use_local_roles() {
         let s = Settings::default();
-        assert_eq!(s.query_provider, "anthropic-cli");
-        assert_eq!(s.ingest_provider, "anthropic-cli");
-        assert!(s.providers.anthropic_cli); // primary path stays on
+        assert_eq!(s.query_provider, "builtin-local");
+        assert_eq!(s.ingest_provider, "builtin-local");
+        assert!(!s.providers.anthropic_cli);
         assert!(!s.providers.gemini_cli);
         assert!(!s.providers.codex_cli);
         assert!(!s.providers.anthropic_api);
@@ -692,17 +738,16 @@ mod tests {
     }
 
     #[test]
-    fn legacy_settings_json_keeps_claude_cli_enabled() {
+    fn absent_cli_flag_does_not_assume_a_connection() {
         with_isolated_data("legacy-flags", |dir| {
-            // Pre-CLI-flags settings.json — anthropic_cli absent must
-            // default to true so upgrades don't break the working setup.
+            // Absent CLI flags do not prove an external connection.
             std::fs::write(
                 dir.join("settings.json"),
                 r#"{ "providers": { "ollama": true } }"#,
             )
             .unwrap();
             let s = load();
-            assert!(s.providers.anthropic_cli);
+            assert!(!s.providers.anthropic_cli);
             assert!(!s.providers.gemini_cli);
             assert!(s.providers.ollama);
         });
@@ -721,6 +766,19 @@ mod tests {
     }
 
     #[test]
+    fn permanent_delete_requires_persisted_opt_in() {
+        assert!(!Settings::default().permanent_delete);
+        let legacy: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!legacy.permanent_delete);
+        let selected: Settings = serde_json::from_str(r#"{"permanent_delete":true}"#).unwrap();
+        assert!(selected.permanent_delete);
+        assert_eq!(
+            serde_json::to_value(selected).unwrap()["permanent_delete"],
+            true
+        );
+    }
+
+    #[test]
     fn notch_defaults_off() {
         // Opt-in: a fresh install AND any pre-notch settings.json (field
         // absent) must come up with the surface disabled.
@@ -733,7 +791,7 @@ mod tests {
     fn load_returns_default_when_missing() {
         with_isolated_data("load-missing", |_dir| {
             let s = load();
-            assert_eq!(s.query_provider, "anthropic-cli");
+            assert_eq!(s.query_provider, "builtin-local");
         });
     }
 
@@ -1160,7 +1218,7 @@ mod tests {
             .unwrap();
             let s = load();
             assert!(s.providers.ollama);
-            assert_eq!(s.query_provider, "anthropic-cli"); // default
+            assert_eq!(s.query_provider, "builtin-local"); // default
         });
     }
 }

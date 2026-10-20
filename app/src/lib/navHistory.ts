@@ -39,3 +39,15 @@ export function sanitizeHistory(
     ? { entries: p.entries, idx: p.idx }
     : { entries: [route], idx: 0 };
 }
+
+/** The last `n` distinct notes visited, newest first, without the open one —
+ *  the palette's Recent group. Forward entries count: they were seen later. */
+export function recentPages(h: NavHistory, n: number): RouteId[] {
+  const current = h.entries[h.idx];
+  const out: RouteId[] = [];
+  for (let i = h.entries.length - 1; i >= 0 && out.length < n; i--) {
+    const r = h.entries[i];
+    if (r.startsWith("page:") && r !== current && !out.includes(r)) out.push(r);
+  }
+  return out;
+}

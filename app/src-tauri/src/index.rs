@@ -19,6 +19,11 @@ pub struct Adjacency {
     /// status / source_count). Keyed by the same absolute file path as `forward`.
     /// Only files that declare at least one of these fields appear here.
     pub meta: BTreeMap<String, NodeMeta>,
+    /// Notes the build could not read: not downloaded yet (iCloud
+    /// "Optimise Mac Storage") or unreadable. Absolute paths, sorted. A
+    /// not-downloaded note whose earlier parse is cached stays in the graph
+    /// but is still listed here.
+    pub unread: Vec<String>,
     /// Hash of everything above, so a poller can skip re-rendering an
     /// identical graph. See [`fingerprint`].
     pub rev: u64,
@@ -38,6 +43,11 @@ pub struct NodeMeta {
     pub status: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_count: Option<u32>,
+    /// Frontmatter `title`. The graph, sidebar and palette list pages by file
+    /// stem; an opaque session stem (`source-claude-code-<uuid>`) is named by
+    /// this instead once Tidy has given it a readable one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
 }
 
 impl NodeMeta {
@@ -46,6 +56,7 @@ impl NodeMeta {
             && self.confidence.is_none()
             && self.status.is_none()
             && self.source_count.is_none()
+            && self.title.is_none()
     }
 }
 
@@ -67,9 +78,16 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
     for file in &sources {
         // Stat only. `stamp` is None when metadata is unreadable, which forces
         // a re-read (and never caches) — the conservative side.
-        let stamp = std::fs::metadata(file)
-            .ok()
+        let meta = std::fs::metadata(file).ok();
+        let stamp = meta
+            .as_ref()
             .and_then(|m| Some((m.modified().ok()?, m.len())));
+        // Reading a not-downloaded note downloads it — a build would pull the
+        // whole vault down. List it instead; a cached parse is still used.
+        let dataless = meta.as_ref().is_some_and(crate::vault::is_dataless);
+        if dataless {
+            adj.unread.push(file.to_string_lossy().into_owned());
+        }
         // Skip pathologically large files so one file can't dominate a full-vault
         // scan (matches the 2 MB cap search_vault uses). A failed metadata read
         // (len 0) falls through to read_to_string, preserving its error behaviour.
@@ -79,6 +97,7 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
         let parsed = match prev.get(file) {
             // Same mtime+len as last build: reuse the parse, don't touch the disk.
             Some(hit) if stamp.is_some() && hit.stamp == stamp => Arc::clone(hit),
+            _ if dataless => continue,
             _ => {
                 // Skip what we cannot read instead of failing the build. One bad file —
                 // a dangling symlink, an un-downloaded iCloud placeholder, a
@@ -88,6 +107,7 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
                 // graph missing one note is enormously better than no graph at all.
                 // This matches how search_vault (vault.rs) already degrades.
                 let Ok(raw) = std::fs::read_to_string(file) else {
+                    adj.unread.push(file.to_string_lossy().into_owned());
                     continue;
                 };
                 Arc::new(parse_file(stamp, &raw))
@@ -106,6 +126,7 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
         cur.insert(file.clone(), parsed);
     }
     cache.insert(root_path, cur);
+    adj.unread.sort();
     adj.rev = fingerprint(&adj);
 
     Ok(adj)
@@ -175,9 +196,17 @@ fn fingerprint(adj: &Adjacency) -> u64 {
     for map in [&adj.forward, &adj.backward, &adj.unresolved, &adj.tags] {
         map.hash(&mut h);
     }
+    adj.unread.hash(&mut h);
     for (k, m) in &adj.meta {
         k.hash(&mut h);
-        (&m.node_type, &m.confidence, &m.status, m.source_count).hash(&mut h);
+        (
+            &m.node_type,
+            &m.confidence,
+            &m.status,
+            m.source_count,
+            &m.title,
+        )
+            .hash(&mut h);
     }
     h.finish() & ((1u64 << 53) - 1)
 }
@@ -192,13 +221,16 @@ fn fingerprint(adj: &Adjacency) -> u64 {
 /// `templates/` holds note scaffolds with `{{title}}` placeholders — not
 /// knowledge either, so they stay out of the graph, Tags and lint.
 ///
+/// `cards/` holds study decks, each saved as `cards/<stem>.md` after the note
+/// it quotes: walked, a deck would be a second `[[stem]]` target.
+///
 /// Top-level only (compared against the vault root), so a legitimate
 /// `wiki/sessions.md` page or a `wiki/x/_inbox/` folder is untouched.
 pub(crate) fn is_staging_dir(root: &Path, path: &Path) -> bool {
     path.parent() == Some(root)
         && matches!(
             path.file_name().and_then(|n| n.to_str()),
-            Some("_inbox") | Some("sessions") | Some("templates")
+            Some("_inbox") | Some("sessions") | Some("templates") | Some("cards")
         )
 }
 
@@ -262,6 +294,23 @@ pub(crate) fn build_name_index(files: &[PathBuf]) -> HashMap<String, PathBuf> {
         if let Some(name) = f.file_name().and_then(|s| s.to_str()) {
             idx.insert(crate::norm::nfc(name).to_lowercase(), f.clone());
         }
+        // Path citations must resolve before a basename fallback: two pages
+        // called status.md may support different, conflicting decisions.
+        let path = f.to_string_lossy().replace('\\', "/");
+        for (offset, ch) in path.char_indices() {
+            if ch != '/' {
+                continue;
+            }
+            let suffix = &path[offset + 1..];
+            if !suffix.contains('/') {
+                continue;
+            }
+            let key = crate::norm::nfc(suffix).to_lowercase();
+            idx.insert(key.clone(), f.clone());
+            if let Some(stem_path) = key.strip_suffix(".md") {
+                idx.insert(stem_path.to_string(), f.clone());
+            }
+        }
     }
     idx
 }
@@ -280,18 +329,15 @@ fn resolve_links(
     let mut seen_unresolved: HashSet<String> = HashSet::new();
     for target in targets {
         // Drop any `#heading` / `#^block` suffix — Obsidian resolves
-        // `[[Note#Section]]` to the note itself. Then drop any path prefix
-        // (`[[wiki/x]]`, `[[wiki/sub/x.md]]`) — this vault has a flat wikilink
-        // name index (build_name_index keys by stem/basename only, not full
-        // path), so a link written path-style must look up the same key as the
-        // bare stem `[[x]]` or it reads as a false "missing page" even though
-        // the file exists. Matches Obsidian's own basename resolution.
+        // `[[Note#Section]]` to the note itself. Prefer the explicit relative
+        // path so identically named sessions cannot redirect a citation.
+        // Legacy basename links retain their existing fallback.
         let base = target.split('#').next().unwrap_or(target).trim();
-        let base = base.rsplit(['/', '\\']).next().unwrap_or(base);
         // Same normalization as build_name_index's keys — both sides must
         // agree or NFD-vs-NFC pairs miss.
-        let key = crate::norm::nfc(base).to_lowercase();
-        match names.get(&key) {
+        let key = crate::norm::nfc(base).to_lowercase().replace('\\', "/");
+        let short = key.rsplit('/').next().unwrap_or(&key);
+        match names.get(&key).or_else(|| names.get(short)) {
             Some(resolved) => {
                 let target_path = resolved.to_string_lossy().into_owned();
                 if !seen_resolved.insert(target_path.clone()) {
@@ -404,6 +450,7 @@ fn extract_meta(pod: &gray_matter::Pod) -> NodeMeta {
     m.node_type = get_str("type");
     m.confidence = get_str("confidence");
     m.status = get_str("status");
+    m.title = get_str("title");
     m.source_count = match map.get("source_count") {
         Some(Pod::Integer(n)) => u32::try_from(*n).ok(),
         Some(Pod::Float(f)) if *f >= 0.0 => Some(*f as u32),
@@ -497,6 +544,23 @@ mod tests {
         assert_eq!(linkables.len(), 1);
     }
 
+    /// `cards/<stem>.md` decks are named after the note they quote, so walking
+    /// them made a deck a second target for `[[stem]]` (whichever the name
+    /// index saw last won) and its card lines a second copy of the note.
+    #[test]
+    fn collect_files_skips_top_level_cards() {
+        let root = temp_vault("cards");
+        for d in ["cards", "wiki"] {
+            fs::create_dir_all(root.join(d)).unwrap();
+        }
+        fs::write(root.join("cards/attention.md"), "What? ?? [[kv-cache]]\n").unwrap();
+        fs::write(root.join("wiki/attention.md"), "# Attention\n").unwrap();
+
+        let (sources, linkables) = collect_files(&root).unwrap();
+        assert_eq!(sources, vec![root.join("wiki/attention.md")]);
+        assert_eq!(linkables, vec![root.join("wiki/attention.md")]);
+    }
+
     /// An NFD-named file (macOS file APIs) must resolve a typed NFC
     /// [[wikilink]] — the name index and the lookup key both normalize.
     #[test]
@@ -544,6 +608,30 @@ mod tests {
             "the readable files must still be in the graph; got {:?}",
             adj.forward.keys().collect::<Vec<_>>()
         );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_note_it_cannot_read_is_named_not_dropped() {
+        let dir = temp_vault("unread-named");
+        fs::write(dir.join("good.md"), "# good").unwrap();
+        fs::write(dir.join("latin1.md"), b"caf\xe9").unwrap(); // not UTF-8
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        let root = dir.canonicalize().unwrap();
+        assert_eq!(
+            adj.unread,
+            vec![root.join("latin1.md").to_string_lossy().into_owned()]
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn readable_vault_reports_nothing_unread() {
+        let dir = temp_vault("all-read");
+        fs::write(dir.join("a.md"), "see [[b]]").unwrap();
+        fs::write(dir.join("b.md"), "# b").unwrap();
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        assert!(adj.unread.is_empty());
         fs::remove_dir_all(&dir).ok();
     }
 
@@ -643,6 +731,34 @@ mod tests {
     }
 
     #[test]
+    fn path_citations_distinguish_duplicate_stems() {
+        let dir = temp_vault("path-collision");
+        fs::create_dir_all(dir.join("wiki/first")).unwrap();
+        fs::create_dir_all(dir.join("wiki/second")).unwrap();
+        fs::write(dir.join("wiki/first/status.md"), "First decision").unwrap();
+        fs::write(dir.join("wiki/second/status.md"), "Second decision").unwrap();
+        fs::write(
+            dir.join("wiki/question.md"),
+            "[[wiki/second/status|status]]",
+        )
+        .unwrap();
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        let src = dir
+            .join("wiki/question.md")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let expected = dir
+            .join("wiki/second/status.md")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(adj.forward.get(&src), Some(&vec![expected]));
+    }
+
+    #[test]
     fn strips_trailing_backslash_before_resolving() {
         let dir = temp_vault("backslash-resolve");
         fs::write(dir.join("a.md"), "see [[b\\]]").unwrap();
@@ -675,7 +791,7 @@ mod tests {
         let dir = temp_vault("meta");
         fs::write(
             dir.join("a.md"),
-            "---\ntype: concept\nconfidence: high\nstatus: disputed\nsource_count: 3\n---\nbody [[b]]",
+            "---\ntitle: \"서버 띄워봐. · Claude Code\"\ntype: concept\nconfidence: high\nstatus: disputed\nsource_count: 3\n---\nbody [[b]]",
         )
         .unwrap();
         fs::write(dir.join("b.md"), "x").unwrap();
@@ -691,6 +807,7 @@ mod tests {
         assert_eq!(m.confidence.as_deref(), Some("high"));
         assert_eq!(m.status.as_deref(), Some("disputed"));
         assert_eq!(m.source_count, Some(3));
+        assert_eq!(m.title.as_deref(), Some("서버 띄워봐. · Claude Code"));
         // A file with no frontmatter meta produces no entry.
         let bkey = dir
             .join("b.md")

@@ -158,6 +158,15 @@ describe("store actions (persistence)", () => {
     expect(useResurfaceStore.getState().picks).toEqual([]);
   });
 
+  it("snoozing the top pick promotes the next one (Home's Later)", () => {
+    useResurfaceStore
+      .getState()
+      .refreshFrom([pick("wiki/a.md", 0.9), pick("wiki/b.md", 0.8)]);
+    useResurfaceStore.getState().snooze("wiki/a.md");
+
+    expect(useResurfaceStore.getState().picks[0]?.page).toBe("wiki/b.md");
+  });
+
   it("open counts an accept only for a currently-shown pick", () => {
     useResurfaceStore.getState().refreshFrom([pick("wiki/a.md", 0.9)]);
 

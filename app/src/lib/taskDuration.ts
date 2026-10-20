@@ -12,6 +12,17 @@ const UNIT_MIN: Record<string, number> = {
 };
 const TOKEN_RE = /^(\d+(?:\.\d+)?)([mhdw])$/;
 
+const KO_UNIT: Record<string, string> = { 분: "m", 시간: "h", 일: "d", 주: "w" };
+const KO_RE = /^(\d+(?:\.\d+)?)\s*(분|시간|일|주)$/;
+
+/** A Korean duration ("2일", "3시간") as the stored token ("2d", "3h"); any
+ *  other text comes back trimmed, so the stored form never changes. */
+export function normalizeDuration(s: string): string {
+  const t = s.trim();
+  const m = KO_RE.exec(t);
+  return m ? `${m[1]}${KO_UNIT[m[2]]}` : t;
+}
+
 /** Minutes, or null when `s` is not a duration token. */
 export function parseDuration(s: string): number | null {
   const m = TOKEN_RE.exec(s.trim());

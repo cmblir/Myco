@@ -1,0 +1,642 @@
+/* Everyday actions stay readable in both a full window and a split pane. */
+.everyday-home {
+  container-type: inline-size;
+  margin-bottom: 2rem;
+}
+/* Ask-or-capture band above the hero: Enter asks, Cmd+Enter writes the line
+   into today's daily note. */
+.home-ask {
+  margin-bottom: 1.25rem;
+}
+.home-ask__greet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem 0.625rem;
+  margin: 0 0 0.75rem;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+}
+.home-ask__greet strong {
+  color: var(--ink);
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+.home-ask__input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.875rem 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  background: var(--bg-elev);
+  color: var(--ink);
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: none;
+  /* HomeAsk fits the height to the text; four lines, then it scrolls. */
+  max-height: calc(4 * 1.5em + 2 * 0.875rem + 2px);
+  overflow-y: auto;
+}
+.home-ask__input::placeholder {
+  color: var(--ink-3);
+}
+/* The app's text-field focus (.input:focus): the box is focused on arrival,
+   and a 2px outline around it all the time read as an error state. */
+.home-ask__input:focus {
+  outline: none;
+  border-color: var(--ink);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+/* Ask and Add to today's note, with the key hint at the row's end. */
+.home-ask__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+/* 44px targets, as the example chips below. */
+.home-ask__actions .u-btn {
+  height: auto;
+  min-height: 2.75rem;
+}
+.home-ask__keys {
+  margin: 0 0 0 auto;
+  color: var(--ink-2);
+  font-size: 0.75rem;
+}
+/* Enter and Cmd+Enter mean nothing to a touch keyboard; the buttons do it. */
+@media (hover: none) {
+  .home-ask__keys {
+    display: none;
+  }
+}
+.home-ask__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+/* An example question wraps rather than pushing past a narrow pane. */
+.home-ask__chips .u-btn {
+  height: auto;
+  min-height: 2.75rem;
+  padding-block: 0.5rem;
+  border-radius: var(--r-pill);
+  line-height: 1.4;
+  white-space: normal;
+  text-align: start;
+  flex-shrink: 1;
+}
+/* A quiet surface keeps Home's greeting and input clear during background
+   work. Graph appearance remains on the Graph page. */
+.home-management-content .ovl-zone.is-stack,
+.home-management-content .ovl-zone.is-stack > .ovl-block {
+  display: contents;
+}
+.home-band {
+  position: relative;
+  isolation: isolate;
+  margin-bottom: 1.25rem;
+  padding: 1.25rem;
+  border-radius: var(--r-lg);
+  background: var(--bg-soft);
+  overflow: hidden;
+  min-height: 11rem;
+}
+.home-band > .home-ask {
+  margin-bottom: 0;
+}
+.home-band .home-ask__greet,
+.home-band .home-ask__keys {
+  width: fit-content;
+  padding: 0.25rem 0.625rem;
+  border-radius: var(--r-pill);
+  background: var(--bg-soft);
+}
+/* Home's notices bell (HomeNotices), the title row's one control. Its count
+   wears the sidebar Home badge's outline (.nav-badge.alert): the same number,
+   the same look. The popover hangs under it, right-aligned, over the page. */
+.home-bell {
+  position: relative;
+}
+.home-bell__btn {
+  position: relative;
+  width: 2.75rem;
+  height: 2.75rem;
+  color: var(--ink-2);
+}
+.home-bell__btn:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.home-bell__btn[aria-expanded="true"] {
+  background: var(--bg-active);
+  color: var(--ink);
+}
+.home-bell__count {
+  position: absolute;
+  top: 0.25rem;
+  right: 0.125rem;
+  min-width: 1.125rem;
+  padding: 0 0.3125rem;
+  border-radius: var(--r-pill);
+  background: var(--bg);
+  color: var(--live);
+  box-shadow: inset 0 0 0 1px var(--live);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  line-height: 1.125rem;
+}
+.home-bell__pop {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 30;
+  box-sizing: border-box;
+  width: min(22rem, calc(100vw - 2rem));
+  max-height: min(70vh, 32rem);
+  overflow-y: auto;
+  padding: 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  box-shadow: var(--shadow-pop);
+}
+.home-bell__title {
+  margin: 0 0 0.5rem;
+  color: var(--ink);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.home-bell__state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+.home-bell__state + .home-bell__list {
+  margin-top: 0.75rem;
+}
+.home-bell__list,
+.home-bell__items {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.home-bell__notice + .home-bell__notice {
+  margin-top: 0.625rem;
+  padding-top: 0.625rem;
+  border-top: 1px solid var(--line-soft);
+}
+.home-bell__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.25rem;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+.home-bell__n {
+  color: var(--ink-2);
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+.home-bell__items button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 0.125rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.375rem 0.5rem;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.home-bell__items button:hover {
+  background: var(--bg-hover);
+}
+.home-bell__items button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+.home-bell__name {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.home-bell__why {
+  color: var(--ink-2);
+  font-size: 0.75rem;
+  line-height: 1.5;
+}
+/* 44px targets, as Home's other buttons. */
+.home-bell__pop .u-btn {
+  height: auto;
+  min-height: 2.75rem;
+  margin-top: 0.25rem;
+}
+.everyday-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: clamp(1.25rem, 4cqi, 2.75rem);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(ellipse at 90% 40%, #9b88cf18, transparent 65%),
+    var(--bg-elev);
+}
+.everyday-hero__copy {
+  max-width: 35rem;
+  min-width: 0;
+}
+.everyday-hero h2 {
+  margin: 0 0 0.9rem;
+  font-size: clamp(1.55rem, 3.6cqi, 2.3rem);
+  line-height: 1.3;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+  word-break: keep-all;
+}
+.everyday-hero p {
+  max-width: 31rem;
+  margin: 0 0 1.5rem;
+  color: var(--ink-3);
+  font-size: 0.9375rem;
+  line-height: 1.75;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.everyday-home .u-btn {
+  min-height: 2.75rem;
+  padding-inline: 1.15rem;
+  font-size: 0.875rem;
+}
+.everyday-hero__hint {
+  display: block;
+  margin-top: 0.65rem;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+}
+.everyday-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.875rem;
+  margin-top: 0.875rem;
+}
+.everyday-actions > button {
+  display: flex;
+  align-items: center;
+  gap: 0.875rem;
+  min-width: 0;
+  min-height: 6rem;
+  padding: 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  color: var(--ink);
+  background: var(--bg);
+  text-align: start;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick),
+    border-color var(--dur-quick);
+}
+.everyday-actions > button > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.everyday-actions strong {
+  display: block;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.everyday-actions strong + span {
+  display: block;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+.everyday-actions__icon {
+  color: var(--ink-3);
+  display: grid;
+  place-items: center;
+}
+/* One card left (a vault is open, so asking is Home's own box): full row. */
+.everyday-actions > button:only-child {
+  grid-column: 1 / -1;
+}
+.everyday-actions > button:hover:not(:disabled) {
+  background: var(--bg-elev);
+  border-color: var(--line-strong);
+}
+.everyday-actions > button:active:not(:disabled) {
+  background: var(--bg-active);
+}
+.everyday-actions > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.everyday-actions > button:focus-visible,
+.home-management-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+/* What onboarding no longer asks (HomeGuide): one card under the everyday
+   actions, a row per offer, closed for good with its ✕. */
+.home-guide {
+  margin: 0 0 2rem;
+  padding: 1rem 1.125rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+}
+.home-guide__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.home-guide__head h2 {
+  margin: 0;
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.home-guide__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1rem;
+  margin-top: 0.875rem;
+  padding-top: 0.875rem;
+  border-top: 1px solid var(--line);
+}
+.home-guide__row > div:first-child {
+  flex: 1 1 18rem;
+  min-width: 0;
+}
+.home-guide__row strong {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.home-guide__row p {
+  margin: 0.3rem 0 0;
+  color: var(--ink-3);
+  font-size: 0.8rem;
+  line-height: 1.6;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.home-guide__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.home-guide .u-btn[aria-disabled="true"] {
+  opacity: 0.55;
+  cursor: default;
+}
+.home-management {
+  margin-top: 2rem;
+  border-top: 1px solid var(--line);
+  padding-top: 1rem;
+}
+.home-management-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.875rem;
+  min-height: 3.5rem;
+  border: 0;
+  border-radius: var(--r-md);
+  padding: 0.75rem;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  text-align: start;
+}
+.home-management-toggle:hover {
+  background: var(--bg-elev);
+}
+.home-management-toggle > span {
+  flex: 1;
+  min-width: 0;
+}
+.home-management-toggle strong {
+  color: var(--ink-2);
+  display: block;
+  font-weight: 500;
+  font-size: 0.875rem;
+}
+.home-management-toggle small {
+  display: block;
+  margin-top: 0.25rem;
+  line-height: 1.5;
+}
+.home-management-count {
+  flex: 0 1 auto !important;
+  font-size: 0.75rem;
+}
+.home-management-content {
+  margin-top: 1.25rem;
+}
+.home-management-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+/* The report panels (contradictions, reunions) left the old right rail for
+   this column; this is the gap the rail's stack gave them. */
+.home-management-content > .u-rail,
+.home-management-content > .home-contra {
+  margin-top: 1.25rem;
+}
+/* Reflect (spec 2026-10-02 #5-8). The run button says idle (a plain glyph)
+   or running (the spinner); one line says done or failed. Its text stays in
+   ink: --ok and --danger are under 4.5:1 on this ground in light, so only
+   the icon carries the colour. */
+.home-reflect {
+  margin-top: 1.5rem;
+  padding: 1rem;
+  background: var(--bg-soft);
+  word-break: keep-all;
+}
+.home-reflect__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.home-reflect__head .section-title {
+  font-size: 0.875rem;
+}
+.home-reflect__tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.home-reflect__tools .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+}
+.home-reflect__lede,
+.home-reflect__note {
+  margin: 0.5rem 0 0;
+  color: var(--ink-3);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+.home-reflect__line {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  margin: 0.625rem 0 0;
+  color: var(--ink);
+  font-size: 0.8125rem;
+  font-weight: 500;
+}
+.home-reflect__line.is-done svg {
+  color: var(--ok);
+}
+.home-reflect__line.is-failed svg {
+  color: var(--danger);
+}
+.home-reflect__detail {
+  margin: 0.25rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  color: var(--ink-2);
+}
+.home-reflect__empty {
+  margin: 0.25rem 0 0 1.25rem;
+  color: var(--ink-2);
+  font-size: 0.8125rem;
+}
+.home-reflect__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+}
+.home-reflect__list li {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.125rem 0;
+  border-top: 1px solid var(--line);
+  font-size: 0.8125rem;
+}
+.home-reflect__list li > span:first-child {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.home-reflect__acts {
+  display: flex;
+  flex-shrink: 0;
+}
+.home-recent-status {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 5rem;
+  color: var(--ink-3);
+  font-size: 0.875rem;
+}
+.home-recent-status .u-btn {
+  min-height: 2.75rem;
+}
+.home-page .recent-row {
+  min-height: 3rem;
+}
+@container (max-width: 38rem) {
+  .everyday-hero {
+    gap: 0.25rem;
+  }
+  .everyday-hero__mascot {
+    width: 7rem;
+    height: 7rem;
+  }
+  .everyday-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 25rem) {
+  .everyday-hero {
+    flex-direction: column-reverse;
+    align-items: flex-start;
+  }
+  .everyday-hero__mascot {
+    align-self: center;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .everyday-actions > button {
+    transition: none;
+  }
+}
+
+.status-details > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: var(--side-row-h);
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+.status-details > summary::after {
+  content: "+";
+}
+.status-details[open] > summary::after {
+  content: "−";
+}
+.status-details > summary::-webkit-details-marker {
+  display: none;
+}
+.status-details > summary:hover {
+  background: var(--bg-hover);
+}
+.status-details > summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* The warning's mark on the folded line; the glyph is not the only cue, the
+   sentence is read out with it. */
+.st-sum-alert {
+  color: var(--warn);
+  font-weight: 600;
+}
+.st-sum-alert__sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

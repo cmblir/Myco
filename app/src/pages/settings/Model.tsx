@@ -10,11 +10,15 @@ import { ipc } from "../../lib/ipc";
 import type { MycoSettings } from "../../lib/ipc";
 import {
   BUILTIN_INGEST_MODEL,
+  BUILTIN_CHAT_MODEL,
+  BUILTIN_FAST_CHAT_MODEL,
   CLI_DEFAULT,
+  RECOMMENDED_MODEL,
+  isRecommendedModel,
   providerCanIngest,
   useEnabledProviders,
 } from "../../lib/providers";
-import type { ProviderDef } from "../../lib/providers";
+import type { ModelRole, ProviderDef } from "../../lib/providers";
 import ModelSelect from "../../components/ModelSelect";
 import {
   getBudgetThreshold,
@@ -24,11 +28,19 @@ import {
 } from "../../lib/budget";
 import { SettingsCard } from "../../components/SettingsCard";
 import { useReindexStore } from "../../stores/reindexStore";
+import { useUIStore } from "../../stores/uiStore";
+import { SettingsLocalModel } from "./LocalModel";
+import { SEMANTIC_ROLES, ROLE_LABELS, ROLE_COPY } from "../../lib/modelRoles";
 
 export function SettingsModel({ t }: { t: Strings }): JSX.Element {
   const settings = useSettingsStore((s) => s.settings);
   const update = useSettingsStore((s) => s.update);
   const enabled = useEnabledProviders();
+  const selectRole = useSettingsStore((s) => s.selectRole);
+  const setRoleAutomaticUse = useSettingsStore((s) => s.setRoleAutomaticUse);
+  const saving = useSettingsStore((s) => s.saving);
+  const error = useSettingsStore((s) => s.error);
+  const lang = useUIStore((s) => s.lang);
 
   if (!settings) return <div className="muted">Loading…</div>;
 
@@ -42,45 +54,32 @@ export function SettingsModel({ t }: { t: Strings }): JSX.Element {
           {t.s_model_lede}
         </p>
       </div>
-      <ModelPicker
-        t={t}
-        rowId="model_query"
-        label={t.s_model_query}
-        providers={enabled}
-        provider={settings.query_provider}
-        model={settings.query_model}
-        effort={settings.query_effort}
-        onPick={(provider, model) =>
-          void update({ query_provider: provider, query_model: model })
-        }
-        onPickEffort={(effort) => void update({ query_effort: effort })}
-      />
-      <ModelPicker
-        t={t}
-        rowId="model_ingest"
-        label={t.s_model_ingest}
-        // Ingest writes vault files; a text-only provider (HTTP APIs, ollama)
-        // can only fail after the raw/ copy is already written — so it is not
-        // offered here. A stored incapable choice still displays, marked
-        // not-connected (ModelSelect never silently rewrites).
-        //
-        // Built-in is offered, and shows `extractive-ingest` rather than the
-        // query row's `extractive-retrieval`: same provider, different work.
-        // Its catalog is swapped per-row instead of carrying both ids, so the
-        // query row is never offered a model that only ingests.
-        providers={enabled
-          .filter((p) => providerCanIngest(p.id))
-          .map((p) =>
-            p.id === "builtin-local" ? { ...p, catalog: [BUILTIN_INGEST_MODEL] } : p,
-          )}
-        provider={settings.ingest_provider}
-        model={settings.ingest_model}
-        effort={settings.ingest_effort}
-        onPick={(provider, model) =>
-          void update({ ingest_provider: provider, ingest_model: model })
-        }
-        onPickEffort={(effort) => void update({ ingest_effort: effort })}
-      />
+      <SettingsLocalModel lang={lang} />
+      <SettingsLocalModel lang={lang} modelId={BUILTIN_FAST_CHAT_MODEL} />
+      <p className="muted">{ROLE_COPY[lang].policy}</p>
+      {SEMANTIC_ROLES.map((feature) => {
+        const choice = settings.model_roles?.roles[feature];
+        if (!choice) return null;
+        const role = feature === "compilation" ? "ingest" : "query";
+        return <div className="col" key={feature} style={{ gap: 8 }}>
+          <ModelPicker t={t} role={role} rowId={`model_${feature}`} label={ROLE_LABELS[lang][feature]}
+            providers={role === "ingest" ? enabled.filter((provider) => providerCanIngest(provider.id)).map((provider) => provider.id === "builtin-local" ? { ...provider, catalog: [BUILTIN_INGEST_MODEL, BUILTIN_FAST_CHAT_MODEL, BUILTIN_CHAT_MODEL] } : provider) : enabled}
+            provider={choice.providerId} model={choice.modelId} effort={choice.effort}
+            disabled={saving}
+            onPick={(providerId, modelId, effort = choice.effort) => void selectRole({ role: feature, providerId, modelId, effort })}
+            onPickEffort={(effort) => void selectRole({ role: feature, providerId: choice.providerId, modelId: choice.modelId, effort })} />
+          <p className="muted" style={{ margin: 0 }}>
+            {choice.providerId === "builtin-local" ? ROLE_COPY[lang].local : ROLE_COPY[lang].external}
+            {choice.legacyUnconfirmed ? ` · ${ROLE_COPY[lang].legacy}: ${choice.legacyUnconfirmed.providerId} / ${choice.legacyUnconfirmed.modelId}` : ""}
+          </p>
+          {choice.providerId !== "builtin-local" && <label style={{ display: "flex", alignItems: "center", gap: 8, minHeight: 44 }}>
+            <input type="checkbox" checked={choice.automaticExternalAllowed} disabled={saving}
+              onChange={(event) => void setRoleAutomaticUse(feature, event.target.checked)} />
+            {ROLE_COPY[lang].automatic}
+          </label>}
+        </div>;
+      })}
+      {error && <p role="alert" className="muted">{error}</p>}
       <AutoImportSetting t={t} settings={settings} update={update} />
       <AutoIngestSetting t={t} settings={settings} update={update} />
       <AutoReflectSetting t={t} settings={settings} update={update} />
@@ -91,15 +90,16 @@ export function SettingsModel({ t }: { t: Strings }): JSX.Element {
 }
 
 // Semantic layer (Feature 1): index health + a manual reindex. Embeddings run
-// offline via the bundled Gemma model. Powers semantic search, related notes,
+// offline via the bundled E5 embedding model. Powers semantic search, related notes,
 // and graph similarity edges.
 //
 // The run itself lives in reindexStore, not here: it takes minutes, so it
 // outlives this panel routinely, and state that dies with the panel let a second
 // run start against the same index. This component renders the store's five
 // states and re-attaches to a run already in flight.
-function ModelPicker({
+export function ModelPicker({
   t,
+  role,
   rowId,
   label,
   providers,
@@ -108,8 +108,10 @@ function ModelPicker({
   effort,
   onPick,
   onPickEffort,
+  disabled = false,
 }: {
   t: Strings;
+  role: ModelRole;
   /** Registry row id — "model_query" or "model_ingest". */
   rowId: string;
   label: string;
@@ -117,9 +119,19 @@ function ModelPicker({
   provider: string;
   model: string;
   effort: string;
-  onPick: (provider: string, model: string) => void;
+  onPick: (provider: string, model: string, effort?: string) => void;
   onPickEffort: (effort: string) => void;
+  disabled?: boolean;
 }): JSX.Element {
+  const rec = RECOMMENDED_MODEL[role];
+  const onRec = isRecommendedModel(role, { provider, model, effort });
+  // Only a click writes. "Choose myself" just shows the selects; the mode is
+  // derived from the stored pick, so a change made elsewhere (the topbar
+  // picker) can never leave "recommended" checked over a different model.
+  const [choosing, setChoosing] = useState(false);
+  const custom = choosing || !onRec;
+  const canRec = rec.provider === "builtin-local" || providers.some((p) => p.id === rec.provider);
+  const hintId = `${rowId}-rec-needs`;
   return (
     <SettingsCard id={rowId} hideValue className="card">
       <div className="row" style={{ marginBottom: 12 }}>
@@ -129,15 +141,59 @@ function ModelPicker({
           {effort && effort !== CLI_DEFAULT ? ` · ${effort}` : ""}
         </span>
       </div>
-      <ModelSelect
-        t={t}
-        providers={providers}
-        provider={provider}
-        model={model}
-        onPick={onPick}
-        effort={effort}
-        onPickEffort={onPickEffort}
-      />
+      <div
+        role="radiogroup"
+        aria-label={label}
+        className="row"
+        style={{ gap: 16, flexWrap: "wrap", marginBottom: custom ? 12 : 0 }}
+      >
+        <label className="row" style={{ gap: 6, minHeight: 44 }}>
+          <input
+            type="radio"
+            name={rowId}
+            checked={!custom}
+            disabled={disabled || !canRec}
+            aria-describedby={canRec ? undefined : hintId}
+            onChange={() => {
+              setChoosing(false);
+              if (onRec) return;
+              onPick(rec.provider, rec.model, rec.effort);
+            }}
+          />
+          {t.s_model_use_recommended}
+        </label>
+        <label className="row" style={{ gap: 6, minHeight: 44 }}>
+          <input
+            type="radio"
+            name={rowId}
+            checked={custom}
+            disabled={disabled}
+            onChange={() => setChoosing(true)}
+          />
+          {t.s_model_choose_own}
+        </label>
+      </div>
+      {canRec ? null : (
+        <p
+          id={hintId}
+          className="muted"
+          style={{ margin: "0 0 12px", fontSize: 12 }}
+        >
+          {t.s_model_recommended_needs}
+        </p>
+      )}
+      {custom ? (
+        <ModelSelect
+          t={t}
+          providers={providers}
+          provider={provider}
+          model={model}
+          onPick={onPick}
+          effort={effort}
+          onPickEffort={onPickEffort}
+          disabled={disabled}
+        />
+      ) : null}
     </SettingsCard>
   );
 }
@@ -277,7 +333,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
 
       {stage === "done" ? (
         <div
-          style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+          style={{ color: "var(--ok)", fontSize: 12, marginTop: 8 }}
           data-testid="reindex-done"
         >
           {(t.s_embeddings_done ?? "Indexed {n} pages").replace(
@@ -289,7 +345,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
 
       {stage === "error" ? (
         <div
-          style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}
+          style={{ color: "var(--danger)", fontSize: 12, marginTop: 8 }}
           data-testid="reindex-error"
         >
           {error}
@@ -616,8 +672,8 @@ function AutoReflectSetting({
         </div>
       ) : null}
       {settings.query_provider === "builtin-local" ? (
-        // builtin-local can't generate prose, so reflect runs the extractive
-        // variant (reflectStore.extractiveReflect): link-graph facts only.
+        // Optional local generation is limited to Ask. Reflect still runs the
+        // extractive variant (reflectStore.extractiveReflect): link-graph facts only.
         // Tell the user up front what flipping the toggle will produce.
         <div
           className="row muted"

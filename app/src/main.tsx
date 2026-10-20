@@ -5,7 +5,9 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import ErrorBoundary from "./components/ErrorBoundary";
 import {
+  isMyco3DWindow,
   isNotchWindow,
+  isRoamWindow,
   isSpotlightWindow,
   isTrayPanelWindow,
 } from "./lib/windowRoute";
@@ -97,12 +99,23 @@ async function bootstrap(): Promise<void> {
   // stands down under `?window=notch&notchMock=1`, where the panel's own dev
   // walk still cycles the ten states in a plain browser.
   if (isNotchWindow(location.search)) {
-    const [{ default: NotchPanel }, { useNotchDriver }] = await Promise.all([
+    const [
+      { default: NotchPanel },
+      { useNotchDriver },
+      { followUIStore },
+      { useRoamTrigger },
+    ] = await Promise.all([
       import("./components/NotchPanel"),
       import("./lib/notchDriver"),
+      import("./stores/uiStore"),
+      import("./lib/roamTrigger"),
     ]);
+    // Settings lives in the main window; the mascot and language follow it.
+    followUIStore();
     function NotchHost(): React.JSX.Element {
       const drive = useNotchDriver();
+      // Long work sends myco out of the notch to roam the screen.
+      useRoamTrigger(drive?.panel ?? null, drive?.mascotAway ?? false);
       if (!drive) return <NotchPanel />;
       return (
         <NotchPanel
@@ -113,12 +126,14 @@ async function bootstrap(): Promise<void> {
           onCaptureCancel={drive.onCaptureCancel}
           onCaptureVoice={drive.onCaptureVoice}
           onCaptureOpen={drive.onCaptureOpen}
+          onCapturedOpen={drive.onCapturedOpen}
           onRecordStop={drive.onRecordStop}
           onCapturePaste={drive.onCapturePaste}
           levels={drive.levels}
           agenda={drive.agenda}
           onAgendaAct={drive.onAgendaAct}
           agendaActed={drive.agendaActed}
+          mascotAway={drive.mascotAway}
         />
       );
     }
@@ -126,6 +141,45 @@ async function bootstrap(): Promise<void> {
       <React.StrictMode>
         <ErrorBoundary>
           <NotchHost />
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
+
+  // The panel myco roams in while work runs (`index.html?window=roam`, built
+  // by roam.rs on the first roam). App never mounts here either. The window
+  // draws nothing until roam.rs says where myco is out, then plays the
+  // notch's cue; `&roamMock=1` walks the preview instead.
+  if (isRoamWindow(location.search)) {
+    const [{ default: RoamWindow }, { useRoamCue, useRoamPlace }] = await Promise.all([
+      import("./components/RoamWindow"),
+      import("./lib/roamFeed"),
+    ]);
+    const live = !new URLSearchParams(location.search).has("roamMock");
+    function RoamHost(): React.JSX.Element {
+      const place = useRoamPlace(live);
+      const cue = useRoamCue(live, place !== null);
+      return <RoamWindow place={place} cue={cue} />;
+    }
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <RoamHost />
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
+
+  // The 3D myco preview (`index.html?window=myco3d&skin=black|white`): myco
+  // alone, turned with the mouse. three.js loads in this chunk only.
+  if (isMyco3DWindow(location.search)) {
+    const { default: Myco3DPreview } = await import("./components/Myco3D");
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <Myco3DPreview />
         </ErrorBoundary>
       </React.StrictMode>,
     );
@@ -141,7 +195,7 @@ async function bootstrap(): Promise<void> {
   const { default: App } = await import("./App");
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
-      <ErrorBoundary reload>
+      <ErrorBoundary reload home>
         <App />
       </ErrorBoundary>
     </React.StrictMode>,

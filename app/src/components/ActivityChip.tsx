@@ -16,7 +16,7 @@ import { ipc } from "../lib/ipc";
 import type { InflowStats, TaskItem } from "../lib/ipc";
 import { formatTicker } from "../lib/time";
 import { inflowLines } from "../lib/inflow";
-import { getLastSweepAt } from "../lib/autoImport";
+import { getLastSweepAt, getLastSweepReceipt } from "../lib/autoImport";
 import { requestDistillStop } from "../lib/distill";
 import { pendingLinkCount } from "../lib/linkSuggestions";
 import { dueOpen } from "../lib/taskNotify";
@@ -38,6 +38,7 @@ import type {
 import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
 import { useResurfaceStore } from "../stores/resurfaceStore";
+import { useNoteInsertStore } from "../stores/noteInsertStore";
 import type { ResurfacePick } from "../stores/resurfaceStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
@@ -48,7 +49,11 @@ import { useLintStore } from "../stores/lintStore";
 import { useHarvestStore } from "../stores/harvestStore";
 import type { HarvestRun } from "../stores/harvestStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
-import { useDistillStore, pendingMapProposals } from "../stores/distillStore";
+import {
+  useDistillStore,
+  pendingMapProposals,
+  settingsNeedWriter,
+} from "../stores/distillStore";
 import type { ProposalMeta } from "../stores/distillStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
@@ -128,15 +133,18 @@ export function harvestFraction(run: HarvestRun): number | undefined {
 export interface RunningSources {
   ask: { busy: boolean; startedAt: number | null };
   harvest: HarvestRun;
-  ingest: { running: boolean; startedAt: number | null };
+  /** `gateAt`: the plan gate is open and the run waits on the user. */
+  ingest: { running: boolean; startedAt: number | null; gateAt?: number | null };
   lintRunning: boolean;
   distill: { running: boolean; step: DistillRunStep | null };
   reflectRunning: boolean;
   progress: NoticeProgress | null;
   applyingCount: number;
   reindex: { stage: ReindexStage; done: number; total: number };
-  /** Clock for the elapsed tickers — passed in so this stays pure. */
+  /** Wall clock for existing ingest timing; never used for Ask duration. */
   now: number;
+  /** Renderer monotonic clock, matching QueryState.startedAt. */
+  monotonicNow: number;
 }
 
 /** Every running activity, most to least urgent to surface when collapsed:
@@ -159,7 +167,7 @@ export function buildRunning(s: RunningSources, t: Strings): RunningActivity[] {
     running.push({
       icon: "ask",
       label: t.nav_query,
-      detail: s.ask.startedAt ? formatTicker(s.now - s.ask.startedAt) : "",
+      detail: s.ask.startedAt !== null ? formatTicker(s.monotonicNow - s.ask.startedAt) : "",
     });
   }
   if (s.harvest.phase !== null) {
@@ -177,7 +185,11 @@ export function buildRunning(s: RunningSources, t: Strings): RunningActivity[] {
     running.push({
       icon: "indexing",
       label: t.nav_ingest,
-      detail: s.ingest.startedAt ? formatTicker(s.now - s.ingest.startedAt) : "",
+      detail: s.ingest.gateAt
+        ? t.ing_gate_paused
+        : s.ingest.startedAt
+          ? formatTicker(s.now - s.ingest.startedAt)
+          : "",
     });
   }
   if (s.lintRunning) {
@@ -291,6 +303,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const harvestRun = useHarvestStore((s) => s.run);
   const ingestStage = useIngestStore((s) => s.stage);
   const ingestStartedAt = useIngestStore((s) => s.startedAt);
+  const ingestGateAt = useIngestStore((s) => s.gateAt);
   const lintRunning = useLintStore((s) => s.stage === "running");
   const reflectRunning = useReflectStore((s) => s.stage === "running");
   // Findings from the last reflect run — a STANDING count, like suggested
@@ -315,6 +328,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   // Resurface picks (Q4 item 10) — a standing decision surface like the map
   // proposals: recomputed by the distill chain, never part of the chip badge.
   const resurfacePicks = useResurfaceStore((s) => s.picks);
+  const noteInsert = useNoteInsertStore((s) => s.insert);
   const resurfaceFloor = useResurfaceStore((s) => s.floor);
   // Quarantined items awaiting review — a standing count from the same
   // distill_status the Settings tab and the sidebar badge read.
@@ -395,12 +409,14 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     }
   };
 
-  // One clock for every elapsed ticker in the chip (Ask and ingest show one).
-  const [now, setNow] = useState(() => Date.now());
+  // Ask duration and the existing ingest timestamps use separate clock domains.
+  const [clocks, setClocks] = useState(() => ({ now: Date.now(), monotonicNow: performance.now() }));
+  const { now, monotonicNow } = clocks;
   const ticking = askBusy || ingestRunning;
   useEffect(() => {
     if (!ticking) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
+    setClocks({ now: Date.now(), monotonicNow: performance.now() });
+    const id = setInterval(() => setClocks({ now: Date.now(), monotonicNow: performance.now() }), 1000);
     return () => clearInterval(id);
   }, [ticking]);
 
@@ -479,7 +495,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     {
       ask: { busy: askBusy, startedAt: askStartedAt },
       harvest: harvestRun,
-      ingest: { running: ingestRunning, startedAt: ingestStartedAt },
+      ingest: { running: ingestRunning, startedAt: ingestStartedAt, gateAt: ingestGateAt },
       lintRunning,
       distill: { running: distillRunning, step: distillStep },
       reflectRunning,
@@ -487,6 +503,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       applyingCount,
       reindex: { stage: reindexStage, done: reindexDone, total: reindexTotal },
       now,
+      monotonicNow,
     },
     t,
   );
@@ -582,7 +599,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       ),
       trailing: (
         <span className="activity-num">
-          {askStartedAt ? formatTicker(now - askStartedAt) : ""}
+          {askStartedAt !== null ? formatTicker(monotonicNow - askStartedAt) : ""}
         </span>
       ),
     });
@@ -798,6 +815,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const lines = inflow
     ? inflowLines(inflow, t, {
         sweepAt: getLastSweepAt(),
+        sweepStatus: getLastSweepReceipt()?.finishedAt ? getLastSweepReceipt()?.status : undefined,
         autoImportMin: settings?.auto_import_enabled
           ? settings.auto_import_interval_min
           : null,
@@ -846,13 +864,11 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       setFeedbackTab("proposals");
       jump("feedback");
     },
-    // Stated, not hidden: on builtin-local the approval lands on disk but the
-    // draft-map step (applyApprovedDraftMaps) early-returns no-provider.
-    note:
-      settings?.query_provider === "builtin-local"
-        ? (t.tb_activity_map_wait ??
-          "Approving is saved, but the draft needs a query model.")
-        : "",
+    // Stated, not hidden: with no role that writes, an approve here writes
+    // nothing (distillStore.apply's gate), so the rows say what is missing.
+    note: settingsNeedWriter(settings)
+      ? (t.pf_map_needs_writer ?? "Writing a topic map needs a model that can write")
+      : "",
   });
 
   // Resurface rows (mockup M6): resonance line = similarity + relative last
@@ -892,6 +908,15 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     },
     onSnooze: (page) => useResurfaceStore.getState().snooze(page),
     onIgnore: (page) => useResurfaceStore.getState().ignore(page),
+    insertLabel: t.ins_link,
+    onInsert: noteInsert
+      ? (page) => {
+          const pick = resurfacePicks.find((p) => p.page === page);
+          if (!pick) return;
+          setOpen(false);
+          noteInsert(`[[${pick.stem}]]`, false);
+        }
+      : undefined,
     note: (t.rs_floor_note ?? "Frequent ignores raise the bar · now {f}").replace(
       "{f}",
       resurfaceFloor.toFixed(2),

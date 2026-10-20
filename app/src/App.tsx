@@ -9,15 +9,20 @@ import {
 import type { JSX } from "react";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
+import PhoneTabBar from "./components/PhoneTabBar";
 import CommandBar from "./components/CommandBar";
 import DialogHost from "./components/DialogHost";
 import NoticeStack from "./components/NoticeStack";
+import { notice } from "./lib/notice";
 import { useFocusMiss } from "./lib/useFocusTarget";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { PAGE_HEADING, focusPageHeading } from "./components/AppPage";
 import OnboardingWizard from "./components/OnboardingWizard";
+import { keepWizardOpen, offerHomeGuide } from "./lib/onboarding";
 import MascotClip from "./components/MascotClip";
 import HelpWidget from "./components/HelpWidget";
 import UpdateBanner from "./components/UpdateBanner";
+import VaultAccessNotice from "./components/VaultAccessNotice";
 import PageOverview from "./pages/PageOverview";
 import PageIngest from "./pages/PageIngest";
 import PageQuery from "./pages/PageQuery";
@@ -29,6 +34,8 @@ const PageGraph = lazy(() => import("./pages/PageGraph"));
 // is the overview — none of it is needed for first paint.
 const PageReader = lazy(() => import("./pages/PageReader"));
 const PageSettings = lazy(() => import("./pages/PageSettings"));
+// Lazy too: the Tidy sheet (and lib/tidy*) runs only when asked for.
+const TidySheet = lazy(() => import("./components/TidySheet"));
 import PageHistory from "./pages/PageHistory";
 import PageProvenance from "./pages/PageProvenance";
 import PageTasks from "./pages/PageTasks";
@@ -38,22 +45,27 @@ import { STRINGS } from "./lib/i18n";
 import { promptNewNote } from "./lib/newNote";
 import { initTrayIntegration } from "./lib/trayStatus";
 import { initSpotlightBridge } from "./lib/spotlight";
+import { clipReceipt } from "./lib/dailyNote";
 import type { Strings } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import type { RouteId } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
-import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
+import { useTidyStore } from "./stores/tidyStore";
+import { useVaultStore } from "./stores/vaultStore";
+import { usePluginStore } from "./stores/pluginStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
+import { runSessionPass } from "./lib/sessionIngest";
 import { useAutoImportScheduler } from "./lib/autoImport";
 import { useTaskNotifier } from "./lib/taskNotifier";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useAutoReindexScheduler } from "./lib/autoReindex";
+import { useAutoDistill } from "./lib/autoDistill";
 import { runInboxPass } from "./lib/autoIngest";
 import { useIngestStore } from "./stores/ingestStore";
 import { useUpdateStore } from "./stores/updateStore";
-import { ipc } from "./lib/ipc";
 import type { FileNode } from "./lib/ipc";
 import { SPLIT_DEFAULT_RATIO, clampSplitRatio } from "./lib/splitRatio";
+import { readScale } from "./lib/textSize";
 
 const ONBOARDED_KEY = "myco.onboarded";
 
@@ -225,10 +237,31 @@ export default function App(): JSX.Element {
     ro.observe(el);
     return () => ro.disconnect();
   }, [splitRoute]);
+  // A route change starts the new page at its title unless a field or a
+  // dialog holds focus (focusPageHeading). Boot is no change. A lazy route
+  // has no title until its chunk loads, so this retries for up to 2 s, and
+  // gives up as soon as focus moves anywhere but <body> meanwhile.
+  const shownRoute = useRef(route);
+  useEffect(() => {
+    if (shownRoute.current === route) return;
+    shownRoute.current = route;
+    const before = document.activeElement;
+    let tries = 0;
+    let id: ReturnType<typeof setTimeout>;
+    const attempt = (): void => {
+      const now = document.activeElement;
+      if (now !== before && now !== document.body) return;
+      if (!focusPageHeading(document) && ++tries < 40) id = setTimeout(attempt, 50);
+    };
+    id = setTimeout(attempt, 0);
+    return () => clearTimeout(id);
+  }, [route]);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
+  const tidyOpen = useTidyStore((s) => s.open);
   const lang = useUIStore((s) => s.lang);
   const theme = useUIStore((s) => s.theme);
   const density = useUIStore((s) => s.density);
+  const textSize = useUIStore((s) => s.textSize);
   const accent = useUIStore((s) => s.accent);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
@@ -237,7 +270,8 @@ export default function App(): JSX.Element {
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed);
   const currentVault = useVaultStore((s) => s.currentVault);
   const fileTree = useVaultStore((s) => s.fileTree);
-  const openVault = useVaultStore((s) => s.openVault);
+  const restoreVault = useVaultStore((s) => s.restoreVault);
+  const vaultError = useVaultStore((s) => s.error);
   const loadSettings = useSettingsStore((s) => s.load);
   const settings = useSettingsStore((s) => s.settings);
 
@@ -258,6 +292,7 @@ export default function App(): JSX.Element {
     }
   });
   const [bootDone, setBootDone] = useState(false);
+  const bootStarted = useRef(false);
   function completeOnboarding(): void {
     try {
       localStorage.setItem(ONBOARDED_KEY, "1");
@@ -265,10 +300,15 @@ export default function App(): JSX.Element {
       /* localStorage unavailable */
     }
     setOnboarded(true);
+    offerHomeGuide();
   }
   // Genuine first run: nothing opened, or an empty vault (no markdown pages).
   const firstRun =
-    bootDone && !onboarded && (!currentVault || countPages(fileTree) === 0);
+    bootDone && !vaultError && !onboarded && (!currentVault || countPages(fileTree) === 0);
+  // The wizard's note step makes the first page, which ends `firstRun`.
+  const [wizardShown, setWizardShown] = useState(false);
+  const showWizard = keepWizardOpen(wizardShown, firstRun, onboarded);
+  if (showWizard !== wizardShown) setWizardShown(showWizard);
 
   useEffect(() => {
     void loadSettings();
@@ -305,6 +345,9 @@ export default function App(): JSX.Element {
     settings?.auto_reindex_enabled ?? false,
     currentVault?.path,
   );
+
+  // Idle + backlog distill while the app is open; its runs leave raw/ alone.
+  useAutoDistill(currentVault?.path);
 
   // Auto-refresh the file tree + link graph so EXTERNAL changes (edits in
   // Obsidian/Finder, files written outside in-app operations) appear without a
@@ -346,6 +389,12 @@ export default function App(): JSX.Element {
     };
   }, [currentVaultPath]);
 
+  // The vault's declarative plugins (.myco/plugins/), read once per open;
+  // Settings → Plugins reads them again.
+  useEffect(() => {
+    void usePluginStore.getState().load(currentVaultPath);
+  }, [currentVaultPath]);
+
   // Web clipper: the Rust deep-link handler saved a clip into _inbox/ and
   // emitted this event. Refresh so the new source doc appears immediately, and
   // — if the user has auto-ingest on — pick it up NOW rather than on the next
@@ -362,9 +411,10 @@ export default function App(): JSX.Element {
     let cancelled = false;
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
-        listen("myco://clip-saved", () => {
+        listen<{ rel?: string; title?: string } | null>("myco://clip-saved", (e) => {
           const v = useVaultStore.getState();
           void v.refreshTree();
+          clipReceipt(e.payload, STRINGS[useUIStore.getState().lang]);
           // runInboxPass skips itself while a run is in flight and leaves the
           // source in place if the run fails, so a burst of clips is safe.
           const path = useVaultStore.getState().currentVault?.path;
@@ -382,6 +432,28 @@ export default function App(): JSX.Element {
       cancelled = true;
       if (unlisten) unlisten();
     };
+  }, []);
+
+  // MCP updates wake the same bounded queue used by the enabled scheduler.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) => listen("myco://session-imported", () => {
+        const path = useVaultStore.getState().currentVault?.path;
+        if (!autoIngestOn.current || !path) return;
+        void runSessionPass(path).then((out) => {
+          if (!cancelled && out?.errors.length) notice.warn(STRINGS[useUIStore.getState().lang].ing_auto_failed);
+        }).catch(() => {
+          if (!cancelled) notice.warn(STRINGS[useUIStore.getState().lang].ing_auto_failed);
+        });
+      }))
+      .then((stop) => { if (cancelled) stop(); else unlisten = stop; })
+      .catch(() => {
+        // A failed event subscription leaves the periodic queue drain active.
+        if (!cancelled && autoIngestOn.current) notice.warn(STRINGS[useUIStore.getState().lang].ing_auto_failed);
+      });
+    return () => { cancelled = true; unlisten?.(); };
   }, []);
 
   // Menu bar tray: mirror the activity stores into the native tray menu and
@@ -430,18 +502,25 @@ export default function App(): JSX.Element {
     const r = document.documentElement;
     if (density === "compact") {
       r.style.setProperty("--top-h", "40px");
-      r.style.setProperty("--side-w", "240px");
+      r.style.setProperty("--side-w", "14rem");
       document.body.style.fontSize = "13px";
     } else if (density === "spacious") {
       r.style.setProperty("--top-h", "52px");
-      r.style.setProperty("--side-w", "280px");
+      r.style.setProperty("--side-w", "16.5rem");
       document.body.style.fontSize = "15px";
     } else {
       r.style.setProperty("--top-h", "44px");
-      r.style.setProperty("--side-w", "264px");
+      r.style.setProperty("--side-w", "15rem");
       document.body.style.fontSize = "14px";
     }
   }, [density]);
+
+  useEffect(() => {
+    document.documentElement.style.setProperty(
+      "--read-scale",
+      String(readScale(textSize)),
+    );
+  }, [textSize]);
 
   useEffect(() => {
     const el = document.documentElement;
@@ -458,11 +537,25 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     function onKey(e: KeyboardEvent): void {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      // A modal (Tidy sheet, DialogHost prompt, onboarding) traps focus; a
+      // shortcut would open or move things behind it where the user cannot
+      // see them. The palette is itself a modal, and ⌘K must still close it.
+      if (document.querySelector('[aria-modal="true"]:not(.cmd-panel)')) return;
+      // Unless the editor took the key: ⌘K on a selection links it, ⌘B
+      // bolds (editorFormat) — elsewhere they open the palette / sidebar.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.defaultPrevented &&
+        e.key.toLowerCase() === "k"
+      ) {
         e.preventDefault();
         toggleCmd();
       }
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "b") {
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.defaultPrevented &&
+        e.key.toLowerCase() === "b"
+      ) {
         e.preventDefault();
         toggleSidebar();
       }
@@ -507,55 +600,14 @@ export default function App(): JSX.Element {
     }
   }, [route, setSidebarCollapsed]);
 
-  // Auto-restore or create default vault on first mount.
-  //
-  // We always run ensureDefaultVault first — it's idempotent and seeds
-  // the canonical ~/Documents/myco scaffold. This repairs any missing
-  // subdirectories or seed files (e.g. if the user manually deleted
-  // raw/ from Finder).
-  //
-  // Then we open the user's last vault if any (which may be the default
-  // OR an external folder like an existing Obsidian vault). If the
-  // saved path no longer exists, fall through to the default so the
-  // app is never stuck without a vault.
+  // Restore the chosen folder without probing Documents on every launch.
+  // StrictMode replays effects; only the first invocation starts the I/O.
   useEffect(() => {
-    if (currentVault) {
-      setBootDone(true);
-      return;
-    }
-    void (async () => {
-      try {
-        // Dev-only escape hatch — `?vault=/some/path` lets us point the
-        // app at an arbitrary directory for quick visual testing.
-        const urlVault = new URLSearchParams(window.location.search).get(
-          "vault",
-        );
-        if (urlVault) {
-          await openVault(urlVault);
-          if (useVaultStore.getState().currentVault) return;
-        }
-        let defaultVault: string | null = null;
-        try {
-          defaultVault = await ipc.ensureDefaultVault();
-        } catch {
-          /* keep going — user may have a different vault saved */
-        }
-        const last = getLastVaultPath();
-        if (last) {
-          await openVault(last);
-          if (useVaultStore.getState().currentVault) return;
-        }
-        if (defaultVault) {
-          await openVault(defaultVault);
-        }
-      } finally {
-        // Whatever the outcome, the initial vault-open attempt has settled —
-        // now it's safe to evaluate first-run for the onboarding overlay.
-        setBootDone(true);
-      }
-    })();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (bootStarted.current) return;
+    bootStarted.current = true;
+    const urlVault = new URLSearchParams(window.location.search).get("vault");
+    void restoreVault(urlVault).finally(() => setBootDone(true));
+  }, [restoreVault]);
 
   // The three.js chunk is ~800KB — the parse gap used to be a BLANK pane on
   // the marquee view. Reuse the constellation tip so the wait reads as part of
@@ -577,7 +629,7 @@ export default function App(): JSX.Element {
     if (r === "query") return <PageQuery t={t} />;
     if (r === "graph")
       return (
-        <ErrorBoundary area="graph">
+        <ErrorBoundary area="graph" home>
           <Suspense fallback={chunkFallback}>
             <PageGraph t={t} />
           </Suspense>
@@ -664,6 +716,14 @@ export default function App(): JSX.Element {
 
   return (
     <div className={"app" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>
+      {/* A button, not an #anchor: the route lives in the store, not the URL. */}
+      <button
+        type="button"
+        className="skip-link"
+        onClick={() => document.querySelector<HTMLElement>(PAGE_HEADING)?.focus()}
+      >
+        {t.skip_to_content}
+      </button>
       <Sidebar t={t} />
       {/* Backdrop for the mobile sidebar overlay; tap to close. Hidden on
           desktop and when the sidebar is collapsed (see styles.css). */}
@@ -676,13 +736,20 @@ export default function App(): JSX.Element {
       <main>
         <Topbar t={t} />
         <UpdateBanner t={t} />
+        {bootDone ? <VaultAccessNotice /> : null}
         {body}
       </main>
+      <PhoneTabBar t={t} />
       <CommandBar t={t} />
       <DialogHost />
+      {tidyOpen ? (
+        <Suspense fallback={null}>
+          <TidySheet />
+        </Suspense>
+      ) : null}
       <NoticeStack />
       <HelpWidget t={t} />
-      {firstRun ? (
+      {showWizard ? (
         <OnboardingWizard t={t} onClose={completeOnboarding} />
       ) : null}
     </div>

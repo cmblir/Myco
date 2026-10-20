@@ -7,13 +7,15 @@ import type { ReactNode } from "react";
 
 export type DialogKind = "prompt" | "confirm" | "pick";
 
-interface DialogRequest {
+export interface DialogRequest {
   kind: DialogKind;
   title: string;
   message?: string;
   defaultValue?: string;
   placeholder?: string;
   danger?: boolean;
+  /** Primary button text; defaults by kind (Create / OK / Delete). */
+  confirmLabel?: string;
   /** Rendered between message and actions (e.g. a diff preview), scrollable. */
   body?: ReactNode;
   resolve: (value: string | null) => void;
@@ -41,6 +43,7 @@ export function promptText(opts: {
   message?: string;
   defaultValue?: string;
   placeholder?: string;
+  confirmLabel?: string;
 }): Promise<string | null> {
   return new Promise((resolve) => {
     useDialogStore.getState().open({
@@ -49,6 +52,7 @@ export function promptText(opts: {
       message: opts.message,
       defaultValue: opts.defaultValue,
       placeholder: opts.placeholder,
+      confirmLabel: opts.confirmLabel,
       resolve,
     });
   });
@@ -59,6 +63,7 @@ export function confirmAction(opts: {
   message: string;
   danger?: boolean;
   body?: ReactNode;
+  confirmLabel?: string;
 }): Promise<boolean> {
   return new Promise((resolve) => {
     useDialogStore.getState().open({
@@ -67,6 +72,7 @@ export function confirmAction(opts: {
       message: opts.message,
       danger: opts.danger,
       body: opts.body,
+      confirmLabel: opts.confirmLabel,
       resolve: (v) => resolve(v === "ok"),
     });
   });

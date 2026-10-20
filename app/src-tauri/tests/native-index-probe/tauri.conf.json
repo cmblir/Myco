@@ -1,0 +1,8 @@
+{
+  "productName": "myco Native Index QA",
+  "version": "0.4.0",
+  "identifier": "dev.cmblir.myco.native-index-qa",
+  "build": { "frontendDist": "web" },
+  "app": { "windows": [], "security": { "assetProtocol": { "enable": true } } },
+  "bundle": { "active": false, "icon": ["../../icons/32x32.png"] }
+}

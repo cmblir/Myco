@@ -7,7 +7,7 @@
 import { chromium } from "playwright";
 
 const headed = process.argv.includes("--headed");
-const BASE = "http://localhost:5173/?mock=1";
+const BASE = `${process.env.MYCO_TEST_URL ?? "http://127.0.0.1:5173"}/?mock=1`;
 
 const browser = await chromium.launch({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
@@ -25,7 +25,7 @@ await page.addInitScript(() => {
   localStorage.setItem("myco.onboarded", "1");
   localStorage.setItem(
     "myco-ui",
-    JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
+    JSON.stringify({ state: { lang: "en", theme: "light", editorMode: "live" }, version: 3 }),
   );
 });
 
@@ -33,6 +33,7 @@ await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 60_000 });
 await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
 
 // --- Open the raw PDF from the sidebar (raw/ folder → the .pdf leaf) ---
+await page.getByRole("treeitem", { name: /^Managed by myco/ }).click();
 await page.locator(".nav-item", { hasText: "raw" }).first().click();
 await page
   .locator(".nav-leaf", { hasText: "attention-is-all-you-need" })
@@ -49,38 +50,40 @@ await page
       const c = document.querySelector(".pdf-canvas");
       return c && c.width > 0 && c.height > 0;
     },
+    undefined,
     { timeout: 20_000 },
-  )
-  .catch(() => {});
+  );
 const canvasOk = await page.evaluate(() => {
   const c = document.querySelector(".pdf-canvas");
   return !!c && c.width > 0 && c.height > 0;
 });
 check("pdf page canvas rendered", canvasOk);
 
-const pageIndicator = await page.locator(".pdf-nav .muted").innerText().catch(() => "");
+const pageIndicator = await page.locator(".pdf-nav .muted").innerText();
 check("page indicator shows", /p\.\s*1\s*\/\s*1/.test(pageIndicator), pageIndicator);
 
 // Seeded sidecar highlight renders as an overlay.
-await page.waitForSelector(".pdf-highlight", { timeout: 10_000 }).catch(() => {});
+await page.waitForSelector(".pdf-highlight", { timeout: 10_000 });
 check("seeded highlight renders", (await page.locator(".pdf-highlight").count()) >= 1);
 
 // Clicking the highlight routes to its citing note (attention-mechanism).
 await page.locator(".pdf-highlight").first().click();
-await page.waitForSelector(".page-title, .u-page__title", { timeout: 10_000 }).catch(() => {});
-const title = await page.locator(".page-title, .u-page__title").innerText().catch(() => "");
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 10_000 });
+const title = await page.locator(".page-title, .u-page__title").first().innerText();
 check("highlight click opens citing note", /attention-mechanism/i.test(title), title);
 
 // --- Click a [[pdf::…]] link inside a note → viewer opens at page/anchor ---
-await page.locator(".nav-item", { hasText: "wiki" }).first().click();
+const wikiFolder = page.locator(".nav-item").filter({ has: page.locator(".ni-text", { hasText: /^wiki$/ }) });
+if (await wikiFolder.getAttribute("aria-expanded") !== "true") await wikiFolder.click();
 await page.locator(".nav-leaf", { hasText: "pdf-demo" }).first().click();
-await page.waitForSelector(".myco-wikilink", { timeout: 10_000 });
+const pinpoint = page.locator(".myco-wikilink, .live-wikilink").filter({ hasText: "Hello myco PDF" });
+await pinpoint.waitFor({ timeout: 10_000 });
 check(
   "pdf pinpoint link rendered in note",
-  (await page.locator(".myco-wikilink").count()) >= 1,
+  (await pinpoint.count()) === 1,
 );
-await page.locator(".myco-wikilink").first().click();
-await page.waitForSelector('[data-testid="pdf-viewer"]', { timeout: 15_000 }).catch(() => {});
+await pinpoint.click({ modifiers: ["ControlOrMeta"] });
+await page.waitForSelector('[data-testid="pdf-viewer"]', { timeout: 15_000 });
 check("clicking pdf link opens viewer", (await page.locator('[data-testid="pdf-viewer"]').count()) > 0);
 
 check("no page errors", errors.length === 0, errors.slice(0, 3).join(" | "));

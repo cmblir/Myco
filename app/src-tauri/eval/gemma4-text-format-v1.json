@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "template_sha256": "0a2c8073c878ab1da004bee933a998606537bbb62016310352c7285c3f01c5b5",
+  "source": "pinned Google E4B GGUF embedded canonical template",
+  "artifact_revision": "4b4a2c1d584be7264f87aac328a1bc739ce81b6c",
+  "reference_runtime": {"Jinja2": "3.1.6", "MarkupSafe": "3.0.4"},
+  "configuration": {"tools": [], "enable_thinking": false, "add_generation_prompt": true, "bos_token": "<bos>"},
+  "scope": "canonical text-format vectors; not model or semantic acceptance",
+  "cases": [
+    {"system": "", "user": " Notes ", "expected": "<bos><|turn>user\nNotes<turn|>\n<|turn>model\n"},
+    {"system": "  Policy\n", "user": "\n 근거  ", "expected": "<bos><|turn>system\nPolicy<turn|>\n<|turn>user\n근거<turn|>\n<|turn>model\n"},
+    {"system": " \n", "user": "Notes", "expected": "<bos><|turn>system\n<turn|>\n<|turn>user\nNotes<turn|>\n<|turn>model\n"},
+    {"system": "기록만 사용하세요.", "user": "[S1] 한글 source: A < B; {\"value\":128}.", "expected": "<bos><|turn>system\n기록만 사용하세요.<turn|>\n<|turn>user\n[S1] 한글 source: A < B; {\"value\":128}.<turn|>\n<|turn>model\n"},
+    {"system": "\tPolicy\r\n", "user": "\u00a0자료\u3000", "expected": "<bos><|turn>system\nPolicy<turn|>\n<|turn>user\n자료<turn|>\n<|turn>model\n"},
+    {"system": "Policy", "user": "\u001c자료\u001f", "expected": "<bos><|turn>system\nPolicy<turn|>\n<|turn>user\n자료<turn|>\n<|turn>model\n"}
+  ]
+}

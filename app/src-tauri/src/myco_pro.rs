@@ -147,7 +147,7 @@ pub async fn ingest(
         }
         crate::vault::write_file(&target.to_string_lossy(), &op.content)?;
         if let Some(u) = crate::INDEX_UPDATER.get() {
-            u.mark_dirty(op.path.replace('\\', "/"));
+            u.mark_dirty(root, op.path.replace('\\', "/"));
         }
         paths.push(op.path.clone());
     }

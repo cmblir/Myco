@@ -13,3 +13,5 @@ export { Check } from "./Check";
 export type { CheckProps } from "./Check";
 export { Hero } from "./Hero";
 export type { HeroProps } from "./Hero";
+export { PHONE_QUERY, Sheet, sheetFrame, useKeyboardFrame, useMediaQuery, useSheetMode } from "./Sheet";
+export type { SheetProps } from "./Sheet";

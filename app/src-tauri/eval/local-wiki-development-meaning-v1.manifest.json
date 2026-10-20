@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "id": "local-wiki-development-meaning-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "labelStatus": "frozen_before_inference",
+  "sourceReview": {
+    "status": "automated_agent_original_source_reviewed",
+    "method": "original_source_only",
+    "reviewer": "root_and_automated_agent_original_source_review_with_pre_inference_event_date_and_explicit_actor_clarifications",
+    "independentHuman": false,
+    "inferenceObserved": false
+  },
+  "artifact": {
+    "path": "local-wiki-development-meaning-v1.json",
+    "bytes": 20012,
+    "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+  },
+  "caseCount": 4,
+  "semanticAcceptance": "manual_original_source_cross_review_required",
+  "runtimePromptOverride": false,
+  "nativeAuthority": false,
+  "privateVaultRead": false
+}

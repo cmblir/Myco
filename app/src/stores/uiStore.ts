@@ -15,6 +15,7 @@ import type { Question as GraphQuestion } from "../lib/graphEncoding";
 import type { AskScope, TierWeights } from "../lib/ipc";
 import { DEFAULT_TIER_WEIGHTS } from "../lib/extractive";
 import type { SettingsTab } from "../lib/settingsSearch";
+import { isTextSize, type TextSize } from "../lib/textSize";
 import {
   pushRoute,
   replaceCurrent,
@@ -63,8 +64,11 @@ function isRoute(r: unknown): r is RouteId {
 }
 
 export type FeedbackTab = "proposals" | "quarantine";
-export type EditorMode = "live" | "source" | "preview";
-const EDITOR_MODES: readonly EditorMode[] = ["live", "source", "preview"];
+// The Read view ("preview") is gone: notes open in the one Live editor, and
+// the markdown source view is the ⋯ menu's escape hatch. An older store's
+// "preview" (like the removed "split") falls back to "live" in `merge`.
+export type EditorMode = "live" | "source";
+const EDITOR_MODES: readonly EditorMode[] = ["live", "source"];
 const ASK_SCOPES: readonly AskScope[] = ["wiki", "sessions", "all"];
 
 /** A persisted weight is only trusted as a finite 0..1 number; anything else
@@ -98,8 +102,9 @@ export interface UIState {
   // Settings: show only rows whose value differs from the shipped default.
   // Per device, like the other view prefs.
   settingsChangedOnly: boolean;
-  // Deck path the Study page should open directly (ritual card's 복습 시작 —
-  // Q4 item 11). Same deep-link idiom as feedbackTab, but consumed ONCE:
+  // Deck path the Study page should open directly, or studyStore's
+  // TODAY_REVIEW for every deck's due cards (ritual card's 복습 시작 — Q4
+  // item 11, UX S34). Same deep-link idiom as feedbackTab, but consumed ONCE:
   // PageStudy reads it on mount and clears it, so later Study visits start at
   // the deck list as usual.
   studyDeck: string | null;
@@ -117,7 +122,7 @@ export interface UIState {
   splitRatio: number;
   // Layout
   sidebarCollapsed: boolean;
-  // Sidebar Tools disclosure (Graph … Provenance). Per device — not in the
+  // Sidebar Tools disclosure (Study … Provenance). Per device — not in the
   // settings bundle.
   toolsOpen: boolean;
   cmdOpen: boolean;
@@ -125,11 +130,22 @@ export interface UIState {
   lang: Lang;
   theme: Theme;
   density: Density;
+  // Note and Ask body size (lib/textSize). Per device, like the theme.
+  textSize: TextSize;
   accent: string;
   showCitations: boolean;
   // MYCO mascot master switch — WCAG-style full opt-out (also the 14% of
   // users who reject any character presence). Off = static logo fallback.
   mascotEnabled: boolean;
+  // Settings → Appearance: myco leaves the notch and roams the screen while
+  // long work runs (lib/roamTrigger). On by default: the owner asked for it.
+  mascotRoam: boolean;
+  // Settings → Study: let a connected chat model draft study cards too
+  // (quote-checked). Off by default — cards quote the note with no model.
+  aiCards: boolean;
+  // Settings → Study "Grade in detail": review with Again/Hard/Good/Easy
+  // instead of Forgot/Remembered (UX S34). Off by default.
+  fineGrades: boolean;
   // Which ambient background the Overview page runs. Named after the graph's
   // layouts on purpose — same vocabulary, two expressions — but deliberately a
   // SEPARATE key: the two are not linked, so changing one must not move the other.
@@ -154,11 +170,16 @@ export interface UIState {
   propsCollapsed: boolean;
   // Reader editor mode; per device, no longer reset per file.
   editorMode: EditorMode;
-  // Reader outline pane (headings) shown beside the editor. Per device.
+  // Note info is closed by default; explicit choices persist per device.
   outlineOpen: boolean;
+  // Opening note info folded the sidebar to fit beside the note; closing it
+  // unfolds it again. Any other sidebar move hands the choice back.
+  sidebarFoldedByRail: boolean;
   // Ask: last search scope and tier priors (the 고급 sliders). Per device,
   // like the other Ask prefs; sent with every question.
   askScope: AskScope;
+  // An explicit choice, including wiki, remains authoritative across callers.
+  isAskScopeExplicit: boolean;
   askTierWeights: TierWeights;
   // Graph deep link (`graph?q=…&n=…` — see lib/graphLink): the question the
   // arriving surface wants answered, and the note it wants selected. Consumed
@@ -182,17 +203,26 @@ export interface UIState {
   setSplitRatio: (ratio: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
   toggleSidebar: () => void;
+  /** Fold the sidebar for note info, to unfold when note info closes. */
+  foldSidebarForRail: () => void;
   toggleTools: () => void;
   setCmdOpen: (v: boolean) => void;
   toggleCmd: () => void;
   setLang: (lang: Lang) => void;
   setTheme: (theme: Theme) => void;
   setDensity: (density: Density) => void;
+  setTextSize: (size: TextSize) => void;
   setAccent: (accent: string) => void;
   setShowCitations: (v: boolean) => void;
   setMascotEnabled: (v: boolean) => void;
+  setMascotRoam: (v: boolean) => void;
+  setAiCards: (v: boolean) => void;
+  setFineGrades: (v: boolean) => void;
   setOverviewTheme: (v: OverviewThemeKey) => void;
-  toggleFolder: (id: string) => void;
+  /** `fallback` is the open state shown while nothing is stored for `id`. */
+  toggleFolder: (id: string, fallback?: boolean) => void;
+  /** Open every listed folder (the tree revealing the open note). */
+  expandFolders: (ids: string[]) => void;
   setMyceliumGrown: (v: boolean) => void;
   stampVisit: () => void;
   setHarvestExpanded: (vault: string, v: boolean) => void;
@@ -210,7 +240,8 @@ export const useUIStore = create<UIState>()(
       route: "overview",
       navHistory: { entries: ["overview"], idx: 0 },
       feedbackTab: "proposals",
-      settingsTab: "model",
+      // What most people come to change (UX S22), not the AI model card.
+      settingsTab: "appearance",
       settingsChangedOnly: false,
       studyDeck: null,
       focusTarget: null,
@@ -223,19 +254,28 @@ export const useUIStore = create<UIState>()(
       theme: "dark",
       overviewTheme: DEFAULT_OVERVIEW_THEME,
       density: "comfortable",
+      textSize: "system",
       accent: "#181715",
       showCitations: true,
       mascotEnabled: true,
+      mascotRoam: true,
+      aiCards: false,
+      fineGrades: false,
       // Keyed by absolute folder path (synthetic groups by id); all collapsed
-      // except Favorites. The old slug-keyed seed never matched real paths.
-      expandedFolders: { __favorites: true },
+      // except the Favorites and Recently edited groups. The old slug-keyed
+      // seed never matched real paths.
+      // __workspace (the sidebar's Workspace group, UX S43) is left unset:
+      // its default follows the window height until the user picks.
+      expandedFolders: { __favorites: true, __recent: true },
       myceliumGrown: false,
       lastVisitAt: null,
       harvestExpanded: {},
       propsCollapsed: false,
       editorMode: "live",
-      outlineOpen: true,
+      outlineOpen: false,
+      sidebarFoldedByRail: false,
       askScope: "wiki",
+      isAskScopeExplicit: false,
       askTierWeights: DEFAULT_TIER_WEIGHTS,
       graphFocus: null,
 
@@ -259,25 +299,38 @@ export const useUIStore = create<UIState>()(
       setSplitRoute: (route) =>
         set((s) => ({ splitRoute: route === s.route ? null : route })),
       setSplitRatio: (ratio) => set({ splitRatio: ratio }),
-      setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
-      toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
+      setSidebarCollapsed: (v) => set({ sidebarCollapsed: v, sidebarFoldedByRail: false }),
+      toggleSidebar: () =>
+        set({ sidebarCollapsed: !get().sidebarCollapsed, sidebarFoldedByRail: false }),
+      foldSidebarForRail: () => set({ sidebarCollapsed: true, sidebarFoldedByRail: true }),
       toggleTools: () => set({ toolsOpen: !get().toolsOpen }),
       setCmdOpen: (v) => set({ cmdOpen: v }),
       toggleCmd: () => set({ cmdOpen: !get().cmdOpen }),
       setLang: (lang) => set({ lang }),
       setTheme: (theme) => set({ theme }),
       setDensity: (density) => set({ density }),
+      setTextSize: (textSize) => set({ textSize }),
       setAccent: (accent) => set({ accent }),
       setShowCitations: (v) => set({ showCitations: v }),
       setMascotEnabled: (v) => set({ mascotEnabled: v }),
+      setMascotRoam: (v) => set({ mascotRoam: v }),
+      setAiCards: (v) => set({ aiCards: v }),
+      setFineGrades: (v) => set({ fineGrades: v }),
       setOverviewTheme: (v) => set({ overviewTheme: v }),
-      toggleFolder: (id) =>
+      toggleFolder: (id, fallback = false) =>
         set({
           expandedFolders: {
             ...get().expandedFolders,
             // Default must match DirectoryRow's read default (collapsed/false),
             // so the first click reliably expands a not-yet-seen folder.
-            [id]: !(get().expandedFolders[id] ?? false),
+            [id]: !(get().expandedFolders[id] ?? fallback),
+          },
+        }),
+      expandFolders: (ids) =>
+        set({
+          expandedFolders: {
+            ...get().expandedFolders,
+            ...Object.fromEntries(ids.map((id) => [id, true])),
           },
         }),
       setMyceliumGrown: (v) => set({ myceliumGrown: v }),
@@ -286,8 +339,13 @@ export const useUIStore = create<UIState>()(
         set({ harvestExpanded: { ...get().harvestExpanded, [vault]: v } }),
       setPropsCollapsed: (v) => set({ propsCollapsed: v }),
       setEditorMode: (editorMode) => set({ editorMode }),
-      toggleOutline: () => set({ outlineOpen: !get().outlineOpen }),
-      setAskScope: (askScope) => set({ askScope }),
+      toggleOutline: () =>
+        set(
+          get().outlineOpen && get().sidebarFoldedByRail
+            ? { outlineOpen: false, sidebarCollapsed: false, sidebarFoldedByRail: false }
+            : { outlineOpen: !get().outlineOpen },
+        ),
+      setAskScope: (askScope) => set({ askScope, isAskScopeExplicit: true }),
       setAskTierWeights: (askTierWeights) => set({ askTierWeights }),
       setGraphFocus: (graphFocus) => set({ graphFocus }),
     }),
@@ -322,20 +380,46 @@ export const useUIStore = create<UIState>()(
           askScope: ASK_SCOPES.includes(p.askScope as AskScope)
             ? (p.askScope as AskScope)
             : "wiki",
+          // Older stores cannot distinguish the default wiki value from a
+          // manual selection; use automatic routing until the next choice.
+          isAskScopeExplicit: p.isAskScopeExplicit === true,
           askTierWeights: sanitizeTierWeights(p.askTierWeights),
+          textSize: isTextSize(p.textSize) ? p.textSize : "system",
           navHistory: sanitizeHistory(p.navHistory, route),
           // Transient by design: a persisted target would scroll+flash a
           // section on the next launch for a click made days ago. The graph
-          // deep link is transient for the same reason.
+          // deep link is transient for the same reason, and so is the Settings
+          // tab: Settings opens on Theme every launch (a deep link still picks
+          // a tab within the session).
           focusTarget: null,
           graphFocus: null,
-          // Favorites default open even for a store persisted before the group existed.
-          expandedFolders: { __favorites: true, ...p.expandedFolders },
+          settingsTab: "appearance",
+          settingsChangedOnly: false,
+          // The groups default open even for a store persisted before they
+          // did; one the user closed stays closed.
+          expandedFolders: {
+            __favorites: true,
+            __recent: true,
+            ...p.expandedFolders,
+          },
         };
       },
     },
   ),
 );
+
+/** For a satellite window that only reads this store (the notch): re-read it
+ *  whenever another window saves it. The notch webview is retained, never
+ *  reloaded, so without this a Settings change (the mascot, the language)
+ *  reached it only on the next launch. `storage` fires in every OTHER
+ *  same-origin document, never in the one that wrote. */
+export function followUIStore(target: EventTarget = window): () => void {
+  const onStorage = (e: Event): void => {
+    if ((e as StorageEvent).key === "myco-ui") void useUIStore.persist.rehydrate();
+  };
+  target.addEventListener("storage", onStorage);
+  return () => target.removeEventListener("storage", onStorage);
+}
 
 // Never let the primary and split panes show the SAME route (two live graph
 // scenes, duplicate state) — clear the split if it would collide.

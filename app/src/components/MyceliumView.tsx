@@ -47,6 +47,7 @@ const HUB_LABEL_CAP = 20;
 export default function MyceliumView({
   graph,
   onSelect,
+  selected,
   flat,
   nodeColor,
   hyphaColor,
@@ -67,10 +68,11 @@ export default function MyceliumView({
   graph: VaultGraph | null;
   /** Node click → selection (the page opens the SAME GraphInspector panel the
    *  main graph uses — z-index 5, over this view's z-index 2 canvas). A click
-   *  on empty substrate passes null = deselect, like clicking the void. Must
-   *  be referentially stable (PageGraph passes setSelected) — it sits in the
-   *  build effect's dependency list. */
+   *  on empty substrate passes null, which the page treats as the void click. Must
+   *  be referentially stable (PageGraph passes a ref-held handler) — it sits in
+   *  the build effect's dependency list. */
   onSelect: (id: string | null) => void;
+  selected: string | null;
   /** 2D: layout flattened to z=0, camera locked front-on. 3D: free orbit. */
   flat: boolean;
   /** Flat septa colour — independent of hyphaColor so a node never has to
@@ -125,6 +127,9 @@ export default function MyceliumView({
   // OrbitControls updates, not geometry). Separate from the heavy build
   // effect's own local `scene` so those effects don't have to re-run it.
   const sceneRef = useRef<MyceliumScene | null>(null);
+  const selectionRef = useRef(selected);
+  selectionRef.current = selected;
+  const highlightRef = useRef<((id: string | null) => void) | null>(null);
   // Read inside startGrowth callbacks instead of a dependency, so dragging
   // the timelapse-speed slider never re-triggers the (expensive) build effect.
   const growSpeedRef = useRef(growSpeed);
@@ -165,13 +170,15 @@ export default function MyceliumView({
     // passes so the browser lays out ALL the spans once instead of once per
     // read. `visibility: hidden` rather than `display: none`, or offsetWidth
     // comes back 0 and every label claims a zero-width box.
-    const hubLabels: { id: string; w: number }[] = [];
-    if (hubHost) {
+    function buildLabels(ids: readonly string[]): { id: string; w: number }[] {
+      const hubLabels: { id: string; w: number }[] = [];
+      if (!hubHost) return hubLabels;
       hubHost.replaceChildren();
-      for (const id of hubIds) {
+      hubEls.clear();
+      for (const id of ids) {
         const span = document.createElement("span");
         span.className = "myc-hub-label";
-        span.textContent = graph.getNodeAttribute(id, "label") ?? id;
+        span.textContent = graph!.getNodeAttribute(id, "label") ?? id;
         span.style.display = "block";
         span.style.visibility = "hidden";
         hubHost.appendChild(span);
@@ -182,7 +189,10 @@ export default function MyceliumView({
         span.style.display = "none";
         span.style.visibility = "";
       }
+      return hubLabels;
     }
+    const hubLabels = buildLabels(hubIds);
+    let labelledFocus: string | null = null;
 
     const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, {
       targetRadius: TARGET_RADIUS,
@@ -208,6 +218,16 @@ export default function MyceliumView({
     // Shared by hover and by focusRef (search / inspector fly-to), so an
     // arrived-at note is lit the same way a hovered one is.
     function applyHighlight(id: string | null): void {
+      if (id && !g.hasNode(id)) id = null;
+      if (id !== labelledFocus) {
+        labelledFocus = id;
+        const ids = id ? [id] : [...hubIds];
+        if (id) g.someNeighbor(id, (neighbor, attrs) => {
+          if (!attrs.hidden) ids.push(neighbor);
+          return ids.length >= HUB_LABEL_CAP;
+        });
+        scene.setLabelIds(buildLabels(ids));
+      }
       if (!id) {
         scene.setHighlight(null, [], new Float32Array());
         return;
@@ -248,7 +268,7 @@ export default function MyceliumView({
             label.style.display = "none";
           }
         }
-        applyHighlight(id);
+        applyHighlight(id ?? selectionRef.current);
       },
       onFrame: (labels) => {
         const shown = new Set(labels.map((l) => l.id));
@@ -321,6 +341,8 @@ export default function MyceliumView({
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     scene.setAutoRotate(ambientMotion && !flat && !reduced);
     sceneRef.current = scene;
+    highlightRef.current = applyHighlight;
+    applyHighlight(selectionRef.current);
     if (fitRef) fitRef.current = () => scene.fit();
     if (startGrowthRef) {
       // Replay (toolbar/drawer timelapse button): reduced-motion jumps
@@ -397,6 +419,7 @@ export default function MyceliumView({
       if (startGrowthRef) startGrowthRef.current = null;
       if (focusRef) focusRef.current = null;
       sceneRef.current = null;
+      highlightRef.current = null;
       scene.dispose();
     };
     // background/nodeSizeScale/linkThicknessScale/textFadeThreshold/
@@ -407,6 +430,10 @@ export default function MyceliumView({
     // caller (PageGraph) debounces them before they ever reach this prop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [graph, onSelect, flat, nodeColor, hyphaColor, maxNodes, branchPct, fitRef, startGrowthRef, focusRef]);
+
+  useEffect(() => {
+    highlightRef.current?.(selected);
+  }, [selected]);
 
   // Live updates for the knobs the build effect intentionally excludes above.
   useEffect(() => {

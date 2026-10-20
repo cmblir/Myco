@@ -18,9 +18,8 @@
 // doc addendum this test's numbers feed): the real index
 // (`commands::collect_wiki_pages`) embeds every `wiki/*.md` and
 // `sessions/*.md` page regardless of its distill admission tier — Phase A's
-// only session-side removal lever is quarantine -> TTL trash (raw archiving
-// is a separate, source-only pass; Full/Summary/Reject tiers never move a
-// session file). A literal simulation where every session record counts
+// only session-side removal lever is quarantine -> TTL trash (raw/ is never
+// touched; Full/Summary/Reject tiers never move a session file). A literal simulation where every session record counts
 // against the "< 1.5x wiki" bound is only satisfiable if quarantine-then-
 // trash covers the large majority of session volume. Two documented choices
 // follow from that, both deliberate and both worth a reader's skepticism:
@@ -241,6 +240,7 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
 
     // ---- 2. Build a wiki-only store, derive the REAL ontology + thresholds -
     let mut store = VectorStore {
+        signature: String::new(),
         model: MODEL.to_string(),
         dim: DIM,
         records: Vec::new(),
@@ -255,7 +255,8 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
             vector: wp.vector.clone(),
         });
     }
-    let probe_ontology = ontology::build(&store, &[], &[]);
+    let probe_ontology =
+        ontology::build(&store, &[], &[]).expect("valid synthetic ontology geometry");
     assert_eq!(
         probe_ontology.clusters.len(),
         2,
@@ -307,7 +308,7 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
     // doc comment) — clearly below either cluster's quarantine floor.
     let off_vec = vec![0.0f32, 0.0, 1.0];
 
-    // ---- 3. raw/: 10 archivable sources + 5 orphans without a wiki page ----
+    // ---- 3. raw/: 10 cited sources + 5 orphans without a wiki page --------
     for n in 1..=10u32 {
         let p = root.join(format!("raw/src{n:04}.md"));
         write_file(&p, &prose("RAW_CORE_A", n));
@@ -416,11 +417,10 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
         let report = distill::run(&root, &cfg, &embed).expect("run should succeed");
         let status = distill::status(&root);
         println!(
-            "run {i}: id={} scored={} quarantined={} archived={} trashed={} proposals={} backlog={}",
+            "run {i}: id={} scored={} quarantined={} trashed={} proposals={} backlog={}",
             report.id,
             report.scan.scored,
             report.scan.quarantined,
-            report.archived,
             report.trashed,
             report.proposals,
             status.backlog
@@ -485,26 +485,24 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
         );
     }
 
-    // ---- 9. Citation-lint: archived raw sources must still resolve ----------
+    // ---- 9. Citation-lint: raw sources must still resolve -------------------
     let source_pages: Vec<String> = (1..=10u32)
         .map(|n| format!("wiki/source-src{n:04}.md"))
         .collect();
     let lint = validator::validate_pages(&root, &source_pages);
     assert!(
         lint.errors.is_empty(),
-        "citation lint errors after archiving: {:?}",
+        "citation lint errors after the runs: {:?}",
         lint.errors
     );
 
     // ---- 10. Undo round-trip -------------------------------------------------
-    // A fresh archivable source added AFTER convergence, so the probe run
-    // below makes exactly one clean, undo-tracked move (the archive pass).
-    // Quarantine moves are undo-tracked too (`scan` threads the run's own
-    // manifest through them — see its doc comment); kept out of this probe
-    // deliberately, to isolate the archive-move assertions below from this
-    // synthetic vault's calibrated quarantine/TTL timing.
+    // A fresh source with its summary page, added AFTER convergence. No run
+    // touches raw/ (owner decision 2026-10-03, B1), so the probe run leaves
+    // it in place and undo has nothing to put back. Quarantine moves are
+    // undo-tracked (`scan` threads the run's own manifest through them);
     // `undo_restores_a_quarantined_file_and_removes_its_sidecar` in
-    // distill.rs covers the quarantine+undo path directly.
+    // distill.rs covers that path directly.
     let late_raw = root.join("raw/late0001.md");
     write_file(&late_raw, &prose("RAW_CORE_A", 9999));
     backdate(&late_raw, 2);
@@ -519,18 +517,9 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
     let probe = distill::run(&root, &cfg, &embed).expect("probe run should succeed");
     assert_eq!(
         probe.scan.quarantined, 0,
-        "probe run should not quarantine anything — isolates the assertions \
-         below to the archive move alone"
+        "probe run should not quarantine anything"
     );
-    let after = list_all_files(&root);
-    assert_ne!(
-        before, after,
-        "probe run should have changed the vault listing"
-    );
-    assert!(
-        probe.archived >= 1,
-        "probe run should have archived the late source"
-    );
+    assert!(late_raw.exists(), "a run must leave raw/ in place");
 
     let late_lint = validator::validate_pages(&root, &["wiki/source-late0001.md".to_string()]);
     assert!(
@@ -539,11 +528,7 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
         late_lint.errors
     );
 
-    let reversed = distill::undo(&root, &probe.id).expect("undo should succeed");
-    assert!(
-        reversed >= 1,
-        "undo should have reversed at least the archive move"
-    );
+    distill::undo(&root, &probe.id).expect("undo should succeed");
 
     // `undo` never deletes the run's own manifest/report — that is its audit
     // trail, not a move it made (see `distill::render_report`'s "Undo"

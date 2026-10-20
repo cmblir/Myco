@@ -1,0 +1,41 @@
+{
+  "version": "Gemma4Dense12BTextFormatReferenceV1",
+  "template_sha256": "ae53464bf3be25802b3a5b37def7fd89667067d7577049b3b2d74c4d8de4c6d4",
+  "Jinja2": "3.1.6",
+  "MarkupSafe": "3.0.3",
+  "engine": "ImmutableSandboxedEnvironment; same output with trim/lstrip both false and true",
+  "mode": "String-content text-only; no tools; enable_thinking=false; add_generation_prompt=true; empty system omitted, whitespace system retained",
+  "model_or_tokenizer_executed": false,
+  "cases": [
+    {
+      "system": "",
+      "user": " Notes ",
+      "expected": "<bos><|turn>user\nNotes<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    },
+    {
+      "system": "  Policy\n",
+      "user": "\n 근거  ",
+      "expected": "<bos><|turn>system\nPolicy<turn|>\n<|turn>user\n근거<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    },
+    {
+      "system": " \n",
+      "user": "Notes",
+      "expected": "<bos><|turn>system\n<turn|>\n<|turn>user\nNotes<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    },
+    {
+      "system": "기록만 사용하세요.",
+      "user": "[S1] 한글 source: A < B; {\"value\":128}.",
+      "expected": "<bos><|turn>system\n기록만 사용하세요.<turn|>\n<|turn>user\n[S1] 한글 source: A < B; {\"value\":128}.<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    },
+    {
+      "system": "\tPolicy\r\n",
+      "user": " 자료　",
+      "expected": "<bos><|turn>system\nPolicy<turn|>\n<|turn>user\n자료<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    },
+    {
+      "system": "Policy",
+      "user": "\u001c자료\u001f",
+      "expected": "<bos><|turn>system\nPolicy<turn|>\n<|turn>user\n자료<turn|>\n<|turn>model\n<|channel>thought\n<channel|>"
+    }
+  ]
+}

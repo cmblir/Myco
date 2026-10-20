@@ -94,7 +94,7 @@ export function SettingsMcp({ t }: { t: Strings }): JSX.Element {
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: info?.running ? "#22c55e" : "#9aa0a8",
+            background: info?.running ? "var(--ok)" : "#9aa0a8",
             display: "inline-block",
           }}
           aria-hidden="true"
@@ -116,7 +116,7 @@ export function SettingsMcp({ t }: { t: Strings }): JSX.Element {
             : (t.mcp_connect_btn ?? "Connect to Claude Code")}
         </button>
         {status ? (
-          <div style={{ fontSize: 12, color: "#16a34a" }}>{status}</div>
+          <div style={{ fontSize: 12, color: "var(--ok)" }}>{status}</div>
         ) : null}
       </div>
 
@@ -145,7 +145,7 @@ export function SettingsMcp({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, whiteSpace: "pre-wrap" }}>
+        <div style={{ color: "var(--danger)", fontSize: 12, whiteSpace: "pre-wrap" }}>
           {error}
         </div>
       ) : null}

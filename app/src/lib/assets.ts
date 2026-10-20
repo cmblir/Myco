@@ -2,7 +2,30 @@
 // paste-able types, and how a markdown `src` maps onto a vault path so the
 // preview can hand it to Tauri's asset protocol.
 
+import type { Strings } from "./i18n";
+
 export const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp"] as const;
+
+/** Per-render context: lets an image map vault paths to webview URLs. */
+export interface RenderEnv {
+  vaultRoot?: string;
+  /** Directory of the note being rendered; `./x` resolves against it. */
+  noteDir?: string;
+  /** Absolute vault path → URL the webview may load (Tauri's convertFileSrc). */
+  toUrl?: (absPath: string) => string;
+  /** UI strings for the text the renderer writes itself (an untitled
+   *  callout's kind); absent = English. */
+  strings?: Strings;
+  /** `data-line` (0-based body line) on every block, not only headings. */
+  sourceLines?: boolean;
+  /** Unaliased links to an opaque session id read as `Claude Code · …`
+   *  (lib/displayName). Only answers opt in (Ask, Spotlight): a note's own
+   *  Preview, embeds and Live widgets keep the link text Live's lines show. */
+  displayNames?: boolean;
+  /** To-do boxes are live and name their body line (`data-task-line`): the
+   *  reader's Preview writes a tick to the file. Elsewhere they are disabled. */
+  tasks?: boolean;
+}
 
 const MIME_EXT: Record<string, string> = {
   "image/png": "png",
@@ -52,4 +75,12 @@ export function resolveImageSrc(
     else parts.push(seg);
   }
   return parts.join("/");
+}
+
+/** The URL an image `src` loads from: a vault path through `env.toUrl` (the
+ *  asset protocol); a remote URL, or any src without an env, as written. */
+export function imageUrl(src: string, env?: RenderEnv): string {
+  if (!env?.vaultRoot || !env.toUrl) return src;
+  const abs = resolveImageSrc(src, env.vaultRoot, env.noteDir ?? env.vaultRoot);
+  return abs ? env.toUrl(abs) : src;
 }

@@ -13,7 +13,7 @@
 //! real export before being relied on. Detection is by content, so a file that
 //! does not match this shape is simply routed elsewhere, never mis-parsed here.
 
-use super::{Conversation, Role, Source, Turn};
+use super::{Conversation, Role, Source, Turn, TurnMetadata};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -25,25 +25,7 @@ struct RawConversation {
     #[serde(default)]
     created_at: Option<String>,
     #[serde(default)]
-    chat_messages: Vec<RawMessage>,
-}
-
-#[derive(Deserialize)]
-struct RawMessage {
-    #[serde(default)]
-    sender: Option<String>,
-    /// Older exports: the whole message as one string.
-    #[serde(default)]
-    text: Option<String>,
-    /// Newer exports: structured content blocks.
-    #[serde(default)]
-    content: Vec<ContentBlock>,
-}
-
-#[derive(Deserialize)]
-struct ContentBlock {
-    #[serde(default)]
-    text: Option<String>,
+    chat_messages: Vec<serde_json::Value>,
 }
 
 /// True when the parsed JSON array looks like a Claude.ai export (its elements
@@ -83,21 +65,27 @@ fn convert(raw: RawConversation) -> Option<Conversation> {
     })
 }
 
-fn message_to_turn(msg: &RawMessage) -> Option<Turn> {
-    let role = match msg.sender.as_deref() {
-        Some("human") | Some("user") => Role::User,
-        Some("assistant") => Role::Assistant,
+fn message_to_turn(msg: &serde_json::Value) -> Option<Turn> {
+    let sender = msg.get("sender")?.as_str()?;
+    let role = match sender {
+        "human" | "user" => Role::User,
+        "assistant" => Role::Assistant,
         _ => return None,
     };
     // Prefer the structured content blocks; fall back to the flat text field.
     let from_blocks = msg
-        .content
-        .iter()
-        .filter_map(|b| b.text.as_deref())
+        .get("content")
+        .and_then(|content| content.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|block| block.get("text").and_then(|text| text.as_str()))
         .collect::<Vec<_>>()
         .join("\n");
     let text = if from_blocks.trim().is_empty() {
-        msg.text.clone().unwrap_or_default()
+        msg.get("text")
+            .and_then(|text| text.as_str())
+            .unwrap_or_default()
+            .to_string()
     } else {
         from_blocks
     };
@@ -105,7 +93,25 @@ fn message_to_turn(msg: &RawMessage) -> Option<Turn> {
     if text.is_empty() {
         return None;
     }
-    Some(Turn { role, text })
+    Some(Turn {
+        role,
+        text,
+        metadata: TurnMetadata {
+            message_id: msg
+                .get("uuid")
+                .and_then(|id| id.as_str())
+                .map(str::to_string),
+            timestamp: msg
+                .get("created_at")
+                .and_then(|time| time.as_str())
+                .map(str::to_string),
+            original_role: Some(sender.to_string()),
+            // Keep every field of the retained parsed message. Reserialization
+            // preserves JSON structure, not the original export's byte layout.
+            original_record: Some(msg.to_string()),
+            ..Default::default()
+        },
+    })
 }
 
 #[cfg(test)]
@@ -141,6 +147,10 @@ mod tests {
         assert_eq!(c.turns[0].text, "What is attention?");
         assert_eq!(c.turns[1].role, Role::Assistant);
         assert_eq!(c.turns[2].text, "Older messages store text flat.");
+        assert!(
+            c.turns.iter().all(|turn| turn.metadata.timestamp.is_none()),
+            "conversation created_at must not become an invented message time"
+        );
     }
 
     #[test]
@@ -171,5 +181,39 @@ mod tests {
     #[test]
     fn a_non_array_body_errors() {
         assert!(parse("{\"not\":\"array\"}").is_err());
+    }
+
+    #[test]
+    fn preserves_optional_message_uuid_sender_and_original_offset_without_inventing_missing_times()
+    {
+        let mut source: serde_json::Value = serde_json::from_str(FIXTURE).unwrap();
+        source[0]["chat_messages"][0]["uuid"] = serde_json::json!("human-message");
+        source[0]["chat_messages"][0]["created_at"] =
+            serde_json::json!("2026-10-03T09:00:00+09:00");
+        source[0]["chat_messages"][0]["provider_extra"] = serde_json::json!({"synthetic": true});
+        source[0]["chat_messages"][1]["uuid"] = serde_json::json!("assistant-message");
+        source[0]["chat_messages"][1]["created_at"] = serde_json::json!("2026-10-04T00:00:00Z");
+        let conversations = parse(&source.to_string()).unwrap();
+        let conversation = &conversations[0];
+        let first = &conversation.turns[0].metadata;
+        assert_eq!(first.message_id.as_deref(), Some("human-message"));
+        assert_eq!(first.original_role.as_deref(), Some("human"));
+        assert_eq!(
+            first.timestamp.as_deref(),
+            Some("2026-10-03T09:00:00+09:00")
+        );
+        assert_eq!(
+            super::super::parse_iso8601(first.timestamp.as_deref().unwrap()),
+            Some(1_790_985_600)
+        );
+        assert!(conversation.turns[2].metadata.timestamp.is_none());
+        assert!(conversation.turns[2].metadata.message_id.is_none());
+        assert!(first.parent_id.is_none());
+        let retained: serde_json::Value =
+            serde_json::from_str(first.original_record.as_deref().unwrap()).unwrap();
+        assert_eq!(retained, source[0]["chat_messages"][0]);
+        let rendered = conversation.to_inbox_doc();
+        assert!(rendered.contains("last_activity: 1791072000"));
+        assert!(!rendered.contains("provider_extra"));
     }
 }

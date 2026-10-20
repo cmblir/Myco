@@ -65,9 +65,28 @@ rmcp = { version = "=2.2.0", default-features = false, features = ["server", "ma
 axum = "0.8"
 tokio-util = "0.7"
 similar = "2"
+# Web-link import (src/web_fetch.rs): parse a fetched page and turn its main
+# text into markdown. Already in the lockfile and compiled via tauri-utils;
+# its default `markdown` feature is the html→md serializer, so no hand-rolled
+# converter and no new crate in the build.
+dom_query = "0.27"
+# Web-link import: decode legacy-charset pages (EUC-KR, Shift_JIS, ...) by the
+# header/meta charset. Already in the lockfile via calamine, pdf-extract and
+# llama-cpp-2, so naming it adds no new code to the build.
+encoding_rs = "0.8"
+# SHA-256 of an _inbox/ original, so a retried image or recording finds the
+# raw copy its first description went into (vault::source_marker). Already
+# in the lockfile and the binary via lopdf and wry.
+sha2 = "0.10"
+# Native publication capabilities; this exact version is already locked.
+getrandom = "=0.3.4"
 notify = "8.2.0"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-process = "2"
+
+# The already locked libc constant prevents a replaced image FIFO from blocking open.
+[target.'cfg(unix)'.dependencies]
+libc = "=0.2.186"
 
 # macOS notch surface (src/notch.rs): NSScreen safe-area/auxiliary-area
 # geometry, and promoting a Tauri window to a status-level non-activating
@@ -101,6 +120,60 @@ rerank = ["dep:llama-cpp-sys-2"]
 # private AppKit selector, kept for the spike and compiled out of every normal
 # build. The notch GEOMETRY command is not gated; only the probe is.
 notch-probe = []
+# Isolated native/AppHandle index checks; absent from normal builds.
+native-index-probe = []
+
+[[example]]
+name = "native_ask_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "native_transport_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_compact_claim_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_source_focus_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "native_index_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "native_import_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "native_image_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "native_session_compile_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_packet_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_quoted_packet_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_reading_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_direct_reading_probe"
+required-features = ["native-index-probe"]
+
+[[example]]
+name = "local_answer_review_probe"
+required-features = ["native-index-probe"]
 
 [[bench]]
 name = "vector_store"

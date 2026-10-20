@@ -1,0 +1,121 @@
+{
+  "version": 1,
+  "status": "declared_not_executed",
+  "scenarios": [
+    {
+      "id": "seoul_midnight",
+      "kind": "date_boundary",
+      "timezone": "Asia/Seoul",
+      "interval": {
+        "from": "2026-10-02T15:00:00Z",
+        "toExclusive": "2026-10-03T15:00:00Z"
+      },
+      "events": [
+        {
+          "id": "before",
+          "at": "2026-10-02T14:59:59Z",
+          "eligible": false
+        },
+        {
+          "id": "start",
+          "at": "2026-10-02T15:00:00Z",
+          "eligible": true
+        },
+        {
+          "id": "end",
+          "at": "2026-10-03T15:00:00Z",
+          "eligible": false
+        }
+      ]
+    },
+    {
+      "id": "dst_repeated_hour",
+      "kind": "date_boundary",
+      "timezone": "America/New_York",
+      "interval": {
+        "from": "2026-11-01T04:00:00Z",
+        "toExclusive": "2026-11-02T05:00:00Z"
+      },
+      "events": [
+        {
+          "id": "first_0130",
+          "at": "2026-11-01T05:30:00Z",
+          "eligible": true
+        },
+        {
+          "id": "second_0130",
+          "at": "2026-11-01T06:30:00Z",
+          "eligible": true
+        },
+        {
+          "id": "end",
+          "at": "2026-11-02T05:00:00Z",
+          "eligible": false
+        }
+      ]
+    },
+    {
+      "id": "unreadable_is_not_empty",
+      "kind": "fault_contract",
+      "operation": "scan",
+      "fault": "PermissionDenied",
+      "expected": {
+        "state": "unreadable",
+        "pruneAllowed": false
+      }
+    },
+    {
+      "id": "stale_vault_isolation",
+      "kind": "fault_contract",
+      "operation": "apply_proposal",
+      "originVault": "synthetic-vault-a",
+      "currentVault": "synthetic-vault-b",
+      "expected": {
+        "publishAllowed": false,
+        "sourceMutationAllowed": false
+      }
+    },
+    {
+      "id": "same_path_reopened",
+      "kind": "fault_contract",
+      "operation": "apply_proposal",
+      "originGeneration": 1,
+      "currentGeneration": 2,
+      "expected": {
+        "publishAllowed": false
+      }
+    },
+    {
+      "id": "partial_provider_write",
+      "kind": "fault_contract",
+      "operation": "ingest",
+      "providerExitCode": 1,
+      "expected": {
+        "outcome": "partial",
+        "retainRaw": true,
+        "markGlobalDone": false
+      }
+    },
+    {
+      "id": "local_fail_no_cloud",
+      "kind": "routing_contract",
+      "operation": "schema_repair",
+      "selectedRoute": "local",
+      "localOutcome": "unavailable",
+      "externalCredentialsDetected": true,
+      "expected": {
+        "remoteAttempts": 0,
+        "outcome": "pending"
+      }
+    },
+    {
+      "id": "connect_does_not_select",
+      "kind": "routing_contract",
+      "connected": true,
+      "selectedRoute": "local",
+      "expected": {
+        "remoteAttempts": 0
+      }
+    }
+  ]
+}

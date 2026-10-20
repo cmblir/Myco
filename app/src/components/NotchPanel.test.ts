@@ -7,19 +7,48 @@
 // copy and the right cap tone, and the colour rule holds — purple only while
 // something is alive, amber only on a refusal, green only when finished.
 
-import { describe, expect, it } from "vitest";
-import {
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import postcss from "postcss";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import NotchPanel, {
   CANCELLED_DWELL_MS,
   DONE_DWELL_MS,
   MOCK_FRAMES,
   clampPercent,
   clock,
   describeNotch,
-  markCount,
+  type NotchPanelProps,
   type NotchState,
 } from "./NotchPanel";
 import { STRINGS } from "../lib/i18n";
 import { EMPTY_CAPTION } from "../lib/liveCaption";
+import { useUIStore } from "../stores/uiStore";
+
+// The real mascot reads matchMedia through useSyncExternalStore, which has no
+// server snapshot; the panel's markup only needs to know where it stands.
+vi.mock("./NotchMascot", () => ({
+  default: ({ placement }: { placement: string }) =>
+    createElement("span", { className: "notch-mascot", "data-placement": placement }),
+}));
+// react-dom/server renders zustand's server snapshot — the store's INITIAL
+// state, whatever setState did — so the panel reads a plain object here.
+vi.mock("../stores/uiStore", async (importOriginal) => {
+  const real = await importOriginal<Record<string, unknown>>();
+  const state = { lang: "en", mascotEnabled: true };
+  const useUIStore = Object.assign(
+    <T,>(select: (s: typeof state) => T): T => select(state),
+    {
+      getState: () => state,
+      setState: (patch: Partial<typeof state>) => void Object.assign(state, patch),
+      // distillStore subscribes at import (a tab switch clears its error).
+      subscribe: () => () => undefined,
+    },
+  );
+  return { ...real, useUIStore };
+});
 
 const t = STRINGS.en;
 
@@ -33,11 +62,10 @@ describe("describeNotch", () => {
     });
   });
 
-  it("S10 pill fallback stays collapsed but names itself", () => {
-    // With no notch to hide inside, an unlabelled black pill is just a smudge.
-    expect(describeNotch({ kind: "idle" }, t, true)).toEqual({
-      lip: "MYCO",
-      tone: "live",
+  it("S10 fallback also stays invisible while idle", () => {
+    expect(describeNotch({ kind: "idle" }, t)).toEqual({
+      lip: "",
+      tone: "dim",
       open: false,
       dwellMs: null,
     });
@@ -93,7 +121,8 @@ describe("describeNotch", () => {
 
   it("S7 saved goes green and folds on S6's 4s clock", () => {
     const view = describeNotch({ kind: "captured", rel: "daily/2026-08-25.md" }, t);
-    expect(view.lip).toBe(t.notch_capture_saved);
+    // Same sentence as Home's capture: both write to today's note (UX S39).
+    expect(view.lip).toBe(t.home_captured);
     expect(view.tone).toBe("ok");
     expect(view.dwellMs).toBe(DONE_DWELL_MS);
   });
@@ -175,7 +204,7 @@ describe("describeNotch", () => {
 
   it("only the finished states — and the cancelled beat — self-collapse", () => {
     const dwelling = MOCK_FRAMES.filter(
-      (f) => describeNotch(f.state, t, f.pill).dwellMs !== null,
+      (f) => describeNotch(f.state, t).dwellMs !== null,
     );
     expect(dwelling.map((f) => f.state.kind)).toEqual([
       "done",
@@ -186,7 +215,7 @@ describe("describeNotch", () => {
 
   it("every state but idle unfolds the body", () => {
     const collapsed = MOCK_FRAMES.filter(
-      (f) => !describeNotch(f.state, t, f.pill).open,
+      (f) => !describeNotch(f.state, t).open,
     );
     expect(collapsed.map((f) => f.state.kind)).toEqual(["idle", "idle"]);
   });
@@ -194,11 +223,13 @@ describe("describeNotch", () => {
   it("translates every state in every language without leaving a placeholder", () => {
     for (const lang of ["en", "ko", "ja"] as const) {
       for (const frame of MOCK_FRAMES) {
-        const view = describeNotch(frame.state, STRINGS[lang], frame.pill);
+        const view = describeNotch(frame.state, STRINGS[lang]);
         expect(view.lip).not.toContain("{");
-        // Idle in the notch is the one state that says nothing.
-        if (frame.state.kind !== "idle" || frame.pill) {
+        // Idle remains silent on both notched and notchless displays.
+        if (frame.state.kind !== "idle") {
           expect(view.lip.length).toBeGreaterThan(0);
+        } else {
+          expect(view.lip).toBe("");
         }
       }
     }
@@ -280,22 +311,110 @@ describe("clampPercent", () => {
   });
 });
 
-describe("markCount", () => {
-  const collapsed = describeNotch({ kind: "idle" }, t);
-
-  it("draws nothing when nothing is waiting", () => {
-    // The whole reason the collapsed surface may render anything at all: it
-    // has to stay invisible on an empty agenda.
-    expect(markCount(collapsed, 0)).toBeNull();
+describe("the collapsed surface's markup", () => {
+  beforeAll(() => {
+    // readMockParams reads location at first render; node has none.
+    vi.stubGlobal("location", { search: "" });
   });
 
-  it("shows the count when a decision is waiting", () => {
-    expect(markCount(collapsed, 1)).toBe(1);
-    expect(markCount(collapsed, 12)).toBe(12);
+  const render = (mascot: boolean, props: NotchPanelProps): string => {
+    useUIStore.setState({ lang: "en", mascotEnabled: mascot });
+    return renderToStaticMarkup(createElement(NotchPanel, props));
+  };
+  const waiting = (n: number): NotchPanelProps => ({
+    collapsedWidth: 204,
+    agenda: { total: n, rows: [] },
   });
 
-  it("stays out of an open card", () => {
-    // Open, the card lists the rows themselves; a count beside them is noise.
-    expect(markCount(describeNotch({ kind: "peek" }, t), 3)).toBeNull();
+  it.each([0, 1, 2, 28189])("keeps a collapsed surface undecorated with %i waiting decisions", (count) => {
+    for (const mascot of [true, false]) {
+      for (const pill of [true, false]) {
+        const html = render(mascot, { ...waiting(count), pill });
+        expect(html).not.toContain("notch-mascot");
+        expect(html).not.toContain("notch-mark");
+        expect(html).not.toContain("notch-cap");
+        expect(html).not.toContain("notch-winged");
+        expect(html).not.toContain("--notch-wing-w");
+      }
+    }
   });
+
+  it("draws no myco while it is out roaming the screen, so there is never a second one", () => {
+    const running: NotchState = { kind: "running", percent: 55, detail: "11/20", elapsedMs: 0 };
+    for (const props of [waiting(3), { ...waiting(0), state: running }, { ...waiting(3), pill: true }]) {
+      const html = render(true, { ...props, mascotAway: true });
+      expect(html).not.toContain("notch-mascot");
+      expect(html).not.toContain("notch-mark");
+    }
+    expect(render(true, { ...waiting(3), mascotAway: true })).not.toContain("notch-body");
+    expect(render(true, { ...waiting(0), state: running, mascotAway: true })).toContain("notch-lip-label");
+  });
+
+  it("shows one myco inside the open card", () => {
+    const html = render(true, { ...waiting(3), state: { kind: "peek" } });
+    expect(html.match(/class="notch-mascot"/g)).toHaveLength(1);
+    expect(html).toContain('data-placement="panel"');
+    expect(html).not.toContain("notch-mark");
+  });
+});
+
+// The mascot renders INSIDE .notch, so whatever animates the card animates
+// the character too. Layout is measured in a browser; this pins the rules.
+describe("the notch's stylesheet", () => {
+  const root = postcss.parse(readFileSync(resolve(__dirname, "../styles.css"), "utf8"));
+
+  it("unfurls the card by revealing it, never by scaling what is inside", () => {
+    // A scaleY(0.3) unfurl flattened the mascot to a pancake for the first
+    // ~90 ms of every open; only its own spring may squash it (decision 2).
+    const props: string[] = [];
+    root.walkAtRules("keyframes", (at) => {
+      if (at.params === "notch-unfurl") at.walkDecls((d) => void props.push(d.prop));
+    });
+    expect(props).toContain("clip-path");
+    expect(props).not.toContain("transform");
+    expect(props).not.toContain("scale");
+  });
+
+  /** Declarations of the top-level rules listing `selector`. */
+  const decls = (selector: string): Record<string, string> => {
+    const out: Record<string, string> = {};
+    root.walkRules((rule) => {
+      if (rule.parent?.type !== "root" || !rule.selectors.includes(selector)) return;
+      rule.walkDecls((d) => void (out[d.prop] = d.value));
+    });
+    return out;
+  };
+
+  it("folds the card and the mascot in the same frame", () => {
+    // Collapsed, the ground is transparent at once; a card still shrinking
+    // and a mascot still sliding home hung card-less over the app below for
+    // ~240 ms. Only opening animates; the pill's black ground keeps its fold.
+    expect(decls(".notch:not(.notch-open)").transition).toBe("none");
+    expect(decls(".notch-mascot").transition).toBeUndefined();
+    expect(decls(".notch.notch-open .notch-mascot").transition).toMatch(/^left 340ms/);
+  });
+
+  it("fades the cap glow back in after a clip, never pops it", () => {
+    // Unmounted under a clip, the glow remounted with no transition, so the
+    // still's first frame already showed it at full strength (accepted 0.6,
+    // done 0.4). It stays mounted: a clip hides it at once, and when the clip
+    // goes its own 240 ms transition brings it back.
+    expect(decls(".notch-mascot-clip ~ .notch-mascot-glow")).toMatchObject({
+      opacity: "0",
+      transition: "none",
+    });
+    expect(decls(".notch-mascot-glow").transition).toMatch(/^opacity 240ms/);
+  });
+
+  it("keeps the collapsed hotspot transparent and cutout-wide", () => {
+    expect(decls(".notch").width).toBe("var(--notch-collapsed)");
+    expect(decls(".notch").background).toBe("transparent");
+    expect(decls(".notch:not(.notch-open):not(.notch-pill)")["min-height"]).toBe(
+      "calc(var(--notch-cutout, 0px) + 14px)",
+    );
+    expect(decls(".notch.notch-pill").background).toBeUndefined();
+    expect(decls(".notch.notch-pill")["box-shadow"]).toBeUndefined();
+    expect(decls(".notch.notch-pill.notch-open").background).toBe("#000");
+  });
+
 });

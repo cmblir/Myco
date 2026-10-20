@@ -1,0 +1,187 @@
+{
+  "version": 1,
+  "id": "local-wiki-native-activity-development-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "kind": "derived_synthetic_native_transcript_container",
+  "sourceArtifact": {
+    "path": "../local-wiki-development-meaning-v1.json",
+    "bytes": 20012,
+    "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+  },
+  "sourceManifest": {
+    "path": "../local-wiki-development-meaning-v1.manifest.json",
+    "bytes": 830,
+    "sha256": "a27e437a81bb4ad4acbe569044191f3d82964df890d119d2005914fd3f958ba5"
+  },
+  "sourceLedgerReference": {
+    "path": "../local-wiki-development-ledger-reference-v1.json",
+    "bytes": 157143,
+    "sha256": "0fedd5fbb4a55efc444b15c2763986efd19f3555f3527abecbd8731c6ab63c36"
+  },
+  "sourceLedgerManifest": {
+    "path": "../local-wiki-development-ledger-reference-v1.manifest.json",
+    "bytes": 5320,
+    "sha256": "df733f2356ed152fe5b43a12ba48b2f3a5a91c7707f18d401ff784ddfecbbabf"
+  },
+  "mappingArtifact": {
+    "path": "span-mapping.json",
+    "bytes": 13601,
+    "sha256": "3dfbbd9d9b82d02eff657ffa54524ec3b782470d1527b629a7c8fa118799cd26"
+  },
+  "containers": [
+    {
+      "caseId": "synthetic-dev-plan-negation",
+      "path": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-plan-negation.fixture",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-plan-negation.md",
+      "bytes": 588,
+      "sha256": "ac6b29c3e38db5c7912befa56abd3394b3d070e75df1d045692eeeaf8f2cde74",
+      "title": "Synthetic prism exporter preparation",
+      "originalSourceSha256": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+      "originalSourceBytes": 182,
+      "originalSourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "originalActivityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "turnCount": 2,
+      "runtimeDateRange": "must be selected by the real local planner; originalActivityPeriod is historical helper metadata, never an injected native period",
+      "semanticReference": {
+        "path": "../local-wiki-development-meaning-v1.json",
+        "jsonPointer": "/cases/0/gold"
+      },
+      "fullOriginalSourceSha256": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c"
+    },
+    {
+      "caseId": "synthetic-dev-decision-cause",
+      "path": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-decision-cause.fixture",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-decision-cause.md",
+      "bytes": 648,
+      "sha256": "7e2c73668138e4e213ebfda6cfbba963272b9f1b441182065bccfc7c027d5077",
+      "title": "Synthetic index filter rollback",
+      "originalSourceSha256": "0dfc6298461b218f1181292be547070fd917b9955f09f83e6b1dd491a34222e8",
+      "originalSourceBytes": 247,
+      "originalSourcePath": "raw/synthetic-development/synthetic-dev-decision-cause.md",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "originalActivityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "turnCount": 2,
+      "runtimeDateRange": "must be selected by the real local planner; originalActivityPeriod is historical helper metadata, never an injected native period",
+      "semanticReference": {
+        "path": "../local-wiki-development-meaning-v1.json",
+        "jsonPointer": "/cases/1/gold"
+      },
+      "fullOriginalSourceSha256": "0dfc6298461b218f1181292be547070fd917b9955f09f83e6b1dd491a34222e8"
+    },
+    {
+      "caseId": "synthetic-dev-actor-event-date",
+      "path": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-actor-event-date.fixture",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-actor-event-date.md",
+      "bytes": 630,
+      "sha256": "7985e794a530d5700da9a976cc883639526749ae9c25f9cf467a2e08e66a78cb",
+      "title": "Synthetic loom adapter attribution",
+      "originalSourceSha256": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+      "originalSourceBytes": 226,
+      "originalSourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "originalActivityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "turnCount": 2,
+      "runtimeDateRange": "must be selected by the real local planner; originalActivityPeriod is historical helper metadata, never an injected native period",
+      "semanticReference": {
+        "path": "../local-wiki-development-meaning-v1.json",
+        "jsonPointer": "/cases/2/gold"
+      },
+      "fullOriginalSourceSha256": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8"
+    },
+    {
+      "caseId": "synthetic-dev-cancel-reopen",
+      "path": "corpus/sessions/2026-10/synthetic-native-synthetic-dev-cancel-reopen.fixture",
+      "vaultPath": "sessions/2026-10/synthetic-native-synthetic-dev-cancel-reopen.md",
+      "bytes": 804,
+      "sha256": "d2147665263602c1a8d05b0d10169247c43f17d9fc4e93d85418d411e4cbcf30",
+      "title": "Synthetic lantern connector reopening",
+      "originalSourceSha256": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+      "originalSourceBytes": 295,
+      "originalSourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+      "recordTime": "2026-10-04T09:00:00Z",
+      "originalActivityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "turnCount": 3,
+      "runtimeDateRange": "must be selected by the real local planner; originalActivityPeriod is historical helper metadata, never an injected native period",
+      "semanticReference": {
+        "path": "../local-wiki-development-meaning-v1.json",
+        "jsonPointer": "/cases/3/gold"
+      },
+      "fullOriginalSourceSha256": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300"
+    }
+  ],
+  "scheduledQuestions": [
+    {
+      "id": "recent-work",
+      "question": "내가 최근에 한 일들에 대해서 정리해줘",
+      "scope": "all",
+      "resolutionMode": "historical_as_of"
+    },
+    {
+      "id": "month-work",
+      "question": "내가 최근 한달동안 한 일에 대해서 알려줘",
+      "scope": "all",
+      "resolutionMode": "historical_as_of"
+    },
+    {
+      "id": "next-work",
+      "question": "내가 앞으로 어떤 작업을 하는게 좋을까?",
+      "scope": "all",
+      "resolutionMode": "current_state"
+    }
+  ],
+  "clockPolicy": {
+    "queryTime": "capture actual local query clock; do not freeze today to 2026-10-04 or rewrite original timestamps",
+    "plannerToday": "same captured local calendar day; production validate_request allows at most one UTC civil-day difference",
+    "dateRange": "model-selected inclusive local calendar dates; frontend queryDateRange supplies epoch bounds at local midnights and exclusive next-day end",
+    "historicalResolution": "asOfEpoch=min(selected endEpoch-1,captured queryEpoch)",
+    "currentResolution": "asOfEpoch=captured queryEpoch",
+    "legacySourceTurnLocalDatesInAsiaSeoul": "All nine original turn timestamps fall on the same UTC and Asia/Seoul calendar day; file creation/import/modified timestamps are not turn/event dates",
+    "periodCoverage": "Compare original reference facts only for actually admitted source turns inside the selected period; disclose separately if the chosen period omits useful historical sources. Never replace the model period with originalActivityPeriod."
+  },
+  "retrievalLimits": {
+    "perPageHits": 2,
+    "globalHits": 12,
+    "D4ThreeTurnContainer": "Keep all three original turns in one file. Native raw recall may admit only its newest two selected-period turns and mark incomplete; record that omission, do not split the file or preload its missing turn.",
+    "sourceClosure": "Later native resolution is observed, never injected into the initial hit list."
+  },
+  "limitations": {
+    "helperRequestPlanAndPositiveCasesIncluded": false,
+    "coordinationDistractorsIncluded": false,
+    "scopeDensityStressTest": false,
+    "realMcpImportOrCompilationLineageEstablished": false,
+    "heldOut": false,
+    "independentHumanReview": false,
+    "productAcceptance": false,
+    "installedAcceptance": false,
+    "modelInferenceExecuted": false,
+    "nativeParserExecuted": false,
+    "paidProviderUse": false,
+    "privateVaultRead": false
+  },
+  "nativeBindingRecipe": {
+    "sourceDocumentId": "S-SHA256(vault-relative container path)[:32]",
+    "nativeTurnId": "T-SHA256(original turn id as turn_metadata.message_id)[:32]",
+    "nativeSpanId": "Q-SHA256(path + \":\" + nativeBodyStart + \":\" + nativeBodyEnd)[:32]",
+    "nativeSpanScope": "base bind_original_page admission; later windows may reissue IDs",
+    "idValidation": "predicted_from_current_source_not_executed_native_parser",
+    "readSource": "src/activity_recall/claim_sources.rs: original_turns and bind_original_page",
+    "offsetEncoding": "UTF-8 bytes, half-open [start,end)",
+    "passagePreservation": "Exact original turn text remains a contiguous subrange. Original separators are retained between turns; inserted role headers interrupt whole-document contiguity. Remove inserted headers and frontmatter to reconstruct source.original.",
+    "nativeBodyDifference": "For non-final turns, original inter-turn separator bytes belong to the native body and are included in its SHA256. Do not substitute the original passage SHA for the full native body SHA."
+  },
+  "preservation": "Existing source artifact, its original passages, source timestamps/speakers/phases, original gold and prior manifests are unchanged. This new corpus changes only transcript container representation; all derived full-file hashes and offsets are new."
+}

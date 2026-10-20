@@ -1,0 +1,2583 @@
+{
+  "version": 1,
+  "id": "local-wiki-development-review-packets-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "labelStatus": "frozen_before_inference",
+  "sourceReviewStatus": "source_review_required_before_inference",
+  "scope": "Eight exposed-development whole-packet proposals. Source references and preview inputs are author-authored until separately audited and native-admitted; not held-out, human, product or installed acceptance.",
+  "base": {
+    "path": "local-wiki-development-meaning-v1.json",
+    "bytes": 20012,
+    "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+  },
+  "sourceOnlyReferences": true,
+  "priorDevelopmentOutputsKnown": true,
+  "currentTrialOutputsInspected": false,
+  "heldOutInspected": false,
+  "nativeAuthority": false,
+  "packets": [
+    {
+      "pairId": "whole-review-D4AB-rollout-invention",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "selectedSpanIds": [
+        "D4A",
+        "D4B"
+      ],
+      "excludedSpanIds": [
+        "D4C"
+      ],
+      "faultType": "invented_rollout_completion",
+      "purpose": "Accept correctly attributed reported change and cause-bearing cancellation without independent execution proof; reject an added unsupported rollout-completion claim while judging retained original coverage separately."
+    },
+    {
+      "pairId": "whole-review-D3AB-duplicate-only",
+      "sourceCaseId": "synthetic-dev-actor-event-date",
+      "selectedSpanIds": [
+        "D3A",
+        "D3B"
+      ],
+      "excludedSpanIds": [],
+      "faultType": "duplicate_only_omits_verification_qualifiers",
+      "purpose": "Accept maintainer attribution/explicit repair date and historical user/assistant verification limitations; duplicate supported repair claims do not cover nonverification, inability to confirm, or absence of later result."
+    },
+    {
+      "pairId": "whole-review-D4ABC-omit-nonrollout",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "selectedSpanIds": [
+        "D4A",
+        "D4B",
+        "D4C"
+      ],
+      "excludedSpanIds": [],
+      "faultType": "omitted_explicit_nonrollout",
+      "purpose": "Accept chronological change report, cancellation with cause, completed reopening and explicit nonrollout; completed reopening is not completed rollout and does not cover omitted nonrollout."
+    },
+    {
+      "pairId": "whole-review-D1AB-omit-request",
+      "sourceCaseId": "synthetic-dev-plan-negation",
+      "selectedSpanIds": [
+        "D1A",
+        "D1B"
+      ],
+      "excludedSpanIds": [],
+      "faultType": "omitted_request",
+      "purpose": "Accept request, personal nonperformance, completed plan preparation and passive unspecified-performer repair/check nonperformance; retaining negatives and preparation alone does not cover the omitted request."
+    }
+  ],
+  "cases": [
+    {
+      "id": "whole-review-D4AB-rollout-invention-supported",
+      "pairId": "whole-review-D4AB-rollout-invention",
+      "variant": "source_supported",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-0",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-cancel-reopen.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+            "anchorSpanId": "D4A",
+            "supportSpanIds": [
+              "D4A"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "anchorSpanId": "D4B",
+            "supportSpanIds": [
+              "D4B"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_cancelled",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "accept",
+        "expectedNativeAcceptanceFailureCode": null,
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "D4A attributes completion of the connector change to Assistant and explicitly says this is a report, not independent verification."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "D4B is a User past cancellation report and retains the blank-preview cause; it is not a future request."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B"
+        ],
+        "sourceCoverage": "covered",
+        "missingSpanIds": [],
+        "coverageByOriginal": [
+          {
+            "spanId": "D4A",
+            "importantFacts": [
+              "Assistant reports completing a connector change.",
+              "The statement is an attributed report, not independent verification."
+            ],
+            "isMissing": false,
+            "rationale": "C0 retains completion attribution and the non-independent-verification qualification."
+          },
+          {
+            "spanId": "D4B",
+            "importantFacts": [
+              "User reports cancelling rollout.",
+              "Cancellation cause is the blank preview."
+            ],
+            "isMissing": false,
+            "rationale": "C1 retains cancellation and blank-preview cause."
+          }
+        ],
+        "caseRationale": "The proposals preserve every supplied important original fact, attribution, cause and negative qualification. Known event time is limited to the original D3 maintainer repair date; all other action dates remain unknown.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "00cdac2a1445433b19f37afb7f9bd870d56eda16afcea85fbd0bcebdfaf2f9d9",
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D4A",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 0,
+            "end": 101,
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+            "turnId": "D4A",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4B",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 102,
+            "end": 184,
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "turnId": "D4B",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+              "anchorSpanId": "D4A",
+              "supportSpanIds": [
+                "D4A"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+              "anchorSpanId": "D4B",
+              "supportSpanIds": [
+                "D4B"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_cancelled",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D4AB-rollout-invention-comparison",
+      "pairId": "whole-review-D4AB-rollout-invention",
+      "variant": "comparison",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-1",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-cancel-reopen.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+            "anchorSpanId": "D4A",
+            "supportSpanIds": [
+              "D4A"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "anchorSpanId": "D4B",
+            "supportSpanIds": [
+              "D4B"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_cancelled",
+            "verificationId": null
+          },
+          {
+            "action": "Completed the synthetic lantern connector rollout.",
+            "anchorSpanId": "D4B",
+            "supportSpanIds": [
+              "D4B"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "reject",
+        "expectedNativeAcceptanceFailureCode": "review_rejected",
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C2",
+            "disposition": "unsupported",
+            "rationale": "The good D4 A/B reports and cause remain in C0/C1. Added C2 invents a User rollout-completion report not entailed by either supplied original. Reject that claim; do not convert fully retained original facts into missing merely because C2 fails. D4C is outside this packet and must not be demanded."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B"
+        ],
+        "sourceCoverage": "covered",
+        "missingSpanIds": [],
+        "coverageByOriginal": [
+          {
+            "spanId": "D4A",
+            "importantFacts": [
+              "Assistant reports completing a connector change.",
+              "The statement is an attributed report, not independent verification."
+            ],
+            "isMissing": false,
+            "rationale": "C0 retains attributed change report and nonverification qualification."
+          },
+          {
+            "spanId": "D4B",
+            "importantFacts": [
+              "User reports cancelling rollout.",
+              "Cancellation cause is the blank preview."
+            ],
+            "isMissing": false,
+            "rationale": "C1 retains cancellation and blank-preview cause; unsupported extra C2 does not erase that coverage."
+          }
+        ],
+        "caseRationale": "The good D4 A/B reports and cause remain in C0/C1. Added C2 invents a User rollout-completion report not entailed by either supplied original. Reject that claim; do not convert fully retained original facts into missing merely because C2 fails. D4C is outside this packet and must not be demanded.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "8dbcf8dfcb80b3fcbea077e6cb2f9851ae2ae21381f2873983f731005137d2b8",
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D4A",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 0,
+            "end": 101,
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+            "turnId": "D4A",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4B",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 102,
+            "end": 184,
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "turnId": "D4B",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1",
+          "C2"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+              "anchorSpanId": "D4A",
+              "supportSpanIds": [
+                "D4A"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+              "anchorSpanId": "D4B",
+              "supportSpanIds": [
+                "D4B"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_cancelled",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C2",
+            "proposal": {
+              "action": "Completed the synthetic lantern connector rollout.",
+              "anchorSpanId": "D4B",
+              "supportSpanIds": [
+                "D4B"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D3AB-duplicate-only-supported",
+      "pairId": "whole-review-D3AB-duplicate-only",
+      "variant": "source_supported",
+      "sourceCaseId": "synthetic-dev-actor-event-date",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-2",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-actor-event-date.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "The maintainer repaired the synthetic loom adapter on 2026-10-01; the user reports the maintainer's work, not the user's own work.",
+            "anchorSpanId": "D3A",
+            "supportSpanIds": [
+              "D3A"
+            ],
+            "actor": {
+              "role": "source",
+              "basis": "explicit_subject",
+              "subjectSpanId": "D3A"
+            },
+            "eventTime": {
+              "value": "2026-10-01",
+              "basis": "explicit",
+              "precision": "day",
+              "uncertainty": "specified",
+              "supportSpanId": "D3A"
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "The user has not verified the reported synthetic loom adapter repair result.",
+            "anchorSpanId": "D3A",
+            "supportSpanIds": [
+              "D3A"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          },
+          {
+            "action": "The assistant cannot independently confirm that repair; its message contains no later repair result.",
+            "anchorSpanId": "D3B",
+            "supportSpanIds": [
+              "D3B"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "accept",
+        "expectedNativeAcceptanceFailureCode": null,
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "D3A explicitly names the maintainer, not User or Assistant, as actor and states repair event date 2026-10-01."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "D3A personally denies User verification; it does not say nobody verified or that repair failed."
+          },
+          {
+            "id": "C2",
+            "disposition": "supported",
+            "rationale": "D3B records Assistant inability to independently confirm and says this message supplies no later repair result; it is not a repair failure report."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D3A",
+          "D3B"
+        ],
+        "sourceCoverage": "covered",
+        "missingSpanIds": [],
+        "coverageByOriginal": [
+          {
+            "spanId": "D3A",
+            "importantFacts": [
+              "Maintainer, not User or Assistant, is reported repair actor.",
+              "Reported repair has explicit event date 2026-10-01.",
+              "User is reporting maintainer work rather than own work.",
+              "User personally has not verified the result."
+            ],
+            "isMissing": false,
+            "rationale": "C0 retains maintainer attribution/date/not-own-work; C1 retains User nonverification."
+          },
+          {
+            "spanId": "D3B",
+            "importantFacts": [
+              "Assistant cannot independently confirm the repair.",
+              "This message supplies no later repair result; absence does not establish failure or noncompletion."
+            ],
+            "isMissing": false,
+            "rationale": "C2 retains inability to independently confirm and absence of later repair result."
+          }
+        ],
+        "caseRationale": "The proposals preserve every supplied important original fact, attribution, cause and negative qualification. Known event time is limited to the original D3 maintainer repair date; all other action dates remain unknown.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "8907509aae4b03bc38b251ade0aca2c022b4e486cbfa15a6d49850d961606f84",
+        "coverageRequiredSpanIds": [
+          "D3A",
+          "D3B"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D3A",
+            "sourceId": "synthetic-dev-actor-event-date-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+            "sourceRevision": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+            "start": 0,
+            "end": 136,
+            "sha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+            "text": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result.",
+            "turnId": "D3A",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D3B",
+            "sourceId": "synthetic-dev-actor-event-date-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+            "sourceRevision": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+            "start": 137,
+            "end": 226,
+            "sha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+            "text": "I cannot independently confirm that repair. This message contains no later repair result.",
+            "turnId": "D3B",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-04T08:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1",
+          "C2"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "The maintainer repaired the synthetic loom adapter on 2026-10-01; the user reports the maintainer's work, not the user's own work.",
+              "anchorSpanId": "D3A",
+              "supportSpanIds": [
+                "D3A"
+              ],
+              "actor": {
+                "role": "source",
+                "basis": "explicit_subject",
+                "subjectSpanId": "D3A"
+              },
+              "eventTime": {
+                "value": "2026-10-01",
+                "basis": "explicit",
+                "precision": "day",
+                "uncertainty": "specified",
+                "supportSpanId": "D3A"
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "The user has not verified the reported synthetic loom adapter repair result.",
+              "anchorSpanId": "D3A",
+              "supportSpanIds": [
+                "D3A"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C2",
+            "proposal": {
+              "action": "The assistant cannot independently confirm that repair; its message contains no later repair result.",
+              "anchorSpanId": "D3B",
+              "supportSpanIds": [
+                "D3B"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D3AB-duplicate-only-comparison",
+      "pairId": "whole-review-D3AB-duplicate-only",
+      "variant": "comparison",
+      "sourceCaseId": "synthetic-dev-actor-event-date",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-3",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-actor-event-date.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "The maintainer repaired the synthetic loom adapter on 2026-10-01; the user reports the maintainer's work, not the user's own work.",
+            "anchorSpanId": "D3A",
+            "supportSpanIds": [
+              "D3A"
+            ],
+            "actor": {
+              "role": "source",
+              "basis": "explicit_subject",
+              "subjectSpanId": "D3A"
+            },
+            "eventTime": {
+              "value": "2026-10-01",
+              "basis": "explicit",
+              "precision": "day",
+              "uncertainty": "specified",
+              "supportSpanId": "D3A"
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "The maintainer repaired the synthetic loom adapter on 2026-10-01; the user reports the maintainer's work, not the user's own work.",
+            "anchorSpanId": "D3A",
+            "supportSpanIds": [
+              "D3A"
+            ],
+            "actor": {
+              "role": "source",
+              "basis": "explicit_subject",
+              "subjectSpanId": "D3A"
+            },
+            "eventTime": {
+              "value": "2026-10-01",
+              "basis": "explicit",
+              "precision": "day",
+              "uncertainty": "specified",
+              "supportSpanId": "D3A"
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "reject",
+        "expectedNativeAcceptanceFailureCode": "review_missing",
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D3A",
+          "D3B"
+        ],
+        "sourceCoverage": "missing",
+        "missingSpanIds": [
+          "D3A",
+          "D3B"
+        ],
+        "coverageByOriginal": [
+          {
+            "spanId": "D3A",
+            "importantFacts": [
+              "Maintainer, not User or Assistant, is reported repair actor.",
+              "Reported repair has explicit event date 2026-10-01.",
+              "User is reporting maintainer work rather than own work.",
+              "User personally has not verified the result."
+            ],
+            "isMissing": true,
+            "rationale": "C0/C1 duplicate the repair/attribution/date but omit User personal nonverification."
+          },
+          {
+            "spanId": "D3B",
+            "importantFacts": [
+              "Assistant cannot independently confirm the repair.",
+              "This message supplies no later repair result; absence does not establish failure or noncompletion."
+            ],
+            "isMissing": true,
+            "rationale": "No proposal retains Assistant inability to confirm or absence of a later repair result."
+          }
+        ],
+        "caseRationale": "Both proposals describe the same supported maintainer repair, retaining its date and actor. Duplication supplies neither User personal nonverification from A nor Assistant inability/no-later-result from B. The missing facts are qualifications, not a nonexistent request.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "ae3800bb6c30e9a6448639567d7fbdcdbc9a19e77b7cfaaca2f4ffaf3cb3de9c",
+        "coverageRequiredSpanIds": [
+          "D3A",
+          "D3B"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D3A",
+            "sourceId": "synthetic-dev-actor-event-date-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+            "sourceRevision": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+            "start": 0,
+            "end": 136,
+            "sha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+            "text": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result.",
+            "turnId": "D3A",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D3B",
+            "sourceId": "synthetic-dev-actor-event-date-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+            "sourceRevision": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+            "start": 137,
+            "end": 226,
+            "sha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+            "text": "I cannot independently confirm that repair. This message contains no later repair result.",
+            "turnId": "D3B",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-04T08:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "The maintainer repaired the synthetic loom adapter on 2026-10-01; the user reports the maintainer's work, not the user's own work.",
+              "anchorSpanId": "D3A",
+              "supportSpanIds": [
+                "D3A"
+              ],
+              "actor": {
+                "role": "source",
+                "basis": "explicit_subject",
+                "subjectSpanId": "D3A"
+              },
+              "eventTime": {
+                "value": "2026-10-01",
+                "basis": "explicit",
+                "precision": "day",
+                "uncertainty": "specified",
+                "supportSpanId": "D3A"
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "The maintainer repaired the synthetic loom adapter on 2026-10-01; the user reports the maintainer's work, not the user's own work.",
+              "anchorSpanId": "D3A",
+              "supportSpanIds": [
+                "D3A"
+              ],
+              "actor": {
+                "role": "source",
+                "basis": "explicit_subject",
+                "subjectSpanId": "D3A"
+              },
+              "eventTime": {
+                "value": "2026-10-01",
+                "basis": "explicit",
+                "precision": "day",
+                "uncertainty": "specified",
+                "supportSpanId": "D3A"
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D4ABC-omit-nonrollout-supported",
+      "pairId": "whole-review-D4ABC-omit-nonrollout",
+      "variant": "source_supported",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-4",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-cancel-reopen.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+            "anchorSpanId": "D4A",
+            "supportSpanIds": [
+              "D4A"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "anchorSpanId": "D4B",
+            "supportSpanIds": [
+              "D4B"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_cancelled",
+            "verificationId": null
+          },
+          {
+            "action": "Reopened the synthetic lantern connector rollout to investigate the blank preview.",
+            "anchorSpanId": "D4C",
+            "supportSpanIds": [
+              "D4C"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "The user has not rolled out the synthetic lantern connector.",
+            "anchorSpanId": "D4C",
+            "supportSpanIds": [
+              "D4C"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "accept",
+        "expectedNativeAcceptanceFailureCode": null,
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "D4A is an attributed Assistant completion report, not independent execution proof."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "D4B reports User cancellation with the blank-preview cause."
+          },
+          {
+            "id": "C2",
+            "disposition": "supported",
+            "rationale": "D4C reports completed reopening for investigation, not rollout completion or a new request to reopen."
+          },
+          {
+            "id": "C3",
+            "disposition": "supported",
+            "rationale": "D4C explicitly denies User rollout; historical nonperformance is retained with unknown outcome/date, not promoted to present-state proof."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B",
+          "D4C"
+        ],
+        "sourceCoverage": "covered",
+        "missingSpanIds": [],
+        "coverageByOriginal": [
+          {
+            "spanId": "D4A",
+            "importantFacts": [
+              "Assistant reports completing a connector change.",
+              "The statement is an attributed report, not independent verification."
+            ],
+            "isMissing": false,
+            "rationale": "C0 retains qualified completion report."
+          },
+          {
+            "spanId": "D4B",
+            "importantFacts": [
+              "User reports cancelling rollout.",
+              "Cancellation cause is the blank preview."
+            ],
+            "isMissing": false,
+            "rationale": "C1 retains cancellation and cause."
+          },
+          {
+            "spanId": "D4C",
+            "importantFacts": [
+              "User reports reopening rollout to investigate the blank preview.",
+              "User explicitly reports not rolling it out."
+            ],
+            "isMissing": false,
+            "rationale": "C2 retains reopening/purpose; C3 retains explicit nonrollout."
+          }
+        ],
+        "caseRationale": "The proposals preserve every supplied important original fact, attribution, cause and negative qualification. Known event time is limited to the original D3 maintainer repair date; all other action dates remain unknown.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "f39b4c7fa99e88c230632a83f6829f35985735fcd39ce6222a28f791f86c4a4e",
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B",
+          "D4C"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D4A",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 0,
+            "end": 101,
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+            "turnId": "D4A",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4B",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 102,
+            "end": 184,
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "turnId": "D4B",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4C",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 185,
+            "end": 295,
+            "sha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+            "text": "I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out.",
+            "turnId": "D4C",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+              "anchorSpanId": "D4A",
+              "supportSpanIds": [
+                "D4A"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+              "anchorSpanId": "D4B",
+              "supportSpanIds": [
+                "D4B"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_cancelled",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C2",
+            "proposal": {
+              "action": "Reopened the synthetic lantern connector rollout to investigate the blank preview.",
+              "anchorSpanId": "D4C",
+              "supportSpanIds": [
+                "D4C"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C3",
+            "proposal": {
+              "action": "The user has not rolled out the synthetic lantern connector.",
+              "anchorSpanId": "D4C",
+              "supportSpanIds": [
+                "D4C"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D4ABC-omit-nonrollout-comparison",
+      "pairId": "whole-review-D4ABC-omit-nonrollout",
+      "variant": "comparison",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-5",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-cancel-reopen.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+            "anchorSpanId": "D4A",
+            "supportSpanIds": [
+              "D4A"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "anchorSpanId": "D4B",
+            "supportSpanIds": [
+              "D4B"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_cancelled",
+            "verificationId": null
+          },
+          {
+            "action": "Reopened the synthetic lantern connector rollout to investigate the blank preview.",
+            "anchorSpanId": "D4C",
+            "supportSpanIds": [
+              "D4C"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "reject",
+        "expectedNativeAcceptanceFailureCode": "review_missing",
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C2",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B",
+          "D4C"
+        ],
+        "sourceCoverage": "missing",
+        "missingSpanIds": [
+          "D4C"
+        ],
+        "coverageByOriginal": [
+          {
+            "spanId": "D4A",
+            "importantFacts": [
+              "Assistant reports completing a connector change.",
+              "The statement is an attributed report, not independent verification."
+            ],
+            "isMissing": false,
+            "rationale": "C0 retains the original attributed report."
+          },
+          {
+            "spanId": "D4B",
+            "importantFacts": [
+              "User reports cancelling rollout.",
+              "Cancellation cause is the blank preview."
+            ],
+            "isMissing": false,
+            "rationale": "C1 retains cancellation and its cause."
+          },
+          {
+            "spanId": "D4C",
+            "importantFacts": [
+              "User reports reopening rollout to investigate the blank preview.",
+              "User explicitly reports not rolling it out."
+            ],
+            "isMissing": true,
+            "rationale": "C2 retains reopening/purpose but no proposal retains the explicit User nonrollout."
+          }
+        ],
+        "caseRationale": "The supplied reports retain change, cancellation with cause and reopening for investigation. Dropping explicit nonrollout leaves an important C qualification missing; reopening itself does not entail rollout completion.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "99773faf701ab8eac63a79d962753a5fd3d4a6799a2c1c5f62e1ea099729cdab",
+        "coverageRequiredSpanIds": [
+          "D4A",
+          "D4B",
+          "D4C"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D4A",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 0,
+            "end": 101,
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+            "turnId": "D4A",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4B",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 102,
+            "end": 184,
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "turnId": "D4B",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4C",
+            "sourceId": "synthetic-dev-cancel-reopen-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+            "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+            "start": 185,
+            "end": 295,
+            "sha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+            "text": "I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out.",
+            "turnId": "D4C",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1",
+          "C2"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "Completed a synthetic lantern connector change; this is an assistant report, not an independent verification.",
+              "anchorSpanId": "D4A",
+              "supportSpanIds": [
+                "D4A"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "Cancelled the synthetic lantern connector rollout because the preview was blank.",
+              "anchorSpanId": "D4B",
+              "supportSpanIds": [
+                "D4B"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_cancelled",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C2",
+            "proposal": {
+              "action": "Reopened the synthetic lantern connector rollout to investigate the blank preview.",
+              "anchorSpanId": "D4C",
+              "supportSpanIds": [
+                "D4C"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D1AB-omit-request-supported",
+      "pairId": "whole-review-D1AB-omit-request",
+      "variant": "source_supported",
+      "sourceCaseId": "synthetic-dev-plan-negation",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-6",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-plan-negation.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Repair the synthetic prism exporter.",
+            "anchorSpanId": "D1A",
+            "supportSpanIds": [
+              "D1A"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "request",
+            "status": "requested",
+            "verificationId": null
+          },
+          {
+            "action": "The user has not repaired the synthetic prism exporter.",
+            "anchorSpanId": "D1A",
+            "supportSpanIds": [
+              "D1A"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          },
+          {
+            "action": "Finished drafting a repair plan for the synthetic prism exporter.",
+            "anchorSpanId": "D1B",
+            "supportSpanIds": [
+              "D1B"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "Repair and checking of the synthetic prism exporter have not been performed.",
+            "anchorSpanId": "D1B",
+            "supportSpanIds": [
+              "D1B"
+            ],
+            "actor": {
+              "role": "unknown",
+              "basis": "unknown",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "accept",
+        "expectedNativeAcceptanceFailureCode": null,
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "D1A explicitly requests repair; personal nonperformance does not contradict the existence of that request."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "D1A specifically denies User repair, without claiming that no other person repaired it."
+          },
+          {
+            "id": "C2",
+            "disposition": "supported",
+            "rationale": "D1B reports completion of drafting a repair plan, not repair completion and not merely an intention to draft."
+          },
+          {
+            "id": "C3",
+            "disposition": "supported",
+            "rationale": "D1B passively reports repair/check nonperformance without naming a performer; actor remains unknown."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D1A",
+          "D1B"
+        ],
+        "sourceCoverage": "covered",
+        "missingSpanIds": [],
+        "coverageByOriginal": [
+          {
+            "spanId": "D1A",
+            "importantFacts": [
+              "User requests exporter repair.",
+              "User personally has not repaired it."
+            ],
+            "isMissing": false,
+            "rationale": "C0 retains request; C1 retains personal nonperformance."
+          },
+          {
+            "spanId": "D1B",
+            "importantFacts": [
+              "Assistant reports completed drafting of a repair plan.",
+              "Repair and checking have not occurred; performer is unspecified."
+            ],
+            "isMissing": false,
+            "rationale": "C2 retains completed plan preparation; C3 retains passive nonperformance with unknown performer."
+          }
+        ],
+        "caseRationale": "The proposals preserve every supplied important original fact, attribution, cause and negative qualification. Known event time is limited to the original D3 maintainer repair date; all other action dates remain unknown.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "fd0545a2adaf03b3d321669683a77206363e0ea729ffeec2357f73091d85abb9",
+        "coverageRequiredSpanIds": [
+          "D1A",
+          "D1B"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D1A",
+            "sourceId": "synthetic-dev-plan-negation-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+            "sourceRevision": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+            "start": 0,
+            "end": 67,
+            "sha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+            "text": "Please repair the synthetic prism exporter. I have not repaired it.",
+            "turnId": "D1A",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D1B",
+            "sourceId": "synthetic-dev-plan-negation-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+            "sourceRevision": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+            "start": 68,
+            "end": 182,
+            "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+            "text": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked.",
+            "turnId": "D1B",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1",
+          "C2",
+          "C3"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "Repair the synthetic prism exporter.",
+              "anchorSpanId": "D1A",
+              "supportSpanIds": [
+                "D1A"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "request",
+              "status": "requested",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "The user has not repaired the synthetic prism exporter.",
+              "anchorSpanId": "D1A",
+              "supportSpanIds": [
+                "D1A"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C2",
+            "proposal": {
+              "action": "Finished drafting a repair plan for the synthetic prism exporter.",
+              "anchorSpanId": "D1B",
+              "supportSpanIds": [
+                "D1B"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C3",
+            "proposal": {
+              "action": "Repair and checking of the synthetic prism exporter have not been performed.",
+              "anchorSpanId": "D1B",
+              "supportSpanIds": [
+                "D1B"
+              ],
+              "actor": {
+                "role": "unknown",
+                "basis": "unknown",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    },
+    {
+      "id": "whole-review-D1AB-omit-request-comparison",
+      "pairId": "whole-review-D1AB-omit-request",
+      "variant": "comparison",
+      "sourceCaseId": "synthetic-dev-plan-negation",
+      "syntheticOnly": true,
+      "request": {
+        "modelId": null,
+        "requestId": "synthetic-whole-packet-case-7",
+        "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+        "previousQuestion": null,
+        "lang": "en",
+        "hits": [],
+        "expectedVault": "/synthetic/whole-packet-review-vault",
+        "origin": {
+          "vaultPath": "/synthetic/whole-packet-review-vault",
+          "openingToken": "synthetic-whole-packet-opening"
+        },
+        "roleSnapshot": {
+          "snapshotId": "synthetic-whole-packet-review-role",
+          "origin": {
+            "vaultPath": "/synthetic/whole-packet-review-vault",
+            "openingToken": "synthetic-whole-packet-opening"
+          },
+          "role": "ask",
+          "usage": "foreground",
+          "authorizationRevision": "synthetic-only",
+          "routeSignature": {
+            "role": "ask",
+            "providerId": "synthetic-only",
+            "modelId": "synthetic-only",
+            "effort": "(default)",
+            "executionLocation": "in-process",
+            "artifactRevision": null,
+            "artifactSha256": null,
+            "runtimeContract": "synthetic-only",
+            "signature": "not-a-native-issued-grant"
+          }
+        },
+        "scope": "all",
+        "range": null,
+        "paths": [
+          "wiki/synthetic-development/synthetic-dev-plan-negation.md"
+        ],
+        "maxTokens": null,
+        "activityOverview": false,
+        "resolution": null
+      },
+      "proposalBatch": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "The user has not repaired the synthetic prism exporter.",
+            "anchorSpanId": "D1A",
+            "supportSpanIds": [
+              "D1A"
+            ],
+            "actor": {
+              "role": "user",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          },
+          {
+            "action": "Finished drafting a repair plan for the synthetic prism exporter.",
+            "anchorSpanId": "D1B",
+            "supportSpanIds": [
+              "D1B"
+            ],
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "verificationId": null
+          },
+          {
+            "action": "Repair and checking of the synthetic prism exporter have not been performed.",
+            "anchorSpanId": "D1B",
+            "supportSpanIds": [
+              "D1B"
+            ],
+            "actor": {
+              "role": "unknown",
+              "basis": "unknown",
+              "subjectSpanId": null
+            },
+            "eventTime": {
+              "value": null,
+              "basis": "unknown",
+              "precision": "unknown",
+              "uncertainty": "unknown",
+              "supportSpanId": null
+            },
+            "speechAct": "report",
+            "status": "unknown",
+            "verificationId": null
+          }
+        ]
+      },
+      "reference": {
+        "expectedVerdict": "reject",
+        "expectedNativeAcceptanceFailureCode": "review_missing",
+        "expectedDecisions": [
+          {
+            "id": "C0",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C1",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          },
+          {
+            "id": "C2",
+            "disposition": "supported",
+            "rationale": "This individual proposal is entailed by its source; the separate coverage audit still checks omitted original facts."
+          }
+        ],
+        "coverageRequiredSpanIds": [
+          "D1A",
+          "D1B"
+        ],
+        "sourceCoverage": "missing",
+        "missingSpanIds": [
+          "D1A"
+        ],
+        "coverageByOriginal": [
+          {
+            "spanId": "D1A",
+            "importantFacts": [
+              "User requests exporter repair.",
+              "User personally has not repaired it."
+            ],
+            "isMissing": true,
+            "rationale": "C0 retains User personal nonperformance, but no proposal retains the request."
+          },
+          {
+            "spanId": "D1B",
+            "importantFacts": [
+              "Assistant reports completed drafting of a repair plan.",
+              "Repair and checking have not occurred; performer is unspecified."
+            ],
+            "isMissing": false,
+            "rationale": "C1 retains completed plan preparation; C2 retains passive repair/check nonperformance with unknown performer."
+          }
+        ],
+        "caseRationale": "Only the repair request was removed. Personal nonperformance, completed preparation and passive repair/check nonperformance remain supported, but none expresses the omitted request in A. Do not invent repair completion or claim the request conflicts with nonperformance.",
+        "timePolicy": "Turn/record timestamps locate source messages only; no conversion to event dates. D3 repair alone has literal explicit day 2026-10-01.",
+        "negativeScopePolicy": "Personal nonperformance does not assert global nonperformance; passive unspecified performer remains unknown; historical negative reports do not establish current-state failure.",
+        "absentSpanPolicy": "No missingSpanId outside this exact selected packet; D4AB never requires D4C.",
+        "sourceReviewStatus": "author_proposed_not_independently_reviewed_or_frozen"
+      },
+      "userPreview": {
+        "context": {
+          "question": "Review whether the proposed activities preserve the supplied originals and their important qualifications.",
+          "language": "en",
+          "scope": "all",
+          "activityPeriod": null,
+          "requestedPeriod": null,
+          "resolutionWindow": null,
+          "previousQuestion": null
+        },
+        "contextRevision": "4ab99ca1e409cdc5a494e27c4033aa37a3bab3215860e70fb8248ab10e8a7718",
+        "coverageRequiredSpanIds": [
+          "D1A",
+          "D1B"
+        ],
+        "referenceSpanIds": [],
+        "originalSpans": [
+          {
+            "id": "D1A",
+            "sourceId": "synthetic-dev-plan-negation-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+            "sourceRevision": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+            "start": 0,
+            "end": 67,
+            "sha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+            "text": "Please repair the synthetic prism exporter. I have not repaired it.",
+            "turnId": "D1A",
+            "speaker": "user",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D1B",
+            "sourceId": "synthetic-dev-plan-negation-source",
+            "sourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+            "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+            "sourceRevision": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+            "start": 68,
+            "end": 182,
+            "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+            "text": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked.",
+            "turnId": "D1B",
+            "speaker": "assistant",
+            "recordTime": "2026-10-04T09:00:00Z",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          }
+        ],
+        "requiredClaimIds": [
+          "C0",
+          "C1",
+          "C2"
+        ],
+        "claims": [
+          {
+            "id": "C0",
+            "proposal": {
+              "action": "The user has not repaired the synthetic prism exporter.",
+              "anchorSpanId": "D1A",
+              "supportSpanIds": [
+                "D1A"
+              ],
+              "actor": {
+                "role": "user",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C1",
+            "proposal": {
+              "action": "Finished drafting a repair plan for the synthetic prism exporter.",
+              "anchorSpanId": "D1B",
+              "supportSpanIds": [
+                "D1B"
+              ],
+              "actor": {
+                "role": "assistant",
+                "basis": "speaker",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "reported_completed",
+              "verificationId": null
+            }
+          },
+          {
+            "id": "C2",
+            "proposal": {
+              "action": "Repair and checking of the synthetic prism exporter have not been performed.",
+              "anchorSpanId": "D1B",
+              "supportSpanIds": [
+                "D1B"
+              ],
+              "actor": {
+                "role": "unknown",
+                "basis": "unknown",
+                "subjectSpanId": null
+              },
+              "eventTime": {
+                "value": null,
+                "basis": "unknown",
+                "precision": "unknown",
+                "uncertainty": "unknown",
+                "supportSpanId": null
+              },
+              "speechAct": "report",
+              "status": "unknown",
+              "verificationId": null
+            }
+          }
+        ],
+        "independentVerificationReceipts": []
+      }
+    }
+  ]
+}

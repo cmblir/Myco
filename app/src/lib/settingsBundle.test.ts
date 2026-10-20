@@ -133,7 +133,7 @@ describe("settings bundle round trip", () => {
   it("export -> import onto a different machine's state reproduces the same effective state", async () => {
     // "Machine A": distinctive values across every portable section.
     saveGraphSettings({ ...loadGraphSettings(), nodeSize: 2.5, brightness: 1.3 });
-    useUIStore.setState({ theme: "light", density: "spacious", accent: "#ff00aa" });
+    useUIStore.setState({ theme: "light", density: "spacious", accent: "#ff00aa", textSize: "large" });
     const sourceSettings = fakeSettings({ tray_resident: true, auto_ingest_enabled: true });
 
     const bundle = buildSettingsBundle("0.4.0", sourceSettings);
@@ -142,7 +142,13 @@ describe("settings bundle round trip", () => {
     // "Machine B": different current state, including excluded fields that
     // must survive the import untouched.
     saveGraphSettings({ ...loadGraphSettings(), nodeSize: 1, brightness: 1, tagFilter: "keep-me" });
-    useUIStore.setState({ theme: "dark", density: "compact", sidebarCollapsed: true, route: "graph" });
+    useUIStore.setState({
+      theme: "dark",
+      density: "compact",
+      textSize: "system",
+      sidebarCollapsed: true,
+      route: "graph",
+    });
     const targetSettings = fakeSettings({
       myco_pro_url: "https://this-machines-own-pro-url",
       myco_pro_email: "this-machine@example.com",
@@ -172,6 +178,7 @@ describe("settings bundle round trip", () => {
     const ui = useUIStore.getState();
     expect(ui.theme).toBe("light");
     expect(ui.density).toBe("spacious");
+    expect(ui.textSize).toBe("large");
     expect(ui.accent).toBe("#ff00aa");
     // Navigation state (not in the export) stays whatever it already was.
     expect(ui.route).toBe("graph");
@@ -231,6 +238,7 @@ describe("rejection cases", () => {
     };
     const res = validateSettingsBundle(bad, target);
     expect(res.ok).toBe(false);
+    expect(validateSettingsBundle({ ...bad, ui: { textSize: "huge" } }, target).ok).toBe(false);
   });
 });
 

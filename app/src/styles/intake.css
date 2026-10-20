@@ -1,0 +1,572 @@
+/* Keep adding and asking focused; supporting controls open on demand. */
+.intake-disclosure > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  min-height: 2.75rem;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.intake-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.intake-disclosure > summary::before {
+  content: "+";
+  display: inline-grid;
+  flex: 0 0 1rem;
+  place-items: center;
+  color: var(--ink-3);
+}
+.intake-disclosure[open] > summary::before {
+  content: "−";
+}
+.intake-disclosure > summary:hover {
+  color: var(--ink);
+}
+.intake-disclosure > summary:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: 3px;
+  border-radius: var(--r-md);
+}
+.intake-disclosure__hint {
+  margin: 0 0 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+}
+.intake-page .u-hero__tile {
+  align-items: center;
+}
+/* The hero clips' box (SURFACE_CLIPS, 96 px): a smaller slot let the clip
+   spill right and down, off the running ring's centre. */
+.intake-page .u-hero__fig {
+  width: 6rem;
+  height: 6rem;
+  flex-basis: 6rem;
+  display: grid;
+  place-items: center;
+  color: var(--live);
+}
+.intake-page .u-hero__text {
+  flex: 1 1 16rem;
+}
+.intake-page .u-hero__title {
+  font-size: clamp(1.375rem, 2.5vw, 1.75rem);
+}
+.intake-page .sv-dz {
+  gap: 1rem;
+  padding: 1.25rem;
+}
+.intake-page .sv-dz-form {
+  gap: 1rem;
+  margin-top: 0.75rem;
+}
+.intake-page .sv-dz .btn {
+  min-height: 2.75rem;
+}
+/* UX S35: nothing can drop a file on a touch screen, so the headline
+   there says pick one instead. */
+.intake-page .sv-dz-t__touch {
+  display: none;
+}
+@media (pointer: coarse) {
+  .intake-page .sv-dz-t__mouse {
+    display: none;
+  }
+  .intake-page .sv-dz-t__touch {
+    display: inline;
+  }
+}
+.intake-submit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.intake-storage {
+  display: grid;
+  gap: 0.375rem;
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.intake-page .sv-chan {
+  padding-top: 0.625rem;
+}
+.intake-page .sv-chan-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.intake-page .sv-ch-row {
+  min-height: 3.5rem;
+}
+.intake-page .sv-ch-nm {
+  white-space: normal;
+}
+.intake-page .sv-ch-src {
+  display: block;
+  margin: 0.25rem 0 0;
+  font-family: inherit;
+  line-height: 1.5;
+}
+.intake-processing {
+  margin-top: 0.75rem;
+  padding: 0.375rem 0.75rem;
+}
+.intake-processing p {
+  font-size: 0.8125rem;
+}
+.intake-path {
+  overflow-wrap: anywhere;
+}
+.intake-results {
+  margin-top: 1.5rem;
+}
+.intake-results h2 {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.intake-results .sv-rows {
+  margin-top: 0.5rem;
+}
+.intake-tallies .sv-nums {
+  gap: 1.5rem;
+  margin: 0.75rem;
+}
+.intake-tallies .sv-big {
+  font-size: 1.75rem;
+}
+.ask-composer {
+  padding: 1rem 1.25rem;
+  margin-top: 0.5rem;
+}
+.ask-composer__input {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ask-composer__input > svg {
+  flex-shrink: 0;
+  color: var(--ink-3);
+}
+.ask-composer__input .input {
+  flex: 1;
+  min-width: 0;
+  min-height: 3rem;
+  font-size: 1rem;
+}
+.ask-composer__input .btn {
+  min-height: 3rem;
+  padding-inline: 1.25rem;
+}
+.ask-composer__scope {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+}
+.ask-composer__scope button {
+  min-height: 2.75rem;
+}
+/* The scope chip (UX S33): the choices open under it, in the composer, so a
+   composer pinned to the bottom grows up rather than off the screen. */
+.ask-scope {
+  flex: 1 1 100%;
+}
+.ask-scope > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-height: 2.75rem;
+  padding: 0 0.875rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  color: var(--ink-2);
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.ask-scope > summary::-webkit-details-marker {
+  display: none;
+}
+.ask-scope > summary:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.ask-scope > summary:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: 2px;
+}
+.ask-scope[open] > summary svg {
+  transform: rotate(180deg);
+}
+.ask-scope__menu {
+  display: grid;
+  gap: 0.25rem;
+  max-width: 28rem;
+  margin-top: 0.5rem;
+}
+.ask-scope__menu button {
+  display: grid;
+  gap: 0.125rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid transparent;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+}
+.ask-scope__menu button:hover {
+  background: var(--bg-hover);
+}
+.ask-scope__menu button[aria-pressed="true"] {
+  border-color: var(--line-strong);
+  background: var(--bg-soft);
+}
+.ask-scope__menu button:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: -2px;
+}
+.ask-scope__menu button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+.ask-scope__name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.ask-scope__hint {
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+}
+/* "Ask this note" (UX S37): the scope chip names the note, ✕ clears it. */
+.ask-note-scope {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.ask-note-scope__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.375rem;
+  max-width: 100%;
+  min-height: 2.75rem;
+  padding-inline: 0.875rem 0.25rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-pill);
+  background: var(--bg-soft);
+  color: var(--ink);
+  font-weight: 500;
+}
+.ask-note-scope__name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ask-composer__scope .ask-note-scope__chip button {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  min-width: 2.75rem;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.ask-note-scope__chip button:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.ask-note-scope__chip button:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: -2px;
+}
+.ask-options {
+  margin-top: 0.5rem;
+  padding: 0 0.5rem;
+}
+.ask-options[open] {
+  padding: 0 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.ask-examples {
+  display: grid;
+  gap: 0.625rem;
+  width: min(100%, 30rem);
+  margin: 0.75rem auto 0;
+}
+.ask-examples__label {
+  margin-bottom: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--ink-3);
+}
+.ask-examples .btn {
+  min-height: 2.75rem;
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  white-space: normal;
+  text-align: start;
+}
+.ask-examples svg {
+  flex-shrink: 0;
+}
+/* 기록 (UX S36): past questions above the composer, newest first; a row
+   opens on the answer as it was shown. */
+.ask-history {
+  margin-top: 0.5rem;
+  padding: 0 0.5rem;
+}
+.ask-history[open] {
+  padding: 0 1rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+}
+.ask-history__search {
+  width: 100%;
+  min-height: 2.75rem;
+}
+.ask-history__list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 20rem;
+  overflow-y: auto;
+}
+.ask-history__list > li + li {
+  border-top: 1px solid var(--line);
+}
+/* An opened past answer is read with the page, not in a 20rem box inside it.
+   `visible`, not just uncapped: a box with overflow auto stays the scroller
+   its sticky question sticks to, though it no longer scrolls. */
+.ask-history__list:has(.ask-hrow[open]) {
+  max-height: none;
+  overflow-y: visible;
+}
+.ask-hrow > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 0.75rem;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.25rem;
+  cursor: pointer;
+  list-style: none;
+}
+.ask-hrow > summary::-webkit-details-marker {
+  display: none;
+}
+/* ...with its question held under the sticky topbar while it is read.
+   Only where :has uncaps the list: in the capped box a question stuck a
+   topbar's height down leaves a gap above it. Before :hover, which paints
+   over it at the same specificity. */
+@supports selector(:has(*)) {
+  .ask-hrow[open] > summary {
+    position: sticky;
+    top: var(--top-h);
+    z-index: 1;
+    background: var(--bg);
+  }
+}
+.ask-hrow > summary:hover {
+  background: var(--bg-hover);
+}
+.ask-hrow > summary:focus-visible {
+  outline: 2px solid var(--live);
+  outline-offset: -2px;
+  border-radius: var(--r-sm);
+}
+.ask-hrow__q {
+  flex: 1 1 14rem;
+  min-width: 0;
+  font-weight: 500;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+.ask-hrow__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+}
+.ask-hrow__body {
+  padding: 0 0.25rem 0.75rem;
+}
+.ask-hrow__error,
+.ask-history__error {
+  color: var(--danger);
+  font-size: 0.8125rem;
+}
+.ask-history__none {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+}
+/* A turn stopped with ■ (UX S36): the receipt's dashed box, no answer. */
+.ask-stopped {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+  padding: 0.5rem 0.75rem;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-sm);
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+}
+.ask-stopped strong {
+  color: var(--ink-2);
+  font-weight: 600;
+}
+.ask-search-details {
+  margin-block: 0.5rem;
+}
+.ask-sources:not(.is-detailed) .ask-lrow {
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.625rem;
+}
+.ask-sources:not(.is-detailed) .ask-lnum {
+  grid-column: 2;
+  text-align: start;
+}
+.ask-sources__toggle {
+  min-height: 2.75rem;
+  margin: 0.25rem 0.625rem 0.5rem;
+}
+/* UX S33: the rail lists three sources; this opens all of them. */
+.ask-sources__all {
+  display: flex;
+  justify-content: space-between;
+  width: calc(100% - 1.25rem);
+  min-height: 2.75rem;
+  margin: 0.5rem 0.625rem 0;
+}
+/* ...in a sheet at the window's right edge, over the modal backdrop. */
+.myco-modal__backdrop.ask-sheet-backdrop {
+  justify-content: flex-end;
+  align-items: stretch;
+}
+.ask-sheet {
+  width: min(28rem, calc(100vw - 2rem));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-block: env(safe-area-inset-top) env(safe-area-inset-bottom);
+  background: var(--bg);
+  border-left: 1px solid var(--line);
+  box-shadow: var(--shadow-pop);
+}
+.ask-sheet .ask-panel {
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+.ask-sheet .ask-panel > header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-elev);
+}
+.ask-sheet .ask-panel > header h3 {
+  flex: 1;
+}
+.ask-sheet__close {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+  justify-content: center;
+}
+@media (max-width: 600px) {
+  .intake-page .u-hero__tile {
+    padding: 1rem;
+    gap: 1rem;
+  }
+  .intake-page .sv-dz {
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    padding: 1rem;
+  }
+  .intake-page .sv-dz > .btn {
+    grid-column: 1 / -1;
+  }
+  .intake-page .sv-chan {
+    margin: 0 -1rem -1rem;
+    padding: 0.5rem 1rem;
+  }
+  .intake-page .sv-chan-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .intake-submit > .btn {
+    width: 100%;
+  }
+  .ask-composer {
+    padding: 0.75rem;
+  }
+  .ask-composer__input {
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .ask-composer__input > svg {
+    display: none;
+  }
+  .ask-composer__input .input {
+    flex-basis: 100%;
+  }
+  .ask-composer__input .btn {
+    width: 100%;
+  }
+}
+/* UX S32: in a narrow column the composer under the answers stays pinned to
+   the bottom, clear of the home indicator, so the next question is always in
+   reach. One row there: the field and its button stacked made a third of a
+   phone screen. After the 600px rules, which it overrides. */
+@container ask (max-width: 40rem) {
+  .ask-composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 3;
+    margin-bottom: 0;
+    padding-bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    box-shadow: 0 -6px 18px rgba(0, 0, 0, 0.12);
+  }
+  .ask-composer__input {
+    flex-wrap: nowrap;
+  }
+  .ask-composer__input .input {
+    flex-basis: auto;
+  }
+  .ask-composer__input .btn {
+    width: auto;
+  }
+  /* A pane's page scrolls itself, inside its 64px bottom padding
+     (.workspace-pane .workspace): pinned there, the composer floated that
+     far above the pane's edge with the answer showing under it. */
+  .workspace-pane .ask-composer {
+    bottom: -64px;
+  }
+}
+/* On a phone the composer pins above the bottom bar, which already clears
+   the home indicator (UX S50). */
+@media (max-width: 768px) {
+  .ask-composer {
+    bottom: var(--tabbar-h);
+    padding-bottom: 0.75rem;
+  }
+}

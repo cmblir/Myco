@@ -1,0 +1,21 @@
+<!doctype html>
+<meta charset="utf-8" />
+<title>Clip to myco</title>
+<style>
+  body { margin: 0; padding: 12px; width: 18rem; font: 13px/1.4 system-ui, sans-serif; }
+  form { display: flex; flex-direction: column; gap: 8px; }
+  label { font-weight: 600; }
+  input { padding: 6px 8px; font: inherit; }
+  button { min-height: 32px; font: inherit; font-weight: 600; cursor: pointer; }
+  @media (prefers-color-scheme: dark) {
+    body { background: #1e1e1e; color: #eee; }
+    input { background: #2a2a2a; color: #eee; border: 1px solid #555; }
+  }
+</style>
+<form id="clip-form">
+  <label for="note">Why save this? (optional)</label>
+  <input id="note" type="text" maxlength="500" autocomplete="off" autofocus />
+  <button type="submit">Clip to myco</button>
+</form>
+<script src="clip-link.js"></script>
+<script src="popup.js"></script>

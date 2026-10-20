@@ -1,3 +1,4 @@
+import type { RoleSnapshot, RoleUsage } from "./modelRoles";
 // TS mirror types for distillation config. Fields match the Rust serde output
 // (snake_case from the #[serde(rename_all)] directives).
 
@@ -7,7 +8,8 @@ import {
   sendNotification,
 } from "@tauri-apps/plugin-notification";
 import { ipc } from "./ipc";
-import { getActiveModel } from "./chat";
+import { tryLock, unlock } from "./vaultLock";
+import { canGenerate, getActiveModel } from "./chat";
 import { STRINGS } from "./i18n";
 import type { Lang, Strings } from "./i18n";
 import { useUIStore } from "../stores/uiStore";
@@ -29,6 +31,8 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import { toPick, useResurfaceStore } from "../stores/resurfaceStore";
 import { stripFrontmatter } from "./markdown";
+import { isMissingFile } from "./sessionEvidence";
+import { WorkflowOperationError, workflowIssue, workflowStatus, type WorkflowProgress, type WorkflowReceipt, type WorkflowStatus } from "./workflowOutcome";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -68,8 +72,8 @@ export interface ScanOutcome {
 export interface RunReport {
   id: string;
   scan: ScanOutcome;
-  archived: number;
   trashed: number;
+  deleted?: number;
   proposals: number;
   backlog_after: number;
 }
@@ -104,7 +108,7 @@ export interface PackReport {
   files: number;
   /** Loose bytes removed minus zip bytes written. */
   reclaimed: number;
-  /** `"<tree>/<bucket>: <error>"` — those buckets kept their originals. */
+  /** Failed buckets retain available copies; a partial unlink retains the full ZIP. */
   failed: string[];
 }
 
@@ -203,8 +207,10 @@ export function lastRunLabel(
 // Task 8 fix (code review): independent callers can decide to run
 // distill_run around the same moment (the manual "Distill now" button, the
 // auto-distill toggle's pass), and a run can outlive the poll that started
-// it — without a shared guard two runs could interleave file moves. One
-// per-vault in-flight set, consulted and set by every caller.
+// it — without a shared guard two runs could interleave file moves. The guard
+// is the vault lock (vaultLock.ts), which the in-app auto-ingest pass takes
+// too; this set only tracks which vaults have a distill chain running, for
+// the stop request and the Topbar.
 const inFlight = new Set<string>();
 
 // Phase B, Task 2 — the session daily-digest's outcome, keyed by vault path.
@@ -231,11 +237,22 @@ export const lastFullTierOutcome = new Map<string, FullTierOutcome>();
 // Phase B, Task 4 (final-review Important 3) — draft-map auto-apply's
 // outcome, same idiom as the two maps above; the Overview card's "LLM steps
 // waiting" note reads all three.
-export interface MapDraftOutcome {
+export interface MapDraftOutcome extends WorkflowProgress {
   drafted: number;
   skipped: "no-provider" | null;
+  pending?: number;
+  publishedPending?: string[];
 }
 export const lastMapDraftOutcome = new Map<string, MapDraftOutcome>();
+export const lastWorkflowReceipt = new Map<string, WorkflowReceipt>();
+
+/** Keep the completed native work reviewable without reporting the chain done. */
+export class WorkflowRunError extends Error {
+  constructor(readonly receipt: WorkflowReceipt, readonly report: RunReport | null) {
+    super(receipt.issues.map(issue => `${issue.step}: ${issue.error}`).join("; ") || `Distill ${receipt.status}`);
+    this.name = "WorkflowRunError";
+  }
+}
 
 // Q4 item 10 — the resurface hook's outcome, same module-level map idiom as
 // lastDigestOutcome above. `shown` is the pick count that survived the
@@ -262,6 +279,14 @@ export function pendingShrank(prev: number | null, now: number): boolean {
   return prev !== null && now < prev;
 }
 
+/** Sources with unread passages after the latest bounded distill pass. */
+export function pendingEvidenceSources(vault: string): number {
+  return (lastDigestOutcome.get(vault)?.filesPending ?? 0) +
+    (lastWeeklyOutcome.get(vault)?.sourcesPending ?? 0) +
+    (lastMonthlyOutcome.get(vault)?.sourcesPending ?? 0) +
+    (lastFullTierOutcome.get(vault)?.sourcesPending ?? 0);
+}
+
 /** Overview card's inline outcome line for a finished manual run — an
  * empty-backlog run resolves in under a second, too fast for the topbar
  * activity chip to communicate anything, so the card itself says what
@@ -272,22 +297,23 @@ export function formatRunOutcome(
   weeksRolledUp: number,
   t: Strings,
   monthsRolledUp = 0,
+  sourcesPending = 0,
 ): string {
   const worked =
-    report.archived > 0 ||
     report.trashed > 0 ||
+    (report.deleted ?? 0) > 0 ||
     report.proposals > 0 ||
     daysDigested > 0 ||
     weeksRolledUp > 0 ||
     monthsRolledUp > 0;
   if (!worked) {
+    if (sourcesPending > 0) return t.set_distill_evidence_pending.replace("{n}", String(sourcesPending));
     return t.ov_distill_done_none ?? "Distill finished — nothing to process";
   }
   return (
     t.ov_distill_done ??
-    "Distill finished — archived {a} · {d} days digested · {w} weeks rolled up · {p} proposals"
+    "Distill finished — {d} days digested · {w} weeks rolled up · {p} proposals"
   )
-    .replace("{a}", String(report.archived))
     .replace("{d}", String(daysDigested))
     .replace("{w}", String(weeksRolledUp))
     .replace("{p}", String(report.proposals))
@@ -301,7 +327,7 @@ export function formatRunOutcome(
             String(monthsRolledUp),
           )
         : "",
-    );
+    ).concat((report.deleted ?? 0) > 0 ? ` · ${t.deleted_count.replace("{n}", String(report.deleted))}` : "").concat(sourcesPending > 0 ? ` · ${t.set_distill_evidence_pending.replace("{n}", String(sourcesPending))}` : "");
 }
 
 // Fallback llm_ingest_budget when getDistillConfig is unavailable — mirrors
@@ -362,41 +388,58 @@ export function requestDistillStop(vault: string): void {
 async function applyApprovedDraftMaps(
   vaultPath: string,
   budget: number,
+  usage: RoleUsage = "foreground",
+  roleSnapshot?: RoleSnapshot,
 ): Promise<MapDraftOutcome> {
   // Collect the approved proposals BEFORE the provider check — "waiting for
   // a provider" with nothing approved is a lie the Overview card would
   // faithfully repeat (same ordering as runFullTierIngest).
-  const tree = await ipc.listFiles(vaultPath).catch(() => []);
+  const tree = await ipc.listFiles(vaultPath);
   const approved: { path: string; raw: string; cluster: string; members: string[] }[] = [];
   for (const f of feedbackFileNodes(tree)) {
-    const file = await ipc.readFile(f.path).catch(() => null);
-    if (!file) continue;
+    const file = await ipc.readFile(f.path);
     const parsed = parseProposal(toRelative(vaultPath, f.path), file.raw);
     if (parsed?.action !== "draft-map" || parsed.status !== "approved") continue;
     if (!parsed.cluster || !parsed.members) continue;
     approved.push({ path: f.path, raw: file.raw, cluster: parsed.cluster, members: parsed.members });
   }
   if (approved.length === 0) return { drafted: 0, skipped: null };
+  if (budget <= 0) return { drafted: 0, skipped: null, pending: approved.length, status: "pending" };
 
-  const { provider } = await getActiveModel("query");
-  if (provider === "builtin-local") {
-    return { drafted: 0, skipped: "no-provider" };
+  // The admitted route stays fixed through generation and publication.
+  const selected = roleSnapshot ? {
+    provider: roleSnapshot.routeSignature.providerId,
+    model: roleSnapshot.routeSignature.modelId,
+  } : await getActiveModel("organization");
+  if (!canGenerate(selected.provider, selected.model)) {
+    return { drafted: 0, skipped: "no-provider", pending: approved.length, status: "pending",
+      issues: [workflowIssue("maps", new WorkflowOperationError("pending", "unavailable", "Selected local map generation is unavailable"))] };
   }
 
   let drafted = 0;
+  const publishedPending: string[] = [];
+  const issues = [];
   // One undo-manifest for ALL maps this run drafts — per-call ids fragmented
   // a multi-map run so "undo this run" only reached the last map drafted.
   const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
   for (const p of approved.slice(0, budget)) {
     try {
-      await draftMap(vaultPath, p.cluster, p.members, manifestId);
+      await draftMap(vaultPath, p.cluster, p.members, manifestId, undefined, usage, roleSnapshot);
       await ipc.writeFile(p.path, rewriteStatus(p.raw, "done"));
       drafted++;
     } catch (e) {
       console.error(`[distill] auto draft-map apply failed for ${p.path}:`, e);
+      if (e instanceof WorkflowOperationError && "writtenPath" in e && typeof e.writtenPath === "string") publishedPending.push(e.writtenPath);
+      issues.push(workflowIssue("maps", e, p.path));
+      if (issues.at(-1)?.status === "stopped") break;
     }
   }
-  return { drafted, skipped: null };
+  const pending = approved.length - drafted;
+  return { drafted, skipped: null, ...(pending ? { pending } : {}),
+    ...(publishedPending.length ? { publishedPending } : {}),
+    ...(issues.length || pending ? { status: workflowStatus(issues, drafted + publishedPending.length, pending) } : {}),
+    ...(issues.length ? { issues } : {}),
+  };
 }
 
 /** Cold-tier prune (final-review Important 6): after a digest run archives
@@ -412,17 +455,16 @@ async function applyApprovedDraftMaps(
  *   - only for the currently-open vault — `reindex_embeddings` runs against
  *     the CURRENT vault root, not a parameter, and the digest chain can run
  *     for a different one;
- *   - never on an empty index — that would be the FIRST build (minutes plus
- *     a 769 MB model load), which stays the Settings button's deliberate
+ *   - never on an empty index — that would be the FIRST build, which stays the Settings button's deliberate
  *     action (same rule as autoReindex's decidePoll). */
 async function pruneColdTier(vault: string): Promise<void> {
   if (useVaultStore.getState().currentVault?.path !== vault) return;
-  const status = await ipc.embeddingsStatus().catch(() => null);
+  const status = await ipc.embeddingsStatus();
   if (!status || status.indexed_pages === 0) return;
-  // Fire-and-forget: reindexStore's own guard rejects a run already in
-  // flight, and holding the distill guard window for an index maintenance
-  // pass would serialize unrelated work behind it.
-  void useReindexStore.getState().reindex();
+  await useReindexStore.getState().reindex();
+  const indexed = useReindexStore.getState();
+  if (indexed.stage === "error") throw new Error(indexed.error ?? "Cold-tier index refresh failed");
+  if (indexed.stage !== "done") throw new WorkflowOperationError("pending", "unavailable", "Cold-tier index refresh has not completed");
 }
 
 // Local YYYY-MM-DD — daily/<day>.md's own naming. Local rather than
@@ -454,216 +496,144 @@ async function osNotify(title: string, body: string): Promise<void> {
   }
 }
 
-/** Runs distill_run for `vault`, unless one is already in flight for that
- * vault — in which case this resolves to null immediately and makes no ipc
- * call. All callers (schedule-due, count-trigger, manual button) must go
- * through this instead of calling ipc.distillRun directly.
- *
- * On success, also runs the session daily-digest (Phase B, Task 2), then
- * full-tier ingest (Phase B, Task 3), then the draft-map auto-apply bridge
- * (Phase B, Task 4) for the same vault, inside this same guard window — so
- * all three trigger paths get all three for free and concurrency stays
- * single-guarded. All three failures are logged, not thrown: none must ever
- * take down the distill_run result the caller is waiting on. */
-export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
-  if (inFlight.has(vault)) return null;
+/** Run the bounded chain under the shared vault lock. Only a fully completed
+ * chain resolves its native report; incomplete work keeps a typed receipt. */
+export async function runDistillGuarded(vault: string, usage: RoleUsage = "foreground"): Promise<RunReport | null> {
+  if (!tryLock(vault)) return null;
   inFlight.add(vault);
-  // Cleared up front so a digest step that THROWS cannot leave last run's
-  // outcome behind — formatRunOutcome would attribute stale digested-day
-  // counts to this run.
   lastDigestOutcome.delete(vault);
   lastWeeklyOutcome.delete(vault);
   lastMonthlyOutcome.delete(vault);
+  lastFullTierOutcome.delete(vault);
+  lastMapDraftOutcome.delete(vault);
   lastResurfaceOutcome.delete(vault);
-  // `outcome: null` also retires the previous run's Topbar pill — a new chain
-  // must not leave the old result up.
-  useDistillRunStore.setState({
-    running: true,
-    step: "run",
-    outcome: null,
-    seen: true,
-  });
-  let failed = false;
+  lastStopPoint.set(vault, null);
+  const receipt: WorkflowReceipt = { status: "pending", steps: [], issues: [] };
+  lastWorkflowReceipt.set(vault, receipt);
+  useDistillRunStore.setState({ running: true, step: "run", outcome: null,
+    workflowStatus: null, receipt: null, seen: true });
+  let report: RunReport | null = null;
+  let activeStep = "run";
+  const fail = (): never => {
+    receipt.status = receipt.issues.some(issue => issue.status === "stopped") ? "stopped"
+      : receipt.steps.some(step => step.status === "success" || step.status === "partial") ? "partial"
+      : receipt.issues.some(issue => issue.status === "failed") ? "failed" : "pending";
+    throw new WorkflowRunError(receipt, report);
+  };
+  const stopped = (step: DistillStopPoint): void => {
+    if (!stopRequested.has(vault)) return;
+    lastStopPoint.set(vault, step);
+    receipt.issues.push(workflowIssue(step, new WorkflowOperationError("stopped", "cancelled", "stopped")));
+    fail();
+  };
+  const accept = async (step: DistillStopPoint, result: WorkflowProgress | null | undefined, status: WorkflowStatus, prune = false): Promise<void> => {
+    if (!result) throw new Error(`${step} returned no workflow outcome`);
+    const actual = result.status ?? status;
+    const issues = result.issues ?? [];
+    receipt.steps.push({ step, status: actual, ...(issues.length ? { issues } : {}) });
+    receipt.issues.push(...issues);
+    if (prune) {
+      activeStep = `${step}.index`;
+      await pruneColdTier(vault);
+      activeStep = step;
+    }
+    stopped(step);
+    if (actual === "success" || actual === "skipped") return;
+    if (!issues.length) receipt.issues.push(workflowIssue(step,
+      new WorkflowOperationError(actual === "stopped" ? "stopped" : actual === "failed" ? "failed" : "pending",
+        actual === "stopped" ? "cancelled" : "incomplete", `${step} has unfinished work`)));
+    fail();
+  };
   try {
-    const report = await ipc.distillRun(vault);
-    // OS notification: new quarantine items. Fired here — the layer that
-    // already has the number — and only when this run actually moved
-    // something into quarantine, so a quiet run stays quiet.
+    report = await ipc.distillRun(vault);
+    const coreWork = report.proposals + report.trashed + (report.deleted ?? 0) + report.scan.summaries + report.scan.quarantined;
+    receipt.steps.push({ step: "run", status: coreWork > 0 ? "success" : "skipped" });
     if (report.scan.quarantined > 0) {
       const t = STRINGS[useUIStore.getState().lang];
-      void osNotify(
-        t.notif_quarantine_title ?? "New quarantine items",
-        (t.notif_quarantine_body ??
-          "{n} items are waiting for review in _inbox/quarantine.").replace(
-          "{n}",
-          String(report.scan.quarantined),
-        ),
-      );
+      void osNotify(t.notif_quarantine_title, t.notif_quarantine_body.replace("{n}", String(report.scan.quarantined)));
     }
-    // Idle is checked at entry only (by the callers' own triggers); once
-    // started, the chain can only be stopped cooperatively BETWEEN steps
-    // (requestDistillStop), never mid-LLM-call. Total work stays bounded by
-    // the per-step budgets (llm_digest_days, llm_ingest_budget ×2).
-    lastStopPoint.set(vault, null);
-    if (stopRequested.has(vault)) {
-      lastStopPoint.set(vault, "run");
-      return report;
-    }
+    stopped("run");
+
+    activeStep = "digest";
     useDistillRunStore.setState({ step: "digest" });
-    const outcome = await runSessionDigest(vault).catch((e) => {
-      console.error("[distill] session digest failed", vault, e);
-      return null;
-    });
-    if (outcome) lastDigestOutcome.set(vault, outcome);
-    if (outcome && outcome.filesArchived > 0) {
-      await pruneColdTier(vault).catch((e) => {
-        console.error("[distill] cold-tier prune failed", vault, e);
-      });
-    }
-    if (stopRequested.has(vault)) {
-      lastStopPoint.set(vault, "digest");
-      return report;
-    }
-    // ROADMAP P1 — the second compression layer, immediately after the first:
-    // the digest step above is what just appended to daily/, so this runs on
-    // the freshest possible view of it (a week whose last daily file was only
-    // written this run is still held back by its own maturity gate).
+    const origin = await ipc.agentVaultSession();
+    if (origin.vaultPath !== vault) throw new Error("Vault changed before organization started");
+    const roleSnapshot = await ipc.captureModelRole(origin, "organization", usage);
+    const digest = await runSessionDigest(vault, usage, roleSnapshot);
+    if (!digest) throw new Error("digest returned no workflow outcome");
+    lastDigestOutcome.set(vault, digest);
+    await accept("digest", digest, digest.filesPending ? "partial" : digest.skipped ? "skipped" : "success",
+      digest.filesArchived > 0 || (digest.chunksProcessed ?? 0) > 0);
+
+    activeStep = "weekly";
     useDistillRunStore.setState({ step: "weekly" });
-    const weekly = await runWeeklyRollup(vault).catch((e) => {
-      console.error("[distill] weekly rollup failed", vault, e);
-      return null;
-    });
-    if (weekly) lastWeeklyOutcome.set(vault, weekly);
-    if (weekly && weekly.sourcesArchived > 0) {
-      await pruneColdTier(vault).catch((e) => {
-        console.error("[distill] cold-tier prune failed", vault, e);
-      });
-    }
-    if (stopRequested.has(vault)) {
-      lastStopPoint.set(vault, "weekly");
-      return report;
-    }
-    // Third layer, immediately after the second for the same reason: the
-    // weekly step above is what just appended to weekly/, so a month whose
-    // last week was only written this run is still held back by that week's
-    // own maturity gate.
+    const weekly = await runWeeklyRollup(vault, usage, roleSnapshot);
+    if (!weekly) throw new Error("weekly returned no workflow outcome");
+    lastWeeklyOutcome.set(vault, weekly);
+    await accept("weekly", weekly, weekly.sourcesPending ? "partial" : weekly.skipped ? "skipped" : "success",
+      weekly.sourcesArchived > 0 || (weekly.chunksProcessed ?? 0) > 0);
+
+    activeStep = "monthly";
     useDistillRunStore.setState({ step: "monthly" });
-    const monthly = await runMonthlyRollup(vault).catch((e) => {
-      console.error("[distill] monthly rollup failed", vault, e);
-      return null;
-    });
-    if (monthly) lastMonthlyOutcome.set(vault, monthly);
-    if (monthly && monthly.sourcesArchived > 0) {
-      await pruneColdTier(vault).catch((e) => {
-        console.error("[distill] cold-tier prune failed", vault, e);
-      });
-    }
-    if (stopRequested.has(vault)) {
-      lastStopPoint.set(vault, "monthly");
-      return report;
-    }
+    const monthly = await runMonthlyRollup(vault, usage, roleSnapshot);
+    if (!monthly) throw new Error("monthly returned no workflow outcome");
+    lastMonthlyOutcome.set(vault, monthly);
+    await accept("monthly", monthly, monthly.sourcesPending ? "partial" : monthly.skipped ? "skipped" : "success",
+      monthly.sourcesArchived > 0 || (monthly.chunksProcessed ?? 0) > 0);
+
+    activeStep = "ingest";
     useDistillRunStore.setState({ step: "ingest" });
-    const fullTierOutcome = await runFullTierIngest(vault).catch((e) => {
-      console.error("[distill] full-tier ingest failed", vault, e);
-      return null;
-    });
-    if (fullTierOutcome) lastFullTierOutcome.set(vault, fullTierOutcome);
-    if (stopRequested.has(vault)) {
-      lastStopPoint.set(vault, "ingest");
-      return report;
-    }
-    // Task 2 fix (settings audit): llm_ingest_budget is a SHARED per-run cap
-    // over ingest + draft maps, not one full budget for each — pass maps
-    // only what full-tier ingest didn't already spend. A failed fullTierOutcome
-    // (caught above) means nothing is known to have been spent.
+    const fullTier = await runFullTierIngest(vault, { origin, usage });
+    if (!fullTier) throw new Error("ingest returned no workflow outcome");
+    lastFullTierOutcome.set(vault, fullTier);
+    await accept("ingest", fullTier, fullTier.errors.length ? fullTier.ingested ? "partial" : "failed"
+      : fullTier.sourcesPending || fullTier.skipped === "no-provider" ? "pending"
+      : fullTier.skipped ? "skipped" : "success");
+
+    activeStep = "maps";
     useDistillRunStore.setState({ step: "maps" });
-    const ingestCfg = await ipc.getDistillConfig(vault).catch(() => null);
-    const ingestBudget = ingestCfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
-    const mapBudget = Math.max(0, ingestBudget - (fullTierOutcome?.ingested ?? 0));
-    const mapOutcome = await applyApprovedDraftMaps(vault, mapBudget).catch((e) => {
-      console.error("[distill] draft-map auto-apply failed", vault, e);
-      return null;
-    });
-    if (mapOutcome) lastMapDraftOutcome.set(vault, mapOutcome);
-    if (stopRequested.has(vault)) {
-      lastStopPoint.set(vault, "maps");
-      return report;
-    }
-    // Q4 item 10 — resurface: echo today's daily note against dormant wiki
-    // pages. Runs last because it writes nothing — it only refreshes the
-    // store the Activity popover reads. No daily note today means no seed,
-    // which is a quiet skip, not an error.
+    const cfg = await ipc.getDistillConfig(vault);
+    const spent = fullTier.ingested + (fullTier.sourcesPending ?? 0) + fullTier.errors.length;
+    const maps = await applyApprovedDraftMaps(vault, Math.max(0, (cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET) - spent), usage, roleSnapshot);
+    lastMapDraftOutcome.set(vault, maps);
+    await accept("maps", maps, maps.pending || maps.skipped ? "pending" : maps.drafted ? "success" : "skipped");
+
+    activeStep = "resurface";
     useDistillRunStore.setState({ step: "resurface" });
-    try {
-      const daily = await ipc
-        .readFile(`${vault}/daily/${localDay()}.md`)
-        .catch(() => null);
-      if (daily?.raw) {
-        const floor = useResurfaceStore.getState().floor;
-        const cands = await ipc.resurfaceCandidates(
-          vault,
-          stripFrontmatter(daily.raw).slice(0, 4000),
-          6,
-          floor,
-        );
-        useResurfaceStore.getState().refreshFrom(cands.map(toPick));
-        lastResurfaceOutcome.set(vault, {
-          shown: useResurfaceStore.getState().picks.length,
-        });
-      }
-    } catch (e) {
-      // Resurfacing must never fail the run it decorates.
-      console.warn("[distill] resurface failed:", vault, e);
-    }
-    // OS notification: distill complete, with the run's headline counts.
-    // Only when the run produced something — the idle trigger fires this
-    // chain routinely, and a stream of "0 proposals" notifications would
-    // train the user to disable notifications entirely. Stopped-early runs
-    // (the returns above) skip it too: the user was watching the popover.
-    const days = outcome?.daysDigested ?? 0;
-    const weeks = weekly?.bucketsRolledUp ?? 0;
-    const months = monthly?.bucketsRolledUp ?? 0;
-    if (report.proposals > 0 || days > 0 || weeks > 0 || months > 0) {
+    const daily = await ipc.readFile(`${vault}/daily/${localDay()}.md`).catch(error => {
+      if (isMissingFile(error)) return null;
+      throw error;
+    });
+    if (daily?.raw) {
+      const candidates = await ipc.resurfaceCandidates(vault, stripFrontmatter(daily.raw).slice(0, 4000), 6, useResurfaceStore.getState().floor);
+      useResurfaceStore.getState().refreshFrom(candidates.map(toPick));
+      lastResurfaceOutcome.set(vault, { shown: useResurfaceStore.getState().picks.length });
+      receipt.steps.push({ step: "resurface", status: "success" });
+    } else receipt.steps.push({ step: "resurface", status: "skipped" });
+    receipt.status = receipt.steps.every(step => step.status === "skipped") ? "skipped" : "success";
+    if (report.proposals > 0 || digest.daysDigested > 0 || weekly.bucketsRolledUp > 0 || monthly.bucketsRolledUp > 0) {
       const t = STRINGS[useUIStore.getState().lang];
-      void osNotify(
-        t.notif_distill_done_title ?? "Distill finished",
-        (t.notif_distill_done_body ??
-          "{p} proposals · {d} session days digested · {w} weeks rolled up")
-          .replace("{p}", String(report.proposals))
-          .replace("{d}", String(days))
-          .replace("{w}", String(weeks))
-          // Same appended-clause rule as the Overview line above.
-          .concat(
-            months > 0
-              ? (t.notif_distill_done_months ?? " · {m} monthly rollups").replace(
-                  "{m}",
-                  String(months),
-                )
-              : "",
-          ),
-      );
+      void osNotify(t.notif_distill_done_title, t.notif_distill_done_body.replace("{p}", String(report.proposals))
+        .replace("{d}", String(digest.daysDigested)).replace("{w}", String(weekly.bucketsRolledUp))
+        .concat(monthly.bucketsRolledUp > 0 ? t.notif_distill_done_months.replace("{m}", String(monthly.bucketsRolledUp)) : ""));
     }
     return report;
-  } catch (e) {
-    failed = true;
-    throw e;
+  } catch (error) {
+    if (error instanceof WorkflowRunError) throw error;
+    const issue = workflowIssue(activeStep, error);
+    receipt.steps.push({ step: activeStep, status: issue.status, issues: [issue] });
+    receipt.issues.push(issue);
+    console.error("[distill] workflow incomplete", vault, error);
+    return fail();
   } finally {
     inFlight.delete(vault);
+    unlock(vault);
     stopRequested.delete(vault);
-    // Reflects "any vault still running", not just this one — the guard
-    // itself is per-vault (inFlight), but a single boolean is all the
-    // Topbar needs (see distillRunStore.ts). The outcome rides along on the
-    // same set so the bar gets its done/failed pill from every exit path,
-    // early "stopped" returns included.
-    useDistillRunStore.setState(
-      inFlight.size > 0
-        ? { running: true }
-        : {
-            running: false,
-            step: null,
-            outcome: failed ? "error" : "done",
-            seen: false,
-          },
-    );
+    lastWorkflowReceipt.set(vault, receipt);
+    useDistillRunStore.setState(inFlight.size > 0 ? { running: true } : {
+      running: false, step: null,
+      outcome: receipt.status === "success" || receipt.status === "skipped" ? "done" : receipt.status === "stopped" ? null : "error",
+      workflowStatus: receipt.status, receipt, seen: false,
+    });
   }
 }

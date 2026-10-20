@@ -1,20 +1,14 @@
-// Claude CLI bridge. Spawns the system `claude` binary with a prompt and
-// captures stdout. The CLI uses the user's existing Claude Pro/Max
-// subscription via the Anthropic OAuth login it manages itself — myco does
-// not store an API key.
-//
-// We pass the prompt on stdin so it can be arbitrary length without bumping
-// into argv limits. cwd defaults to the vault root so the CLI can read /
-// write project files when given file-tool permissions.
+//! Claude installation discovery, session identity and stream event parsing.
+//! Unconfined external execution is unavailable pending a verified host,
+//! settings/MCP/child boundary. Legacy run APIs fail before locating/spawning.
+//! The shared child-drain helper remains in use by local audio tools.
 
 use std::collections::HashMap;
-use std::io::{BufRead, BufReader, Read, Write};
+use std::io::{Read, Write};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
-
-const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
 // Children of in-flight streaming runs, keyed by run_id. Lets `cancel` kill
 // a run early and `cancel_all` reap everything on app exit so no orphan
@@ -39,31 +33,13 @@ pub struct CliStatus {
     pub path: Option<String>,
 }
 
+/// Inspect installation metadata without launching an unconfined binary.
 pub fn check() -> CliStatus {
-    match locate() {
-        Some(path) => {
-            let v = Command::new(&path)
-                .arg("--version")
-                .output()
-                .ok()
-                .and_then(|o| {
-                    if o.status.success() {
-                        Some(String::from_utf8_lossy(&o.stdout).trim().to_string())
-                    } else {
-                        None
-                    }
-                });
-            CliStatus {
-                installed: true,
-                version: v,
-                path: Some(path),
-            }
-        }
-        None => CliStatus {
-            installed: false,
-            version: None,
-            path: None,
-        },
+    let path = locate_runner_bin("claude", "MYCO_CLAUDE_PATH");
+    CliStatus {
+        installed: path.is_some(),
+        version: None,
+        path,
     }
 }
 
@@ -72,101 +48,53 @@ pub fn check() -> CliStatus {
 /// picker in Settings → Model).
 pub const CLI_DEFAULT: &str = "(default)";
 
+/// Compatibility entry point. Installation and an old writable tool list do
+/// not authorize unconfined execution; supported runners need a native scope.
 pub fn run_prompt(
-    prompt: &str,
-    cwd: &str,
-    model: Option<&str>,
-    effort: Option<&str>,
+    _prompt: &str,
+    _cwd: &str,
+    _model: Option<&str>,
+    _effort: Option<&str>,
 ) -> Result<CliResult, String> {
-    let path = locate().ok_or_else(|| {
-        "claude CLI not found on PATH. Install: https://docs.claude.com/en/docs/claude-code"
-            .to_string()
-    })?;
-    let dir = Path::new(cwd);
-    if !dir.is_dir() {
-        return Err(format!("cwd is not a directory: {cwd}"));
-    }
-    // --print so the CLI exits after producing output (non-interactive).
-    // --allowedTools so Claude can actually edit the vault myco spawned
-    // it on — without this, every Write/Edit in an ingest workflow gets
-    // silently denied in --print mode. We pre-authorize only the tools the
-    // Ingest / Lint workflow needs to maintain markdown: Read/Write/Edit/
-    // Glob/Grep. Bash is deliberately EXCLUDED from the default: ingest feeds
-    // UNTRUSTED raw/ source content to the agent in non-interactive --print
-    // mode (no human approval prompt), so a prompt-injection payload hidden in
-    // a source must not be able to reach a shell. A user who genuinely needs a
-    // different (or wider) set can override via the MYCO_CLAUDE_TOOLS env var.
-    let allowed = crate::env::var("MYCO_CLAUDE_TOOLS")
-        .unwrap_or_else(|| "Read,Write,Edit,Glob,Grep".to_string());
-    let mut cmd = Command::new(&path);
-    cmd.arg("--print").arg("--allowedTools").arg(&allowed);
-    add_raw_deny_args(&mut cmd);
-    // --model selects the model for this run (alias like "haiku"/"sonnet"/"opus"
-    // or a full id). Omitted -> the CLI's configured default. Lets the cheap
-    // Haiku model be chosen for high-volume ingest.
-    add_model_and_effort_args(&mut cmd, model, effort);
-    let child = cmd
-        .env("PATH", augmented_path(&path))
-        .current_dir(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("spawn claude failed: {e}"))?;
+    Err(crate::cli_agent::execution_unavailable(
+        "anthropic-cli",
+        crate::cli_agent::CliExecutionCapability::ReadOnly,
+    ))
+}
 
-    run_with_timeout(
-        child,
-        prompt.as_bytes().to_vec(),
-        Duration::from_secs(DEFAULT_TIMEOUT_SECS),
-        "claude",
+/// Opening of every session id myco hands the claude CLI: `6d79636f` is
+/// "myco" in ASCII hex, then a fixed group and the v4 version digit. The CLI
+/// writes it as `sessionId` on every JSONL line (verified on 2.1.282 with
+/// `--print`), so the session importer can tell myco's own runs from the
+/// owner's. A random v4 id opens this way with odds of 2^-48.
+const MYCO_SESSION_ID_PREFIX: &str = "6d79636f-0000-4";
+
+/// A fresh v4 UUID carrying `MYCO_SESSION_ID_PREFIX`, one per run so no two
+/// runs share a session. Not a secret, so std's randomly keyed SipHash over
+/// the clock is enough entropy.
+pub fn myco_session_id() -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let word = || {
+        let mut h = std::collections::hash_map::RandomState::new().build_hasher();
+        h.write_u128(nanos);
+        h.finish()
+    };
+    let (a, b) = (word(), word());
+    format!(
+        "{MYCO_SESSION_ID_PREFIX}{:03x}-{:x}{:03x}-{:012x}",
+        a & 0xfff,
+        8 + ((a >> 12) & 0x3),
+        (a >> 14) & 0xfff,
+        b & 0xffff_ffff_ffff
     )
 }
 
-/// Append `--model <model>` and `--effort <level>` to a claude CLI command,
-/// skipping either when it is empty or the `(default)` sentinel (the CLI then
-/// uses its own configured default). Shared by the streaming and
-/// non-streaming run paths. `--effort` is a real flag on the installed CLI
-/// (`claude --help`: "Effort level for the current session (low, medium,
-/// high, xhigh, max)") and works alongside `--print`.
-fn add_model_and_effort_args(cmd: &mut Command, model: Option<&str>, effort: Option<&str>) {
-    for (flag, value) in [("--model", model), ("--effort", effort)] {
-        if let Some(v) = value {
-            let v = v.trim();
-            if !v.is_empty() && v != CLI_DEFAULT {
-                cmd.arg(flag).arg(v);
-            }
-        }
-    }
-}
-
-/// Permission deny rule keeping the spawned agent out of the vault's immutable
-/// `raw/` tree (repo rule: read-only through every path). The vault's CLAUDE.md
-/// only *asks* the model; this is enforced by Claude Code itself. Per the
-/// permissions docs: deny rules are evaluated before any allow rule, so it
-/// also holds when MYCO_CLAUDE_TOOLS widens the allow list; `Edit(path)` is
-/// the one file rule the CLI consults for every built-in tool that edits files
-/// (Write/NotebookEdit/MultiEdit included — a `Write(...)` path rule is
-/// "accepted but never consulted"); and a CLI-flag rule's leading `/` anchors
-/// at the primary working directory, which both spawn sites set to the vault
-/// root, so exactly `<vault>/raw/**` is covered (the `vault::is_raw_path`
-/// boundary) — an unanchored `raw/**` deny would match a `raw` directory at
-/// any depth. Verified against claude 2.1.257 in --print mode: Write of a new
-/// raw/ file and Edit of an existing one are refused ("File is in a directory
-/// that is denied by your permission settings") while Write under wiki/
-/// succeeds. Ceiling: Bash `> raw/…` redirections are covered, a script that
-/// opens the file itself is not — only reachable if MYCO_CLAUDE_TOOLS adds
-/// Bash; OS-level enforcement would need the CLI sandbox.
-/// Docs: https://code.claude.com/docs/en/permissions#read-and-edit,
-/// https://code.claude.com/docs/en/permissions#manage-permissions (deny first),
-/// https://code.claude.com/docs/en/cli-reference (`--disallowedTools`).
-const RAW_DENY_RULE: &str = "Edit(/raw/**)";
-
-/// Append the `raw/` deny to a claude CLI command. Both spawn paths call this
-/// so the guard cannot exist on one and be forgotten on the other. Keep it
-/// where no positional argument follows: `--disallowedTools` is variadic and
-/// would swallow a trailing prompt as more rules (the prompt goes on stdin).
-fn add_raw_deny_args(cmd: &mut Command) {
-    cmd.arg("--disallowedTools").arg(RAW_DENY_RULE);
+/// Whether a claude-code session id is one `myco_session_id` made.
+pub fn is_myco_session_id(id: &str) -> bool {
+    id.starts_with(MYCO_SESSION_ID_PREFIX)
 }
 
 /// One event parsed from the CLI's `stream-json` output. `kind` is one of:
@@ -271,132 +199,20 @@ pub fn parse_stream_line(line: &str) -> Vec<ParsedEvent> {
     }
 }
 
-/// Streaming variant of `run_prompt`. Spawns the CLI with
-/// `--output-format stream-json`, parses stdout line-by-line and reports
-/// each displayable event through `on_event` while the run is in flight.
-/// The child is registered under `run_id` so `cancel(run_id)` can kill it.
-/// No hard timeout — the user cancels from the UI instead.
+/// Compatibility streaming entry point. Refuses before binary lookup, child
+/// creation, registry insertion or an event callback until isolation is proven.
 pub fn run_prompt_stream<F>(
-    run_id: &str,
-    prompt: &str,
-    cwd: &str,
-    model: Option<&str>,
-    effort: Option<&str>,
-    on_event: F,
+    _run_id: &str,
+    _prompt: &str,
+    _cwd: &str,
+    _model: Option<&str>,
+    _effort: Option<&str>,
+    _on_event: F,
 ) -> Result<CliResult, String>
 where
     F: Fn(ParsedEvent) + Send,
 {
-    let path = locate().ok_or_else(|| {
-        "claude CLI not found on PATH. Install: https://docs.claude.com/en/docs/claude-code"
-            .to_string()
-    })?;
-    let dir = Path::new(cwd);
-    if !dir.is_dir() {
-        return Err(format!("cwd is not a directory: {cwd}"));
-    }
-    // Same default-tool policy as run_prompt: no Bash on untrusted ingest
-    // content (overridable via MYCO_CLAUDE_TOOLS).
-    let allowed = crate::env::var("MYCO_CLAUDE_TOOLS")
-        .unwrap_or_else(|| "Read,Write,Edit,Glob,Grep".to_string());
-    // --verbose is required by the CLI when combining --print with
-    // --output-format stream-json.
-    let mut cmd = Command::new(&path);
-    cmd.arg("--print")
-        .arg("--verbose")
-        .arg("--output-format")
-        .arg("stream-json")
-        .arg("--allowedTools")
-        .arg(&allowed);
-    add_raw_deny_args(&mut cmd);
-    add_model_and_effort_args(&mut cmd, model, effort);
-    let mut child = cmd
-        .env("PATH", augmented_path(&path))
-        .current_dir(dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("spawn claude failed: {e}"))?;
-
-    // Take stdin/stdout/stderr off the child *before* it is moved into the
-    // RUNNING registry — once registered we no longer own `child` here.
-    let stdin = child.stdin.take();
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| "no stdout handle".to_string())?;
-    let stderr = child.stderr.take();
-    // Feed the prompt on a dedicated thread and drain stdout concurrently.
-    // Writing the whole prompt before reading would deadlock once the prompt
-    // exceeds the OS pipe buffer (~64 KB) — the write blocks with no reader,
-    // and the child can't drain its own stdout either. Large ingest prompts
-    // hit this. Mirror run_with_timeout's stdin thread. The prompt is copied
-    // into an owned buffer so the writer thread doesn't borrow `prompt`.
-    let prompt_bytes = prompt.as_bytes().to_vec();
-    let stdin_thread = std::thread::spawn(move || {
-        if let Some(mut si) = stdin {
-            let _ = si.write_all(&prompt_bytes);
-            // Dropping `si` closes the pipe so the child sees EOF on stdin.
-        }
-    });
-    let stderr_thread = stderr.map(|s| {
-        std::thread::spawn(move || {
-            let mut buf = String::new();
-            let _ = std::io::Read::read_to_string(&mut BufReader::new(s), &mut buf);
-            buf
-        })
-    });
-
-    running()
-        .lock()
-        .map_err(|_| "registry poisoned".to_string())?
-        .insert(run_id.to_string(), child);
-
-    let mut result_text: Option<String> = None;
-    let mut texts: Vec<String> = Vec::new();
-    for line in BufReader::new(stdout).lines() {
-        let Ok(line) = line else { break };
-        for ev in parse_stream_line(&line) {
-            if ev.kind == "result" {
-                result_text = ev.text.clone();
-            } else if ev.kind == "text" {
-                if let Some(t) = &ev.text {
-                    texts.push(t.clone());
-                }
-            }
-            on_event(ev);
-        }
-    }
-
-    // The writer thread has either flushed the whole prompt or unblocked
-    // because the child closed its stdin (e.g. on cancel/exit). Reap it so
-    // it doesn't outlive the run.
-    let _ = stdin_thread.join();
-
-    let stderr_text = stderr_thread
-        .and_then(|h| h.join().ok())
-        .unwrap_or_default();
-
-    // If the child is gone from the registry, `cancel` beat us to it.
-    let child = running()
-        .lock()
-        .map_err(|_| "registry poisoned".to_string())?
-        .remove(run_id);
-    let Some(mut child) = child else {
-        return Err("cancelled".to_string());
-    };
-    let status = child
-        .wait()
-        .map_err(|e| format!("wait failed: {e}"))?
-        .code()
-        .unwrap_or(-1);
-
-    Ok(CliResult {
-        stdout: result_text.unwrap_or_else(|| texts.join("\n")),
-        stderr: stderr_text,
-        status,
-    })
+    run_prompt("", "", None, None)
 }
 
 /// Kill the streaming run with this id. Returns true if a child was found.
@@ -424,8 +240,48 @@ pub fn cancel_all() {
     }
 }
 
-fn locate() -> Option<String> {
-    locate_bin("claude", "MYCO_CLAUDE_PATH")
+/// Locate an optional external runner using filesystem metadata only. In
+/// particular, do not run `--version`, `which` or a login shell with settings.
+pub(crate) fn locate_runner_bin(bin: &str, override_var: &str) -> Option<String> {
+    let is_executable = |path: &Path| -> bool {
+        let Ok(metadata) = std::fs::metadata(path) else {
+            return false;
+        };
+        if !metadata.is_file() {
+            return false;
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            metadata.permissions().mode() & 0o111 != 0
+        }
+        #[cfg(not(unix))]
+        {
+            true
+        }
+    };
+    if let Some(override_path) = crate::env::var(override_var) {
+        return is_executable(Path::new(&override_path)).then_some(override_path);
+    }
+    let mut paths = Vec::new();
+    if let Some(path) = std::env::var_os("PATH") {
+        for directory in std::env::split_paths(&path) {
+            paths.push(directory.join(bin));
+            #[cfg(windows)]
+            for extension in ["cmd", "exe", "bat"] {
+                paths.push(directory.join(format!("{bin}.{extension}")));
+            }
+        }
+    }
+    paths.extend(
+        candidate_paths(bin)
+            .into_iter()
+            .map(std::path::PathBuf::from),
+    );
+    paths
+        .into_iter()
+        .find(|path| is_executable(path))
+        .map(|path| path.to_string_lossy().into_owned())
 }
 
 /// Home directory env var — `USERPROFILE` on Windows, `HOME` elsewhere.
@@ -680,43 +536,25 @@ mod tests {
         assert!(res.is_err(), "expected error for missing cwd");
     }
 
-    fn args_of(model: Option<&str>, effort: Option<&str>) -> Vec<String> {
-        let mut cmd = Command::new("claude");
-        add_model_and_effort_args(&mut cmd, model, effort);
-        cmd.get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect()
-    }
-
     #[test]
-    fn claude_effort_flag_is_passed_and_defaults_omitted() {
+    fn every_run_carries_a_fresh_myco_session_id() {
+        let id = myco_session_id();
+        assert!(is_myco_session_id(&id));
+        // The CLI refuses anything but a valid UUID: 8-4-4-4-12 lowercase
+        // hex, version 4, RFC 4122 variant.
+        let groups: Vec<&str> = id.split('-').collect();
         assert_eq!(
-            args_of(Some("opus"), Some("xhigh")),
-            vec!["--model", "opus", "--effort", "xhigh"]
+            groups.iter().map(|g| g.len()).collect::<Vec<_>>(),
+            [8, 4, 4, 4, 12]
         );
-        // The "(default)" sentinel (and an empty value) means: pass nothing.
-        assert!(args_of(Some("opus"), Some("(default)"))
-            .iter()
-            .all(|a| a != "--effort"));
-        assert!(args_of(Some("(default)"), Some("high"))
-            .iter()
-            .all(|a| a != "--model"));
-        assert!(args_of(None, None).is_empty());
-        assert!(args_of(Some(""), Some("  ")).is_empty());
-    }
-
-    #[test]
-    fn raw_deny_is_an_anchored_edit_rule_on_disallowed_tools() {
-        let mut cmd = Command::new("claude");
-        add_raw_deny_args(&mut cmd);
-        let args: Vec<String> = cmd
-            .get_args()
-            .map(|a| a.to_string_lossy().into_owned())
-            .collect();
-        // `Edit` is the only file rule the CLI checks, and the leading `/`
-        // pins it to <cwd>/raw — an unanchored `raw/**` deny would also match
-        // `wiki/raw/…`, and a `Write(...)` rule is silently ignored.
-        assert_eq!(args, vec!["--disallowedTools", "Edit(/raw/**)"]);
+        assert!(groups.iter().all(|g| g
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())));
+        assert!(groups[2].starts_with('4'));
+        assert!(matches!(groups[3].as_bytes()[0], b'8' | b'9' | b'a' | b'b'));
+        // Fresh per run, so no two runs share a session.
+        assert_ne!(myco_session_id(), myco_session_id());
+        assert!(!is_myco_session_id("2202078e-1c2d-4e5f-8a9b-0c1d2e3f4a5b"));
     }
 
     #[test]
@@ -824,13 +662,20 @@ mod tests {
     }
 
     #[test]
-    fn locate_honors_env_override() {
-        let prev = std::env::var("MYCO_CLAUDE_PATH").ok();
-        unsafe {
-            std::env::set_var("MYCO_CLAUDE_PATH", "/tmp/fake-claude");
+    #[serial_test::serial]
+    fn locate_runner_honors_executable_env_override() {
+        let fixture = tempfile::tempdir().unwrap();
+        let child = fixture.path().join("fake-claude");
+        std::fs::write(&child, "synthetic executable fixture").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&child, std::fs::Permissions::from_mode(0o700)).unwrap();
         }
-        let p = locate();
-        assert_eq!(p.as_deref(), Some("/tmp/fake-claude"));
+        let prev = std::env::var("MYCO_CLAUDE_PATH").ok();
+        std::env::set_var("MYCO_CLAUDE_PATH", &child);
+        let path = locate_runner_bin("claude", "MYCO_CLAUDE_PATH");
+        assert_eq!(path.as_deref(), child.to_str());
         if let Some(v) = prev {
             unsafe {
                 std::env::set_var("MYCO_CLAUDE_PATH", v);

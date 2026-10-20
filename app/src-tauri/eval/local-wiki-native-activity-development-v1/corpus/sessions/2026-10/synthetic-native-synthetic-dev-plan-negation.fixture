@@ -1,0 +1,11 @@
+---
+fixture_kind: synthetic_native_activity_development
+title: "Synthetic prism exporter preparation"
+created: "2026-10-04T09:00:00Z"
+last_updated: "2026-10-04T09:00:00Z"
+turn_metadata: [{"message_id":"D1A","original_role":"user","timestamp":"2026-10-01T10:00:00Z","phase":null},{"message_id":"D1B","original_role":"assistant","timestamp":"2026-10-02T10:00:00Z","phase":null}]
+---
+**User:**
+Please repair the synthetic prism exporter. I have not repaired it.
+**Assistant:**
+I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked.

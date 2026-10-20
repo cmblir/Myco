@@ -3,7 +3,7 @@
 // via a vision provider (describe_image), audio/video via an installed whisper
 // CLI (transcribe_media). Plain documents keep going through read_external_text.
 
-import { ipc } from "./ipc";
+import { ipc, type ImageIngestRequest } from "./ipc";
 
 const IMAGE_RE = /\.(png|jpe?g|gif|webp)$/i;
 const MEDIA_RE = /\.(mp3|m4a|wav|flac|ogg|mp4|mov|webm|mkv|aac)$/i;
@@ -45,21 +45,85 @@ export const IMAGE_INGEST_PROMPT =
   "Transcribe any text verbatim, and summarize diagrams, figures, charts, or " +
   "data so the content can be turned into cited notes.";
 
-export interface SourceDeps {
-  provider: string;
-  model: string;
+export type ImageIngestContext = Pick<
+  ImageIngestRequest,
+  "origin" | "roleSnapshot" | "requestId"
+>;
+
+/** DTO consistency only; native private authority and capabilities remain mandatory. */
+export function checkedImageContext(
+  context: ImageIngestContext | undefined,
+): ImageIngestContext {
+  const origin = context?.origin;
+  const snapshot = context?.roleSnapshot;
+  const route = snapshot?.routeSignature;
+  const bounded = (value: unknown): value is string =>
+    typeof value === "string" &&
+    value.length > 0 &&
+    value.length <= 256 &&
+    ![...value].some(
+      (char) => char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127,
+    );
+  if (
+    !origin ||
+    typeof origin.vaultPath !== "string" ||
+    !origin.vaultPath ||
+    !bounded(origin.openingToken) ||
+    !bounded(context?.requestId) ||
+    !snapshot ||
+    snapshot.role !== "compilation" ||
+    snapshot.usage !== "foreground" ||
+    snapshot.origin?.vaultPath !== origin.vaultPath ||
+    snapshot.origin.openingToken !== origin.openingToken ||
+    !bounded(snapshot.snapshotId) ||
+    !bounded(snapshot.authorizationRevision) ||
+    !route ||
+    route.role !== "compilation" ||
+    !bounded(route.signature) ||
+    !bounded(route.providerId) ||
+    !bounded(route.modelId)
+  ) {
+    throw new Error(
+      "Image ingest requires the initiating Compilation foreground context",
+    );
+  }
+  return context!;
 }
 
 /** Resolve a dropped/picked file to ingestable text, dispatching on kind. */
 export async function sourceTextFor(
   path: string,
-  deps: SourceDeps,
+  context?: ImageIngestContext,
 ): Promise<string> {
   if (isImageFile(path)) {
-    return ipc.describeImage(deps.provider, deps.model, path, IMAGE_INGEST_PROMPT);
+    return ipc.describeImage({
+      ...checkedImageContext(context),
+      path,
+      prompt: IMAGE_INGEST_PROMPT,
+    });
   }
   if (isMediaFile(path)) {
     return ipc.transcribeMedia(path);
   }
   return ipc.readExternalText(path);
+}
+
+/** Text for an image or recording in the vault that stays the same across
+ *  retries, and the marker naming the file's bytes for ingest to file it
+ *  under. A description or transcript is sampled anew on every call, so a
+ *  retried `_inbox/` file made a new raw payload each time, find_raw_copy
+ *  never matched it, and every failed pass filed one more permanent copy. A
+ *  later attempt at the same bytes takes the text back out of the raw copy
+ *  that carries the marker, so ingest rebuilds the same payload and reuses
+ *  that copy. */
+export async function retryStableSourceText(
+  path: string,
+  context?: ImageIngestContext,
+): Promise<{ text: string; marker: string }> {
+  if (isImageFile(path)) checkedImageContext(context);
+  const { marker, copy } = await ipc.derivedRawCopy(path);
+  if (copy == null) return { text: await sourceTextFor(path, context), marker };
+  // ingestStore's writeRaw filed `# <title>\n\n<marker>\n\n<text>\n`.
+  const text = copy.slice(copy.indexOf(marker) + marker.length);
+  return { text: text.replace(/^\n\n/, "").replace(/\n$/, ""), marker };
 }

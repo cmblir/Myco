@@ -178,7 +178,9 @@ fn main() {
         chunks_total += chunks.len();
         pages += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
-        store.upsert_page(&rel, &stem, entries);
+        store
+            .upsert_page(&rel, &stem, entries)
+            .expect("valid dense index vectors");
         eprint!("\rindexed {pages} pages / {chunks_total} chunks");
     }
 
@@ -206,7 +208,9 @@ fn main() {
             chunks_total += chunks.len();
             pages += 1;
             let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
-            store.upsert_page(&rel, &stem, entries);
+            store
+                .upsert_page(&rel, &stem, entries)
+                .expect("valid dense index vectors");
             eprint!("\rindexed {pages} pages / {chunks_total} chunks");
         }
     }
@@ -227,7 +231,9 @@ fn main() {
     let mut pos: Vec<PosResult> = Vec::with_capacity(set.queries.len());
     for lab in &set.queries {
         let qvec = query_vec(&llm, &lab.q);
-        let hits = store.search(&qvec, 10); // raw cosine, pre-fusion
+        let hits = store
+            .search(&qvec, 10)
+            .expect("valid dense search geometry"); // raw cosine, pre-fusion
         let relevant: HashSet<&str> = lab.relevant.iter().map(String::as_str).collect();
         let top1_cosine = hits.first().map(|h| h.score).unwrap_or(f32::NAN);
         let correct = hits
@@ -255,7 +261,7 @@ fn main() {
     let mut neg: Vec<NegResult> = Vec::with_capacity(NEGATIVES.len());
     for q in NEGATIVES {
         let qvec = query_vec(&llm, q);
-        let hits = store.search(&qvec, 1);
+        let hits = store.search(&qvec, 1).expect("valid dense search geometry");
         let top1_cosine = hits.first().map(|h| h.score).unwrap_or(f32::NAN);
         neg.push(NegResult {
             q: q.to_string(),

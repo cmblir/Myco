@@ -1,10 +1,92 @@
 import { describe, expect, it } from "vitest";
-import { parseTimeQuery } from "./timeQuery";
+import { parseTimeQuery, queryDateRange } from "./timeQuery";
 
 // Fixed clock: Saturday 2026-08-22 (local). ISO week = Mon 08-17 .. Sun 08-23.
 const now = new Date(2026, 7, 22);
 
+describe("queryDateRange", () => {
+  it("keeps display days and uses the user's local midnight boundaries", () => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "Asia/Seoul";
+    try {
+      expect(queryDateRange({ start: "2026-08-22", end: "2026-08-22" })).toEqual({
+        start: "2026-08-22", end: "2026-08-22",
+        startEpoch: Date.parse("2026-08-22T00:00:00+09:00") / 1000,
+        endEpoch: Date.parse("2026-08-23T00:00:00+09:00") / 1000,
+      });
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
+  });
+  it("constructs calendar boundaries across 23-hour and 25-hour DST days", () => {
+    const previousTimezone = process.env.TZ;
+    process.env.TZ = "America/New_York";
+    try {
+      for (const [day, hours] of [["2026-03-08", 23], ["2026-11-01", 25]] as const) {
+        const range = queryDateRange({ start: day, end: day });
+        expect(range.endEpoch - range.startEpoch).toBe(hours * 3600);
+      }
+    } finally {
+      if (previousTimezone === undefined) delete process.env.TZ;
+      else process.env.TZ = previousTimezone;
+    }
+  });
+  it("rejects malformed, impossible and reversed date ranges", () => {
+    for (const range of [
+      { start: "2026-8-22", end: "2026-08-22" },
+      { start: "2026-02-31", end: "2026-03-01" },
+      { start: "2026-08-23", end: "2026-08-22" },
+      { start: "2026-08-22", end: "2026-08-32" },
+    ]) expect(() => queryDateRange(range)).toThrow("invalid query date range");
+  });
+});
+
 describe("parseTimeQuery — ko", () => {
+  it("parses the reported recent-month work question without removing its subject", () => {
+    expect(parseTimeQuery("내가 최근 한달동안 한 일에 대해서 알려줘", now, "ko")).toEqual({
+      range: { start: "2026-07-22", end: "2026-08-22" },
+      cleaned: "내가 한 일에 대해서 알려줘",
+    });
+  });
+  it.each(["최근 한 달 동안 한 일", "지난 한달간 한 일", "최근 1달 동안 한 일", "지난 1 개월간에 한 일"])(
+    "uses a rolling calendar month through today for %s", (question) => {
+      expect(parseTimeQuery(question, now, "ko")).toEqual({
+        range: { start: "2026-07-22", end: "2026-08-22" }, cleaned: "한 일",
+      });
+    },
+  );
+  it.each([
+    [new Date(2026, 2, 31, 23, 59), "2026-02-28", "2026-03-31"],
+    [new Date(2024, 2, 31), "2024-02-29", "2024-03-31"],
+    [new Date(2026, 0, 31), "2025-12-31", "2026-01-31"],
+  ])("clamps the rolling month to the previous month's last valid date at %s", (clock, start, end) => {
+    expect(parseTimeQuery("최근 한달동안 한 일", clock, "ko").range).toEqual({ start, end });
+  });
+  it.each(['"최근 한달동안"', "`최근 한달동안`"])(
+    "keeps %s literal while finding a later rolling-month anchor", (literal) => {
+      const question = `${literal}이라는 문자열을 검색해줘`;
+      expect(parseTimeQuery(question, now, "ko")).toEqual({ range: null, cleaned: question });
+      expect(parseTimeQuery(`${literal} 최근 한달동안 한 일`, now, "ko")).toEqual({
+        range: { start: "2026-07-22", end: "2026-08-22" }, cleaned: `${literal} 한 일`,
+      });
+    },
+  );
+  it.each(["최근 일주일동안 한일", "최근 일주일 동안 한 일", "지난 7일간 한 일"])(
+    "uses seven local calendar days including today for %s", (question) => {
+      expect(parseTimeQuery(question, now, "ko")).toEqual({
+        range: { start: "2026-08-16", end: "2026-08-22" },
+        cleaned: question.endsWith("한일") ? "한일" : "한 일",
+      });
+    },
+  );
+  it("keeps a quoted recent-week phrase as a literal and handles a rolling year boundary", () => {
+    const literal = '"최근 일주일"이라는 문자열을 검색해줘';
+    expect(parseTimeQuery(literal, now, "ko")).toEqual({ range: null, cleaned: literal });
+    expect(parseTimeQuery("최근 일주일동안 한일", new Date(2026, 0, 2), "ko").range).toEqual({
+      start: "2025-12-27", end: "2026-01-02",
+    });
+  });
   it("이번 주 → Monday..today, phrase (with particle) removed from cleaned", () => {
     const p = parseTimeQuery("이번 주에 배포 관련 뭐 결정했지", now, "ko");
     expect(p.range).toEqual({ start: "2026-08-17", end: "2026-08-22" });
@@ -182,6 +264,39 @@ describe("parseTimeQuery — ja", () => {
 });
 
 describe("parseTimeQuery — explicit dates", () => {
+  it("keeps date-shaped IDs and filenames as literal retrieval terms", () => {
+    for (const q of ["SYN-2026-08-05 원문", "wiki/2026-08-05.md", "`2026-08-05` exact", '"2026-08-05" phrase']) {
+      expect(parseTimeQuery(q, now, "ko")).toEqual({ range: null, cleaned: q });
+    }
+  });
+  it("finds the later date anchor after a quoted date or date-shaped filename", () => {
+    for (const literal of ['"2026-08-05"', "`2026-08-05`", "wiki/2026-08-05.md", "SYN-2026-08-05"]) {
+      expect(parseTimeQuery(`${literal} on 2026-08-21`, now, "en")).toEqual({
+        range: { start: "2026-08-21", end: "2026-08-21" },
+        cleaned: `${literal} on`,
+      });
+    }
+  });
+  it("continues after an invalid date without removing the invalid literal", () => {
+    expect(parseTimeQuery("2026-02-31 on 2026-08-21", now, "en")).toEqual({
+      range: { start: "2026-08-21", end: "2026-08-21" },
+      cleaned: "2026-02-31 on",
+    });
+  });
+  it("finds the later relative anchor after the same word in a quoted literal", () => {
+    expect(parseTimeQuery('"today" notes today', now, "en")).toEqual({
+      range: { start: "2026-08-22", end: "2026-08-22" },
+      cleaned: '"today" notes',
+    });
+  });
+  it("supports an inclusive explicit history interval", () => {
+    expect(parseTimeQuery("2026-07-01부터 2026-08-05까지 결정 이력", now, "ko")).toEqual({
+      range: { start: "2026-07-01", end: "2026-08-05" }, cleaned: "결정 이력",
+    });
+    expect(parseTimeQuery("decisions from 2026-07-01 to 2026-08-05", now, "en").range).toEqual({
+      start: "2026-07-01", end: "2026-08-05",
+    });
+  });
   it("YYYY-MM → full month", () => {
     const p = parseTimeQuery("2026-07 임베딩 실험", now, "ko");
     expect(p.range).toEqual({ start: "2026-07-01", end: "2026-07-31" });

@@ -1,0 +1,419 @@
+{
+  "version": 1,
+  "id": "local-wiki-development-meaning-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "scope": "Exposed development counterexamples for shared activity synthesis; not frozen review-pairs, held-out accuracy, native authority or installed acceptance.",
+  "cases": [
+    {
+      "id": "synthetic-dev-plan-negation",
+      "syntheticOnly": true,
+      "title": "Synthetic prism exporter preparation",
+      "language": "ko",
+      "question": "최근 합성 프리즘 내보내기 관련 작업과 수리 완료 여부를 기록에 있는 범위로 정리해줘.",
+      "activityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "source": {
+        "id": "synthetic-dev-plan-negation-source",
+        "path": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+        "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+        "recordTime": "2026-10-04T09:00:00Z",
+        "original": "Please repair the synthetic prism exporter. I have not repaired it.\nI finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked.",
+        "bytes": 182,
+        "sha256": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+        "turns": [
+          {
+            "id": "D1A",
+            "start": 0,
+            "end": 67,
+            "text": "Please repair the synthetic prism exporter. I have not repaired it.",
+            "sha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+            "turnId": "D1A",
+            "speaker": "user",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D1B",
+            "start": 68,
+            "end": 182,
+            "text": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked.",
+            "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+            "turnId": "D1B",
+            "speaker": "assistant",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          }
+        ]
+      },
+      "gold": {
+        "requiredFacts": [
+          "The user requested exporter repair and explicitly denied having repaired it.",
+          "The assistant reports completion of drafting a repair plan, not completion of the repair.",
+          "The second message explicitly reports that repair and checking have not occurred; their performer is unspecified."
+        ],
+        "expectedClaims": [
+          {
+            "meaning": "Repair the synthetic prism exporter",
+            "sourceTurnIds": [
+              "D1A"
+            ],
+            "actorRole": "user",
+            "speechAct": "request",
+            "status": "requested",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "The user has not repaired the synthetic prism exporter",
+            "sourceTurnIds": [
+              "D1A"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "unknown",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "Draft a repair plan for the synthetic prism exporter",
+            "sourceTurnIds": [
+              "D1B"
+            ],
+            "actorRole": "assistant",
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "Repair and checking of the synthetic prism exporter have not been performed",
+            "sourceTurnIds": [
+              "D1B"
+            ],
+            "actorRole": "unknown",
+            "speechAct": "report",
+            "status": "unknown",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          }
+        ],
+        "forbiddenInterpretations": [
+          "The exporter repair or checking was completed.",
+          "A completed preparation report is only a future plan.",
+          "Explicit nonperformance contradicts the existence of the repair request.",
+          "Historical nonperformance proves the exporter is still unrepaired at query time."
+        ],
+        "answerExpectations": [
+          "Distinguish the request, completed plan preparation and explicit historical nonperformance.",
+          "Attribute the preparation outcome to the assistant report; no independent execution receipt exists.",
+          "With no original event-date anchor, keep action dates unknown; message metadata may locate the source only. No later-state scan is provided."
+        ]
+      }
+    },
+    {
+      "id": "synthetic-dev-decision-cause",
+      "syntheticOnly": true,
+      "title": "Synthetic index filter rollback",
+      "language": "ko",
+      "question": "합성 색인 필터에 어떤 변경과 후속 결정이 있었는지, 이유도 함께 정리해줘.",
+      "activityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "source": {
+        "id": "synthetic-dev-decision-cause-source",
+        "path": "raw/synthetic-development/synthetic-dev-decision-cause.md",
+        "selectionPath": "wiki/synthetic-development/synthetic-dev-decision-cause.md",
+        "recordTime": "2026-10-04T09:00:00Z",
+        "original": "제가 2026-10-01에 합성 색인 필터를 바꿨다고 보고합니다. 독립적인 실행 검증은 없습니다.\n합성 색인 필터 변경을 되돌렸어. 결과에서 항목이 빠져서 이 변경을 배포하지 않기로 결정했어.",
+        "bytes": 247,
+        "sha256": "0dfc6298461b218f1181292be547070fd917b9955f09f83e6b1dd491a34222e8",
+        "turns": [
+          {
+            "id": "D2A",
+            "start": 0,
+            "end": 118,
+            "text": "제가 2026-10-01에 합성 색인 필터를 바꿨다고 보고합니다. 독립적인 실행 검증은 없습니다.",
+            "sha256": "46ef50f205ee7e24b3dafb31ffa212c37039e41da085675e3f750399b87cb37a",
+            "turnId": "D2A",
+            "speaker": "assistant",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D2B",
+            "start": 119,
+            "end": 247,
+            "text": "합성 색인 필터 변경을 되돌렸어. 결과에서 항목이 빠져서 이 변경을 배포하지 않기로 결정했어.",
+            "sha256": "2b0f32f53a5a2a6ae1d03b187df06b8f60ac8404420b4af341badf401e625e10",
+            "turnId": "D2B",
+            "speaker": "user",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          }
+        ]
+      },
+      "gold": {
+        "requiredFacts": [
+          "The assistant reports an index-filter change on the explicit event date 2026-10-01; the message date is 2026-10-02.",
+          "The user reports rollback of that change.",
+          "The user reports a completed decision not to deploy that change because items were missing from the results.",
+          "There is no independent execution verification."
+        ],
+        "expectedClaims": [
+          {
+            "meaning": "Change the synthetic index filter",
+            "sourceTurnIds": [
+              "D2A"
+            ],
+            "actorRole": "assistant",
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTimeMeaning": "Explicit event date 2026-10-01; do not substitute message date 2026-10-02."
+          },
+          {
+            "meaning": "Roll back the synthetic index-filter change",
+            "sourceTurnIds": [
+              "D2B"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "reported_rolled_back",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "Decide not to deploy the synthetic index-filter change because result items were missing",
+            "sourceTurnIds": [
+              "D2B"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          }
+        ],
+        "forbiddenInterpretations": [
+          "The past nondeployment decision is a request to make a future decision.",
+          "The assistant change is independently verified or was performed by the user.",
+          "Rollback and the nondeployment decision are a single cancelled action whose cause may be dropped.",
+          "The change was deployed successfully."
+        ],
+        "answerExpectations": [
+          "Retain the change report, rollback, nondeployment decision and missing-items cause.",
+          "Use the explicit event date for the initial change and preserve uncertainty for later action dates.",
+          "Present historical reports and decisions; do not invent a current deployment outcome."
+        ]
+      }
+    },
+    {
+      "id": "synthetic-dev-actor-event-date",
+      "syntheticOnly": true,
+      "title": "Synthetic loom adapter attribution",
+      "language": "ko",
+      "question": "합성 직조 어댑터 수리는 누가 언제 했고, 무엇이 확인된 기록인지 설명해줘.",
+      "activityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "source": {
+        "id": "synthetic-dev-actor-event-date-source",
+        "path": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+        "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+        "recordTime": "2026-10-04T09:00:00Z",
+        "original": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result.\nI cannot independently confirm that repair. This message contains no later repair result.",
+        "bytes": 226,
+        "sha256": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+        "turns": [
+          {
+            "id": "D3A",
+            "start": 0,
+            "end": 136,
+            "text": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result.",
+            "sha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+            "turnId": "D3A",
+            "speaker": "user",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D3B",
+            "start": 137,
+            "end": 226,
+            "text": "I cannot independently confirm that repair. This message contains no later repair result.",
+            "sha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+            "turnId": "D3B",
+            "speaker": "assistant",
+            "turnTime": "2026-10-04T08:00:00Z",
+            "sourcePhase": null
+          }
+        ]
+      },
+      "gold": {
+        "requiredFacts": [
+          "The user attributes the repair to the maintainer, not to the user or assistant.",
+          "The reported repair has the explicit event date 2026-10-01, separate from message and record dates.",
+          "The user explicitly reports not having verified the result; the assistant also cannot independently confirm it.",
+          "No later repair result is supplied, which does not prove failure or noncompletion."
+        ],
+        "expectedClaims": [
+          {
+            "meaning": "Repair the synthetic loom adapter",
+            "sourceTurnIds": [
+              "D3A"
+            ],
+            "actorRole": "source",
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTimeMeaning": "Explicit event date 2026-10-01, with actor basis explicit_subject on the first original turn."
+          },
+          {
+            "meaning": "The user has not verified the reported repair result",
+            "sourceTurnIds": [
+              "D3A"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "unknown",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "The assistant cannot independently confirm the repair",
+            "sourceTurnIds": [
+              "D3B"
+            ],
+            "actorRole": "assistant",
+            "speechAct": "report",
+            "status": "unknown",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          }
+        ],
+        "forbiddenInterpretations": [
+          "The user or assistant performed the maintainer repair.",
+          "The repair event occurred on the message date 2026-10-03 or record date 2026-10-04.",
+          "Lack of independent confirmation makes the attributed repair report unsupported or establishes repair failure.",
+          "The repair is independently verified."
+        ],
+        "answerExpectations": [
+          "Identify the maintainer as the reported actor and 2026-10-01 as the explicit event date.",
+          "Separate the repair report from absent independent confirmation.",
+          "Unknown later status remains unknown."
+        ]
+      }
+    },
+    {
+      "id": "synthetic-dev-cancel-reopen",
+      "syntheticOnly": true,
+      "title": "Synthetic lantern connector reopening",
+      "language": "ko",
+      "question": "합성 랜턴 커넥터 작업의 초기 결과와 취소·재개 이후 상태를 기록에 있는 범위로 정리해줘.",
+      "activityPeriod": {
+        "start": "2026-10-01",
+        "end": "2026-10-04"
+      },
+      "source": {
+        "id": "synthetic-dev-cancel-reopen-source",
+        "path": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+        "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+        "recordTime": "2026-10-04T09:00:00Z",
+        "original": "I completed a synthetic lantern connector change; this is my report, not an independent verification.\nI cancelled the synthetic lantern connector rollout because the preview was blank.\nI reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out.",
+        "bytes": 295,
+        "sha256": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+        "turns": [
+          {
+            "id": "D4A",
+            "start": 0,
+            "end": 101,
+            "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "turnId": "D4A",
+            "speaker": "assistant",
+            "turnTime": "2026-10-01T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4B",
+            "start": 102,
+            "end": 184,
+            "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "turnId": "D4B",
+            "speaker": "user",
+            "turnTime": "2026-10-02T10:00:00Z",
+            "sourcePhase": null
+          },
+          {
+            "id": "D4C",
+            "start": 185,
+            "end": 295,
+            "text": "I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out.",
+            "sha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+            "turnId": "D4C",
+            "speaker": "user",
+            "turnTime": "2026-10-03T10:00:00Z",
+            "sourcePhase": null
+          }
+        ]
+      },
+      "gold": {
+        "requiredFacts": [
+          "The assistant reports completion of a connector change, without independent verification.",
+          "The user reports cancellation of its rollout because the preview was blank.",
+          "The user later reports reopening the rollout for investigation; this does not mean rollout completion.",
+          "The final message explicitly reports that the user has not rolled it out."
+        ],
+        "expectedClaims": [
+          {
+            "meaning": "Change the synthetic lantern connector",
+            "sourceTurnIds": [
+              "D4A"
+            ],
+            "actorRole": "assistant",
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "Cancel the synthetic lantern connector rollout because the preview was blank",
+            "sourceTurnIds": [
+              "D4B"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "reported_cancelled",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "Reopen the synthetic lantern connector rollout for investigation",
+            "sourceTurnIds": [
+              "D4C"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          },
+          {
+            "meaning": "The user has not rolled out the synthetic lantern connector",
+            "sourceTurnIds": [
+              "D4C"
+            ],
+            "actorRole": "user",
+            "speechAct": "report",
+            "status": "unknown",
+            "eventTimeMeaning": "The original supplies no event-date anchor: eventTime must remain unknown. Message/record dates may locate the source message, never date this activity."
+          }
+        ],
+        "forbiddenInterpretations": [
+          "The rollout remains only cancelled while reopening is omitted.",
+          "Reopening or the initial change report proves rollout completion.",
+          "The final explicit non-rollout condition can be omitted while coverage is called complete.",
+          "A message date is an independently established action date or historical non-rollout proves current noncompletion."
+        ],
+        "answerExpectations": [
+          "Retain all three turns in order: reported change, rollout cancellation with cause, then reopening with explicit non-rollout.",
+          "Distinguish completed reopening from completed rollout.",
+          "Attribute reports and retain action-date and later-state uncertainty."
+        ]
+      }
+    }
+  ]
+}

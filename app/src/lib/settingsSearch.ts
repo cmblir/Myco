@@ -17,15 +17,18 @@
 import { DEFAULT_MONTHLY_THRESHOLD_USD } from "./budget";
 import type { Lang, Strings } from "./i18n";
 import type { MycoSettings } from "./ipc";
-import { DEFAULT_OVERVIEW_THEME } from "./overviewThemes";
-import { PROVIDERS, providerDesc } from "./providers";
+import { BUILTIN_FAST_CHAT_MODEL, PROVIDERS, providerDesc, providerName } from "./providers";
+import type { TextSize } from "./textSize";
+import { localModelCopy } from "./localModelCopy";
 
 export type SettingsTab =
   | "account"
   | "model"
+  | "study"
   | "providers"
   | "mcp"
   | "distill"
+  | "plugins"
   | "lang"
   | "appearance"
   | "about";
@@ -34,9 +37,11 @@ export type SettingsTab =
 const TAB_TITLE: Record<SettingsTab, keyof Strings> = {
   account: "s_account",
   model: "s_model",
+  study: "nav_study",
   providers: "s_providers",
   mcp: "s_mcp",
   distill: "s_distill",
+  plugins: "s_plugins",
   lang: "s_lang",
   appearance: "s_appearance",
   about: "s_about",
@@ -55,7 +60,16 @@ export interface SettingsValues {
   lang: Lang;
   theme: "light" | "dark" | "system";
   mascotEnabled: boolean;
-  overviewTheme: string;
+  /** Settings → Appearance: myco roams while work runs (uiStore.mascotRoam). */
+  mascotRoam?: boolean;
+  /** Settings → Study's opt-in model cards (uiStore.aiCards). */
+  aiCards?: boolean;
+  /** Settings → Study's four-grade review (uiStore.fineGrades). */
+  fineGrades?: boolean;
+  /** Settings → Plugins: this vault's plugins are trusted (pluginStore). */
+  pluginsTrusted?: boolean;
+  /** Settings → Appearance text size (uiStore.textSize). */
+  textSize?: TextSize;
   /** Pages in the embedding index; null until `embeddings_status` answers. */
   indexedPages: number | null;
   /** Monthly spend cap in USD (localStorage-backed). */
@@ -81,11 +95,11 @@ interface RowDef {
   id: string;
   tab: SettingsTab;
   labelKey?: keyof Strings;
-  /** Literal label for rows named by a catalog rather than by i18n (providers). */
-  label?: string;
+  /** Display label for rows named by a catalog rather than by an i18n key. */
+  label?: string | ((t: Strings) => string);
   descKey?: keyof Strings;
   /** Description for rows described by a catalog rather than by i18n. */
-  desc?: (t: Strings) => string;
+  desc?: (t: Strings, values: SettingsValues) => string;
   value?: (v: SettingsValues, t: Strings) => string;
   def?: (t: Strings) => string;
 }
@@ -98,7 +112,21 @@ const flag = (b: boolean | undefined, t: Strings): string =>
 const ROWS: RowDef[] = [
   { id: "account_user", tab: "account", labelKey: "s_local_user" },
   { id: "account_vaults", tab: "account", labelKey: "s_vault_known" },
+  { id: "account_storage", tab: "account", labelKey: "s_storage_title", descKey: "s_storage_desc" },
+  { id: "account_tidy", tab: "account", labelKey: "tidy_btn", descKey: "tidy_s_desc" },
 
+  {
+    id: "model_local_generation",
+    tab: "model",
+    label: "Qwen3.5 4B",
+    desc: (_t, values) => localModelCopy(values.lang).lede,
+  },
+  {
+    id: "model_local_generation_fast",
+    tab: "model",
+    label: "Qwen3.5 2B",
+    desc: (_t, values) => localModelCopy(values.lang, BUILTIN_FAST_CHAT_MODEL).lede,
+  },
   {
     id: "model_query",
     tab: "model",
@@ -174,9 +202,34 @@ const ROWS: RowDef[] = [
     def: () => `$${DEFAULT_MONTHLY_THRESHOLD_USD}`,
   },
 
+  {
+    id: "study_ai_cards",
+    tab: "study",
+    labelKey: "s_ai_cards_title",
+    descKey: "s_ai_cards_desc",
+    value: (v, t) => flag(v.aiCards, t),
+    def: off,
+  },
+  {
+    id: "study_fine_grades",
+    tab: "study",
+    labelKey: "s_fine_grades_title",
+    descKey: "s_fine_grades_desc",
+    value: (v, t) => flag(v.fineGrades, t),
+    def: off,
+  },
+
   { id: "mcp_server", tab: "mcp", labelKey: "s_mcp", descKey: "mcp_lede" },
   { id: "mcp_register", tab: "mcp", labelKey: "mcp_command_label" },
 
+  {
+    id: "distill_deletion",
+    tab: "distill",
+    labelKey: "set_delete_title",
+    descKey: "set_delete_desc",
+    value: (v, t) => v.settings ? (v.settings.permanent_delete ? t.set_delete_permanent : t.set_delete_trash) : "",
+    def: (t) => t.set_delete_trash,
+  },
   {
     id: "distill_enabled",
     tab: "distill",
@@ -211,6 +264,16 @@ const ROWS: RowDef[] = [
   { id: "distill_archive", tab: "distill", labelKey: "set_archive_title" },
 
   {
+    id: "plugins_trust",
+    tab: "plugins",
+    labelKey: "pl_trust_title",
+    descKey: "pl_trust_desc",
+    value: (v, t) => flag(v.pluginsTrusted, t),
+    def: off,
+  },
+  { id: "plugins_list", tab: "plugins", labelKey: "pl_installed", descKey: "s_plugins_lede" },
+
+  {
     id: "lang_ui",
     tab: "lang",
     labelKey: "s_lang_ui",
@@ -232,11 +295,12 @@ const ROWS: RowDef[] = [
     def: (t) => t.s_appearance_dark,
   },
   {
-    id: "appearance_ov_theme",
+    id: "appearance_text_size",
     tab: "appearance",
-    labelKey: "s_ov_theme",
-    value: (v) => v.overviewTheme,
-    def: () => DEFAULT_OVERVIEW_THEME,
+    labelKey: "s_text_size",
+    descKey: "s_text_size_desc",
+    value: (v, t) => (v.textSize ? textSizeLabel(t, v.textSize) : ""),
+    def: (t) => t.s_text_size_system,
   },
   {
     id: "appearance_mascot",
@@ -244,6 +308,21 @@ const ROWS: RowDef[] = [
     labelKey: "s_mascot",
     value: (v, t) => flag(v.mascotEnabled, t),
     def: on,
+  },
+  {
+    id: "appearance_roam",
+    tab: "appearance",
+    labelKey: "s_roam",
+    descKey: "s_roam_hint",
+    value: (v, t) => flag(v.mascotRoam, t),
+    def: on,
+  },
+  // A viewer, not a setting: the skin is not stored, so the row has no value.
+  {
+    id: "appearance_myco3d",
+    tab: "appearance",
+    labelKey: "s_myco3d",
+    descKey: "s_myco3d_hint",
   },
   {
     id: "appearance_tray",
@@ -275,6 +354,17 @@ const ROWS: RowDef[] = [
   { id: "about_crash", tab: "about", labelKey: "cr_last_crash" },
 ];
 
+/** The text size as Settings prints it: the system choice by its own name,
+ *  a custom one by its step. */
+export function textSizeLabel(t: Strings, size: TextSize): string {
+  return {
+    system: t.s_text_size_system,
+    small: t.s_text_size_small,
+    medium: t.s_text_size_medium,
+    large: t.s_text_size_large,
+  }[size];
+}
+
 const LANG_NAME: Record<Lang, string> = { en: "English", ko: "한국어", ja: "日本語" };
 
 // The Connections tab is generated from the provider catalog, not hand-listed:
@@ -282,7 +372,7 @@ const LANG_NAME: Record<Lang, string> = { en: "English", ko: "한국어", ja: "�
 const PROVIDER_ROWS: RowDef[] = PROVIDERS.map((p) => ({
   id: `provider_${p.id}`,
   tab: "providers" as const,
-  label: p.name,
+  label: (t: Strings) => providerName(t, p),
   desc: (t: Strings) => providerDesc(t, p),
   value: (v: SettingsValues, t: Strings) => flag(v.settings?.providers[p.flag], t),
   // ProviderFlags::default() in settings.rs: the Claude CLI and the bundled
@@ -304,8 +394,8 @@ export function settingsRows(t: Strings, v: SettingsValues): SettingsRow[] {
     return {
       id: r.id,
       tab: r.tab,
-      label: r.label ?? (r.labelKey ? t[r.labelKey] : r.id),
-      desc: r.desc?.(t) ?? (r.descKey ? t[r.descKey] : ""),
+      label: typeof r.label === "function" ? r.label(t) : r.label ?? (r.labelKey ? t[r.labelKey] : r.id),
+      desc: r.desc?.(t, v) ?? (r.descKey ? t[r.descKey] : ""),
       value,
       def,
       changed: def !== "" && value !== "" && value !== def,

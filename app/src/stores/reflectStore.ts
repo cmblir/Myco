@@ -1,3 +1,5 @@
+import type { RoleUsage } from "../lib/modelRoles";
+import { isBuiltinChatModel } from "../lib/providers";
 // Reflect run state (FEAT-06). "Reflect" is a read-only LLM pass that proposes
 // concrete wiki improvements (orphans to link, stale pages, missing
 // cross-references). Lifted into a store — like lintStore — so a run survives
@@ -9,15 +11,19 @@
 // bulleted output into a list of suggestions. It NEVER modifies files.
 
 import { create } from "zustand";
-import { complete, getActiveModel } from "../lib/chat";
-import { flattenMarkdown, isNonKnowledgePath } from "../lib/graphData";
+import { complete } from "../lib/chat";
+import { displayName } from "../lib/displayName";
+import { flattenMarkdown, isNonKnowledgePath, stem } from "../lib/graphData";
 import { isMalformedLinkName } from "../lib/graphGaps";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
+import type { AgentVaultSession } from "../lib/ipc";
 import { mmrSelect } from "../lib/sessionDigest";
+import { classifyTopLevel, vaultRel } from "../lib/vaultAreas";
 import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
+import HEADS from "../lib/mycoPromptHeads.json";
 
 // Extractive findings are OUR prose, not a model's, so they follow the UI
 // language — read off uiStore directly, the ingestStore idiom for store-side
@@ -26,7 +32,7 @@ function t(): (typeof STRINGS)["en"] {
   return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
 }
 
-const REFLECT_PROMPT = `You are reviewing a personal knowledge wiki (markdown files in the current directory). Read the vault and propose concrete, actionable improvements.
+const REFLECT_PROMPT = `${HEADS.reflect} Read the vault and propose concrete, actionable improvements.
 
 Focus on:
 - Orphan pages that no other page links to (suggest which existing pages should link to them).
@@ -52,8 +58,9 @@ export type ReflectSuggestion =
    *  `page` is the absolute path (a `page:` route id). */
   | { text: string; kind: "orphan"; page: string }
   /** A page links to `[[link]]`, which has no page. Creating that page is a
-   *  real, safe action — the whole point of the bulk button. */
-  | { text: string; kind: "unresolved"; link: string };
+   *  real, safe action — the whole point of the bulk button. `from` is the
+   *  page holding the link (absolute), which the row's title names. */
+  | { text: string; kind: "unresolved"; link: string; from: string };
 
 type UnresolvedSuggestion = Extract<ReflectSuggestion, { kind: "unresolved" }>;
 
@@ -67,8 +74,17 @@ interface ReflectState {
    *  extractiveReflect. The panel labels extractive results so quoted facts
    *  are never mistaken for model judgment. */
   mode: "llm" | "extractive";
-  /** Items from the last successful run. */
+  /** The vault the last run read; a dismissal is remembered for it. */
+  vault: string | null;
+  /** The frontend opening that produced the current findings. */
+  vaultToken: string | null;
+  /** Native capability retained with findings until this opening is replaced. */
+  origin: AgentVaultSession | null;
+  /** Items from the last successful run, minus the ones acted on since. */
   suggestions: ReflectSuggestion[];
+  /** How many the last run listed — the done line keeps saying it while
+   *  acting on the findings empties the list. */
+  found: number | null;
   /** Raw model output (or an error message when stage === "error"). */
   report: string | null;
   startedAt: number | null;
@@ -82,9 +98,12 @@ interface ReflectState {
   applying: boolean;
   /** Suggestion keys the user told us to stop reporting (persisted). */
   ignored: Set<string>;
-  /** Stop reporting these suggestions, now and on every future run. */
+  /** Stop reporting these suggestions in this vault while their facts hold. */
   ignore: (items: ReflectSuggestion[]) => void;
-  runReflect: () => Promise<void>;
+  /** Take acted-on rows out of the list without remembering them: the next
+   *  run reports them again if nothing changed. */
+  drop: (items: ReflectSuggestion[]) => void;
+  runReflect: (usage?: RoleUsage) => Promise<void>;
   /** Create the missing page for every unresolved-wikilink suggestion (or just
    *  the ones passed — the per-row button hands it one). Applied items leave
    *  the list; on the first failure it stops and leaves the rest listed. */
@@ -107,6 +126,35 @@ export function suggestionKey(s: ReflectSuggestion): string {
 
 const IGNORED_KEY = "myco.reflect.ignored.v1";
 const MAX_IGNORED = 500; // bounded so localStorage cannot grow forever
+
+/** A stored dismissal is per vault: the vault path, a newline, the key. One
+ *  flat list, so the settings export carries it unchanged. Entries saved
+ *  before dismissals were per vault are a bare key; no run can tell which
+ *  vault they came from, so they keep holding everywhere. */
+const scoped = (vault: string, key: string): string => `${vault}\n${key}`;
+
+function isIgnored(ignored: ReadonlySet<string>, vault: string, s: ReflectSuggestion): boolean {
+  const key = suggestionKey(s);
+  return ignored.has(scoped(vault, key)) || ignored.has(key);
+}
+
+/** A dismissal lasts while its fact holds: drop this vault's link-graph
+ *  dismissals the run no longer finds, so a fact that comes back later is
+ *  news. Model prose (`text:`) is never found twice alike, so it stays. */
+function forgetSettled(
+  ignored: ReadonlySet<string>,
+  vault: string,
+  live: ReadonlySet<string>,
+): Set<string> {
+  const prefix = scoped(vault, "");
+  return new Set(
+    [...ignored].filter((e) => {
+      if (!e.startsWith(prefix)) return true;
+      const key = e.slice(prefix.length);
+      return key.startsWith("text:") || live.has(key);
+    }),
+  );
+}
 
 export function loadIgnored(): Set<string> {
   try {
@@ -132,64 +180,104 @@ export function saveIgnored(keys: ReadonlySet<string>): void {
   }
 }
 
+let reflectSeq = 0;
+
+function isCurrentVault(path: string, token: string): boolean {
+  const state = useVaultStore.getState();
+  return !state.isOpeningVault && state.currentVault?.path === path && state.vaultToken === token;
+}
+
 export const useReflectStore = create<ReflectState>((set, get) => ({
   stage: "idle",
   applying: false,
   ignored: loadIgnored(),
   mode: "llm",
+  vault: null,
+  vaultToken: null,
+  origin: null,
   suggestions: [],
+  found: null,
   report: null,
   startedAt: null,
   finishedAt: null,
   seen: true,
 
-  async runReflect() {
-    const vault = useVaultStore.getState().currentVault;
+  async runReflect(usage = "foreground") {
+    const { currentVault: vault, vaultToken, isOpeningVault } = useVaultStore.getState();
     // `applying`: a run mid-bulk-apply would replace `suggestions` under the
     // loop, stranding its progress UI and cleanup on a dead generation.
-    if (!vault || get().stage === "running" || get().applying) return;
+    if (!vault || isOpeningVault || get().stage === "running" || get().applying) return;
+    const seq = ++reflectSeq;
+    const isCurrent = () => seq === reflectSeq && isCurrentVault(vault.path, vaultToken);
     // builtin-local has no chat model to generate with (see chat.ts's
     // CHAT_MODEL_MISSING) — it used to flip the panel into "blocked" here.
     // It now reflects extractively instead (same move as sessionDigest's
     // extractive digest): the link graph already knows the mechanical
     // findings, no generation needed.
-    const { provider } = await getActiveModel("query");
-    const extractive = provider === "builtin-local";
+    // A new run replaces the last one's list from its first moment.
     set({
       stage: "running",
-      mode: extractive ? "extractive" : "llm",
+      vault: vault.path,
+      vaultToken,
+      origin: null,
       report: null,
+      suggestions: [],
+      found: null,
       startedAt: Date.now(),
       finishedAt: null,
       seen: true,
     });
     try {
+      const origin = Object.freeze(await ipc.agentVaultSession());
+      if (!isCurrent()) return;
+      if (origin.vaultPath !== vault.path) {
+        throw new Error("the active vault changed before reflect started");
+      }
+      set({ origin });
+      const roleSnapshot = await ipc.captureModelRole(origin, "reflect", usage);
+      const { providerId: provider, modelId: model } = roleSnapshot.routeSignature;
+      if (!isCurrent()) return;
+      const extractive = provider === "builtin-local" && !isBuiltinChatModel(model);
+      set({ mode: extractive ? "extractive" : "llm" });
       let out: string;
       let suggestions: ReflectSuggestion[];
+      // Dismissed findings are facts that hold until the user acts (an
+      // orphan stays an orphan) — every run would re-report them.
+      const ignored = get().ignored;
+      const skip = (s: ReflectSuggestion): boolean => isIgnored(ignored, vault.path, s);
       if (extractive) {
-        suggestions = await extractiveReflect(vault.path);
+        const found = await extractiveReflect(vault.path, skip, isCurrent);
+        if (!isCurrent()) return;
+        suggestions = found.suggestions;
         out = suggestions.map((s) => s.text).join("\n");
+        const kept = forgetSettled(ignored, vault.path, found.live);
+        if (kept.size !== ignored.size) {
+          saveIgnored(kept);
+          set({ ignored: kept });
+        }
       } else {
         out = await complete({
-          task: "generate",
+          task: "generate", featureRole: "reflect", roleSnapshot, usage,
           cwd: vault.path,
+          origin,
           messages: [{ role: "user", content: REFLECT_PROMPT }],
         });
+        if (!isCurrent()) return;
         // Prose only: no kind, so the panel shows these without an action.
-        suggestions = parseSuggestions(out).map((text) => ({ text }));
+        suggestions = parseSuggestions(out)
+          .map((text) => ({ text }))
+          .filter((s) => !skip(s));
       }
-      // Ignored items are permanent facts (an orphan stays an orphan) — every
-      // run would re-report them, which is what made the panel feel stuck.
-      const ignored = get().ignored;
-      const kept = suggestions.filter((s) => !ignored.has(suggestionKey(s)));
       set({
         stage: "done",
         report: out || "(no output)",
-        suggestions: kept,
+        suggestions,
+        found: suggestions.length,
         finishedAt: Date.now(),
         seen: false,
       });
     } catch (err) {
+      if (!isCurrent()) return;
       set({
         stage: "error",
         // err is an Error thrown by complete()/the provider — String(err) on an
@@ -204,14 +292,16 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
   },
 
   async createMissingPages(items, onProgress) {
-    // Reuses the ordinary new-note path: vaultStore.openWikilink is exactly
-    // what newNote.ts's createNoteAndOpen wraps (minus the routing, which
-    // would navigate away from this panel mid-run), so a page created here is
-    // seeded by the same create_file command and born valid. It also returns
-    // the existing path when the name already resolves, making a repeat run a
-    // no-op rather than a duplicate.
-    const openWikilink = useVaultStore.getState().openWikilink;
-    const targets = (items ?? get().suggestions).filter(isUnresolved);
+    // Native resolves or creates within the captured opening, including its
+    // collision check; ordinary unscoped new-note actions cannot bind a run.
+    const { vault, vaultToken, origin, suggestions, applying, stage } = get();
+    if (!vault || !vaultToken || !origin || applying || stage !== "done" || !isCurrentVault(vault, vaultToken)) {
+      return { created: 0, failed: null };
+    }
+    const seq = reflectSeq;
+    const isCurrent = () => seq === reflectSeq && isCurrentVault(vault, vaultToken);
+    // A queued click may carry a row replaced by a newer run in the same vault.
+    const targets = (items ?? suggestions).filter((s) => suggestions.includes(s)).filter(isUnresolved);
     const applied = new Set<ReflectSuggestion>();
     let failed: string | null = null;
     // Held for the whole loop so runReflect (button OR scheduler tick) cannot
@@ -219,12 +309,14 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
     set({ applying: true });
     try {
       for (const s of targets) {
+        if (!isCurrent()) break;
         let path: string | null = null;
         try {
-          path = await openWikilink(s.link);
+          path = await ipc.reflectCreateMissingPage(origin, s.link);
         } catch {
           path = null;
         }
+        if (!isCurrent()) break;
         if (!path) {
           failed = s.link;
           break; // stop on first error; the rest stay listed
@@ -232,56 +324,110 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
         applied.add(s);
         onProgress?.(applied.size, targets.length);
       }
-      if (applied.size > 0) {
+      if (applied.size > 0 && isCurrent()) {
         set({ suggestions: get().suggestions.filter((s) => !applied.has(s)) });
+        await useVaultStore.getState().refreshTree();
+        if (isCurrent()) void useVaultStore.getState().refreshLinkGraph();
       }
     } finally {
-      set({ applying: false });
+      if (isCurrent()) set({ applying: false });
     }
     return { created: applied.size, failed };
   },
 
   ignore: (items) => {
+    const vault = get().vault;
+    if (!vault) return;
     const next = new Set(get().ignored);
-    for (const s of items) next.add(suggestionKey(s));
+    for (const s of items) next.add(scoped(vault, suggestionKey(s)));
     saveIgnored(next);
     set({
       ignored: next,
-      suggestions: get().suggestions.filter((s) => !next.has(suggestionKey(s))),
+      suggestions: get().suggestions.filter((s) => !isIgnored(next, vault, s)),
     });
   },
 
+  drop: (items) => set({ suggestions: get().suggestions.filter((s) => !items.includes(s)) }),
+
   markSeen: () => set({ seen: true }),
 
-  dismiss: () =>
+  dismiss: () => {
+    reflectSeq++;
     set({
       stage: "idle",
+      applying: false,
       mode: "llm",
+      vault: null,
+      vaultToken: null,
+      origin: null,
       suggestions: [],
+      found: null,
       report: null,
       startedAt: null,
       finishedAt: null,
       seen: true,
-    }),
+    });
+  },
 }));
 
-/** The panel's completion line — the same role the distill card's outcome line
- * plays: after a run, say what came out of it and keep saying it until the run
- * is dismissed. `found` is the count the RUN produced (frozen by the panel, so
- * applying findings afterwards does not rewrite history); extractive runs carry
- * their label here rather than in a second line, so the count is never read as
- * model judgment. null → render nothing. */
-export function reflectDoneLine(
-  s: { stage: ReflectStage; mode: "llm" | "extractive"; found: number | null },
-  strings: Pick<Strings, "rf_done" | "rf_extractive">,
-): string | null {
-  if (s.stage !== "done" || s.found === null) return null;
-  const line = (strings.rf_done ?? "Reflect finished — suggestions: {n}").replace(
-    "{n}",
-    String(s.found),
-  );
-  return s.mode === "extractive" ? `${line} · ${strings.rf_extractive}` : line;
+// A path alone cannot identify an opening: reopening the same root also
+// invalidates every pending result and every action on its old findings.
+useVaultStore.subscribe((state, previous) => {
+  if (state.vaultToken !== previous.vaultToken || state.currentVault?.path !== previous.currentVault?.path ||
+      (state.isOpeningVault && !previous.isOpeningVault)) {
+    useReflectStore.getState().dismiss();
+  }
+});
+
+/** What the card says about the last run (spec 2026-10-02 #5). Idle and
+ * running have no line: the run button says those itself, with a plain icon
+ * or a spinner. Done names the time and the run's own count — frozen in
+ * `found`, so working through the list does not rewrite it. */
+export type ReflectStatus =
+  | { tone: "idle" | "running" }
+  | { tone: "done"; line: string }
+  | { tone: "failed"; line: string; detail: string };
+
+export function reflectStatus(
+  s: Pick<ReflectState, "stage" | "found" | "finishedAt" | "report">,
+  strings: Pick<Strings, "rf_done" | "rf_failed">,
+  lang: string,
+): ReflectStatus {
+  if (s.stage === "error") return { tone: "failed", line: strings.rf_failed, detail: s.report ?? "" };
+  if (s.stage !== "done") return { tone: s.stage };
+  const time = new Intl.DateTimeFormat(lang, { timeStyle: "short" }).format(s.finishedAt ?? Date.now());
+  return {
+    tone: "done",
+    line: strings.rf_done
+      .replace("{time}", time)
+      .replace("{n}", new Intl.NumberFormat(lang).format(s.found ?? 0)),
+  };
 }
+
+/** The vault-relative path a row's title keeps (its text names only the
+ *  note); undefined for model prose, which names no page we know. */
+export function suggestionPath(s: ReflectSuggestion, vaultPath: string): string | undefined {
+  if (s.kind === "orphan") return vaultRel(s.page, vaultPath);
+  if (s.kind === "unresolved") return `${vaultRel(s.from, vaultPath)} → [[${s.link}]]`;
+  return undefined;
+}
+
+/** Only the owner's notes are judged (spec 2026-10-02 #7): not the folders
+ *  myco keeps (classifyTopLevel, the sidebar's own split), not its topic maps
+ *  or the welcome page it seeds, and not the graph view's machine and
+ *  structural pages (daily/, index, log…). */
+export function isOwnNote(vaultPath: string, page: string): boolean {
+  const rel = vaultRel(page, vaultPath);
+  return (
+    classifyTopLevel(rel.split("/")[0]) === "mine" &&
+    !rel.startsWith("wiki/maps/") &&
+    rel !== "welcome.md" &&
+    !isNonKnowledgePath(vaultPath, page)
+  );
+}
+
+/** A row's name for a note: its readable name, never its path. */
+const noteName = (path: string): string => displayName(stem(path));
 
 // Matches REFLECT_PROMPT's "at most 8 items".
 const MAX_SUGGESTIONS = 8;
@@ -311,32 +457,38 @@ const ORPHAN_EXEMPT = new Set(["index", "home", "readme"]);
  *  - It applied no knowledge filter, so ingest-reports/, daily/ (five
  *    identical `[[TASK_DONE]]` ghosts) and wiki/log.md crowded out the real
  *    findings — 12 of the 19. isNonKnowledgePath is the graph view's own
- *    filter for exactly this, imported rather than restated. */
+ *    filter for exactly this, imported rather than restated; isOwnNote adds
+ *    the folders myco keeps (work/, audio/ …), its maps and welcome.md.
+ *
+ * `skip` names dismissed findings; `live` comes back with every finding that
+ * holds now, dismissed or not. */
 export async function extractiveReflect(
   vaultPath: string,
-): Promise<ReflectSuggestion[]> {
+  skip: (s: ReflectSuggestion) => boolean = () => false,
+  isCurrent: () => boolean = () => true,
+): Promise<{ suggestions: ReflectSuggestion[]; live: Set<string> }> {
+  const tree = useVaultStore.getState().fileTree;
+  if (!isCurrent()) throw new Error("the vault opening changed before reflect started");
   const graph = await ipc.buildLinkGraph(vaultPath);
-  const rel = (p: string): string =>
-    p.startsWith(`${vaultPath}/`) ? p.slice(vaultPath.length + 1) : p;
+  if (!isCurrent()) throw new Error("the vault opening changed during reflect");
   const pages = new Set([
-    ...flattenMarkdown(useVaultStore.getState().fileTree),
+    ...flattenMarkdown(tree),
     ...Object.keys(graph.forward),
   ]);
   const candidates: ReflectSuggestion[] = [];
   for (const page of [...pages].sort()) {
-    if (isNonKnowledgePath(vaultPath, page)) continue;
-    const stem = (page.split("/").pop() ?? page).replace(/\.md$/i, "").toLowerCase();
-    if (ORPHAN_EXEMPT.has(stem)) continue;
+    if (!isOwnNote(vaultPath, page)) continue;
+    if (ORPHAN_EXEMPT.has(stem(page).toLowerCase())) continue;
     if ((graph.backward[page] ?? []).length === 0) {
       candidates.push({
-        text: t().rf_item_orphan.replace("{page}", rel(page)),
+        text: t().rf_item_orphan.replace("{page}", noteName(page)),
         kind: "orphan",
         page,
       });
     }
   }
   for (const page of Object.keys(graph.unresolved).sort()) {
-    if (isNonKnowledgePath(vaultPath, page)) continue;
+    if (!isOwnNote(vaultPath, page)) continue;
     for (const target of [...graph.unresolved[page]].sort()) {
       // A template placeholder ("source-<slug>") or dots-only name is not a
       // page anyone can create — the gap panel already buckets those away
@@ -344,16 +496,24 @@ export async function extractiveReflect(
       if (isMalformedLinkName(target)) continue;
       candidates.push({
         text: t()
-          .rf_item_unresolved.replace("{page}", rel(page))
-          .replace("{target}", target),
+          .rf_item_unresolved.replace("{page}", noteName(page))
+          .replace("{target}", displayName(target)),
         kind: "unresolved",
         link: target,
+        from: page,
       });
     }
   }
-  if (candidates.length <= MAX_SUGGESTIONS) return candidates;
-  const vectors = await ipc.embedLocalTexts(candidates.map((c) => c.text));
-  return mmrSelect(vectors, MAX_SUGGESTIONS).map((i) => candidates[i]);
+  // `live` is every finding that holds now, dismissed or not — what tells a
+  // dismissal its fact is gone. Dismissed ones leave BEFORE the pick: MMR is
+  // deterministic, so filtering after it would re-pick the same dismissed 8
+  // and hide the rest for good.
+  const live = new Set(candidates.map(suggestionKey));
+  const open = candidates.filter((c) => !skip(c));
+  if (open.length <= MAX_SUGGESTIONS) return { suggestions: open, live };
+  const vectors = await ipc.embedLocalTexts(open.map((c) => c.text));
+  if (!isCurrent()) throw new Error("the vault opening changed during reflect");
+  return { suggestions: mmrSelect(vectors, MAX_SUGGESTIONS).map((i) => open[i]), live };
 }
 
 // Extract bullet items from the model's markdown. Accepts "-", "*", "•" and

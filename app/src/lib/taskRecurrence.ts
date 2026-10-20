@@ -33,6 +33,34 @@ export function parseRecurrence(rule: string): Recurrence | null {
   return { unit: m[2].toLowerCase() as Recurrence["unit"], count };
 }
 
+const KO_EVERY: Record<string, string> = {
+  매일: "every day",
+  매주: "every week",
+  매달: "every month",
+  매월: "every month",
+  매년: "every year",
+};
+const KO_UNIT: Record<string, Recurrence["unit"]> = {
+  일: "day",
+  주: "week",
+  달: "month",
+  개월: "month",
+  년: "year",
+};
+const KO_EVERY_N_RE = /^(\d+)\s*(일|주|달|개월|년)\s*마다$/;
+
+/** A Korean repeat ("매주", "2주마다") as the stored Obsidian Tasks rule
+ *  ("every week", "every 2 weeks"); any other text comes back trimmed. */
+export function normalizeRecurrence(rule: string): string {
+  const t = rule.trim();
+  if (KO_EVERY[t]) return KO_EVERY[t];
+  const m = KO_EVERY_N_RE.exec(t);
+  if (!m) return t;
+  const n = Number(m[1]);
+  const unit = KO_UNIT[m[2]];
+  return n === 1 ? `every ${unit}` : `every ${n} ${unit}s`;
+}
+
 /** Months keep the day of the month where it exists and clamp where it does
  *  not: Jan 31 + 1 month is Feb 28, not Mar 3. Feb 29 + 1 year clamps the same
  *  way in a non-leap year. */

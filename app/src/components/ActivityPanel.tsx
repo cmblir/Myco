@@ -9,6 +9,7 @@
 // .tray-panel — one component, two skins, no props.
 
 import type { JSX, ReactNode } from "react";
+import { Icon } from "../lib/icons";
 import askPng from "../assets/activity/ask.png";
 import distillPng from "../assets/activity/distill.png";
 import indexingPng from "../assets/activity/indexing.png";
@@ -173,8 +174,8 @@ export interface MapProposalRowContent {
 
 /** The pending map-proposal rows, built ONCE for both activity surfaces so
  * approve/reject reads the same in the popover and the tray panel. `note` is
- * the builtin-local caveat — rendered, never hidden: the approval itself is
- * real, but the draft-map step needs a query model to actually run. */
+ * the needs-writer caveat — rendered, never hidden: with no role that writes,
+ * an approve writes nothing until a writing model is set. */
 export function buildMapProposalRows(p: {
   items: MapProposalRowContent[];
   approveLabel: string;
@@ -184,7 +185,7 @@ export function buildMapProposalRows(p: {
   /** "+N more" row text; "" for none. */
   more: string;
   onMore: () => void;
-  /** builtin-local caveat; "" when a generating provider is configured. */
+  /** Needs-writer caveat; "" when a role can write the map. */
   note: string;
 }): PanelRow[] {
   const rows: PanelRow[] = p.items.map((item) => ({
@@ -245,17 +246,20 @@ export interface ResurfaceRowContent {
 }
 
 /** The resurface rows (mockup M6): title + why-quote with its 2px left rule +
- * resonance line, actions 열기 / 일주일 뒤 / 무시. `note` is the self-tuning
- * floor disclosure, appended as a footer only while picks exist — an empty
- * batch returns [] so the section vanishes. */
+ * resonance line, actions 열기 / 일주일 뒤 / 무시 — plus "insert link" after
+ * 열기 while a note is open to insert into (`onInsert`). `note` is the
+ * self-tuning floor disclosure, appended as a footer only while picks exist —
+ * an empty batch returns [] so the section vanishes. */
 export function buildResurfaceRows(p: {
   items: ResurfaceRowContent[];
   openLabel: string;
   snoozeLabel: string;
   ignoreLabel: string;
+  insertLabel?: string;
   onOpen: (page: string) => void;
   onSnooze: (page: string) => void;
   onIgnore: (page: string) => void;
+  onInsert?: (page: string) => void;
   /** Floor-disclosure footer; "" for none. */
   note: string;
 }): PanelRow[] {
@@ -273,27 +277,46 @@ export function buildResurfaceRows(p: {
     ),
     trailing: (
       <span className="activity-actions">
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => p.onOpen(item.page)}
-        >
-          {p.openLabel}
-        </button>
-        <button
-          type="button"
-          className="btn-ghost btn"
-          onClick={() => p.onSnooze(item.page)}
-        >
-          {p.snoozeLabel}
-        </button>
-        <button
-          type="button"
-          className="btn-ghost btn"
-          onClick={() => p.onIgnore(item.page)}
-        >
-          {p.ignoreLabel}
-        </button>
+        {[
+          <button
+            key="open"
+            type="button"
+            className="btn btn-primary"
+            onClick={() => p.onOpen(item.page)}
+          >
+            {p.openLabel}
+          </button>,
+          ...(p.onInsert
+            ? [
+                <button
+                  key="insert"
+                  type="button"
+                  className="icon-btn"
+                  aria-label={p.insertLabel}
+                  title={p.insertLabel}
+                  onClick={() => p.onInsert?.(item.page)}
+                >
+                  <Icon name="link" size={13} />
+                </button>,
+              ]
+            : []),
+          <button
+            key="snooze"
+            type="button"
+            className="btn-ghost btn"
+            onClick={() => p.onSnooze(item.page)}
+          >
+            {p.snoozeLabel}
+          </button>,
+          <button
+            key="ignore"
+            type="button"
+            className="btn-ghost btn"
+            onClick={() => p.onIgnore(item.page)}
+          >
+            {p.ignoreLabel}
+          </button>,
+        ]}
       </span>
     ),
   }));

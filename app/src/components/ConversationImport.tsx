@@ -19,6 +19,7 @@ export default function ConversationImport({ t }: { t: Strings }): JSX.Element |
   const file = useImportStore((s) => s.file);
   const imported = useImportStore((s) => s.imported);
   const skipped = useImportStore((s) => s.skipped);
+  const failed = useImportStore((s) => s.failed);
   const failedItems = useImportStore((s) => s.failedItems);
   const quarantined = useImportStore((s) => s.quarantined);
   const error = useImportStore((s) => s.error);
@@ -37,6 +38,10 @@ export default function ConversationImport({ t }: { t: Strings }): JSX.Element |
   }
 
   const resultLine = ((): string | null => {
+    if (stage === "partial") return t.ci_partial
+      .replace("{i}", imported.toLocaleString())
+      .replace("{s}", skipped.toLocaleString())
+      .replace("{f}", failedItems.length.toLocaleString());
     if (stage !== "done") return null;
     if (imported === 0 && skipped === 0 && failedItems.length === 0) {
       return t.ci_none ?? "No conversations found.";
@@ -139,7 +144,7 @@ export default function ConversationImport({ t }: { t: Strings }): JSX.Element |
             {(t.ci_sweep_tally ?? "imported {i} · skipped {s} · {f} failed")
               .replace("{i}", imported.toLocaleString())
               .replace("{s}", skipped.toLocaleString())
-              .replace("{f}", String(failedItems.length))}
+              .replace("{f}", String(failed))}
             {file ? ` — ${file}` : ""}
           </div>
         </div>
@@ -147,15 +152,15 @@ export default function ConversationImport({ t }: { t: Strings }): JSX.Element |
 
       {resultLine ? <p className="zotero-import__result">{resultLine}</p> : null}
       {stage === "error" && error ? (
-        <p className="zotero-import__result" style={{ color: "#dc2626" }}>
+        <p role="alert" className="zotero-import__result" style={{ color: "var(--danger)" }}>
           {error}
         </p>
       ) : null}
-      {stage === "done" && quarantined.length > 0 ? (
+      {(stage === "done" || stage === "partial") && quarantined.length > 0 ? (
         <p
           className="zotero-import__result"
           data-testid="import-secret-warning"
-          style={{ color: "#b45309" }}
+          style={{ color: "var(--warn)" }}
         >
           {(t.ci_quarantined ??
             "{n} conversation(s) were held back for containing a possible secret; not imported.").replace(
@@ -167,7 +172,7 @@ export default function ConversationImport({ t }: { t: Strings }): JSX.Element |
 
       {/* Failed files: a collapsible list bounded in height, with a retry that
           re-reads only these (not the whole sweep). */}
-      {stage === "done" && failedItems.length > 0 ? (
+      {(stage === "done" || stage === "partial" || stage === "error") && failedItems.length > 0 ? (
         <div style={{ marginTop: 10 }} data-testid="import-failures">
           <details>
             <summary style={{ cursor: "pointer", fontSize: 12.5 }}>

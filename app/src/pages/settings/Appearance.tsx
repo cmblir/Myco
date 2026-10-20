@@ -1,24 +1,53 @@
-// Settings > Appearance — theme, overview skin, mascot, and the three
+// Settings > Appearance — theme, mascot, and the three
 // surfaces outside the main window (tray, notch, spotlight).
 
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../../lib/icons";
 import type { IconName } from "../../lib/icons";
-import type { Strings } from "../../lib/i18n";
+import { STRINGS, type Strings } from "../../lib/i18n";
+import type { Myco3DSkin } from "../../lib/myco3d";
 import { useUIStore } from "../../stores/uiStore";
 import type { Theme } from "../../stores/uiStore";
-import {
-  createOverviewEngine,
-  OVERVIEW_THEMES,
-  type OverviewThemeKey,
-} from "../../lib/overviewThemes";
 import { useSettingsStore } from "../../stores/settingsStore";
 import { ipc } from "../../lib/ipc";
 import type { SpotlightStatus } from "../../lib/ipc";
 import MascotClip from "../../components/MascotClip";
 import { SettingsCard } from "../../components/SettingsCard";
+import { Segment } from "../../components/ui";
+import type { TextSize } from "../../lib/textSize";
 import { accelFromEvent, formatAccel } from "../../lib/shortcutAccel";
+import "../../styles/notch-toggle.css";
+
+// three.js and the model load only when the Appearance tab opens. A chunk that
+// fails to load says so in the card instead of taking the page down.
+const Myco3D = lazy(() =>
+  import("../../components/Myco3D")
+    .then((m) => ({ default: m.Myco3D }))
+    .catch((e: unknown) => {
+      console.error("[myco3d] chunk failed to load", e);
+      return { default: Myco3DUnavailable };
+    }),
+);
+
+// The card's default view: the turntable videos, a small chunk of its own.
+const MycoSpin = lazy(() =>
+  import("../../components/MycoSpin")
+    .then((m) => ({ default: m.MycoSpin }))
+    .catch((e: unknown) => {
+      console.error("[myco-spin] chunk failed to load", e);
+      return { default: Myco3DUnavailable };
+    }),
+);
+
+function Myco3DUnavailable(): JSX.Element {
+  const lang = useUIStore((s) => s.lang);
+  return (
+    <p className="myco3d-note" role="status">
+      {STRINGS[lang].myco3d_error}
+    </p>
+  );
+}
 
 export function SettingsAppearance({
   t,
@@ -113,96 +142,9 @@ export function SettingsAppearance({
         })}
       </div>
       <MascotToggle t={t} />
+      <RoamToggle t={t} />
+      <Myco3DCard t={t} />
     </div>
-  );
-}
-
-// MYCO master switch — the full opt-out research says any character presence
-// needs. Off swaps every MascotClip for the static logo.
-// A live preview, not a static thumbnail: the choice is about MOTION, so a
-// frozen image cannot represent it. Each swatch runs its own engine and stops
-// as soon as it scrolls out of view.
-function ThemeSwatch({
-  themeKey,
-  label,
-  selected,
-  onPick,
-}: {
-  themeKey: OverviewThemeKey;
-  label: string;
-  selected: boolean;
-  onPick: () => void;
-}): JSX.Element {
-  const ref = useRef<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const ctx = cv.getContext("2d");
-    if (!ctx) return;
-    const reduced = window.matchMedia(
-      "(prefers-reduced-motion: reduce)",
-    ).matches;
-    const engine = createOverviewEngine(themeKey, { count: 14, speed: 0.6 });
-    let raf = 0;
-    let last = 0;
-    let visible = true;
-    let stopped = false;
-
-    const fit = (): { w: number; h: number } => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const rect = cv.getBoundingClientRect();
-      const w = Math.max(1, Math.round(rect.width));
-      const h = Math.max(1, Math.round(rect.height));
-      if (cv.width !== w * dpr || cv.height !== h * dpr) {
-        cv.width = w * dpr;
-        cv.height = h * dpr;
-      }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      return { w, h };
-    };
-    const draw = (dt: number): void => {
-      const { w, h } = fit();
-      if (!engine.trails) ctx.clearRect(0, 0, w, h);
-      engine.step(ctx, w, h, dt);
-    };
-    const frame = (ts: number): void => {
-      if (stopped) return;
-      const dt = last ? Math.min((ts - last) / 1000, 0.05) : 0.016;
-      last = ts;
-      draw(dt);
-      raf = requestAnimationFrame(frame);
-    };
-    draw(0.016);
-    // Ten swatches all animating off-screen is ten idle loops for nothing.
-    const io = new IntersectionObserver((entries) => {
-      visible = entries.some((e) => e.isIntersecting);
-      if (visible && !reduced && !raf && !stopped) {
-        last = 0;
-        raf = requestAnimationFrame(frame);
-      } else if (!visible && raf) {
-        cancelAnimationFrame(raf);
-        raf = 0;
-      }
-    });
-    io.observe(cv);
-    return () => {
-      stopped = true;
-      cancelAnimationFrame(raf);
-      io.disconnect();
-    };
-  }, [themeKey]);
-
-  return (
-    <button
-      type="button"
-      className={`ov-theme-sw${selected ? " is-on" : ""}`}
-      aria-pressed={selected}
-      onClick={onPick}
-    >
-      <canvas ref={ref} aria-hidden="true" />
-      <span>{label}</span>
-    </button>
   );
 }
 
@@ -241,58 +183,154 @@ function MascotToggle({ t }: { t: Strings }): JSX.Element {
   );
 }
 
-// The Overview page's living background. Options are named after the graph's
-// layouts on purpose — one vocabulary, two expressions — but the setting is
-// deliberately NOT linked to the graph's own layout.
-export function SettingsOverviewTheme({ t }: { t: Strings }): JSX.Element {
-  const overviewTheme = useUIStore((s) => s.overviewTheme);
-  const setOverviewTheme = useUIStore((s) => s.setOverviewTheme);
-
-  const label = (k: OverviewThemeKey): string => {
-    const map: Record<OverviewThemeKey, string | undefined> = {
-      galaxy: t.gr_layout_galaxy_s,
-      mycelium: t.ov_theme_mycelium,
-      spiral: t.gr_layout_spiral,
-      synapse3d: t.gr_layout_synapse3d_s,
-      celestial: t.gr_layout_celestial,
-      radial: t.gr_layout_radial,
-      walrus: t.gr_layout_walrus,
-      strata: t.gr_layout_strata,
-      semantic: t.gr_layout_semantic,
-      atlas: t.gr_layout_atlas_s,
-    };
-    return map[k] ?? k;
-  };
-
+// myco out of the notch while long work runs (lib/roamTrigger). It roams as
+// the mascot, so with the mascot off there is nothing to switch.
+function RoamToggle({ t }: { t: Strings }): JSX.Element {
+  const mascotEnabled = useUIStore((s) => s.mascotEnabled);
+  const mascotRoam = useUIStore((s) => s.mascotRoam);
+  const setMascotRoam = useUIStore((s) => s.setMascotRoam);
   return (
-    <div className="col" style={{ gap: 14 }}>
-      <div>
-        <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
-          {t.s_ov_theme ?? "Overview background"}
-        </h2>
-        <p className="muted" style={{ margin: "6px 0 0", fontSize: 14 }}>
-          {t.s_ov_theme_lede ??
-            "The living background on the Overview page. Named after the graph's layouts; not linked to them."}
-        </p>
-      </div>
-      <div className="ov-theme-grid">
-        {OVERVIEW_THEMES.map((k) => (
-          <ThemeSwatch
-            key={k}
-            themeKey={k}
-            label={label(k)}
-            selected={overviewTheme === k}
-            onPick={() => setOverviewTheme(k)}
-          />
-        ))}
-      </div>
-    </div>
+    // The checkbox shows the value; the corner chip would sit on top of it.
+    <SettingsCard
+      id="appearance_roam"
+      className="card"
+      style={{ padding: "14px 16px" }}
+      hideValue
+    >
+      <label
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+          cursor: mascotEnabled ? "pointer" : "default",
+          opacity: mascotEnabled ? 1 : 0.6,
+        }}
+      >
+        <span style={{ flex: 1, minWidth: 0 }}>
+          <span style={{ fontWeight: 500, display: "block" }}>{t.s_roam}</span>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {t.s_roam_hint}
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={mascotEnabled && mascotRoam}
+          disabled={!mascotEnabled}
+          onChange={(e) => setMascotRoam(e.target.checked)}
+        />
+      </label>
+    </SettingsCard>
   );
 }
 
-// A live preview, not a static thumbnail: the choice is about MOTION, so a
-// frozen image cannot represent it. Each swatch runs its own engine and stops
-// as soon as it scrolls out of view.
+// The myco to turn around, black or white: the turntable video by default,
+// the procedural model as the other view (specs 2026-10-04-myco-spin.md and
+// -myco-3d.md). A viewer, not a setting, so neither choice is stored.
+function Myco3DCard({ t }: { t: Strings }): JSX.Element {
+  const [skin, setSkin] = useState<Myco3DSkin>("black");
+  const [view, setView] = useState<"video" | "model">("video");
+  return (
+    <SettingsCard
+      id="appearance_myco3d"
+      className="card"
+      style={{ padding: "14px 16px" }}
+      hideValue
+    >
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
+          <div style={{ fontWeight: 500 }}>{t.s_myco3d}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+            {t.s_myco3d_hint}
+          </div>
+        </div>
+        <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+          <Segment<"video" | "model">
+            label={t.s_myco3d_view}
+            value={view}
+            options={[
+              { value: "video", label: t.s_myco3d_video },
+              { value: "model", label: t.s_myco3d_model },
+            ]}
+            onChange={setView}
+          />
+          <Segment<Myco3DSkin>
+            label={t.s_myco3d_skin}
+            value={skin}
+            options={[
+              { value: "black", label: t.s_myco3d_black },
+              { value: "white", label: t.s_myco3d_white },
+            ]}
+            onChange={setSkin}
+          />
+        </div>
+      </div>
+      <div className="myco3d-stage">
+        <Suspense
+          fallback={
+            <p className="myco3d-note" role="status">
+              {t.myco3d_loading}
+            </p>
+          }
+        >
+          {view === "video" ? <MycoSpin key={skin} skin={skin} /> : <Myco3D skin={skin} solid />}
+        </Suspense>
+      </div>
+    </SettingsCard>
+  );
+}
+
+// Text size (UX S22): follow the system by default; a custom step only
+// overrides it. The sample line is .prose, so it moves exactly as notes do.
+export function TextSizeSetting({ t }: { t: Strings }): JSX.Element {
+  const textSize = useUIStore((s) => s.textSize);
+  const setTextSize = useUIStore((s) => s.setTextSize);
+  const custom = textSize !== "system";
+  return (
+    <SettingsCard id="appearance_text_size" className="card" hideValue>
+      <div className="col" style={{ gap: 12 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{t.s_text_size}</div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+            {t.s_text_size_desc}
+          </div>
+        </div>
+        <Segment
+          label={t.s_text_size}
+          value={custom ? "custom" : "system"}
+          options={[
+            { value: "system", label: t.s_text_size_system },
+            { value: "custom", label: t.s_text_size_custom },
+          ]}
+          onChange={(v) => setTextSize(v === "system" ? "system" : "medium")}
+        />
+        {custom ? (
+          <Segment<TextSize>
+            label={t.s_text_size_custom}
+            value={textSize}
+            options={[
+              { value: "small", label: t.s_text_size_small },
+              { value: "medium", label: t.s_text_size_medium },
+              { value: "large", label: t.s_text_size_large },
+            ]}
+            onChange={setTextSize}
+          />
+        ) : null}
+        <p className="prose" style={{ margin: 0 }}>
+          {t.s_text_size_sample}
+        </p>
+      </div>
+    </SettingsCard>
+  );
+}
+
 // Resident mode: closing the window hides it and myco stays in the menu bar
 // tray. Lives in the Appearance tab — the app has no dedicated "general" tab,
 // and this governs window behavior. Default OFF (close quits, as always).
@@ -325,28 +363,45 @@ export function TrayResidentToggle({ t }: { t: Strings }): JSX.Element | null {
           aria-checked={enabled}
           aria-label={t.s_tray_resident_title ?? "Keep running in the menu bar"}
           data-testid="tray-resident-toggle"
+          className="notch-settings-toggle"
+          type="button"
           onClick={() => void update({ tray_resident: !enabled })}
           style={{
             width: 44,
-            height: 24,
+            height: 44,
             borderRadius: 12,
-            border: "1px solid var(--line)",
-            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            border: 0,
+            padding: 0,
+            background: "transparent",
             position: "relative",
             cursor: "pointer",
             flexShrink: 0,
           }}
         >
           <span
+            aria-hidden="true"
             style={{
               position: "absolute",
-              top: 2,
+              top: 10,
+              left: 0,
+              width: 44,
+              height: 24,
+              borderRadius: 12,
+              border: "1px solid var(--line)",
+              background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="notch-settings-toggle__thumb"
+            style={{
+              position: "absolute",
+              top: 12,
               left: enabled ? 22 : 2,
               width: 18,
               height: 18,
               borderRadius: "50%",
               background: enabled ? "var(--bg)" : "var(--ink)",
-              transition: "left 150ms ease",
             }}
           />
         </button>
@@ -356,30 +411,16 @@ export function TrayResidentToggle({ t }: { t: Strings }): JSX.Element | null {
 }
 
 // Menu-bar notch drop surface (macOS only — it is an NSPanel over the notch).
-// The flag persists through the settings store like every toggle; the extra
-// update_notch_enabled call applies it live (shows/hides the window).
-// Menu-bar notch drop surface (macOS only — it is an NSPanel over the notch).
-// The flag persists through the settings store like every toggle; the extra
-// update_notch_enabled call applies it live (shows/hides the window).
+// The dedicated store action keeps native visibility and persistence together.
 export function NotchToggle({ t }: { t: Strings }): JSX.Element | null {
   const settings = useSettingsStore((s) => s.settings);
+  const setNotchEnabled = useSettingsStore((s) => s.setNotchEnabled);
+  const pending = useSettingsStore((s) => s.notchPending);
+  const error = useSettingsStore((s) => s.notchError);
   const isMac =
     typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || "");
   if (!settings || !isMac) return null;
   const enabled = settings.notch_enabled;
-  const flip = (): void => {
-    // ONE persister: update_notch_enabled writes the flag itself (and creates
-    // or destroys the window). Routing the same flag through set_settings too
-    // made two concurrent writers of the settings file — last-wins could undo
-    // either side. The store only mirrors the result optimistically.
-    const next = !enabled;
-    useSettingsStore.setState((st) =>
-      st.settings ? { settings: { ...st.settings, notch_enabled: next } } : st,
-    );
-    void ipc.updateNotchEnabled(next).catch(() => {
-      /* plain-browser dev: no Tauri backend */
-    });
-  };
   return (
     <SettingsCard id="appearance_notch" className="card">
       <div
@@ -404,32 +445,57 @@ export function NotchToggle({ t }: { t: Strings }): JSX.Element | null {
           aria-checked={enabled}
           aria-label={t.s_notch_title ?? "Notch drop surface"}
           data-testid="notch-toggle"
-          onClick={flip}
+          className="notch-settings-toggle"
+          type="button"
+          disabled={pending}
+          aria-busy={pending}
+          onClick={() => void setNotchEnabled(!enabled)}
           style={{
             width: 44,
-            height: 24,
+            height: 44,
             borderRadius: 12,
-            border: "1px solid var(--line)",
-            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            border: 0,
+            padding: 0,
+            background: "transparent",
             position: "relative",
-            cursor: "pointer",
+            cursor: pending ? "wait" : "pointer",
+            opacity: pending ? 0.6 : 1,
             flexShrink: 0,
           }}
         >
           <span
+            aria-hidden="true"
             style={{
               position: "absolute",
-              top: 2,
+              top: 10,
+              left: 0,
+              width: 44,
+              height: 24,
+              borderRadius: 12,
+              border: "1px solid var(--line)",
+              background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            }}
+          />
+          <span
+            aria-hidden="true"
+            className="notch-settings-toggle__thumb"
+            style={{
+              position: "absolute",
+              top: 12,
               left: enabled ? 22 : 2,
               width: 18,
               height: 18,
               borderRadius: "50%",
               background: enabled ? "var(--bg)" : "var(--ink)",
-              transition: "left 150ms ease",
             }}
           />
         </button>
       </div>
+      {error && (
+        <p role="alert" style={{ color: "var(--danger)", marginBottom: 0 }}>
+          {error}
+        </p>
+      )}
     </SettingsCard>
   );
 }

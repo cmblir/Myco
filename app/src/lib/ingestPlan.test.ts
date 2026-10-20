@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { buildIngestPlanPrompt, parseIngestPlan } from "./ingestPlan";
+import { buildIngestPlanPrompt, isPlanSourceComplete, parseIngestPlan } from "./ingestPlan";
 
 describe("parseIngestPlan", () => {
   it("parses a plain JSON array of decisions", () => {
@@ -54,6 +54,11 @@ describe("parseIngestPlan", () => {
 });
 
 describe("buildIngestPlanPrompt", () => {
+  it("discloses prefix-only planning instead of allowing a whole-source NOOP", () => {
+    expect(isPlanSourceComplete("x".repeat(6000))).toBe(true);
+    expect(isPlanSourceComplete("x".repeat(6001))).toBe(false);
+    expect(buildIngestPlanPrompt("x".repeat(6001), [])).toContain("Partial preview: 6000 of 6001");
+  });
   it("includes the source and the candidate stems", () => {
     const prompt = buildIngestPlanPrompt("a source about attention", [
       { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", score: 0.82 },

@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities granted to the main, tray-panel, spotlight and notch windows",
-  "windows": ["main", "tray-panel", "spotlight", "notch"],
+  "description": "Default capabilities granted to the main, tray-panel, spotlight, notch and roam windows",
+  "windows": ["main", "tray-panel", "spotlight", "notch", "roam"],
   "permissions": [
     "core:default",
     "dialog:allow-open",

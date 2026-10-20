@@ -5,6 +5,7 @@
 // function — all IO stays with the caller.
 
 import type { HitTier, ScoredChunk, TierWeights } from "./ipc";
+import { chunkCitation } from "./retrievalContext";
 
 export interface ExtractiveOptions {
   /** Max distinct pages to render (rank order). */
@@ -13,20 +14,39 @@ export interface ExtractiveOptions {
   perPageChars?: number;
 }
 
+const FENCE_RE = /^ {0,3}(`{3,}|~{3,})/;
+
+/** The fence run (a ``` or ~~~ of 3+) still open after `line`, given the one
+ *  open before it ("" = none), as CommonMark reads fences: a run opens one;
+ *  only a bare run of the same character, at least as long, closes it. */
+export function fenceAfter(open: string, line: string): string {
+  const m = FENCE_RE.exec(line);
+  if (!open) return m ? m[1] : "";
+  const closes =
+    m &&
+    m[1][0] === open[0] &&
+    m[1].length >= open.length &&
+    !line.slice(m[0].length).trim();
+  return closes ? "" : open;
+}
+
 /** Cut `text` to at most `limit` chars on a LINE boundary, and never inside a
- * fenced code block: a mid-fence cut leaves an unterminated ``` that swallows
- * the rest of the answer into one code block when the markdown renders. Drops
- * whole trailing lines until any fence count is even, so the quote stays valid
- * markdown at the cost of a little content. */
+ * fenced code block: a mid-fence cut leaves an unterminated fence that
+ * swallows the rest of the answer into one code block when the markdown
+ * renders. Drops the trailing lines past the last point where no fence is
+ * open, so the quote stays valid markdown at the cost of a little content. */
 function truncateWholeLines(text: string, limit: number): string {
   const lines = text.slice(0, limit).split("\n");
   // A partial last line is dropped rather than shown mid-word — unless it is
   // the only line, where dropping it would leave nothing at all.
   if (lines.length > 1 && text.length > limit) lines.pop();
-  const fenced = (ls: string[]): number =>
-    ls.filter((l) => l.trimStart().startsWith("```")).length;
-  while (lines.length > 0 && fenced(lines) % 2 !== 0) lines.pop();
-  return lines.join("\n");
+  let open = "";
+  let keep = 0;
+  lines.forEach((l, i) => {
+    open = fenceAfter(open, l);
+    if (!open) keep = i + 1;
+  });
+  return lines.slice(0, keep).join("\n");
 }
 
 export interface PageGroup {
@@ -73,9 +93,13 @@ export function groupByPage(hits: ScoredChunk[], maxPages: number): PageGroup[] 
  * quote the same lines. */
 export function quoteBody(texts: string[], perPageChars = 700): string {
   const body = texts.join("\n\n");
-  return body.length > perPageChars
-    ? `${truncateWholeLines(body, perPageChars).trimEnd()}…`
-    : body;
+  if (body.length <= perPageChars) return body;
+  const cut = truncateWholeLines(body, perPageChars).trimEnd();
+  // Glued to a closing fence, "…" would make it no closing fence (text after
+  // the run) and leave the fence open: the mark gets a line of its own.
+  return FENCE_RE.test(cut.slice(cut.lastIndexOf("\n") + 1))
+    ? `${cut}\n…`
+    : `${cut}…`;
 }
 
 /** One cited page as the chips under an answer show it. */
@@ -236,19 +260,17 @@ export function formatExtractiveAnswer(
   opts: ExtractiveOptions = {},
 ): string {
   const sections: string[] = [];
-  for (const { stem, texts, best } of groupByPage(hits, opts.maxPages ?? 5)) {
+  for (const { page, stem, texts } of groupByPage(hits, opts.maxPages ?? 5)) {
     const body = quoteBody(texts, opts.perPageChars);
     const quoted = body
       .split("\n")
       .map((line) => `> ${line}`)
       .join("\n");
-    // Relevance is shown because it is now a REAL number: `similarity` is the
-    // dense cosine, so 68% and 52% mean something to compare. (The `score`
-    // field next to it is a rank-fusion value that would look like a
-    // confidence and behave like noise.) A lexical-only hit has no cosine and
-    // gets no percentage rather than a fabricated one.
-    const relevance = best === null ? "" : ` · ${Math.round(best * 100)}%`;
-    sections.push(`**[[${stem}]]**${relevance}\n\n${quoted}`);
+    // No percentage here (UX S14.7, owner decision 2026-10-03): "71%" next
+    // to a quote reads as "71% right". The similarity stays under the
+    // answer's details — Spotlight's (lib/spotlight.ts `relevance`) and the
+    // Ask ladder's search details.
+    sections.push(`**${chunkCitation({ page, stem })}**\n\n${quoted}`);
   }
   return sections.join("\n\n");
 }

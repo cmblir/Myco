@@ -15,9 +15,10 @@
 //! cannot see that (every copy has its own `<source>:<id>`), so a body already
 //! recorded under ANOTHER key is refused and counted in `duplicates`.
 //!
-//! It lives at `<vault>/.myco/ledger.json`. A missing or corrupt file reads as
-//! empty — the ledger is a cache, never a source of truth, so losing it costs a
-//! round of re-imports, nothing more. The fingerprint is a non-cryptographic
+//! It lives at `<vault>/.myco/ledger.json`. Only an absent file starts an empty
+//! ledger. Read or parse failure preserves the original and stops publication.
+//! Saves atomically replace the exact loaded revision; readers never save.
+//! The conversation fingerprint is a non-cryptographic
 //! DefaultHasher digest, matching the vault's other content fingerprints
 //! (vault_revision, VectorCache) rather than pulling in a hashing crate.
 
@@ -25,7 +26,15 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+#[cfg(test)]
+#[path = "ledger_safety_tests.rs"]
+mod safety_tests;
+
+#[cfg(test)]
+#[path = "ledger_snapshot_tests.rs"]
+mod snapshot_tests;
 
 /// A content fingerprint for the dedup key.
 pub fn fingerprint(content: &str) -> String {
@@ -72,12 +81,18 @@ pub struct FileStamp {
     pub mtime_ns: u64,
     pub len: u64,
     pub convs: usize,
+    #[serde(default)]
+    pub parser_version: u32,
 }
+
+// A parser upgrade must revisit an unchanged source once to preserve metadata.
+const PARSER_VERSION: u32 = 3;
 
 /// On-disk shape once the ledger tracks files too. Structurally disjoint from the
 /// legacy flat map (string values vs object values), so `load` can tell them
 /// apart and upgrade in place without dropping the conversation dedup.
 #[derive(Deserialize, Default)]
+#[serde(deny_unknown_fields)]
 struct OnDisk {
     #[serde(default)]
     entries: BTreeMap<String, String>,
@@ -91,6 +106,8 @@ struct OnDisk {
     body_index_version: u32,
     #[serde(default)]
     absorbed: u64,
+    #[serde(default)]
+    locations: BTreeMap<String, String>,
 }
 
 #[derive(Serialize)]
@@ -101,10 +118,13 @@ struct OnDiskRef<'a> {
     duplicates: u64,
     body_index_version: u32,
     absorbed: u64,
+    locations: &'a BTreeMap<String, String>,
 }
 
 #[derive(Default)]
 pub struct Ledger {
+    loaded_path: Option<PathBuf>,
+    expected_revision: Option<String>,
     // key `<source>:<id>` → fingerprint. BTreeMap so the on-disk JSON is stable.
     entries: BTreeMap<String, String>,
     // absolute file path → its last clean import stamp.
@@ -119,6 +139,8 @@ pub struct Ledger {
     body_index_version: u32,
     // Bodies the backfill inserted for sessions that were already on disk.
     absorbed: u64,
+    // `<destination>:<source>:<id>` → stable vault-relative projection path.
+    locations: BTreeMap<String, String>,
 }
 
 /// Bumped when `bodies` needs a one-time backfill from what is already on
@@ -137,37 +159,71 @@ impl Ledger {
         Self::dir(vault_root).join("ledger.json")
     }
 
-    /// Read the ledger. A missing or unparseable file is an empty ledger. A
-    /// legacy flat-map ledger (before file tracking) is upgraded in place, so
-    /// existing users keep their conversation dedup across the format bump.
-    pub fn load(vault_root: &Path) -> Ledger {
-        let Ok(s) = std::fs::read_to_string(Self::path(vault_root)) else {
-            return Ledger::default();
+    fn checked_path(vault_root: &Path) -> Result<PathBuf, String> {
+        let root = vault_root
+            .canonicalize()
+            .map_err(|e| format!("ledger vault: {e}"))?;
+        let directory = Self::dir(&root);
+        for path in [&directory, &Self::path(&root)] {
+            match std::fs::symlink_metadata(path) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    return Err("ledger path contains a symlink".into())
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(format!("inspect ledger path: {error}")),
+            }
+        }
+        Ok(Self::path(&root))
+    }
+
+    /// Read without writing. Missing is empty; corrupt/unreadable is an error.
+    /// Legacy body-index upgrades stay in memory until a checked writer saves.
+    pub fn load(vault_root: &Path) -> Result<Ledger, String> {
+        let path = Self::checked_path(vault_root)?;
+        let mut ledger = match std::fs::read_to_string(&path) {
+            Ok(text) => Self::decode(&text)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ledger::default(),
+            Err(error) => return Err(format!("read ledger: {error}")),
         };
+        ledger.loaded_path = Some(path);
+        ledger.absorb_once(vault_root)?;
+        Ok(ledger)
+    }
+
+    /// Decode already bounded native bytes without I/O or legacy backfill.
+    /// The caller must bind the file's existence, path and revision separately.
+    pub(crate) fn parse_checked_snapshot(bytes: &[u8]) -> Result<Ledger, String> {
+        let text = std::str::from_utf8(bytes)
+            .map_err(|error| format!("invalid import ledger UTF-8; original preserved: {error}"))?;
+        Self::decode(text)
+    }
+
+    fn decode(s: &str) -> Result<Ledger, String> {
         // Legacy flat map first: the new format's object values make it fail
         // this parse, so the two never collide.
-        if let Ok(entries) = serde_json::from_str::<BTreeMap<String, String>>(&s) {
-            let mut l = Ledger {
+        if let Ok(entries) = serde_json::from_str::<BTreeMap<String, String>>(s) {
+            return Ok(Ledger {
                 entries,
+                expected_revision: Some(crate::importers::wikify::source_revision(s)),
                 ..Ledger::default()
-            };
-            l.absorb_once(vault_root);
-            return l;
+            });
         }
-        match serde_json::from_str::<OnDisk>(&s) {
-            Ok(d) => {
-                let mut l = Ledger {
-                    entries: d.entries,
-                    files: d.files,
-                    bodies: d.bodies,
-                    duplicates: d.duplicates,
-                    body_index_version: d.body_index_version,
-                    absorbed: d.absorbed,
-                };
-                l.absorb_once(vault_root);
-                l
-            }
-            Err(_) => Ledger::default(),
+        match serde_json::from_str::<OnDisk>(s) {
+            Ok(d) => Ok(Ledger {
+                entries: d.entries,
+                files: d.files,
+                bodies: d.bodies,
+                duplicates: d.duplicates,
+                body_index_version: d.body_index_version,
+                absorbed: d.absorbed,
+                locations: d.locations,
+                expected_revision: Some(crate::importers::wikify::source_revision(s)),
+                ..Ledger::default()
+            }),
+            Err(error) => Err(format!(
+                "invalid import ledger; original preserved: {error}"
+            )),
         }
     }
 
@@ -179,18 +235,19 @@ impl Ledger {
     // ponytail: a full read of every session (tens of MB on the owner's 1,473
     // files) on ONE load, ever. If that one load is ever felt, stamp per-file
     // (mtime, len) like `files` does and absorb incrementally.
-    fn absorb_once(&mut self, vault_root: &Path) {
-        if self.body_index_version >= BODY_INDEX_VERSION
-            || !vault_root.join(crate::backfill::SESSIONS_DIR).is_dir()
-        {
-            return;
+    fn absorb_once(&mut self, vault_root: &Path) -> Result<(), String> {
+        if self.body_index_version >= BODY_INDEX_VERSION {
+            return Ok(());
         }
-        let report = absorb_session_bodies(vault_root, self);
+        match std::fs::symlink_metadata(vault_root.join(crate::backfill::SESSIONS_DIR)) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+            Err(error) => return Err(format!("inspect legacy session bodies: {error}")),
+            Ok(_) => {}
+        }
+        let report = absorb_session_bodies(vault_root, self)?;
         self.body_index_version = BODY_INDEX_VERSION;
         self.absorbed += report.new_bodies as u64;
-        // Best effort, like every other ledger write: a failed save costs one
-        // repeat of the walk, nothing more.
-        let _ = self.save(vault_root);
+        Ok(())
     }
 
     /// True when this key was already imported with the identical content.
@@ -215,6 +272,16 @@ impl Ledger {
 
     pub fn record(&mut self, key: String, fingerprint: String) {
         self.entries.insert(key, fingerprint);
+    }
+
+    pub fn location(&self, dest: &str, key: &str) -> Option<&str> {
+        self.locations
+            .get(&format!("{dest}:{key}"))
+            .map(String::as_str)
+    }
+
+    pub fn record_location(&mut self, dest: &str, key: &str, rel: String) {
+        self.locations.insert(format!("{dest}:{key}"), rel);
     }
 
     /// True when this body is already recorded under a DIFFERENT key — the
@@ -283,7 +350,9 @@ impl Ledger {
     pub fn file_convs(&self, path: &str, mtime_ns: u64, len: u64) -> Option<usize> {
         self.files
             .get(path)
-            .filter(|s| s.mtime_ns == mtime_ns && s.len == len)
+            .filter(|s| {
+                s.mtime_ns == mtime_ns && s.len == len && s.parser_version == PARSER_VERSION
+            })
             .map(|s| s.convs)
     }
 
@@ -294,19 +363,40 @@ impl Ledger {
                 mtime_ns,
                 len,
                 convs,
+                parser_version: PARSER_VERSION,
             },
         );
     }
 
     /// Persist the ledger, creating `.myco/` (and a `.gitignore` so the whole
     /// directory stays out of a vault that is itself a git repo).
-    pub fn save(&self, vault_root: &Path) -> Result<(), String> {
-        let dir = Self::dir(vault_root);
+    pub fn save(&mut self, vault_root: &Path) -> Result<(), String> {
+        let path = Self::checked_path(vault_root)?;
+        if self
+            .loaded_path
+            .as_ref()
+            .is_some_and(|loaded| loaded != &path)
+        {
+            return Err("ledger snapshot belongs to another vault".into());
+        }
+        let dir = path.parent().ok_or("ledger has no parent")?.to_path_buf();
         std::fs::create_dir_all(&dir)
             .map_err(|e| format!("create {}: {e}", crate::vault_dir::DIR_NAME))?;
         let ignore = dir.join(".gitignore");
-        if !ignore.exists() {
-            let _ = std::fs::write(&ignore, "*\n");
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&ignore)
+        {
+            Ok(mut file) => {
+                use std::io::Write;
+                file.write_all(b"*\n")
+                    .map_err(|e| format!("write ledger gitignore: {e}"))?;
+                file.sync_all()
+                    .map_err(|e| format!("sync ledger gitignore: {e}"))?;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+            Err(error) => return Err(format!("create ledger gitignore: {error}")),
         }
         let on_disk = OnDiskRef {
             entries: &self.entries,
@@ -315,10 +405,23 @@ impl Ledger {
             duplicates: self.duplicates,
             body_index_version: self.body_index_version,
             absorbed: self.absorbed,
+            locations: &self.locations,
         };
         let json =
             serde_json::to_string_pretty(&on_disk).map_err(|e| format!("serialize ledger: {e}"))?;
-        std::fs::write(Self::path(vault_root), json).map_err(|e| format!("write ledger: {e}"))
+        crate::vault::write_file_if_unchanged(
+            &path.to_string_lossy(),
+            &json,
+            self.expected_revision.as_deref(),
+        )
+        .map_err(|e| format!("publish ledger: {e}"))?;
+        self.loaded_path = Some(path);
+        self.expected_revision = Some(crate::importers::wikify::source_revision(&json));
+        #[cfg(unix)]
+        std::fs::File::open(&dir)
+            .and_then(|file| file.sync_all())
+            .map_err(|e| format!("sync published ledger directory: {e}"))?;
+        Ok(())
     }
 }
 
@@ -341,12 +444,27 @@ pub struct Absorbed {
 /// it under another id is. First claim wins, so of the owner's 269 identical
 /// `[[TASK_DONE]]` sessions one body is inserted and 268 count as already
 /// known. Idempotent: a second pass inserts nothing.
-pub fn absorb_session_bodies(root: &Path, ledger: &mut Ledger) -> Absorbed {
+pub fn absorb_session_bodies(root: &Path, ledger: &mut Ledger) -> Result<Absorbed, String> {
     let mut out = Absorbed::default();
-    for file in crate::backfill::scan_sessions(root) {
-        let Ok(text) = std::fs::read_to_string(root.join(&file.rel)) else {
-            continue;
-        };
+    let mut pending = vec![root.join(crate::backfill::SESSIONS_DIR)];
+    let mut texts = Vec::new();
+    while let Some(directory) = pending.pop() {
+        let mut entries = crate::vault::vault_entries_checked(&directory)
+            .map_err(|e| format!("scan legacy session bodies: {e}"))?;
+        entries.sort_by_key(|(entry, _)| entry.file_name());
+        for (entry, kind) in entries {
+            let path = entry.path();
+            if kind.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|ext| ext == "md") {
+                texts.push(
+                    std::fs::read_to_string(path)
+                        .map_err(|e| format!("read legacy session body: {e}"))?,
+                );
+            }
+        }
+    }
+    for text in texts {
         out.scanned += 1;
         let hash = body_hash(&text);
         let key = crate::judge::frontmatter_key(&text);
@@ -357,7 +475,7 @@ pub fn absorb_session_bodies(root: &Path, ledger: &mut Ledger) -> Absorbed {
         ledger.record_body(hash, &key);
         out.new_bodies += 1;
     }
-    out
+    Ok(out)
 }
 
 /// The owner's most-copied session (269 + 267 copies of its two variants) as
@@ -416,17 +534,21 @@ mod tests {
             std::fs::read_to_string(root.join(".myco/.gitignore")).unwrap(),
             "*\n"
         );
-        let reloaded = Ledger::load(root);
+        let reloaded = Ledger::load(root).unwrap();
         assert!(reloaded.seen("codex:s1", "fp1"));
     }
 
     #[test]
-    fn a_missing_or_corrupt_ledger_reads_as_empty() {
+    fn only_a_missing_ledger_reads_as_empty() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(!Ledger::load(dir.path()).seen("x", "y")); // missing
+        assert!(!Ledger::load(dir.path()).unwrap().seen("x", "y")); // missing
         std::fs::create_dir_all(dir.path().join(".myco")).unwrap();
         std::fs::write(dir.path().join(".myco/ledger.json"), "{not json").unwrap();
-        assert!(!Ledger::load(dir.path()).seen("x", "y")); // corrupt
+        assert!(Ledger::load(dir.path()).is_err());
+        assert_eq!(
+            std::fs::read_to_string(dir.path().join(".myco/ledger.json")).unwrap(),
+            "{not json"
+        );
     }
 
     #[test]
@@ -440,6 +562,32 @@ mod tests {
     }
 
     #[test]
+    fn a_parser_upgrade_revisits_unchanged_files_and_preserves_stable_locations() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join(".myco")).unwrap();
+        std::fs::write(
+            Ledger::path(dir.path()),
+            r#"{"entries":{},"files":{"/s/a.jsonl":{"mtime_ns":111,"len":2048,"convs":1}}}"#,
+        )
+        .unwrap();
+        let mut ledger = Ledger::load(dir.path()).unwrap();
+        assert_eq!(ledger.file_convs("/s/a.jsonl", 111, 2048), None);
+        ledger.record_file("/s/a.jsonl".into(), 111, 2048, 1);
+        ledger.record_location(
+            "sessions",
+            "codex:stable",
+            "sessions/2020-01/codex-stable.md".into(),
+        );
+        ledger.save(dir.path()).unwrap();
+        let restored = Ledger::load(dir.path()).unwrap();
+        assert_eq!(restored.file_convs("/s/a.jsonl", 111, 2048), Some(1));
+        assert_eq!(
+            restored.location("sessions", "codex:stable"),
+            Some("sessions/2020-01/codex-stable.md")
+        );
+    }
+
+    #[test]
     fn file_stamps_round_trip_alongside_entries() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -448,7 +596,7 @@ mod tests {
         l.record_file("/s/a.jsonl".into(), 111, 2048, 3);
         l.save(root).unwrap();
 
-        let reloaded = Ledger::load(root);
+        let reloaded = Ledger::load(root).unwrap();
         assert!(reloaded.seen("codex:s1", "fp1"));
         assert_eq!(reloaded.file_convs("/s/a.jsonl", 111, 2048), Some(3));
     }
@@ -518,7 +666,7 @@ mod tests {
         l.record_body("b1".into(), "codex:s1");
         l.note_duplicates(3);
         l.save(root).unwrap();
-        let reloaded = Ledger::load(root);
+        let reloaded = Ledger::load(root).unwrap();
         assert!(reloaded.seen_body("b1", "codex:s2"));
         assert_eq!(reloaded.duplicates(), 3);
         // A ledger written before the body index reads with an empty index.
@@ -527,7 +675,7 @@ mod tests {
             r#"{"entries":{"codex:s1":"fp"},"files":{}}"#,
         )
         .unwrap();
-        let old = Ledger::load(root);
+        let old = Ledger::load(root).unwrap();
         assert!(old.seen("codex:s1", "fp"));
         assert!(!old.seen_body("b1", "codex:s2"));
         assert_eq!(old.duplicates(), 0);
@@ -560,7 +708,7 @@ mod tests {
         assert_ne!(first, last, "the copies differ — in frontmatter only");
         assert_eq!(body_hash(&first), body_hash(&last));
         let mut l = Ledger::default();
-        let report = absorb_session_bodies(root, &mut l);
+        let report = absorb_session_bodies(root, &mut l).unwrap();
         assert_eq!(report.scanned, 269);
         assert_eq!(report.new_bodies, 1, "one distinct body");
         assert_eq!(report.already_known, 268);
@@ -575,8 +723,8 @@ mod tests {
             format!("---\nsource: claude-code\nconversation_id: c{i}\n---\n\nbody number {i}\n")
         });
         let mut l = Ledger::default();
-        assert_eq!(absorb_session_bodies(root, &mut l).new_bodies, 3);
-        let second = absorb_session_bodies(root, &mut l);
+        assert_eq!(absorb_session_bodies(root, &mut l).unwrap().new_bodies, 3);
+        let second = absorb_session_bodies(root, &mut l).unwrap();
         assert_eq!(second.scanned, 3);
         assert_eq!(second.new_bodies, 0, "a second pass inserts 0");
         assert_eq!(second.already_known, 3);
@@ -593,7 +741,7 @@ mod tests {
         let doc = boilerplate_doc("abc", 100);
         sessions(root, 1, |_| doc.clone());
         let mut l = Ledger::default();
-        absorb_session_bodies(root, &mut l);
+        absorb_session_bodies(root, &mut l).unwrap();
         assert!(!l.seen_body(&body_hash(&doc), "claude-code:abc"));
         let copy = boilerplate_doc("xyz", 200);
         assert!(l.seen_body(&body_hash(&copy), "claude-code:xyz"));
@@ -609,13 +757,13 @@ mod tests {
         let bare = "# a talk\n\nsome prose with no frontmatter at all\n";
         sessions(root, 1, |_| bare.to_string());
         let mut l = Ledger::default();
-        assert_eq!(absorb_session_bodies(root, &mut l).new_bodies, 1);
+        assert_eq!(absorb_session_bodies(root, &mut l).unwrap().new_bodies, 1);
         assert!(!l.seen_body(&body_hash(bare), ""));
         assert!(l.seen_body(&body_hash(bare), "claude-code:elsewhere"));
     }
 
     #[test]
-    fn load_absorbs_once_stamps_the_version_and_never_walks_again() {
+    fn writer_persists_complete_backfill_before_later_reads_skip_it() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         sessions(root, 2, |i| {
@@ -629,11 +777,18 @@ mod tests {
         )
         .unwrap();
 
-        let first = Ledger::load(root);
+        let previous = std::fs::read(root.join(".myco/ledger.json")).unwrap();
+        let mut first = Ledger::load(root).unwrap();
         assert_eq!(first.body_index_version(), BODY_INDEX_VERSION);
         assert_eq!(first.bodies_indexed(), 2, "the pass ran on load");
         assert_eq!(first.absorbed(), 2);
         assert!(first.seen("codex:c0", "fp"), "the old dedup survived");
+
+        assert_eq!(
+            std::fs::read(root.join(".myco/ledger.json")).unwrap(),
+            previous
+        );
+        first.save(root).unwrap();
 
         // A new session appears; the version is stamped, so load leaves it be.
         std::fs::write(
@@ -641,7 +796,7 @@ mod tests {
             "---\nsource: codex\nconversation_id: late\n---\n\nsomething new\n",
         )
         .unwrap();
-        let second = Ledger::load(root);
+        let second = Ledger::load(root).unwrap();
         assert_eq!(second.bodies_indexed(), 2, "no second walk");
         assert_eq!(second.absorbed(), 2);
     }
@@ -649,7 +804,7 @@ mod tests {
     #[test]
     fn load_on_a_vault_without_sessions_writes_nothing_at_all() {
         let dir = tempfile::tempdir().unwrap();
-        let l = Ledger::load(dir.path());
+        let l = Ledger::load(dir.path()).unwrap();
         assert_eq!(
             l.body_index_version(),
             0,
@@ -673,7 +828,7 @@ mod tests {
         )
         .unwrap();
 
-        let mut l = Ledger::load(root);
+        let mut l = Ledger::load(root).unwrap();
         assert!(l.seen("chatgpt:c1", "abc")); // dedup preserved on upgrade
         assert!(l.seen("codex:s2", "def"));
         assert_eq!(l.file_convs("/s/a.jsonl", 1, 1), None); // no stamps yet
@@ -681,7 +836,7 @@ mod tests {
         // Saving now writes the new shape without losing the old entries.
         l.record_file("/s/a.jsonl".into(), 5, 10, 1);
         l.save(root).unwrap();
-        let reloaded = Ledger::load(root);
+        let reloaded = Ledger::load(root).unwrap();
         assert!(reloaded.seen("chatgpt:c1", "abc"));
         assert_eq!(reloaded.file_convs("/s/a.jsonl", 5, 10), Some(1));
     }

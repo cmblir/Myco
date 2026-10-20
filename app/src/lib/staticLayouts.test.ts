@@ -169,6 +169,27 @@ describe("applySpiralLayout", () => {
       expect(pos(g1, id)).toEqual(pos(g2, id));
     });
   });
+
+  it("preserves open dark lanes and a thin disc with 2500 notes", () => {
+    const g = makeGraph(Array.from({ length: 2500 }, (_, i) => ({
+      id: `spiral-note-${i}.md`, community: i % 12,
+    })));
+    applySpiralLayout(g, { targetRadius: 2000 });
+    const outerSectors = new Set<number>();
+    let depthSquared = 0;
+    let radiusSquared = 0;
+    g.forEachNode((_id, point) => {
+      const radius = Math.hypot(point.x, point.y);
+      depthSquared += point.z ** 2;
+      radiusSquared += radius ** 2;
+      if (radius > 1100) {
+        const angle = Math.atan2(point.y, point.x) + Math.PI;
+        outerSectors.add(Math.floor(angle / (2 * Math.PI) * 24));
+      }
+    });
+    expect(outerSectors.size).toBeLessThan(14);
+    expect(Math.sqrt(depthSquared / radiusSquared)).toBeLessThan(0.06);
+  });
 });
 
 describe("applyStrataLayout", () => {

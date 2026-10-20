@@ -2,16 +2,17 @@
 // and dispatches to either the Claude CLI (anthropic-cli) or the HTTP
 // provider stack. Returns the assistant's text content.
 //
-// Only the Claude CLI provider can read/write vault files via tools. The HTTP
-// providers are pure chat with no filesystem access, so:
-//   - ingest (must WRITE wiki pages) requires a tool-capable provider.
-//   - query / lint (read-only) work with any provider — for non-tool
-//     providers we inline the vault content so the model has real context
-//     instead of answering blind.
+// External CLI runs require an explicit native capability and source opening.
+// Current unconfined runners are unavailable until their host/settings/MCP/
+// child boundary is proven. HTTP/local routes inline bounded evidence.
 
 import {
   ipc,
   type AskScope,
+  type ClaudeResult,
+  type AgentVaultSession,
+  type CliExecutionRequest,
+  type SearchScope,
   type MycoSettings,
   type NearMiss,
   type ScoredChunk,
@@ -19,10 +20,12 @@ import {
   type TierWeights,
 } from "./ipc";
 import { hitTier, sourceTier } from "./extractive";
-import { BUILTIN_EMBED_MODEL } from "./providers";
+import { BUILTIN_EMBED_MODEL, isBuiltinChatModel } from "./providers";
+import { effectiveRole, type RoleId, type RoleSnapshot, type RoleUsage } from "./modelRoles";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 import { log } from "./log";
 import { loadProfile, injectionText } from "./profile";
+import { buildRetrievalContext } from "./retrievalContext";
 
 export interface SimpleMessage {
   role: "system" | "user" | "assistant";
@@ -59,43 +62,51 @@ export type AskStage =
   | { kind: "thinking"; stems: string[]; stale?: boolean; retrievalFailed?: boolean };
 
 export interface CompleteArgs {
-  /**
-   * Which settings role picks the provider.
-   *
-   * - `"query"` — interactive Ask. Honours the query role exactly, including
-   *   `builtin-local`, because answering extractively from the notes is a
-   *   deliberate choice there, not a degraded state.
-   * - `"ingest"` — the ingest role, as before.
-   * - `"generate"` — everything that must WRITE new prose (audio overview,
-   *   digests, maps, study cards, reflect, lint, the ingest planner). These
-   *   used to ride the query role and so died with `CHAT_MODEL_MISSING` the
-   *   moment Ask was set to extractive: the owner's audio overview stopped
-   *   working while a perfectly good ingest provider sat connected. Now they
-   *   take the query role when it can generate and fall back to the ingest
-   *   role when it cannot.
-   */
+  /** Compatibility task names never inherit another feature's external selection. */
   task: "query" | "ingest" | "generate";
+  featureRole?: RoleId;
+  usage?: RoleUsage;
+  /** Reuse one native grant for the whole job; never recapture after revocation. */
+  roleSnapshot?: RoleSnapshot;
   messages: SimpleMessage[];
   cwd: string;
+  /** Preserve a caller's source opening when it already captured one. */
+  origin?: AgentVaultSession;
   /// Called as the run moves between stages. The non-tool provider path always
   /// reports these. The CLI query path now reports too, but only when this is
   /// passed — that's how interactive Ask (the only caller of task:"query" that
   /// passes it) opts in, and how study.ts/digests.ts/audioOverview.ts (which
   /// don't) opt out of both the stage reports and the CLI retrieval injection
-  /// below. The CLI's own Read/Grep inside its tool loop stays invisible to
-  /// this side regardless, and must not be invented.
+  /// below. Stage reporting never grants a CLI access to filesystem tools.
   onStage?: (stage: AskStage) => void;
   /// Ask scope and tier priors for the retrieval block — interactive Ask's
   /// segment and sliders; the other task:"query" callers leave the backend
   /// defaults (wiki, DEFAULT_TIER_WEIGHTS).
   scope?: AskScope;
   tierWeights?: TierWeights;
+  /// "Ask this note" (UX S37): retrieval keeps only these vault-relative
+  /// pages, and nothing falls back to the whole vault.
+  paths?: string[];
+  /** The same date window and retrieval question apply to every provider. */
+  range?: { start: string; end: string };
+  retrievalQuery?: string;
+  /// Ask's ■ (UX S36). Checked once retrieval is done, before the model is
+  /// called: a stopped question never reaches a provider. Optional external
+  /// runners currently fail before spawn; HTTP calls cannot be recalled and
+  /// the caller drops late results.
+  signal?: AbortSignal;
+}
+
+/** Throws once `signal` is aborted. Not `throwIfAborted`: Safari 15.4+, and
+ *  the app still runs on macOS 10.15. */
+function stopIfAborted(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error("stopped");
 }
 
 // How much vault markdown to inline (in bytes/chars) for non-tool providers.
 const VAULT_CONTEXT_BUDGET = 80_000;
-// The embedded 0.5B model only has a 4k-token window — keep its inline slice
-// small so the question (at the end) always survives backend truncation.
+// Reserve a small context budget for an explicitly supplied local chat model.
+// The default offline Ask path quotes retrieved evidence without generation.
 const LOCAL_CONTEXT_BUDGET = 6_000;
 
 // Mirrors local_llm.rs's CHAT_MODEL_MISSING — the message generate() throws
@@ -103,17 +114,64 @@ const LOCAL_CONTEXT_BUDGET = 6_000;
 // the (unreachable in practice, but still correct) slow-fail path read the
 // same to a caller.
 const CHAT_MODEL_MISSING =
-  "no local chat model is bundled: Ask answers extractively from your notes; " +
-  "classification and generation need a connected provider (Settings → Model)";
+  "no local chat model is bundled: install and select a verified local generation model in Settings → Model";
 
-/** Whether the given provider can read/write vault files via tools. */
+/** Register cancellation before requesting optional external execution. Native
+ *  blocked runners never spawn; future supported runners must also handle the
+ *  cancel-before-spawn race and reap their entire child process tree. */
+async function killableClaudeRun(
+  prompt: string,
+  cwd: string,
+  model: string,
+  effort: string,
+  signal: AbortSignal,
+  execution: CliExecutionRequest,
+): Promise<ClaudeResult> {
+  // Unique among this device's runs is enough; not crypto.randomUUID, which
+  // is Safari 15.4+ like throwIfAborted above.
+  const runId = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+  const kill = (): void => void ipc.claudeCancel(runId);
+  signal.addEventListener("abort", kill, { once: true });
+  try {
+    stopIfAborted(signal);
+    return await ipc.claudeRunStream(
+      runId, prompt, cwd, model || undefined, effort, execution,
+    );
+  } finally {
+    signal.removeEventListener("abort", kill);
+  }
+}
+
+/** Complete with the selected route and explicitly bounded native execution. */
 export async function complete(args: CompleteArgs): Promise<string> {
-  const settings = await ipc.getSettings();
-  const role = roleFor(args.task, settings);
-  const provider = role.provider;
-  const model = role.model;
-  // Reasoning effort for this role — only the CLI branch below can use it.
-  const effort = role.effort;
+  stopIfAborted(args.signal);
+  const featureRole = args.featureRole ?? (args.task === "query" ? "ask" : args.task === "ingest" ? "compilation" : "organization");
+  const usage = args.usage ?? "foreground";
+  const origin = args.origin ?? args.roleSnapshot?.origin ?? Object.freeze(await ipc.agentVaultSession());
+  if (origin.vaultPath !== args.cwd || !origin.openingToken) throw new Error("the active vault changed before model execution");
+  const snapshot = args.roleSnapshot ?? await ipc.captureModelRole(origin, featureRole, usage);
+  if (snapshot.role !== featureRole || snapshot.usage !== usage || snapshot.origin.vaultPath !== origin.vaultPath || snapshot.origin.openingToken !== origin.openingToken) {
+    throw new Error("native feature grant does not match this job");
+  }
+  const provider = snapshot.routeSignature.providerId;
+  const model = snapshot.routeSignature.modelId;
+  const effort = snapshot.routeSignature.effort;
+
+  const isCli =
+    provider === "anthropic-cli" ||
+    provider === "gemini-cli" ||
+    provider === "codex-cli";
+  let execution: CliExecutionRequest | null = null;
+  if (isCli) {
+    stopIfAborted(args.signal);
+    if (origin.vaultPath !== args.cwd) {
+      throw new Error("the active vault changed before external CLI execution");
+    }
+    execution = {
+      capability: args.task === "ingest" ? "staged-write" : "read-only",
+      origin,
+    };
+  }
 
   // Profile personalisation (Phase B, Task 6): read once per complete() call,
   // gated to task:"query" only — ingest gets its own weighting (INGEST_PROMPT's
@@ -137,11 +195,8 @@ export async function complete(args: CompleteArgs): Promise<string> {
     ? `\n\nUser profile: ${injectionText(profile)}`
     : "";
 
-  const isCli =
-    provider === "anthropic-cli" ||
-    provider === "gemini-cli" ||
-    provider === "codex-cli";
   if (isCli) {
+    if (!execution) throw new Error("missing native CLI execution scope");
     // CLIs accept a single prompt; flatten system+user turns.
     const system = args.messages.find((m) => m.role === "system");
     const userTurns = args.messages
@@ -151,23 +206,11 @@ export async function complete(args: CompleteArgs): Promise<string> {
       )
       .join("\n\n");
 
-    // Query only (not ingest): the CLI would otherwise grep the vault cwd
-    // blind. Give it the same bge-m3 semantic retrieval the non-CLI path
-    // uses, at the CLI models' much larger budget — a head start, not a
-    // replacement for its own Read/Grep, so an empty index/no-hits result
-    // injects nothing and the CLI falls back to grepping as before.
-    //
-    // Also gated on `onStage`: task:"query" + one `query_provider` setting is
-    // shared by FOUR features — interactive Ask (which passes `onStage`), and
-    // study.ts (flashcard/quiz), digests.ts, and audioOverview.ts (which don't).
-    // Those three demand strict-JSON-only output with no UI to show a stage
-    // to, so injecting a retrieval block — plus its "use Read/Grep for
-    // anything more" prose hint — risked malformed-JSON failures for them with
-    // no signal. `onStage` is only ever passed by interactive Ask, so it
-    // doubles as the discriminator for "this is the path that wants retrieval."
+    // Interactive Ask supplies retrieved evidence. Generators already supply
+    // their context and output schema; they must not gain filesystem tools.
     let retrievalBlock = "";
     if (args.task === "query" && args.onStage) {
-      const question = lastUserContent(args.messages);
+      const question = args.retrievalQuery ?? lastUserContent(args.messages);
       const { ctx, stems, stale, retrievalFailed } = question
         ? await semanticContext(
             question,
@@ -175,11 +218,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
             args.onStage,
             args.scope,
             args.tierWeights,
+            args.paths,
+            args.range,
           )
         : { ctx: "", stems: [], stale: false, retrievalFailed: false };
       if (ctx.trim()) {
         retrievalBlock =
-          `## Relevant wiki context (local semantic search — start here; use Read/Grep for anything more)\n\n${ctx}\n\n`;
+          `## Relevant wiki context (local semantic search; answer from this supplied evidence)\n\n${ctx}\n\n`;
       }
       args.onStage?.({
         kind: "thinking",
@@ -194,14 +239,17 @@ export async function complete(args: CompleteArgs): Promise<string> {
     // "answer ONLY from below" retrieval instruction must stay first; here
     // there is no such instruction to protect, but the ordering is kept
     // identical across both branches for one predictable contract.
+    stopIfAborted(args.signal);
     const profileBlock = profileSuffix ? `${profileSuffix.trim()}\n\n` : "";
     const prompt = system
       ? `${system.content}\n\n${retrievalBlock}${profileBlock}${userTurns}`
       : `${retrievalBlock}${profileBlock}${userTurns}`;
     const res =
-      provider === "anthropic-cli"
-        ? await ipc.claudeRun(prompt, args.cwd, model || undefined, effort)
-        : await ipc.agentRun(provider, model, prompt, args.cwd, effort);
+      provider !== "anthropic-cli"
+        ? await ipc.agentRun(provider, model, prompt, args.cwd, effort, execution)
+        : args.signal
+          ? await killableClaudeRun(prompt, args.cwd, model, effort, args.signal, execution)
+          : await ipc.claudeRun(prompt, args.cwd, model || undefined, effort, execution);
     if (res.status !== 0) {
       throw new Error(res.stderr.trim() || `${provider} exit ${res.status}`);
     }
@@ -227,19 +275,19 @@ export async function complete(args: CompleteArgs): Promise<string> {
   }
 
   // Read-only task (query / lint): inline the vault content so the model can
-  // actually answer from it. If reading fails, fall back to the bare prompt.
-  // The embedded model has a 4k-token context window, so its budget is far
-  // smaller than the cloud providers' (excess is truncated backend-side too).
+  // actually answer from it. An empty healthy search remains empty evidence.
   const isBuiltin = provider === "builtin-local";
   // No chat GGUF has shipped since Ask went extractive (see BUILTIN_MODEL's
   // doc comment) — generate() below always throws CHAT_MODEL_MISSING for this
   // provider. Failing here, before retrieval, means a doomed call skips the
-  // ~418 MB embed-model load instead of paying for it and then throwing
+  // embedding model load instead of paying for it and then throwing
   // anyway. reflectStore's scheduler triggers this task automatically a few
   // seconds after every launch, so without this check that load happened on
   // every launch too.
-  if (isBuiltin && !(await ipc.localChatModelAvailable())) {
-    throw new Error(CHAT_MODEL_MISSING);
+  if (isBuiltin) {
+    if (!isBuiltinChatModel(model)) throw new Error(CHAT_MODEL_MISSING);
+    const status = await ipc.localChatStatus(model);
+    if (status.state !== "ready") throw new Error(status.reason ?? "local_model_preparation_required: install the selected model explicitly in Settings");
   }
   let messages = args.messages;
   // Pages retrieval chose, carried to the `thinking` stage: the model call is
@@ -256,34 +304,65 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // `thinking` stage so the failure is visible instead of looking identical
   // to "found nothing" — see semanticContext's doc comment.
   let retrievalFailed = false;
-  try {
-    const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
-    // Prefer semantic top-K retrieval (only the most relevant pages) when an
-    // embedding index exists — far better than dumping the whole vault, and the
-    // only thing that fits the builtin model's tiny window. Fall back to the
-    // whole-vault concat when the index is empty, stale, or retrieval fails.
-    const question = lastUserContent(args.messages);
-    const retrieved = question
-      ? await semanticContext(
-          question,
-          budget,
-          args.onStage,
-          args.scope,
-          args.tierWeights,
-        )
-      : { ctx: "", stems: [], stale: false, retrievalFailed: false };
-    stems = retrieved.stems;
-    stale = retrieved.stale;
-    retrievalFailed = retrieved.retrievalFailed;
-    let ctx = retrieved.ctx;
-    if (!ctx.trim()) {
-      ctx = await ipc.readVaultContext(args.cwd, budget);
+  // Audio and Study supply their selected source text. Instruction-only
+  // generators such as Reflect and Lint still need retrieved vault evidence.
+  const hasSuppliedSources =
+    args.task === "generate" &&
+    (featureRole === "audio" || featureRole === "study");
+  if (!hasSuppliedSources) {
+    try {
+      const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
+      // Prefer semantic top-K retrieval (only the most relevant pages) when an
+      // embedding index exists. The compatibility fallback is restricted to
+      // unscoped queries without a date range and an unavailable index.
+      const question = args.retrievalQuery ?? lastUserContent(args.messages);
+      const retrieved = question
+        ? await semanticContext(
+            question,
+            budget,
+            args.onStage,
+            args.scope,
+            args.tierWeights,
+            args.paths,
+            args.range,
+          )
+        : {
+            ctx: "",
+            stems: [],
+            stale: false,
+            retrievalFailed: false,
+            indexedPages: null,
+          };
+      stems = retrieved.stems;
+      stale = retrieved.stale;
+      retrievalFailed = retrieved.retrievalFailed;
+      let ctx = retrieved.ctx;
+      // An Ask over one note never widens to the whole vault.
+      if (
+        !ctx.trim() &&
+        !args.paths &&
+        !args.range &&
+        args.scope !== "sessions" &&
+        (retrieved.stale ||
+          retrieved.retrievalFailed ||
+          retrieved.indexedPages === null)
+      ) {
+        ctx = await ipc.readVaultContext(args.cwd, budget);
+      }
+      messages = withVaultContext(
+        messages,
+        ctx.trim()
+          ? ctx
+          : "No matching source passages were retrieved for this question and scope.",
+      );
+    } catch (err) {
+      log.warn("complete.vault_context_failed", { error: String(err) });
+      retrievalFailed = true;
+      messages = withVaultContext(
+        messages,
+        "Source retrieval failed. Do not infer a vault answer without evidence.",
+      );
     }
-    if (ctx.trim()) {
-      messages = withVaultContext(messages, ctx);
-    }
-  } catch {
-    /* proceed without inlined context rather than blocking the request */
   }
   // Profile paragraph is appended AFTER the retrieval merge above, never
   // before — withVaultContext's "answer ONLY from the content below" line
@@ -303,18 +382,26 @@ export async function complete(args: CompleteArgs): Promise<string> {
     ...(retrievalFailed ? { retrievalFailed: true } : {}),
   });
 
-  // Embedded model (bundled Gemma 3 1B): in-process, offline, no key. The
-  // backend applies the model's own chat template, so pass plain content —
-  // no "User:/Assistant:" role markers (they made the base LM continue the
-  // transcript with fake turns). Light tasks only; ingest is rejected above.
+  stopIfAborted(args.signal);
+
+  // Compatibility path for an explicitly supplied local chat model. No chat
+  // model is bundled; normal offline Ask is handled extractively upstream.
   if (isBuiltin) {
     const system = messages.find((m) => m.role === "system")?.content ?? "";
     const user = messages
       .filter((m) => m.role !== "system")
       .map((m) => m.content)
       .join("\n\n");
-    // 320 tokens ≈ a short paragraph — less runway for a 0.5B model to ramble.
-    const out = await ipc.localQuery(system ? `${system}\n\n${user}` : user, 320);
+    // Keep optional local generation bounded to a short paragraph.
+    const requestId = `text-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const cancel = () => void ipc.cancelLocalSynthesis(requestId).catch(() => log.warn("text.cancel_failed"));
+    args.signal?.addEventListener("abort", cancel, { once: true });
+    let out: string;
+    try {
+      stopIfAborted(args.signal);
+      out = await ipc.localQuery(system ? `${system}\n\n${user}` : user, 320, origin, snapshot, requestId);
+      stopIfAborted(args.signal);
+    } finally { args.signal?.removeEventListener("abort", cancel); }
     return out.trim();
   }
 
@@ -332,7 +419,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
     provider_id: provider,
     model,
     messages,
-  });
+  }, origin, snapshot);
   // Thread the token usage into the cumulative tracker (null for providers that
   // don't report it, e.g. ollama).
   if (res.usage) {
@@ -356,7 +443,8 @@ const CURRENT_BUILTIN_INDEX_ID = `builtin-local:${BUILTIN_EMBED_MODEL}`;
 /** Whether an existing embedding index was built under a bundled embed model
  * that has since been swapped out (e.g. the gemma-3-1b -> bge-m3 migration) —
  * its vectors live in a different space than a fresh query embedding, so
- * search would silently return nothing. Distinct from "never indexed"
+ * the backend skips dense retrieval and keeps the independent lexical arm.
+ * Distinct from "never indexed"
  * (`indexed_pages === 0`), which needs no reindex nudge. Only builtin-local
  * indexes can go stale this way (mirrors `builtin_index_is_stale` in
  * commands.rs) — an ollama-tagged index is never flagged. */
@@ -370,10 +458,10 @@ export function isIndexStale(
 }
 
 /** Retrieval half of semanticContext, exported for the extractive Ask path.
- * Same semantics: `stale` = index predates a bundled embed-model swap (search
- * skipped); `retrievalFailed` = an IPC call REJECTED (logged, caught) — never
- * set for a legitimately empty index or empty hit list. `onRetrieving` fires
- * just before the search IPC, matching the old stage-event timing. */
+ * Missing or stale dense vectors still allow verified lexical evidence.
+ * `stale` means a retired dense index with no accepted lexical answer;
+ * `retrievalFailed` means an IPC call rejected, never a healthy empty result.
+ * `onRetrieving` fires immediately before the actual hybrid search IPC. */
 export interface RetrievedChunks {
   /** Hits at or above `floor` (lexical-only hits included — see isRelevant). */
   hits: ScoredChunk[];
@@ -382,7 +470,7 @@ export interface RetrievedChunks {
   nearMisses: NearMiss[];
   /** The dense-cosine floor `hits` cleared. */
   floor: number;
-  /** Pages in the index, for the retrieval trace; null when unknown. */
+  /** Pages in the dense index; zero does not describe lexical coverage. */
   indexedPages: number | null;
   stale: boolean;
   retrievalFailed: boolean;
@@ -395,8 +483,10 @@ export async function retrieveChunks(
   /** Inclusive YYYY-MM-DD window (time-aware Ask) — threaded through to
    * semantic_search's dated-tier filter. */
   range?: { start: string; end: string },
-  scope?: AskScope,
+  scope?: SearchScope,
   tierWeights?: TierWeights,
+  /** "Ask this note": only these vault-relative pages (semantic_search's `paths`). */
+  paths?: string[],
 ): Promise<RetrievedChunks> {
   const none: RetrievedChunks = {
     hits: [],
@@ -406,13 +496,13 @@ export async function retrieveChunks(
     stale: false,
     retrievalFailed: false,
   };
-  const status = await ipc.embeddingsStatus().catch((err) => {
-    log.warn("retrieve_chunks.embeddings_status_failed", { error: String(err) });
+  const status = await ipc.embeddingsStatus().catch(() => {
+    log.warn("retrieve_chunks.embeddings_status_failed", { code: "embeddings_status_failed" });
     return null;
   });
   if (status === null) return { ...none, retrievalFailed: true };
-  if (status.indexed_pages === 0) return none;
-  if (isIndexStale(status)) return { ...none, stale: true };
+  const staleDense = isIndexStale(status);
+  const denseUnavailable = status.indexed_pages === 0 || staleDense;
   onRetrieving?.();
   let searchRejected = false;
   const res = await ipc
@@ -424,9 +514,10 @@ export async function retrieveChunks(
       range,
       scope,
       tierWeights,
+      paths,
     )
-    .catch((err) => {
-      log.warn("retrieve_chunks.semantic_search_failed", { error: String(err) });
+    .catch(() => {
+      log.warn("retrieve_chunks.semantic_search_failed", { code: "semantic_search_failed" });
       searchRejected = true;
       return null;
     });
@@ -439,8 +530,14 @@ export async function retrieveChunks(
   // The stricter of the two floors: the backend's applied one and the
   // measured constant here. Judging and displaying use the same number.
   const floor = Math.max(found.floor, RELEVANCE_FLOOR);
+  // The native hybrid path independently skips incompatible dense vectors.
+  // Require exact source verification here too when the status says they
+  // cannot support an answer, including replies from an older backend.
+  const relevant = (hit: ScoredChunk): boolean =>
+    isRelevant(hit, floor) && (!denseUnavailable || hit.exact_match === true);
+  const hits = found.hits.filter(relevant);
   const rejected: NearMiss[] = found.hits
-    .filter((h) => !isRelevant(h, floor))
+    .filter((h) => !relevant(h))
     .map((h) => ({
       page: h.page,
       tier: h.tier ?? hitTier(sourceTier(h.page)),
@@ -448,11 +545,11 @@ export async function retrieveChunks(
       similarity: h.similarity,
     }));
   return {
-    hits: found.hits.filter((h) => isRelevant(h, floor)),
+    hits,
     nearMisses: [...found.below_floor, ...rejected],
     floor,
     indexedPages: status.indexed_pages,
-    stale: false,
+    stale: staleDense && hits.length === 0,
     retrievalFailed: false,
   };
 }
@@ -487,19 +584,18 @@ export const RELEVANCE_FLOOR = 0.42;
  * covers `undefined` too: a backend that predates the field must degrade to the
  * old unfiltered behaviour, not silently reject every hit. */
 function isRelevant(hit: ScoredChunk, floor: number): boolean {
-  return hit.similarity == null || hit.similarity >= floor;
+  return hit.exact_match === true || (hit.similarity != null && hit.similarity >= floor);
 }
 
-/** Semantic retrieval: embed the question, pull the top-matching chunks from the
- * embedding index, and inline their PASSAGE TEXT (bounded by `budget`) under one
+/** Hybrid retrieval: rank dense and verified lexical source chunks, then
+ * inline their PASSAGE TEXT (bounded by `budget`) under one
  * citeable [[stem]] header per page — not the whole page body, which is what
  * this used to re-read from disk. Chunks are already ranked by the index, so
  * later chunks of a page just append under its existing header rather than
- * repeating it. Returns "" when no index exists so the caller can fall back
- * to the whole-vault concat. `stale` is true when the index predates a bundled
- * embed-model swap — retrieval is skipped entirely rather than cosining across
- * incompatible vector spaces, and the caller must surface this, not just fall
- * back silently.
+ * repeating it. Returns "" when no accepted evidence exists. The backend
+ * skips incompatible dense vectors while lexical retrieval remains available.
+ * `stale` is true only when a retired dense index has no lexical answer,
+ * preserving the existing reindex notice without hiding verified sources.
  *
  * `retrievalFailed` is true when `embeddings_status` or `semantic_search`
  * actually REJECTED (network/IPC error, panic, etc.) — not when they resolved
@@ -515,47 +611,22 @@ async function semanticContext(
   onStage?: (stage: AskStage) => void,
   scope?: AskScope,
   tierWeights?: TierWeights,
-): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean }> {
+  paths?: string[],
+  range?: { start: string; end: string },
+): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean; indexedPages: number | null }> {
   const r = await retrieveChunks(
     question,
     12,
     () => onStage?.({ kind: "retrieving" }),
-    undefined,
+    range,
     scope,
     tierWeights,
+    paths,
   );
   if (r.stale || r.retrievalFailed || r.hits.length === 0) {
-    return { ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed };
+    return { ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed, indexedPages: r.indexedPages };
   }
-  // Maps-first (Phase B, Task 6): a wiki/maps/ page summarizes its whole
-  // cluster, so front-load its block(s) within the same budget — the model
-  // sees the topic map before it drills into individual pages' details.
-  // Stable partition: relative order within each group is preserved, and
-  // `r.hits` itself (scores, ranking, which hits made the top-k cut) is
-  // untouched — this only reorders which blocks get assembled first.
-  const ordered = [
-    ...r.hits.filter((h) => h.page.startsWith("wiki/maps/")),
-    ...r.hits.filter((h) => !h.page.startsWith("wiki/maps/")),
-  ];
-  const parts: string[] = [];
-  const stems: string[] = [];
-  let used = 0;
-  let lastPage = "";
-  for (const h of ordered) {
-    if (!h.text) continue;
-    // One citeable header per page; later chunks of the same page just
-    // append under it instead of repeating the citation.
-    const header = h.page !== lastPage ? `===== [[${h.stem}]] =====\n` : "\n";
-    const block = `${header}${h.text}`;
-    if (used + block.length > budget && parts.length > 0) break;
-    parts.push(block);
-    used += block.length;
-    if (h.page !== lastPage && !stems.includes(h.stem)) stems.push(h.stem);
-    lastPage = h.page;
-  }
-  // Only the pages that made the budget: the ones past it are never shown to
-  // the model, so naming them would be another fiction.
-  return { ctx: parts.join("\n\n"), stems, stale: false, retrievalFailed: false };
+  return { ...buildRetrievalContext(r.hits, budget), stale: false, retrievalFailed: false, indexedPages: r.indexedPages };
 }
 
 // Merge the vault content into the single system message (providers like
@@ -571,7 +642,9 @@ function withVaultContext(
     `knowledge, and do NOT invent pages, files, facts, or events. If the answer ` +
     `is not present in the content below, reply that you could not find it in ` +
     `the wiki (in the user's language) — do not guess. Cite pages you use as ` +
-    `[[page-stem]].\n\n${ctx}`;
+    `[[vault-relative/path|page-stem]], preserving the source_path shown below. ` +
+    `A dated statement is evidence for that date, not proof of the current state. ` +
+    `If sources disagree, state the dates and disagreement instead of silently choosing.\n\n${ctx}`;
   const sysIdx = messages.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     return messages.map((m, i) =>
@@ -598,49 +671,18 @@ function appendSystemSuffix(
   return [{ role: "system", content: suffix.trim() }, ...messages];
 }
 
-export async function getActiveModel(
-  task: "query" | "ingest" | "generate",
-): Promise<{
-  provider: string;
-  model: string;
-  effort: string;
-}> {
+export async function getActiveModel(task: "query" | "ingest" | "generate" | RoleId): Promise<{ provider: string; model: string; effort: string }> {
   return roleFor(task, await ipc.getSettings());
 }
 
-/** The only provider that cannot write prose: it ships an embedder, no chat
- *  weights. Everything else — CLI bridges, API providers, Ollama — can. */
-export function canGenerate(provider: string): boolean {
-  return provider !== "builtin-local" && provider !== "";
+/** Capability is separate from artifact readiness; extractive models do not generate. */
+export function canGenerate(provider: string, model?: string): boolean {
+  return provider === "builtin-local" ? !!model && isBuiltinChatModel(model) : provider !== "";
 }
 
-/**
- * Settings role → provider/model/effort. Pure, so the fallback rule is
- * testable without a backend.
- *
- * `generate` prefers the query role (a user who pointed Ask at Claude wants
- * their overviews from Claude too) and falls back to the ingest role when the
- * query role is the extractive built-in. If NEITHER can generate it returns
- * the query role unchanged — `complete()` then fails with the same
- * CHAT_MODEL_MISSING it always did, which is the honest answer when no
- * generation provider is connected anywhere.
- */
-export function roleFor(
-  task: "query" | "ingest" | "generate",
-  s: MycoSettings,
-): { provider: string; model: string; effort: string } {
-  const query = {
-    provider: s.query_provider,
-    model: s.query_model,
-    effort: s.query_effort,
-  };
-  const ingest = {
-    provider: s.ingest_provider,
-    model: s.ingest_model,
-    effort: s.ingest_effort,
-  };
-  if (task === "ingest") return ingest;
-  if (task === "query") return query;
-  if (canGenerate(query.provider)) return query;
-  return canGenerate(ingest.provider) ? ingest : query;
+/** Native feature selections only; legacy display values never grant external use. */
+export function roleFor(task: "query" | "ingest" | "generate" | RoleId, settings: MycoSettings): { provider: string; model: string; effort: string } {
+  const role = task === "query" ? "ask" : task === "ingest" ? "compilation" : task === "generate" ? "organization" : task;
+  const selected = effectiveRole(settings, role);
+  return { provider: selected.providerId, model: selected.modelId, effort: selected.effort };
 }

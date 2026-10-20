@@ -40,7 +40,7 @@ async function clipWith(autoIngest) {
   // Set auto-ingest through the real Settings toggle. Importing the store from
   // `evaluate` would get a second module instance with its own state — the app
   // would never see the change.
-  await page.locator(".side-tools .nav-item", { hasText: "Settings" }).first().click();
+  await page.locator(".side-head .side-gear").click();
   await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
   await page.locator(".qbtn", { hasText: "Model" }).first().click();
   const target = page.locator('button[role="switch"][aria-label="Auto-ingest inbox"]').first();

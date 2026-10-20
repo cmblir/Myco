@@ -10,6 +10,10 @@
 // OrbitControls (with idle auto-rotate) provide the real z-axis orbit. Labels
 // reuse the app font via CSS2DRenderer with sigma's hub-first size threshold.
 import * as THREE from "three";
+import { WovenGraphLayer, type LinkInk } from "./wovenGraphLayer";
+import type { WovenLayout } from "./wovenLayout";
+import { SculptedGraphLayer } from "./sculptedGraphLayer";
+import { isSculptedLayout, type SculptedLayoutResult } from "./sculptedLayouts";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { ShipController } from "./shipController";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
@@ -78,6 +82,17 @@ import {
   LIGHT_BG_PIXEL_SIZE_MUL,
   SIGMA_SKIN_NODE_SCALE,
   WEB_SKIN_NODE_SCALE,
+  EDGE_OPACITY_DARK,
+  EDGE_OPACITY_LIGHT,
+  EDGE_BASE_DARK,
+  EDGE_BASE_LIGHT,
+  EDGE_HI,
+  EDGE_DIM,
+  FOCUS_EDGE_DIM,
+  EDGE_NEUTRAL_DARK_HEX,
+  EDGE_NEUTRAL_LIGHT_HEX,
+  EDGE_GREY_MIX,
+  EDGE_END_FADE,
 } from "./layoutConfig";
 
 const PICK_BASE_PX = 14;
@@ -102,11 +117,11 @@ const LABEL_MAX = 64;
 // Declutter box metrics per label class (see styles.css): advance width per
 // latin character, and the row height including a little air so two rows never
 // end up flush against each other.
-// .graph-label-3d: 11px / weight 500. .graph-cluster-label: 13px / weight 600 /
-// letter-spacing .14em / uppercase.
+// .graph-label-3d: 11px / weight 500. .graph-cluster-label: 12.5px / weight 600 /
+// letter-spacing .02em, with a canvas-relative maximum width.
 const NODE_LABEL_CHAR_PX = 6.4;
 const NODE_LABEL_LINE_PX = 15;
-const CLUSTER_LABEL_CHAR_PX = 10;
+const CLUSTER_LABEL_CHAR_PX = 7.2;
 const CLUSTER_LABEL_LINE_PX = 20;
 
 // Estimated on-screen width of a label, WITHOUT touching the DOM — measuring
@@ -134,16 +149,9 @@ function labelWidthPx(text: string, charPx: number): number {
 // Edge material opacity and per-end brightness — theme-branched. Light theme
 // paints edges over near-white paper with NormalBlending, so the mesh needs a
 // darker neutral, higher opacity, and higher per-end brightness to read as
-// connective tissue instead of vanishing.
-const EDGE_OPACITY_DARK = 0.2;
-// Light bg uses NormalBlending (not additive), so thousands of overlapping
-// star-spoke edges STACK into an opaque grey wash that buries the nodes. Keep
-// the per-edge alpha low so a dense hub-and-spoke vault stays readable on paper.
-const EDGE_OPACITY_LIGHT = 0.42;
-const EDGE_BASE_DARK = 0.22; // per-end brightness (edges are tissue, not light)
-const EDGE_BASE_LIGHT = 0.9;
-const EDGE_HI = 1.15; // incident edges on hover (pop)
-const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
+// connective tissue instead of vanishing. Those values (EDGE_OPACITY_*,
+// EDGE_BASE_*, EDGE_HI, EDGE_DIM) live in layoutConfig.ts, shared with the
+// Woven strands so both kinds of line stay one light.
 // Hover micro-pop: the hovered star eases to ×HOVER_POP_SCALE over
 // HOVER_POP_MS and back on leave. Deliberately parallel to the ingest pulse
 // (style.pulseId/pulseScale) — hijacking those would fight a live ingest glow.
@@ -153,9 +161,9 @@ const HOVER_POP_MS = 150;
 // are pulled halfway toward a neutral so the mesh reads as connective tissue
 // and the community hues live in the stars. Dark theme: cool mid-grey. Light
 // theme: dark slate so the neutral half doesn't disappear into #fafaf9.
-const EDGE_NEUTRAL_DARK = new THREE.Color("#8b93a8");
-const EDGE_NEUTRAL_LIGHT = new THREE.Color("#2c3446");
-const EDGE_GREY_MIX = 0.5;
+// The pull (EDGE_GREY_MIX) and both neutrals are shared via layoutConfig.ts.
+const EDGE_NEUTRAL_DARK = new THREE.Color(EDGE_NEUTRAL_DARK_HEX);
+const EDGE_NEUTRAL_LIGHT = new THREE.Color(EDGE_NEUTRAL_LIGHT_HEX);
 // Cosmic-web skin: the edges ARE the picture (dark-matter-simulation look).
 // Tiny stars, and thin violet filaments whose brightness comes from OVERLAP —
 // each line is faint, additive blending sums where strands cross, so density
@@ -179,7 +187,7 @@ const EDGE_GREY_MIX_WEB = 0.85; // near-uniform filament tissue, faint hue hint
 // Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
 // TWO segments s→m, m→t so alpha can peak at the middle and fade at the ends —
 // N spokes converging on a hub no longer sum to a bright disc at the core.
-const EDGE_END_FADE = 0.45; // endpoint brightness × (mid stays ×1.0)
+// Endpoint brightness × EDGE_END_FADE (layoutConfig.ts), mid stays × 1.
 // The midpoint also sags ~5% of the edge length along a deterministic per-edge
 // perpendicular, so spoke bundles read organic instead of ruler-straight.
 const EDGE_SAG = 0.05;
@@ -269,9 +277,9 @@ const EMPTY_STYLE: SceneStyleState = {
 const ENC_BASE_R = 6;
 
 // Focus-isolation context layer: non-members at 0.08 alpha (hover's soft dim is
-// 0.15 — focus is a held state, so it cuts deeper), their edges near-invisible.
+// 0.15 — focus is a held state, so it cuts deeper), their edges near-invisible
+// (FOCUS_EDGE_DIM, layoutConfig.ts).
 const FOCUS_NODE_DIM = 0.08;
-const FOCUS_EDGE_DIM = 0.03;
 
 // Idle time after the last orbit/zoom before auto-rotate resumes (spec A7).
 const ROTATE_IDLE_MS = 8000;
@@ -294,6 +302,11 @@ const SWIRL_SPEED = 0.05;
 const MOON_SPEED = (Math.PI * 2) / 60;
 const MOON_RADIUS_MIN = 4; // × host node's world radius
 const MOON_RADIUS_VAR = 4;
+// Woven's web is flat and framed edge to edge between the rail tabs, so a
+// turn about its normal would swing its long axis off the screen. Its idle
+// orbit sways back and forth over this angle (rad) instead, at the speed every
+// other look's auto-rotate turns (swayTick).
+const WOVEN_SWAY = 0.08;
 
 // Above this node count the scene builds in performance mode (spec B5):
 // 1 starfield shell instead of 3, no nebula, no pulses — the ambient layers
@@ -997,7 +1010,39 @@ export function computeMinimapBounds(
   return { cx, cy, cz, r: Math.sqrt(r2), rz };
 }
 
+/** Camera distance at which a sphere around `center` reaching its farthest
+ * `around` point fits the narrower half-FOV, with a 20 % margin; never closer
+ * than `closeDist`. "그래프에서 보기" frames a note with its first-hop
+ * neighbours this way (UX S44): the close single-note distance hid them all.
+ * Exported for unit testing. */
+export function neighbourhoodDist(
+  center: { x: number; y: number; z: number },
+  around: { x: number; y: number; z: number }[],
+  fovDeg: number,
+  aspect: number,
+  closeDist: number,
+): number {
+  let r = 0;
+  for (const p of around) r = Math.max(r, Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z));
+  const halfFov = Math.atan(Math.tan((fovDeg * Math.PI) / 360) * Math.min(1, aspect));
+  return Math.max(closeDist, (r * 1.2) / Math.sin(halfFov));
+}
+
+/** World distance to slide the look-at point right so a note at the old
+ * centre lands mid-way across the canvas left uncovered by a `coverPx` panel
+ * on its right edge. `heightPx` is the canvas height; the camera is `dist`
+ * away with a vertical FOV of `fovDeg`. Exported for unit testing. */
+export function coverShift(coverPx: number, dist: number, fovDeg: number, heightPx: number): number {
+  const worldPerPx = (2 * dist * Math.tan((fovDeg * Math.PI) / 360)) / heightPx;
+  return (coverPx / 2) * worldPerPx;
+}
+
 export class GraphScene {
+  // Terrain / City: a solid renderer that replaces this scene's drawing.
+  private sculpted: SculptedGraphLayer | null = null;
+  // Woven: its routed strands stand in for the straight links; everything else
+  // (notes, labels, bloom, states) is this scene's own.
+  private woven: WovenGraphLayer | null = null;
   private container: HTMLDivElement;
   private graph: VaultGraph;
   private theme: GraphTheme;
@@ -1175,6 +1220,7 @@ export class GraphScene {
   // sigma/white draws already lives in [0,1] (NormalBlending, tiny bloom), so
   // there is no HDR to compress away.
   private lookToneMapping(): THREE.ToneMapping {
+    if (this.solidLook) return THREE.ACESFilmicToneMapping;
     // Mycelium joins paper and sigma in passing colour straight through. AgX is
     // a deep-space affordance and it LIFTS near-black with a blue cast, which
     // turned the substrate (#0b0a08) into a blue-grey sky — the last thing
@@ -1187,10 +1233,16 @@ export class GraphScene {
   // Exposure = the brightness slider, but paper must not dim below 1.0 or the
   // white board turns grey (NoToneMapping multiplies the background straight).
   private lookExposure(): number {
+    if (this.solidLook) return 1.1;
     if (!this.darkTheme || this.sigmaSkin || this.myceliumSkin) {
       return Math.max(1, this.settings.brightness);
     }
     return this.settings.brightness;
+  }
+  // Terrain and City draw lit solids through their own pass and grade. Woven is
+  // only a link layer inside this scene, so it takes the shared look.
+  private get solidLook(): boolean {
+    return this.settings.layout === "terrain" || this.settings.layout === "city";
   }
   // Per-skin node size multiplier, folded into u_sizeScale wherever it is set.
   private skinNodeScale(): number {
@@ -1343,7 +1395,9 @@ export class GraphScene {
 
     // far plane large enough to hold a wide, fully-zoomed-out layout.
     this.camera = new THREE.PerspectiveCamera(58, w / h, 0.5, 40000);
+    if (isSculptedLayout(settings.layout)) this.camera.up.set(0, 0, 1);
     this.camera.position.set(0, 0, 900);
+    if (settings.layout === "spiral") this.camera.position.set(220, 500, 900);
 
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -1559,7 +1613,9 @@ export class GraphScene {
         // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
         // never visibly detaches stars from their CPU-anchored edges. Flat 2D
         // maps stay perfectly still — drift is a galaxy-space affordance.
-        u_driftAmp: { value: this.flatLayout ? 0 : 2.2 },
+        // Woven's strands end exactly on their notes (and pulses ride them),
+        // so its notes hold still too and every other motion carries them.
+        u_driftAmp: { value: this.flatLayout || settings.layout === "ribbon" ? 0 : 2.2 },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -1675,11 +1731,10 @@ export class GraphScene {
     // still read on large graphs (matches applyTheme, which omits the perfLod gate).
     // NOT in a flat 2D layout: viewed top-down the big soft halo sprite reads
     // as one giant white puck dead centre, burying the map.
-    const flat = settings.layout === "atlas" || settings.layout === "synapse";
     this.nebula = new NebulaLayer(
       this.graph,
       this.nodeIds,
-      SHOW_NEBULA && amb.nebula && !flat,
+      this.nebulaWanted(),
     );
     this.scene.add(this.nebula.group);
 
@@ -1772,7 +1827,7 @@ export class GraphScene {
     // Bundled inter-community strands (GRAPH-01): rebuilt on layoutSettled()
     // (galaxy mode) / atlas apply, so they always follow the measured layout.
     this.bundles = new EdgeBundleLayer(this.graph, dark, w, h);
-    this.bundles.setVisible(settings.edgeBundles);
+    this.bundles.setVisible(this.bundlesWanted());
     this.scene.add(this.bundles.group);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
@@ -1786,6 +1841,9 @@ export class GraphScene {
 
     // --- cluster auto-labels (community names while zoomed out) ---
     this.clusterLabels = new ClusterLabels(this.graph);
+    // A community spans an arm, so its centroid label lands in the empty core.
+    // Individual note labels and the legend still identify the spiral's stars.
+    this.clusterLabels.setEnabled(settings.layout !== "spiral");
     this.scene.add(this.clusterLabels.group);
 
     // --- label allow-set (declutter) ---
@@ -1857,11 +1915,11 @@ export class GraphScene {
   private buildStarfield(dark: boolean): THREE.Group {
     const group = new THREE.Group();
     const style = this.settings.skyStyle;
+    if (style === "void" || style === "grid") return group;
     // Base three-shell field; density multiplied per style. Flat 2D layouts
     // never go below "dense" — a sparse plane left big empty gaps in fly mode.
     const flatFull = this.flatLayout;
-    const densMul =
-      style === "void" ? 0.25 : style === "dense" || flatFull ? 2.2 : 1;
+    const densMul = style === "dense" || flatFull ? 2.2 : 1;
     const near = dark
       ? [
           { count: 900, r0: 900, r1: 3000, size: 1.6, color: 0xbcc6e0, op: 0.3 },
@@ -2092,6 +2150,8 @@ export class GraphScene {
     age.needsUpdate = true;
     hit.needsUpdate = true;
     rng.needsUpdate = true;
+    this.sculpted?.sync(this.nodeGeom, this.settings, this.selectedNode, this.style.pathNodes);
+    this.woven?.sync(this.nodeGeom, this.settings, this.style);
   }
 
   // Pixel-sprite identity cache (archetype + ramp, see NODE_VERT/NODE_FRAG):
@@ -2216,6 +2276,7 @@ export class GraphScene {
   setSelectedNode(id: string | null): void {
     this.selectedNode = id;
     this.writeSelected();
+    this.sculpted?.sync(this.nodeGeom, this.settings, this.selectedNode, this.style.pathNodes);
   }
 
   private writeSelected(): void {
@@ -2461,15 +2522,7 @@ export class GraphScene {
       // bridges glow as bright gradient nerve fibres while dense intra-cluster
       // edges dim into tight cores (ganglia joined by nerves — the reference).
       const web = this.settings.edgeTint === "community";
-      // Web skin: near-uniform filament tissue (strong pull to the violet
-      // neutral) — density, not hue, carries the picture there.
-      const greyMix = this.webSkin
-        ? EDGE_GREY_MIX_WEB
-        : this.sigmaSkin
-          ? EDGE_GREY_MIX_SIGMA
-          : web || this.synapseRender
-            ? 0.12
-            : EDGE_GREY_MIX;
+      const greyMix = this.edgeGreyMix();
       cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
       ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
       if (this.sigmaSkin) {
@@ -2519,6 +2572,33 @@ export class GraphScene {
       this.refreshFilamentTargets();
       this.updateFilaments();
     }
+  }
+
+  // How far each link end is pulled toward the neutral. Web skin: near-uniform
+  // filament tissue (strong pull to the violet neutral) — density, not hue,
+  // carries the picture there.
+  private edgeGreyMix(): number {
+    return this.webSkin
+      ? EDGE_GREY_MIX_WEB
+      : this.sigmaSkin
+        ? EDGE_GREY_MIX_SIGMA
+        : this.settings.edgeTint === "community" || this.synapseRender
+          ? 0.12
+          : EDGE_GREY_MIX;
+  }
+
+  // The link light writeEdges gives every look's links, for Woven's strands
+  // (WovenGraphLayer.setInk), so skin, theme and Link colour land on both.
+  private linkInk(): LinkInk {
+    const community = this.settings.edgeTint === "community";
+    return {
+      neutral: this.edgeNeutral,
+      greyMix: this.edgeGreyMix(),
+      base: this.edgeBaseBrightness * (community && !this.webSkin ? 1.55 : 1),
+      opacity: this.edgeOpacity,
+      additive: this.darkTheme && !this.sigmaSkin,
+      saturate: this.sigmaSkin ? 1.5 : 1,
+    };
   }
 
   // Orient one cone per edge at the target end, pointing source→target. Scaled
@@ -2587,12 +2667,16 @@ export class GraphScene {
         continue;
       }
       dir.divideScalar(len);
-      q.setFromUnitVectors(up, dir); // cone's +Y axis points toward the target
       // Fly along the edge, stopping short of the target star's surface so the
       // ship visibly "arrives" at the node rather than overlapping its core.
       const back = b.size * NODE_RADIUS;
       const travel = Math.max(0, len - back);
       pos.copy(sPos).addScaledVector(dir, p * travel);
+      // Woven: along the strand, heading the way it runs there.
+      const f = (p * travel) / len;
+      if (this.woven?.pointAlong(s, t, f, pos) && this.woven.pointAlong(s, t, f + 0.01, tPos) && tPos.distanceToSquared(pos) > 1e-8)
+        dir.subVectors(tPos, pos).normalize();
+      q.setFromUnitVectors(up, dir); // cone's +Y axis points toward the target
       scl.set(asz, asz, asz);
       m.compose(pos, q, scl);
       this.arrows.setMatrixAt(i, m);
@@ -2619,10 +2703,8 @@ export class GraphScene {
     const threshold = Math.max(1, 5 + (this.settings.textFadeThreshold - 1.1) * 6);
     const { hoveredNode } = this.style;
 
-    // Only the labelable hubs (≤TOP_N) and the single hovered node can ever show
-    // a label, so build that tiny candidate set and visit ONLY it — visiting all
-    // 10k nodes every frame just to leave 9988 of them invisible is pure waste
-    // (and every obj.position.set dirties a matrix three.js then re-walks).
+    // Keep the selected neighborhood readable without scanning every node.
+    // Hover and selection take priority over degree-ranked overview labels.
     // Semantic zoom: the closer the camera is than the framed distance, the more
     // top-degree labels become candidates (bounded by LABEL_MAX). The size-gate
     // below still hides any candidate too small on screen, so this only ever
@@ -2636,22 +2718,31 @@ export class GraphScene {
     const budget = Math.max(LABEL_MIN, Math.min(LABEL_MAX, grown));
     const candidates = this.labelCandidates;
     candidates.clear();
-    for (let i = 0; i < budget && i < this.labelRank.length; i++) {
+    const selected = this.selectedNode;
+    if (selected && this.graph.hasNode(selected)) candidates.add(selected);
+    if (hoveredNode) candidates.add(hoveredNode);
+    if (selected && this.graph.hasNode(selected)) {
+      candidates.add(selected);
+      this.graph.someNeighbor(selected, (id, attrs) => {
+        if (!attrs.hidden) candidates.add(id);
+        return candidates.size >= budget;
+      });
+    }
+    for (let i = 0; candidates.size < budget && i < this.labelRank.length; i++) {
       candidates.add(this.labelRank[i]);
     }
     if (hoveredNode) candidates.add(hoveredNode);
 
-    // Hide any label shown last frame that is no longer a candidate.
+    // Candidates can fail this frame's size or collision gate after moving.
     for (const id of this.shownLabels) {
-      if (!candidates.has(id)) {
-        const obj = this.labels.get(id);
-        if (obj) obj.visible = false;
-      }
+      const obj = this.labels.get(id);
+      if (obj) obj.visible = false;
     }
     this.shownLabels.clear();
 
     this.placedBoxes.length = 0;
     const w = Math.max(1, this.container.clientWidth);
+    const maxClusterWidth = this.clusterLabels.setViewportWidth(w);
 
     // Community names claim their screen space FIRST — at the distance they
     // show, they are the coarse layer and a per-node name must yield to them.
@@ -2661,11 +2752,14 @@ export class GraphScene {
       this.tmpVec.copy(l.obj.position).project(this.camera);
       const inFront = this.tmpVec.z >= -1 && this.tmpVec.z <= 1;
       const ok =
-        inFront &&
+        !selected && inFront &&
         this.claimLabelBox(
           ((this.tmpVec.x + 1) / 2) * w,
           ((1 - this.tmpVec.y) / 2) * h,
-          labelWidthPx(l.el.textContent ?? "", CLUSTER_LABEL_CHAR_PX),
+          Math.min(
+            labelWidthPx(l.el.textContent ?? "", CLUSTER_LABEL_CHAR_PX),
+            maxClusterWidth,
+          ),
           CLUSTER_LABEL_LINE_PX,
         );
       l.el.classList.toggle("is-visible", ok);
@@ -2678,18 +2772,20 @@ export class GraphScene {
     for (const id of candidates) {
       const a = this.graph.getNodeAttributes(id);
       if (a.hidden) continue;
-      // On hover only the hovered node's label shows (sigma parity).
-      if (hoveredNode && id !== hoveredNode) continue;
+      const isContext = id === hoveredNode || id === selected ||
+        (!!selected && this.graph.hasNode(selected) && this.graph.areNeighbors(selected, id));
+      if (hoveredNode && !selected && id !== hoveredNode) continue;
       this.tmpVec.set(a.x, a.y, a.z);
       const dist = Math.max(1, this.camera.position.distanceTo(this.tmpVec));
-      const renderedPx = (a.size * NODE_RADIUS * scale) / dist;
-      if (!hoveredNode && renderedPx <= threshold) continue;
+      const radius = this.sculpted?.layout.nodes.get(id)?.width ?? a.size * NODE_RADIUS;
+      const renderedPx = (radius * scale) / dist;
+      if (!isContext && renderedPx <= threshold * (this.sculpted ? 0.25 : 1)) continue;
       this.tmpVec.project(this.camera);
       if (this.tmpVec.z < -1 || this.tmpVec.z > 1) continue;
       // The sprite is drawn GLOW_SCALE× the plain node radius — the label hangs
       // clear of that body (see the CSS2DObject center below), so its box has to
       // start below it or the declutter would happily stack text over planets.
-      const gap = renderedPx * GLOW_SCALE * 0.5 + 3;
+      const gap = renderedPx * (this.sculpted ? 0.5 : GLOW_SCALE * 0.5) + 3;
       boxes.push({
         id,
         x: ((this.tmpVec.x + 1) / 2) * w,
@@ -2751,6 +2847,7 @@ export class GraphScene {
     el.className = "graph-label-3d";
     el.textContent = this.graph.getNodeAttribute(id, "label");
     el.style.color = this.theme.ink;
+    el.style.textShadow = this.darkTheme ? "" : "0 0 3px #fff, 0 0 6px #fff";
     const obj = new CSS2DObject(el);
     obj.center.set(0.5, 0); // hang below the node, not over its body
     obj.visible = false;
@@ -2974,21 +3071,20 @@ export class GraphScene {
       this.filamentGeom.instanceCount = 0;
       return;
     }
-    const pos = new Float32Array(n * 6);
-    const col = new Float32Array(n * 6);
+    // Woven: a lit link follows its routed strand, not the straight chord.
+    const strands = this.woven
+      ? Array.from({ length: n }, (_, i) => this.woven!.strand(...this.edgePairs[this.filamentEdges[i]]))
+      : null;
+    const segments = strands ? strands.reduce((k, strand) => k + (strand ? strand.points.length / 6 : 1), 0) : n;
+    const pos = new Float32Array(segments * 6);
+    const col = new Float32Array(segments * 6);
     const cs = new THREE.Color();
     const ct = new THREE.Color();
+    let o = 0;
     for (let i = 0; i < n; i++) {
       const [s, t] = this.edgePairs[this.filamentEdges[i]];
       const sa = this.graph.getNodeAttributes(s);
       const ta = this.graph.getNodeAttributes(t);
-      const o = i * 6;
-      pos[o] = sa.x;
-      pos[o + 1] = sa.y;
-      pos[o + 2] = sa.z;
-      pos[o + 3] = ta.x;
-      pos[o + 4] = ta.y;
-      pos[o + 5] = ta.z;
       const f =
         sa.hidden || ta.hidden
           ? 0
@@ -2997,16 +3093,38 @@ export class GraphScene {
             : FILAMENT_BASE;
       cs.set(sa.color);
       ct.set(ta.color);
-      col[o] = cs.r * f;
-      col[o + 1] = cs.g * f;
-      col[o + 2] = cs.b * f;
-      col[o + 3] = ct.r * f;
-      col[o + 4] = ct.g * f;
-      col[o + 5] = ct.b * f;
+      const strand = strands?.[i];
+      if (!strand) {
+        pos[o] = sa.x;
+        pos[o + 1] = sa.y;
+        pos[o + 2] = sa.z;
+        pos[o + 3] = ta.x;
+        pos[o + 4] = ta.y;
+        pos[o + 5] = ta.z;
+        col[o] = cs.r * f;
+        col[o + 1] = cs.g * f;
+        col[o + 2] = cs.b * f;
+        col[o + 3] = ct.r * f;
+        col[o + 4] = ct.g * f;
+        col[o + 5] = ct.b * f;
+        o += 6;
+        continue;
+      }
+      pos.set(strand.points, o);
+      const count = strand.points.length / 6;
+      for (let k = 0; k < count; k++, o += 6)
+        for (let end = 0; end < 2; end++) {
+          // Share of the way from s to t at this vertex.
+          const along = strand.forward ? (k + end) / count : 1 - (k + end) / count;
+          const c = o + end * 3;
+          col[c] = (cs.r + (ct.r - cs.r) * along) * f;
+          col[c + 1] = (cs.g + (ct.g - cs.g) * along) * f;
+          col[c + 2] = (cs.b + (ct.b - cs.b) * along) * f;
+        }
     }
     this.filamentGeom.setPositions(pos);
     this.filamentGeom.setColors(col);
-    this.filamentGeom.instanceCount = n;
+    this.filamentGeom.instanceCount = segments;
   }
 
   // Per-tick HOT path: update node positions, then re-derive the edge vertex
@@ -3186,6 +3304,52 @@ export class GraphScene {
     this.syncPositions();
   }
 
+  // Woven lays its unlinked notes out as one fan of their own (wovenLayout),
+  // and no strand holds them: they turn about its centre once a minute, the
+  // orphan moons' rate, instead of being captured by the nearest linked note
+  // out of their fan. Only their own positions are rewritten.
+  private unlinkedFan: { at: number[]; cx: number; cy: number } | null = null;
+  private turnUnlinkedFan(dt: number): void {
+    if (!this.unlinkedFan) {
+      const at = this.nodeIds.flatMap((id, i) => (this.graph.degree(id) === 0 ? [i] : []));
+      let cx = 0;
+      let cy = 0;
+      for (const i of at) {
+        const a = this.graph.getNodeAttributes(this.nodeIds[i]);
+        cx += a.x / at.length;
+        cy += a.y / at.length;
+      }
+      this.unlinkedFan = { at, cx, cy };
+    }
+    const { at, cx, cy } = this.unlinkedFan;
+    if (at.length < 2) return;
+    const cos = Math.cos(MOON_SPEED * dt);
+    const sin = Math.sin(MOON_SPEED * dt);
+    const pos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
+    for (const i of at) {
+      const a = this.graph.getNodeAttributes(this.nodeIds[i]);
+      const x = a.x - cx;
+      const y = a.y - cy;
+      a.x = cx + x * cos - y * sin;
+      a.y = cy + x * sin + y * cos;
+      pos.setXY(i, a.x, a.y);
+    }
+    pos.needsUpdate = true;
+  }
+
+  /** Woven's idle orbit (WOVEN_SWAY), about the web's normal, whenever the
+   *  auto-rotate would turn (ambient motion on, no hand on the controls). */
+  private swaySpeed = 0.12;
+  private swayPhase = 0;
+  private swayTick(dt: number): void {
+    if (!this.controls.autoRotate) return;
+    const before = Math.sin(this.swayPhase);
+    this.swayPhase += (dt * this.swaySpeed * Math.PI * 2) / 60 / WOVEN_SWAY;
+    const offset = this.tmpVec.copy(this.camera.position).sub(this.controls.target);
+    offset.applyAxisAngle(this.camera.up, WOVEN_SWAY * (Math.sin(this.swayPhase) - before));
+    this.camera.position.copy(this.controls.target).add(offset);
+  }
+
   /** HUD hook: called when the camera crosses a cosmic-scale band. */
   setScaleListener(cb: (s: CosmicScale) => void): void {
     this.onScale = cb;
@@ -3325,7 +3489,16 @@ export class GraphScene {
   setSkyTexture(tex: THREE.Texture | null): void {
     this.skyTex?.dispose();
     this.skyTex = tex;
-    if (tex) this.scene.background = tex;
+    if (tex && this.deepSky()) this.scene.background = tex;
+  }
+
+  // The baked deep sky belongs to the skins PageGraph bakes it for: galaxy,
+  // and auto on a dark ground. Kept across a live switch it painted the dark
+  // sky under white, black, web, sigma and a light auto ground. The mycelium
+  // skin pins its own ground too: over the substrate colour the sky is the
+  // last thing that would still make the mat read as space.
+  private deepSky(): boolean {
+    return this.settings.skin === "galaxy" || (this.settings.skin === "auto" && this.darkTheme);
   }
 
   // ── Galaxy chart minimap ──────────────────────────────────────────────
@@ -3341,6 +3514,7 @@ export class GraphScene {
   private minimapMarkerLine: THREE.Line | null = null;
   private minimapBounds = { cx: 0, cy: 0, cz: 0, r: 1, rz: 0 };
   private minimapBoundsTick = 0;
+  private minimapClearColor = new THREE.Color();
   private static readonly MINIMAP_MARGIN = 12;
 
   setMinimap(on: boolean): void {
@@ -3479,6 +3653,8 @@ export class GraphScene {
     const vx = rect.x;
     const vy = h - rect.y - rect.size;
     const prevAuto = r.autoClear;
+    r.getClearColor(this.minimapClearColor);
+    const prevClearAlpha = r.getClearAlpha();
     r.autoClear = false;
     r.setScissorTest(true);
     r.setViewport(vx, vy, rect.size, rect.size);
@@ -3489,6 +3665,9 @@ export class GraphScene {
     r.clear(true, true, false);
     r.render(this.scene, cam);
     this.scene.background = bg;
+    // The next nodes-only bloom pass has no scene background. Leaving the
+    // inset's blue clear colour here would tint the entire main canvas.
+    r.setClearColor(this.minimapClearColor, prevClearAlpha);
     r.setScissorTest(false);
     r.setViewport(0, 0, el.clientWidth, h);
     r.autoClear = prevAuto;
@@ -3586,14 +3765,26 @@ export class GraphScene {
   //           crowd, UNDER the normal edges (which stay visible). Deep-space
   //           dark 3D skins only, and never in performance mode.
   private edgeDensity: EdgeDensityLayer | null = null;
+  private nebulaWanted(): boolean {
+    // A planetarium needs clean constellation strokes; haze across spiral
+    // arms fills their dark lanes. Keep clouds for the meaning-nebula look.
+    return SHOW_NEBULA && !this.flatLayout &&
+      !["spiral", "celestial"].includes(this.settings.layout) &&
+      skinAmbience(this.settings.skin, this.darkTheme).nebula;
+  }
+
   private desiredDensityMode(): "web" | "atmo" | null {
     if (this.webSkin) return "web";
+    // Woven's links already crowd into its bundles, and the blurred glow over
+    // them washed each corridor into one milky band that hid its strands
+    // (2,000-note vault): it keeps the clouds, not the link atmosphere.
     if (
       this.darkTheme &&
       !this.sigmaSkin &&
       !this.flatLayout &&
       !this.perfLod &&
-      skinAmbience(this.settings.skin, this.darkTheme).nebula
+      this.settings.layout !== "ribbon" &&
+      this.nebulaWanted()
     ) {
       return "atmo";
     }
@@ -3609,7 +3800,7 @@ export class GraphScene {
     if (want && !this.edgeDensity) {
       const el = this.renderer.domElement;
       this.edgeDensity = new EdgeDensityLayer(
-        this.edgeGeom,
+        this.woven?.geometry ?? this.edgeGeom,
         el.clientWidth || 2,
         el.clientHeight || 2,
         this.renderer.getPixelRatio(),
@@ -3620,7 +3811,10 @@ export class GraphScene {
       this.edgeDensity.quad.renderOrder = want === "atmo" ? -700 : -500;
       this.scene.add(this.edgeDensity.quad);
     }
-    this.edges.visible = this.edgeDensity?.mode !== "web";
+    this.edgeDensity?.setLinkStrength(this.settings.linkThickness);
+    this.edges.visible = this.edgeDensity?.mode !== "web" && !this.woven;
+    // The web field draws Woven's strands in place of the strands themselves.
+    if (this.woven) this.woven.group.visible = this.edgeDensity?.mode !== "web";
   }
 
   /** Live camera world position (clone) — the multiverse uses it to detect when
@@ -3760,6 +3954,8 @@ export class GraphScene {
 
   syncPositions(): void {
     this.writePositions();
+    this.sculpted?.sync(this.nodeGeom, this.settings, this.selectedNode, this.style.pathNodes);
+    this.woven?.sync(this.nodeGeom, this.settings, this.style);
     if (this.filaments) this.updateFilaments();
     // Arrows animate per-frame in the render loop (not per sim tick).
     // Galaxies drift while the sim runs; refresh the gas + cluster-label
@@ -3855,7 +4051,7 @@ export class GraphScene {
     this.edgeGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
     this.writeEdgeFlowAttrs();
     this.edges.geometry = this.edgeGeom;
-    this.edgeDensity?.setGeometry(this.edgeGeom);
+    this.edgeDensity?.setGeometry(this.woven?.geometry ?? this.edgeGeom);
     oldEdgeGeom.dispose();
 
     // Filaments: drop the old focus/path layer and rebuild over the new edge
@@ -3915,6 +4111,7 @@ export class GraphScene {
     // Node set changed — orphan moons re-pick their hosts lazily, and the
     // core bulges re-derive their groups.
     this.moonHosts = null;
+    this.unlinkedFan = null;
     this.coreGlow.setNodeIds(this.nodeIds);
     this.band.setNodeIds(this.nodeIds);
     this.imposter.setNodeIds(this.nodeIds);
@@ -3922,7 +4119,7 @@ export class GraphScene {
     if (this.atlasMode) this.hulls.rebuild();
     // Graph contents changed (live ingest / filter) → re-aggregate strands.
     this.bundles.markTopologyDirty();
-    if (this.settings.edgeBundles) this.bundles.rebuild();
+    if (this.bundlesWanted()) this.bundles.rebuild();
 
     this.writeNodes();
     this.writeNodeSprites(); // refresh per-node pixel-sprite identity cache
@@ -3941,11 +4138,7 @@ export class GraphScene {
       : dark
         ? new THREE.Color(0x05060d)
         : bg;
-    // The mycelium skin pins its own ground. A generated sky texture is the
-    // last thing that would still make the mat read as space after the
-    // starfield, nebula and bloom are off — it paints a sky-coloured wash over
-    // the substrate colour.
-    this.scene.background = this.myceliumSkin ? sceneBg : (this.skyTex ?? sceneBg);
+    this.scene.background = this.deepSky() ? (this.skyTex ?? sceneBg) : sceneBg;
     (this.scene.fog as THREE.FogExp2).color.copy(sceneBg);
     // Starfield shells are colour-baked per dark/light at build time, and the
     // active skin decides whether they show at all — rebuild them so a theme or
@@ -4022,7 +4215,7 @@ export class GraphScene {
     this.planets.setDark(dark); // pixel-planet ramps are dark/light tinted (rampFor)
     this.updatePlanetGate(); // skin/theme flip may enable/disable planets
     this.writeNodeSprites(); // node-sprite ramps are dark/light tinted too (rampFor)
-    this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.flatLayout);
+    this.nebula.setDark(this.nebulaWanted());
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = this.webSkin
       ? EDGE_NEUTRAL_WEB
@@ -4044,6 +4237,7 @@ export class GraphScene {
           ? EDGE_BASE_DARK
           : EDGE_BASE_LIGHT;
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * this.settings.linkThickness);
+    this.woven?.setInk(this.linkInk()); // repainted by writeNodes below
     // Web skin shrinks stars to points (a skin switch must land live, and the
     // resize handler owns this uniform otherwise — same formula, same source).
     this.nodeMat.uniforms.u_sizeScale.value =
@@ -4055,6 +4249,7 @@ export class GraphScene {
     this.arrowFallback = parseRGBA(theme.edgeHi).color;
     for (const obj of this.labels.values()) {
       (obj.element as HTMLElement).style.color = theme.ink;
+      (obj.element as HTMLElement).style.textShadow = this.darkTheme ? "" : "0 0 3px #fff, 0 0 6px #fff";
     }
     this.writeNodes();
     this.writeEdges();
@@ -4144,7 +4339,9 @@ export class GraphScene {
       // current heading so orbiting resumes around what the pilot was facing.
       const fwd = this.tmpVec.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
       this.controls.target.copy(this.camera.position).addScaledVector(fwd, 300);
-      this.camera.up.set(0, 1, 0);
+      // Back to the up the orbit was built around (OrbitControls caches it).
+      if (isSculptedLayout(this.settings.layout)) this.camera.up.set(0, 0, 1);
+      else this.camera.up.set(0, 1, 0);
       this.controls.enabled = true;
       this.controls.autoRotate = this.autoRotateWanted();
       this.controls.update();
@@ -4202,6 +4399,7 @@ export class GraphScene {
       this.writeEdges();
     }
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * settings.linkThickness);
+    this.edgeDensity?.setLinkStrength(settings.linkThickness);
     // Brightness: overall exposure + bloom glow intensity.
     // Brightness drives overall EXPOSURE only (applied by OutputPass at the end).
     // Bloom strength stays fixed so raising brightness lifts the whole image
@@ -4225,19 +4423,66 @@ export class GraphScene {
     }
     // Bundled strands toggle — rebuild on enable so the arcs match the current
     // (possibly swirled) layout instead of a stale snapshot.
-    if (settings.edgeBundles !== this.bundles.group.visible) {
-      this.bundles.setVisible(settings.edgeBundles);
-      if (settings.edgeBundles) this.bundles.rebuild();
+    if (this.bundlesWanted() !== this.bundles.group.visible) {
+      this.bundles.setVisible(this.bundlesWanted());
+      if (this.bundlesWanted()) this.bundles.rebuild();
     }
     // Length-falloff thresholds scale with linkDistance — re-derive so a slider
     // move updates edge brightness even before the sim posts its next tick.
     this.writeEdgeGeometry();
+    this.sculpted?.sync(this.nodeGeom, settings, this.selectedNode, this.style.pathNodes);
+    this.woven?.setInk(this.linkInk());
+    this.woven?.sync(this.nodeGeom, settings, this.style);
+    if (this.sculpted) this.setMinimap(false);
+  }
+
+  /** Route the links along Woven's strands. The strands replace the straight
+   *  links, light as they do and carry their flow; the pulses, sparks, trace
+   *  comet, arrows and hover/path filaments ride them, and the cosmic web
+   *  skin's density field is splatted from them. The notes, labels, cluster
+   *  names, glow and every state stay this scene's own. */
+  setWovenLayout(layout: WovenLayout): void {
+    this.woven?.dispose();
+    const woven = (this.woven = new WovenGraphLayer(this.graph, layout, this.darkTheme));
+    woven.setInk(this.linkInk());
+    woven.flowWith(this.edgeFlowUniforms);
+    const along = woven.pointAlong.bind(woven);
+    this.pulse.along = this.wave.along = this.synapse.along = this.tracePulse.along = along;
+    this.scene.add(woven.group);
+    woven.sync(this.nodeGeom, this.settings, this.style);
+    this.edges.visible = false;
+    this.edgeDensity?.setGeometry(woven.geometry);
+    woven.group.visible = this.edgeDensity?.mode !== "web";
+    // The idle orbit sways instead of turning (swayTick).
+    this.controls.autoRotateSpeed = 0;
+    this.camera.position.set(0, -layout.radius * 0.35, layout.radius * 2);
+    this.clusterLabels.update();
+  }
+
+  /** Install a distinct solid renderer while retaining graph navigation and labels. */
+  setSculptedLayout(layout: SculptedLayoutResult): void {
+    this.sculpted?.dispose();
+    this.sculpted = new SculptedGraphLayer(this.graph, layout);
+    this.sculpted.sync(this.nodeGeom, this.settings, this.selectedNode, this.style.pathNodes);
+    this.setMinimap(false);
+    this.renderer.toneMapping = this.lookToneMapping();
+    this.renderer.toneMappingExposure = this.lookExposure();
+    this.camera.position.set(
+      layout.radius * (layout.kind === "ribbon" ? 0.35 : 0.8),
+      -layout.radius * (layout.kind === "terrain" ? 0.7 : layout.kind === "ribbon" ? 1.15 : 1),
+      layout.radius * (layout.kind === "terrain" ? 1.5 : layout.kind === "ribbon" ? 0.8 : 1.15),
+    );
+    this.clusterLabels.setEnabled(false);
   }
 
   /** Layout-at-rest hook (worker settle / atlas apply / timelapse end): refresh
-   * the settle-cadence decorations — bundled strands follow the final centroids. */
+   * the settle-cadence decorations — bundled strands follow the final centroids.
+   * The cluster clouds and names too: syncPositions refreshes them only every
+   * 12th call, and a baked layout (Woven's included) syncs once. */
   layoutSettled(): void {
-    if (this.settings.edgeBundles) this.bundles.rebuild();
+    this.nebula.update();
+    this.clusterLabels.update();
+    if (this.bundlesWanted()) this.bundles.rebuild();
   }
 
   /** Cinematic orbit for timelapse replays: a slow-but-visible sweep so the
@@ -4245,7 +4490,8 @@ export class GraphScene {
    * produced shot, not a locked-off screencap). Restores the ambient policy
    * (and its slow idle speed) when the replay ends. */
   setCinematicOrbit(on: boolean): void {
-    this.controls.autoRotateSpeed = on ? 0.9 : 0.12;
+    this.swaySpeed = on ? 0.9 : 0.12;
+    this.controls.autoRotateSpeed = this.woven ? 0 : this.swaySpeed;
     this.controls.autoRotate = on ? !this.reducedMotion : this.ambientOn();
   }
 
@@ -4258,7 +4504,7 @@ export class GraphScene {
    * the bubble itself.
    */
   setClusterLabelsVisible(on: boolean): void {
-    this.clusterLabels.setEnabled(on);
+    this.clusterLabels.setEnabled(on && this.settings.layout !== "spiral" && !this.sculpted);
   }
 
   // ── Walrus boundary sphere ────────────────────────────────────────────
@@ -4423,6 +4669,12 @@ export class GraphScene {
     return this.ambientOn() && !this.flatLayout;
   }
 
+  // Woven's strands are its bundles (the drawer says so where the toggle
+  // sits), so its arcs stay off on every path there, the Layout chip's too.
+  private bundlesWanted(): boolean {
+    return this.settings.edgeBundles && this.settings.layout !== "ribbon";
+  }
+
   /** Gap panel: dashed hint lines between semantically-close but unlinked
    * community pairs. Pass [] to hide. Community centroids drift with the sim,
    * so the render loop refreshes the segment ends on a slow tick. */
@@ -4537,12 +4789,122 @@ export class GraphScene {
     this.controls.update();
   }
 
+  // Dynamic depth cues (calm-cosmic-web spec A4): fixed fog constants are a
+  // no-op on a big vault and fog out a small one. Deriving them from the
+  // framed distance keeps the near/far RATIO stable at any vault size — the
+  // back of the graph always sits in haze, the front always reads crisp.
+  // Both fit paths set them, so a look framed by fitSculpted cannot keep the
+  // fog of a fit that ran before its layout arrived.
+  private applyDepthCues(dist: number): void {
+    this.nodeMat.uniforms.u_fogNear.value = 0.35 * dist;
+    this.nodeMat.uniforms.u_fogFar.value = 1.7 * dist;
+    // Flat layouts: a 2D map has no depth to haze, and distance fog on a
+    // top-down view just greys the edges — push fog far away (≈off).
+    (this.scene.fog as THREE.FogExp2).density = this.flatLayout ? 0.02 / dist : 0.55 / dist;
+  }
+
+  private fitSculpted(animateMs: number): void {
+    const framed = this.sculpted ?? this.woven;
+    if (!framed) return;
+    const { bounds, radius } = framed.layout;
+    const target = new THREE.Vector3(
+      (bounds.min.x + bounds.max.x) / 2,
+      (bounds.min.y + bounds.max.y) / 2,
+      (bounds.min.z + bounds.max.z) / 2,
+    );
+    const direction = this.camera.position.clone().sub(this.controls.target).normalize();
+    if (direction.lengthSq() < 0.1) direction.set(0.4, -0.5, 1).normalize();
+    const right = new THREE.Vector3().crossVectors(this.camera.up, direction).normalize();
+    if (right.lengthSq() < 0.1) right.set(1, 0, 0);
+    const vertical = new THREE.Vector3().crossVectors(direction, right).normalize();
+    const tanY = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const fullTanX = tanY * this.camera.aspect;
+    const inspector = framed === this.woven && this.selectedNode
+      ? this.container.parentElement?.querySelector(".graph-inspector") : null;
+    const reserved = inspector ? inspector.getBoundingClientRect().width + 24 : 0;
+    // The folded rails' tabs sit over the canvas's sides: a web framed to the
+    // full width slid a rim cluster's name under one.
+    let leftTabs = 0;
+    let rightTabs = 0;
+    const tabs = this.container.parentElement?.querySelectorAll(".graph-railtab");
+    if (tabs?.length) {
+      const box = this.container.getBoundingClientRect();
+      tabs.forEach((tab) => {
+        const edge = tab.getBoundingClientRect();
+        if (edge.left + edge.right < box.left + box.right) leftTabs = Math.max(leftTabs, edge.right - box.left);
+        else rightTabs = Math.max(rightTabs, box.right - edge.left);
+      });
+    }
+    const width = Math.max(1, this.container.clientWidth);
+    const available = Math.max(0.3, 1 - (reserved + leftTabs + rightTabs) / width);
+    const tanX = fullTanX * available;
+    const offset = new THREE.Vector3();
+    let left = Infinity, rightEdge = -Infinity, bottom = Infinity, top = -Infinity;
+    framed.forEachFramePoint((point) => {
+      offset.copy(point).sub(target);
+      const x = offset.dot(right), y = offset.dot(vertical);
+      left = Math.min(left, x); rightEdge = Math.max(rightEdge, x);
+      bottom = Math.min(bottom, y); top = Math.max(top, y);
+    });
+    target.addScaledVector(right, (left + rightEdge) / 2);
+    target.addScaledVector(vertical, (bottom + top) / 2);
+    let distance = 1;
+    framed.forEachFramePoint((point) => {
+      offset.copy(point).sub(target);
+      distance = Math.max(distance, offset.dot(direction) + Math.max(
+        Math.abs(offset.dot(right)) / tanX,
+        Math.abs(offset.dot(vertical)) / tanY,
+      ) * 1.12);
+    });
+    distance += radius * 0.025;
+    // Frame the complete fibers between the tabs and beside the inspector,
+    // keeping both endpoints visible.
+    target.addScaledVector(right, distance * fullTanX * (1 - available - (2 * leftTabs) / width));
+    this.framedDist = distance;
+    // Terrain and City render their own scene; Woven's notes and strands are
+    // this scene's, so they take its depth cues.
+    if (framed === this.woven) this.applyDepthCues(distance);
+    this.controls.maxDistance = Math.max(30000, distance * 3);
+    this.camera.far = Math.max(40000, distance + radius * 4);
+    this.camera.updateProjectionMatrix();
+    const position = target.clone().addScaledVector(direction, distance);
+    if (animateMs > 0) this.startCamTween(position, target, animateMs);
+    else {
+      this.camera.position.copy(position);
+      this.controls.target.copy(target);
+      this.controls.update();
+    }
+  }
+
   fit(m?: LayoutMetrics, animateMs = 0): void {
+    if (this.sculpted || this.woven) {
+      this.fitSculpted(animateMs);
+      return;
+    }
     let cx = 0;
     let cy = 0;
     let cz = 0;
     let r = 1;
-    if (m && m.n > 0) {
+    let chartSize: THREE.Vector3 | null = null;
+    if (this.strataMode) {
+      // Time endpoints are meaningful even when only one note lives there.
+      // Fit the full chart rectangle instead of discarding rare dates as
+      // 95th-percentile outliers, and include its date-axis labels.
+      const bounds = new THREE.Box3();
+      for (const id of this.nodeIds) {
+        const a = this.graph.getNodeAttributes(id);
+        if (!a.hidden) bounds.expandByPoint(this.tmpVec.set(a.x, a.y, a.z));
+      }
+      for (const label of this.timeAxisLabels) bounds.expandByPoint(label.position);
+      if (this.timeAxis) bounds.union(new THREE.Box3().setFromObject(this.timeAxis));
+      if (bounds.isEmpty()) return;
+      bounds.getCenter(this.tmpVec);
+      cx = this.tmpVec.x;
+      cy = this.tmpVec.y;
+      cz = this.tmpVec.z;
+      chartSize = bounds.getSize(new THREE.Vector3());
+      r = Math.max(1, chartSize.length() / 2);
+    } else if (m && m.n > 0) {
       // Worker-measured settled extent (backlog A1) — same centroid + 95th-
       // percentile rule, computed once off-thread instead of re-scanned here.
       cx = m.cx;
@@ -4578,17 +4940,18 @@ export class GraphScene {
     }
     const toTarget = new THREE.Vector3(cx, cy, cz);
     const fovRad = (this.camera.fov * Math.PI) / 180;
-    const dist = (r * 1.5) / Math.tan(fovRad / 2) + 60;
+    const dist = chartSize
+      ? Math.max(chartSize.y / 2, chartSize.x / (2 * this.camera.aspect)) *
+        1.18 / Math.tan(fovRad / 2) + chartSize.z / 2 + 60
+      : (r * 1.5) / Math.tan(fovRad / 2) + 60;
+    if (chartSize) {
+      // A narrow window can need more distance than the 3D orbit's usual cap.
+      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
+      this.camera.far = Math.max(this.camera.far, dist + r * 2 + 1000);
+      this.camera.updateProjectionMatrix();
+    }
     this.framedDist = dist; // zoom reference for semantic-zoom label budget
-    // Dynamic depth cues (calm-cosmic-web spec A4): fixed fog constants are a
-    // no-op on a big vault and fog out a small one. Deriving them from the
-    // framed distance keeps the near/far RATIO stable at any vault size — the
-    // back of the graph always sits in haze, the front always reads crisp.
-    this.nodeMat.uniforms.u_fogNear.value = 0.35 * dist;
-    this.nodeMat.uniforms.u_fogFar.value = 1.7 * dist;
-    // Flat layouts: a 2D map has no depth to haze, and distance fog on a
-    // top-down view just greys the edges — push fog far away (≈off).
-    (this.scene.fog as THREE.FogExp2).density = this.flatLayout ? 0.02 / dist : 0.55 / dist;
+    this.applyDepthCues(dist);
     const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
     if (this.flatLayout) {
       // Straight-on top-down: the map is the flat 2D plane it was laid out on.
@@ -4612,19 +4975,45 @@ export class GraphScene {
   }
 
   // Frame the camera on a single node — used by the inspector / search-to-focus
-  // to fly to a star. Like fit() but centred on one node at a close distance.
-  focusNode(id: string): void {
+  // to fly to a star. Like fit() but centred on one node at a close distance;
+  // `neighbours` pulls back until its visible first-hop neighbours fit too, in
+  // the part of the canvas a `coverRightPx` panel (the inspector) leaves open.
+  focusNode(id: string, opts: { neighbours?: boolean; coverRightPx?: number } = {}): void {
     if (!this.graph.hasNode(id)) return;
     const a = this.graph.getNodeAttributes(id);
     const toTarget = new THREE.Vector3(a.x, a.y, a.z);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const r = Math.max(a.size * NODE_RADIUS * 4, 60);
-    const dist = (r * 1.5) / Math.tan(fovRad / 2) + 40;
+    let dist = (r * 1.5) / Math.tan(fovRad / 2) + 40;
+    const w = this.container.clientWidth || 1;
+    const h = this.container.clientHeight || 1;
+    // Never more than 60 %: past that the open strip is too thin to aim at.
+    const cover = Math.min(opts.coverRightPx ?? 0, w * 0.6);
+    if (opts.neighbours) {
+      const around = this.graph
+        .neighbors(id)
+        .map((n) => this.graph.getNodeAttributes(n))
+        .filter((n) => !n.hidden);
+      dist = neighbourhoodDist(a, around, this.camera.fov, (w - cover) / h, dist);
+      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
+    }
+    const solidBounds = this.sculpted?.nodeBounds(id);
+    if (solidBounds) {
+      solidBounds.getCenter(toTarget);
+      const radius = solidBounds.getSize(new THREE.Vector3()).length() / 2;
+      const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, this.camera.aspect));
+      dist = Math.max(40, radius * 1.15 / Math.sin(halfFov));
+      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
+    }
     const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
     if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
     dir.setLength(
       THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance),
     );
+    if (cover > 0) {
+      const right = new THREE.Vector3().crossVectors(this.camera.up, dir).normalize();
+      toTarget.addScaledVector(right, coverShift(cover, dir.length(), this.camera.fov, h));
+    }
     // Fly, don't teleport: search-to-focus / inspector jumps ease the camera
     // to the star (the product's own "fly to a star" story). Reduced motion
     // (or an in-progress user gesture) snaps instead.
@@ -4700,6 +5089,10 @@ export class GraphScene {
   // pass into a texture, then a full-scene pass that mixes the bloom back in
   // before ACES tone-mapping (spec A1). Single path: legacy full-scene bloom.
   private render(): void {
+    if (this.sculpted) {
+      this.renderer.render(this.sculpted.scene, this.camera);
+      return;
+    }
     // Cosmic-web skin: accumulate this frame's edge splats first, so the ramp
     // quad the composers are about to draw samples fresh density.
     if (this.edgeDensity) this.edgeDensity.render(this.renderer, this.camera);
@@ -4787,7 +5180,16 @@ export class GraphScene {
       } else {
         this.camTweenTick(dt); // eased focus-flight (no-op when idle)
         this.targetTweenTick(dt); // eased orbit-pivot retarget (no-op when idle)
+        if (this.woven) this.swayTick(dt);
         this.controls.update();
+      }
+      if (this.sculpted) {
+        this.processPick();
+        this.updateLabels();
+        this.render();
+        this.labelRenderer.render(this.scene, this.camera);
+        this.raf = requestAnimationFrame(loop);
+        return;
       }
       this.updateLod(dt);
       // Near-field planets: the nodes nearest the camera resolve into procedural
@@ -4854,9 +5256,11 @@ export class GraphScene {
         // Meteors cross the galaxy-skin sky (visibility gates the skin/perf).
         if (this.meteor.lines.visible) this.meteor.update(dt);
         // Idle galaxy swirl + orphan moons. The O(n + edges) rewrite is the
-        // perf-LOD's problem, so big vaults skip it.
+        // perf-LOD's problem, so big vaults skip it. Woven's strands are routed
+        // for the layout's rest positions, so only its unlinked notes move.
         if (!this.perfLod && this.dragId == null) {
-          this.swirlTick(dt);
+          if (this.woven) this.turnUnlinkedFan(dt);
+          else this.swirlTick(dt);
         }
         // Galactic core bulges pulse; centroids refresh at a slow cadence.
         if (this.coreGlow.points.visible) {
@@ -4908,6 +5312,10 @@ export class GraphScene {
   dispose(): void {
     if (this.raf != null) cancelAnimationFrame(this.raf);
     this.raf = null;
+    this.sculpted?.dispose();
+    this.sculpted = null;
+    this.woven?.dispose();
+    this.woven = null;
     this.setTimeAxis(null); // drop the chronicle axis + its DOM labels
     this.setWalrusBoundary(false); // drop the walrus boundary sphere
     this.resizeObs.disconnect();
@@ -5052,6 +5460,13 @@ export class GraphScene {
 
   private pickNode(clientX: number, clientY: number): string | null {
     const rect = this.renderer.domElement.getBoundingClientRect();
+    if (this.sculpted) {
+      this.tmpNdc.set(
+        ((clientX - rect.left) / rect.width) * 2 - 1,
+        -((clientY - rect.top) / rect.height) * 2 + 1,
+      );
+      return this.sculpted.pick(this.tmpNdc, this.camera);
+    }
     const px = clientX - rect.left;
     const py = clientY - rect.top;
     const scale = this.sizeScale(Math.max(1, rect.height));

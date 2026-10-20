@@ -1,0 +1,163 @@
+.settings-navigation {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+
+.settings-navigation__search {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.settings-navigation .s-box input {
+  height: 2.75rem;
+  padding-right: 3rem;
+}
+
+.settings-navigation .s-box__clear {
+  right: 0;
+  width: 2.75rem;
+  height: 2.75rem;
+}
+
+.settings-navigation .u-check {
+  min-height: 2.75rem;
+}
+
+.settings-navigation__label {
+  margin: 0 0 0.5rem;
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.settings-navigation__choices {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.settings-navigation__choice {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.625rem 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg);
+  color: var(--ink-3);
+  font: inherit;
+  font-size: 0.875rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.settings-navigation__choice > [aria-hidden="true"] {
+  display: flex;
+  flex-shrink: 0;
+}
+
+.settings-navigation__choice:hover,
+.settings-navigation__advanced > summary:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+
+.settings-navigation__choice:active,
+.settings-navigation__advanced > summary:active {
+  background: var(--accent-soft);
+}
+
+.settings-navigation__choice[aria-current="page"] {
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-color: var(--line-strong);
+  box-shadow: inset 0 -2px var(--accent);
+  font-weight: 600;
+}
+
+.settings-navigation__choice:focus-visible,
+.settings-navigation__advanced > summary:focus-visible,
+.settings-navigation .s-box__clear:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.settings-navigation__advanced {
+  margin-top: 0.75rem;
+}
+
+.settings-navigation__advanced > summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.5rem;
+  min-height: 2.75rem;
+  padding: 0.5rem;
+  border-radius: var(--r-md);
+  color: var(--ink-3);
+  font-size: 0.8125rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.settings-navigation__advanced > summary::-webkit-details-marker {
+  display: none;
+}
+
+.settings-navigation__disclosure {
+  display: flex;
+}
+
+.settings-navigation__advanced[open] .settings-navigation__disclosure {
+  transform: rotate(90deg);
+}
+
+.settings-navigation__hint {
+  flex: 1 1 100%;
+  padding-left: 1.5rem;
+  color: var(--ink-3);
+  font-size: 0.75rem;
+}
+
+.settings-navigation__advanced > .settings-navigation__choices {
+  padding-top: 0.5rem;
+}
+
+@media (min-width: 40rem) {
+  .settings-navigation__choices {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .settings-navigation__hint {
+    flex: initial;
+    padding-left: 0.5rem;
+  }
+}
+
+/* A phone (UX S54): the section list first, then one section with a way
+   back (PageSettings sets is-list / is-detail at <=768px only). */
+.settings-page.is-list .u-page__body,
+.settings-page.is-detail .u-page__bar,
+.settings-page.is-detail .u-page__note {
+  display: none;
+}
+
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-height: 44px;
+  margin: 0 0 0.75rem -0.5rem;
+}
+
+/* In the list a section is a row to go into, not a tab already open. */
+.settings-page.is-list .settings-navigation__choices {
+  grid-template-columns: minmax(0, 1fr);
+}

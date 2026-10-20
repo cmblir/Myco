@@ -20,7 +20,17 @@ fn main() {
         std::process::exit(1);
     }
 
-    let files = myco_lib::backfill::scan_sessions(&root);
+    let scan = myco_lib::backfill::scan_sessions(&root);
+    if !scan.read_issues.is_empty() {
+        for issue in scan.read_issues {
+            eprintln!(
+                "session scan incomplete at {}: {}",
+                issue.path, issue.message
+            );
+        }
+        std::process::exit(1);
+    }
+    let files = scan.files;
     // Nothing has been promoted from this process's point of view; the real
     // command reads `.myco/backfill.json`, which this deliberately does not
     // touch so a dry run cannot influence the app's state.

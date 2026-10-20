@@ -45,3 +45,35 @@ export function isComposingKey(
   const native = "nativeEvent" in e ? e.nativeEvent : e;
   return native.isComposing === true || native.keyCode === IME_PROCESSING_KEYCODE;
 }
+
+/** The latest press waiting on each field's composition. */
+const waiting = new WeakMap<EventTarget, () => void>();
+
+/**
+ * Run `act` now, or, while `field` is composing, once its composition ends.
+ *
+ * For a button beside a text field: pressed mid-syllable, it would read the
+ * field before the IME commits that syllable. The run is a task after
+ * `compositionend`, so an `input` the commit fires after it lands first.
+ * Presses during one composition collapse to the last, so a double press
+ * never acts twice.
+ */
+export function afterComposition(field: EventTarget, composing: boolean, act: () => void): void {
+  if (!composing) {
+    act();
+    return;
+  }
+  const armed = waiting.has(field);
+  waiting.set(field, act);
+  if (armed) return;
+  field.addEventListener(
+    "compositionend",
+    () =>
+      setTimeout(() => {
+        const run = waiting.get(field);
+        waiting.delete(field);
+        run?.();
+      }, 0),
+    { once: true },
+  );
+}

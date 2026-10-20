@@ -1,0 +1,3808 @@
+{
+  "version": 1,
+  "id": "local-wiki-development-ledger-reference-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "scope": "Source-reading automated ledger references for the same sixteen development single-span and four supplied whole-packet original selections; not replacement review labels, model truth, independent human review, native authority or acceptance.",
+  "sourceReadingReview": {
+    "status": "automated_agent_original_source_read_before_current_inference",
+    "method": "selected_original_sources_and_prior_source_audit_with_declared_incidental_non_target_role_case_exposure",
+    "humanReviewed": false,
+    "modelOutputsInspected": false,
+    "candidateRawOutputsInspected": false,
+    "proposalBodiesInspected": true,
+    "priorTrialSummaryKnown": true,
+    "heldOutSourceMeaningInspected": false,
+    "rootSourceReviewRequiredBeforeInference": true,
+    "evaluatedPacketProposalBodiesInspected": false,
+    "incidentalNonTargetRoleAuditExposure": {
+      "auditPath": "single_span-source-audit.json",
+      "auditSha256": "397fe8f43d2c69ec163982359d0158e66e30b2f9dfc308501a0bd7976e510316",
+      "field": "roleCases",
+      "description": "An overbroad top-level audit read emitted non-target historical role-case inputs, proposal/reference-label text, and source judgments. The tool output was truncated, so not all emitted content was reviewed. This was not a current or prior raw model-output artifact; the 16 single-span and 4 whole-packet proposal bodies being graded were not inspected.",
+      "currentRawModelOutputsInspected": false,
+      "priorRawModelOutputsInspected": false,
+      "evaluatedPacketProposalBodiesInspected": false
+    }
+  },
+  "inputBindings": [
+    {
+      "path": "local-wiki-v1/review-pairs.json",
+      "bytes": 178028,
+      "sha256": "10e426ade4721950c3e0180992e70c86f93a63241d7f8c36992a6c7c5143c559"
+    },
+    {
+      "path": "local-wiki-v1/review-pairs.manifest.json",
+      "bytes": 1605,
+      "sha256": "c811026389593175765195105d4e3e3d7c0986b1cc699469c908478ccb11bc55"
+    },
+    {
+      "path": "local-wiki-v1/corpus.json",
+      "bytes": 709655,
+      "sha256": "8df85a87dd350a5320617829aeae230af8ee5a4c3ea0ec29b69fbb35d2e0ee74"
+    },
+    {
+      "path": "local-wiki-development-meaning-v1.json",
+      "bytes": 20012,
+      "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+    },
+    {
+      "path": "local-wiki-development-meaning-v1.manifest.json",
+      "bytes": 830,
+      "sha256": "a27e437a81bb4ad4acbe569044191f3d82964df890d119d2005914fd3f958ba5"
+    },
+    {
+      "path": "local-wiki-development-review-packets-v1.json",
+      "bytes": 98226,
+      "sha256": "208f70a7c653e9c38ba3b1d4a4a39a09cc38d5f4be1c4fd7bd8dfabd0c005e31"
+    },
+    {
+      "path": "local-wiki-development-review-packets-v1.manifest.json",
+      "bytes": 1120,
+      "sha256": "470fed90af029cc5e900f680734a3567f24c7c4b95b6c2a5457d02338a305732"
+    }
+  ],
+  "priorSourceAuditBindings": [
+    {
+      "scope": "single_span_development",
+      "sha256": "397fe8f43d2c69ec163982359d0158e66e30b2f9dfc308501a0bd7976e510316",
+      "path": "single_span-source-audit.json"
+    },
+    {
+      "scope": "whole_packet_development",
+      "sha256": "8fe7e07c348451275d30aa7b79723fda485b2e0c21e4a011b98c2fe8ad5ccbc9",
+      "path": "whole_packet-source-audit.json"
+    }
+  ],
+  "identityContract": {
+    "originalSpans": "Exact fields derived from existing native SourceDocument::bind inputs; root must still compare actual native serialization.",
+    "contextAndPromptHash": "Question/language/scope/range and final source-only input/prompt SHA are bound separately by the QA runner receipt.",
+    "selectedScopeOnly": true,
+    "excludedSpansAreNotCoverageRequirements": true,
+    "referenceFactsMustNotEnterModelUser": true,
+    "temporalScope": "For single-span packets, a timestamp literally written before User request or Assistant report is an explicit utterance instant supported by that original span. It may faithfully timestamp the attributed request/report. An underlying implementation/test/completion time is not separately established by that prefix; unknown or appropriately qualified turn inference can describe that underlying time. Literal report/request instants must not be rejected merely because the underlying completion date is unknown. The original frozen positive timestamp policy remains unchanged."
+  },
+  "gradingContract": {
+    "ledgerOnly": true,
+    "originalReviewReferencesUnchanged": true,
+    "originalReviewGatesMayNotBeWeakenedOrReplaced": true,
+    "wholeCoverageMustReadOriginalsBeyondProducedLedger": true,
+    "distinctFactsAndQualificationsRequired": true,
+    "duplicatesDoNotCoverMissingFacts": true,
+    "requesterIsNotRequestRecipientOrPerformer": true,
+    "recordImportFileTimesAreNotEventTimes": true,
+    "unknownOrQualifiedTurnInferencePreservedWhereSupported": true,
+    "uncertainMissingFailedStagesRemainInScheduledDenominator": true,
+    "rejectIsNotAutomaticallyCorrect": true,
+    "unsupportedReasonCannotMakeFalseRejectionSuccessful": true,
+    "fieldAndCoverageProjectionIsNotProductionReceipt": true,
+    "literalRequestAndReportTimestampsRemainSupportedExplicitInstants": true,
+    "temporalScopeMustBePreserved": true,
+    "reportInstantDoesNotIndependentlyVerifyUnderlyingCompletion": true,
+    "literalInstantIsNotOnlyQualifiedTurnInference": true
+  },
+  "packets": [
+    {
+      "packetId": "review:p01:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p01:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p01_t1_r1_user",
+          "sourceId": "source_p01_t1_r1",
+          "sourcePath": "raw/p01/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p01_t1_r1.md",
+          "sourceRevision": "2b9c07be377f11e2bb4016f4b1d852667eb2380f87a46843e4bcf0a51fb01614",
+          "start": 50,
+          "end": 155,
+          "sha256": "6ba62a59451f8b7a4215f4fff7a9ea4b698873b62994d56748aa693c2430dc8c",
+          "text": "2026-10-01T08:00:00Z · User request: synthetic-p01-feature-1 기능을 추가해 달라고 요청했다.",
+          "turnId": "span_p01_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p01_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p01_t1_request",
+          "anchorSpanId": "span_p01_t1_r1_user",
+          "supportSpanIds": [
+            "span_p01_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p01_t1_r1_user",
+            "start": 50,
+            "end": 155,
+            "sha256": "6ba62a59451f8b7a4215f4fff7a9ea4b698873b62994d56748aa693c2430dc8c",
+            "quote": "2026-10-01T08:00:00Z · User request: synthetic-p01-feature-1 기능을 추가해 달라고 요청했다."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p01-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p01_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p01_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p01_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p01:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p01:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p01_t2_r2_assistant",
+          "sourceId": "source_p01_t2_r2",
+          "sourcePath": "raw/p01/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p01_t2_r2.md",
+          "sourceRevision": "8a01a67d6a873173d60a5f78677212eeff5df0e103213f9bfbdf2943ac43f274",
+          "start": 276,
+          "end": 465,
+          "sha256": "7ef75befc107bffd5b1f6f6e2c3a3a9b674d8371c733e37a4ca6ab0f65099eed",
+          "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p01-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+          "turnId": "span_p01_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p01_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p01_t2_implementation_report",
+          "anchorSpanId": "span_p01_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p01_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p01_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "7ef75befc107bffd5b1f6f6e2c3a3a9b674d8371c733e37a4ca6ab0f65099eed",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p01-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p01-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p01_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p01_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p01_t2_test_report",
+          "anchorSpanId": "span_p01_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p01_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p01_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "7ef75befc107bffd5b1f6f6e2c3a3a9b674d8371c733e37a4ca6ab0f65099eed",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p01-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p01_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p01_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p01_t2_manual_not_performed",
+          "anchorSpanId": "span_p01_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p01_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p01_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "7ef75befc107bffd5b1f6f6e2c3a3a9b674d8371c733e37a4ca6ab0f65099eed",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p01-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p01_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p01_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p01_t2_implementation_report",
+        "F_p01_t2_test_report",
+        "F_p01_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p02:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p02:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p02_t1_r1_user",
+          "sourceId": "source_p02_t1_r1",
+          "sourcePath": "raw/p02/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p02_t1_r1.md",
+          "sourceRevision": "8d3f4c3df255ff75ac22ee8e409d440d1d7ba1030f148e6b98c20b6c48a8c134",
+          "start": 50,
+          "end": 155,
+          "sha256": "c501059c925dfa1254361a64a3e34e762ad2a38e47418ec1adacb098e1dec40b",
+          "text": "2026-10-01T08:00:00Z · User request: synthetic-p02-feature-1 기능을 추가해 달라고 요청했다.",
+          "turnId": "span_p02_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p02_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p02_t1_request",
+          "anchorSpanId": "span_p02_t1_r1_user",
+          "supportSpanIds": [
+            "span_p02_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p02_t1_r1_user",
+            "start": 50,
+            "end": 155,
+            "sha256": "c501059c925dfa1254361a64a3e34e762ad2a38e47418ec1adacb098e1dec40b",
+            "quote": "2026-10-01T08:00:00Z · User request: synthetic-p02-feature-1 기능을 추가해 달라고 요청했다."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p02-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p02_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p02_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p02_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p02:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p02:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p02_t2_r2_assistant",
+          "sourceId": "source_p02_t2_r2",
+          "sourcePath": "raw/p02/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p02_t2_r2.md",
+          "sourceRevision": "e8b3ed9da0895b1ed9cb7d8ed1f5d90ff5fcaaa11d2dd4b4b2a9e98a693ca666",
+          "start": 276,
+          "end": 465,
+          "sha256": "00c6541d864655ab02503e87107ae39eff4b9de0dca898a99998a139aa21e3a8",
+          "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+          "turnId": "span_p02_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p02_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p02_t2_implementation_report",
+          "anchorSpanId": "span_p02_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p02_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p02_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "00c6541d864655ab02503e87107ae39eff4b9de0dca898a99998a139aa21e3a8",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p02-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p02_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p02_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p02_t2_test_report",
+          "anchorSpanId": "span_p02_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p02_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p02_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "00c6541d864655ab02503e87107ae39eff4b9de0dca898a99998a139aa21e3a8",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p02_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p02_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p02_t2_manual_not_performed",
+          "anchorSpanId": "span_p02_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p02_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p02_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "00c6541d864655ab02503e87107ae39eff4b9de0dca898a99998a139aa21e3a8",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p02-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p02_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p02_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p02_t2_implementation_report",
+        "F_p02_t2_test_report",
+        "F_p02_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p03:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p03:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p03_t1_r1_user",
+          "sourceId": "source_p03_t1_r1",
+          "sourcePath": "raw/p03/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p03_t1_r1.md",
+          "sourceRevision": "201493bcc0016ac3cf74e8e3a3b1fa88e4c9abc27b7a1363824d94d23efe700e",
+          "start": 50,
+          "end": 155,
+          "sha256": "78cc8a59b84fbfceaf5c57d029322b6836ebfd6ed9be35a506ad9f243a275e96",
+          "text": "2026-10-01T08:00:00Z · User request: synthetic-p03-feature-1 기능을 추가해 달라고 요청했다.",
+          "turnId": "span_p03_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p03_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p03_t1_request",
+          "anchorSpanId": "span_p03_t1_r1_user",
+          "supportSpanIds": [
+            "span_p03_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p03_t1_r1_user",
+            "start": 50,
+            "end": 155,
+            "sha256": "78cc8a59b84fbfceaf5c57d029322b6836ebfd6ed9be35a506ad9f243a275e96",
+            "quote": "2026-10-01T08:00:00Z · User request: synthetic-p03-feature-1 기능을 추가해 달라고 요청했다."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p03-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p03_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p03_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p03_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p03:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p03:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p03_t2_r2_assistant",
+          "sourceId": "source_p03_t2_r2",
+          "sourcePath": "raw/p03/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p03_t2_r2.md",
+          "sourceRevision": "67a30d7bc0d28cd77ba5333714e13b7948446c5d892fd31dedf7bf918f2c9a14",
+          "start": 276,
+          "end": 465,
+          "sha256": "920039de5b0878c2cecd31f24bbe9e14b62c25743e6a312d5214489d930799cb",
+          "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p03-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+          "turnId": "span_p03_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p03_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p03_t2_implementation_report",
+          "anchorSpanId": "span_p03_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p03_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p03_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "920039de5b0878c2cecd31f24bbe9e14b62c25743e6a312d5214489d930799cb",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p03-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p03-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p03_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p03_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p03_t2_test_report",
+          "anchorSpanId": "span_p03_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p03_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p03_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "920039de5b0878c2cecd31f24bbe9e14b62c25743e6a312d5214489d930799cb",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p03-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p03_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p03_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p03_t2_manual_not_performed",
+          "anchorSpanId": "span_p03_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p03_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p03_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "920039de5b0878c2cecd31f24bbe9e14b62c25743e6a312d5214489d930799cb",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p03-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p03_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p03_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p03_t2_implementation_report",
+        "F_p03_t2_test_report",
+        "F_p03_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p04:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p04:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p04_t1_r1_user",
+          "sourceId": "source_p04_t1_r1",
+          "sourcePath": "raw/p04/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p04_t1_r1.md",
+          "sourceRevision": "fbb47b2dcb15c294f4b57e909140133ce69c84336b89881be6019d4c41c4dd14",
+          "start": 50,
+          "end": 155,
+          "sha256": "574d484ec7873866a76e2be36b396b8437bd6f92517f47f11627536311867482",
+          "text": "2026-10-01T08:00:00Z · User request: synthetic-p04-feature-1 기능을 추가해 달라고 요청했다.",
+          "turnId": "span_p04_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p04_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p04_t1_request",
+          "anchorSpanId": "span_p04_t1_r1_user",
+          "supportSpanIds": [
+            "span_p04_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p04_t1_r1_user",
+            "start": 50,
+            "end": 155,
+            "sha256": "574d484ec7873866a76e2be36b396b8437bd6f92517f47f11627536311867482",
+            "quote": "2026-10-01T08:00:00Z · User request: synthetic-p04-feature-1 기능을 추가해 달라고 요청했다."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p04-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p04_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p04_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p04_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p04:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p04:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p04_t2_r2_assistant",
+          "sourceId": "source_p04_t2_r2",
+          "sourcePath": "raw/p04/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p04_t2_r2.md",
+          "sourceRevision": "09e2f9ead68fa6b343d0521d48ce18c45e79a88dafb3f866f32b0c353d4aae0e",
+          "start": 276,
+          "end": 465,
+          "sha256": "4e15325ac42d601aa5ba1e96f56c1d6cfc019dd71a531debf32ddb76096902ad",
+          "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+          "turnId": "span_p04_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p04_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p04_t2_implementation_report",
+          "anchorSpanId": "span_p04_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p04_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p04_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "4e15325ac42d601aa5ba1e96f56c1d6cfc019dd71a531debf32ddb76096902ad",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p04-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p04_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p04_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p04_t2_test_report",
+          "anchorSpanId": "span_p04_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p04_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p04_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "4e15325ac42d601aa5ba1e96f56c1d6cfc019dd71a531debf32ddb76096902ad",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p04_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p04_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p04_t2_manual_not_performed",
+          "anchorSpanId": "span_p04_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p04_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p04_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "4e15325ac42d601aa5ba1e96f56c1d6cfc019dd71a531debf32ddb76096902ad",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p04-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p04_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p04_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p04_t2_implementation_report",
+        "F_p04_t2_test_report",
+        "F_p04_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p05:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p05:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p05_t1_r1_user",
+          "sourceId": "source_p05_t1_r1",
+          "sourcePath": "raw/p05/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p05_t1_r1.md",
+          "sourceRevision": "79c1db634b49f0031fdf8c902e64bd618ae515c4e750f3d7f03ce1eeba9580fd",
+          "start": 50,
+          "end": 155,
+          "sha256": "ee4bb0ebfd34d92fb7d24aace323b5c28bf312f29636dac33aace9d7015710ad",
+          "text": "2026-10-01T08:00:00Z · User request: synthetic-p05-feature-1 기능을 추가해 달라고 요청했다.",
+          "turnId": "span_p05_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p05_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p05_t1_request",
+          "anchorSpanId": "span_p05_t1_r1_user",
+          "supportSpanIds": [
+            "span_p05_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p05_t1_r1_user",
+            "start": 50,
+            "end": 155,
+            "sha256": "ee4bb0ebfd34d92fb7d24aace323b5c28bf312f29636dac33aace9d7015710ad",
+            "quote": "2026-10-01T08:00:00Z · User request: synthetic-p05-feature-1 기능을 추가해 달라고 요청했다."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p05-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p05_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p05_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p05_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p05:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p05:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p05_t2_r2_assistant",
+          "sourceId": "source_p05_t2_r2",
+          "sourcePath": "raw/p05/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p05_t2_r2.md",
+          "sourceRevision": "920f359208ce4d4c501effa7abdf35c8cf3da795b2f31738d0f263ccdd7f03f7",
+          "start": 276,
+          "end": 465,
+          "sha256": "0df6cffeaed8f33cd0a74880acdac4a9f20c5689cc52792e13b7522afff6bece",
+          "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p05-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+          "turnId": "span_p05_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p05_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p05_t2_implementation_report",
+          "anchorSpanId": "span_p05_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p05_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p05_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "0df6cffeaed8f33cd0a74880acdac4a9f20c5689cc52792e13b7522afff6bece",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p05-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p05-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p05_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p05_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p05_t2_test_report",
+          "anchorSpanId": "span_p05_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p05_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p05_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "0df6cffeaed8f33cd0a74880acdac4a9f20c5689cc52792e13b7522afff6bece",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p05-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p05_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p05_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p05_t2_manual_not_performed",
+          "anchorSpanId": "span_p05_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p05_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p05_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "0df6cffeaed8f33cd0a74880acdac4a9f20c5689cc52792e13b7522afff6bece",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p05-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p05_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p05_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p05_t2_implementation_report",
+        "F_p05_t2_test_report",
+        "F_p05_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p06:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p06:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p06_t1_r1_user",
+          "sourceId": "source_p06_t1_r1",
+          "sourcePath": "raw/p06/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p06_t1_r1.md",
+          "sourceRevision": "b607300ee66834641dc76e5d7265fd6eabd667efe24b704ec5361a711e9dfa98",
+          "start": 50,
+          "end": 155,
+          "sha256": "4b3ac17a5aca6f60a524e014090a190d26088c9a05356824f71ad652ead79cb3",
+          "text": "2026-10-01T08:00:00Z · User request: synthetic-p06-feature-1 기능을 추가해 달라고 요청했다.",
+          "turnId": "span_p06_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p06_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p06_t1_request",
+          "anchorSpanId": "span_p06_t1_r1_user",
+          "supportSpanIds": [
+            "span_p06_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p06_t1_r1_user",
+            "start": 50,
+            "end": 155,
+            "sha256": "4b3ac17a5aca6f60a524e014090a190d26088c9a05356824f71ad652ead79cb3",
+            "quote": "2026-10-01T08:00:00Z · User request: synthetic-p06-feature-1 기능을 추가해 달라고 요청했다."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p06-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p06_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p06_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p06_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p06:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p06:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p06_t2_r2_assistant",
+          "sourceId": "source_p06_t2_r2",
+          "sourcePath": "raw/p06/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p06_t2_r2.md",
+          "sourceRevision": "337742c5da235bd24a1294ee3a26302ec037b5f86488e1686d8dfe1d633003ea",
+          "start": 276,
+          "end": 465,
+          "sha256": "4b3965485c02f14192acd9f80329cc7512c55c89bb69b53d107fefb796a15c35",
+          "text": "2026-10-02T08:00:00Z · Assistant report: synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다.",
+          "turnId": "span_p06_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p06_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p06_t2_implementation_report",
+          "anchorSpanId": "span_p06_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p06_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p06_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "4b3965485c02f14192acd9f80329cc7512c55c89bb69b53d107fefb796a15c35",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p06-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p06_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p06_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p06_t2_test_report",
+          "anchorSpanId": "span_p06_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p06_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p06_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "4b3965485c02f14192acd9f80329cc7512c55c89bb69b53d107fefb796a15c35",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p06_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p06_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p06_t2_manual_not_performed",
+          "anchorSpanId": "span_p06_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p06_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p06_t2_r2_assistant",
+            "start": 276,
+            "end": 465,
+            "sha256": "4b3965485c02f14192acd9f80329cc7512c55c89bb69b53d107fefb796a15c35",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: synthetic-p06-feature-2를 구현했고 합성 단위 테스트 12개가 통과했다고 보고했다. 설치본 수동 검증은 하지 않았다."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p06_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p06_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p06_t2_implementation_report",
+        "F_p06_t2_test_report",
+        "F_p06_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p07:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p07:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p07_t1_r1_user",
+          "sourceId": "source_p07_t1_r1",
+          "sourcePath": "raw/p07/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p07_t1_r1.md",
+          "sourceRevision": "d1240523fcececee986d52a89d212908210498e961c0be5020540a5ae05804d7",
+          "start": 48,
+          "end": 114,
+          "sha256": "ed6ff303a04bb3cdaf25d816378745b64cb7d8e987f4a47f1ed21dc0688ab23e",
+          "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p07-feature-1.",
+          "turnId": "span_p07_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p07_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p07_t1_request",
+          "anchorSpanId": "span_p07_t1_r1_user",
+          "supportSpanIds": [
+            "span_p07_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p07_t1_r1_user",
+            "start": 48,
+            "end": 114,
+            "sha256": "ed6ff303a04bb3cdaf25d816378745b64cb7d8e987f4a47f1ed21dc0688ab23e",
+            "quote": "2026-10-01T08:00:00Z · User request: Add synthetic-p07-feature-1."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p07-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p07_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p07_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p07_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p07:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p07:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p07_t2_r2_assistant",
+          "sourceId": "source_p07_t2_r2",
+          "sourcePath": "raw/p07/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p07_t2_r2.md",
+          "sourceRevision": "a4e11185974518d206c794dc91d41d1720a75ce2983310d1ecc595adbe903742",
+          "start": 215,
+          "end": 395,
+          "sha256": "a53735033a4968d106a0e1ea40635133198049de755f8a57aa164795e6e36c90",
+          "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p07-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+          "turnId": "span_p07_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p07_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p07_t2_implementation_report",
+          "anchorSpanId": "span_p07_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p07_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p07_t2_r2_assistant",
+            "start": 215,
+            "end": 395,
+            "sha256": "a53735033a4968d106a0e1ea40635133198049de755f8a57aa164795e6e36c90",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p07-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p07-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p07_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p07_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p07_t2_test_report",
+          "anchorSpanId": "span_p07_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p07_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p07_t2_r2_assistant",
+            "start": 215,
+            "end": 395,
+            "sha256": "a53735033a4968d106a0e1ea40635133198049de755f8a57aa164795e6e36c90",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p07-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p07_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p07_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p07_t2_manual_not_performed",
+          "anchorSpanId": "span_p07_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p07_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p07_t2_r2_assistant",
+            "start": 215,
+            "end": 395,
+            "sha256": "a53735033a4968d106a0e1ea40635133198049de755f8a57aa164795e6e36c90",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p07-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p07_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p07_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p07_t2_implementation_report",
+        "F_p07_t2_test_report",
+        "F_p07_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "review:p08:t1",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p08:t1:r1",
+      "originalSpans": [
+        {
+          "id": "span_p08_t1_r1_user",
+          "sourceId": "source_p08_t1_r1",
+          "sourcePath": "raw/p08/t1/revision-1.md",
+          "selectionPath": "wiki/review-fixture-source_p08_t1_r1.md",
+          "sourceRevision": "3bd4b791dcc78cfe2dcaded9ac64de66770fd6033de4d992de0a3d46c8908dda",
+          "start": 48,
+          "end": 114,
+          "sha256": "a5631d45808f6f2fb00e417496105563e8a406c177fdc59c7c97c6e35e59d4af",
+          "text": "2026-10-01T08:00:00Z · User request: Add synthetic-p08-feature-1.",
+          "turnId": "span_p08_t1_r1_user",
+          "speaker": "user",
+          "recordTime": null,
+          "turnTime": "2026-10-01T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p08_t1_r1_user"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p08_t1_request",
+          "anchorSpanId": "span_p08_t1_r1_user",
+          "supportSpanIds": [
+            "span_p08_t1_r1_user"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p08_t1_r1_user",
+            "start": 48,
+            "end": 114,
+            "sha256": "a5631d45808f6f2fb00e417496105563e8a406c177fdc59c7c97c6e35e59d4af",
+            "quote": "2026-10-01T08:00:00Z · User request: Add synthetic-p08-feature-1."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested addition of synthetic-p08-feature-1",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_request_instant_with_undated_requested_addition",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-01T08:00:00Z",
+            "explicitInstantScope": "request_utterance",
+            "explicitInstantSupportSpanId": "span_p08_t1_r1_user",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-01T08:00:00Z",
+              "supportSpanId": "span_p08_t1_r1_user",
+              "uncertainty": "known",
+              "scope": "request_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "requested_addition",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is a request by the user, not a report that the addition was performed.",
+            "The requested action’s recipient or eventual performer is not named."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p08_t1_request"
+      ]
+    },
+    {
+      "packetId": "review:p08:t2",
+      "packetKind": "single_span_development",
+      "sourceCaseId": "p08:t2:r2",
+      "originalSpans": [
+        {
+          "id": "span_p08_t2_r2_assistant",
+          "sourceId": "source_p08_t2_r2",
+          "sourcePath": "raw/p08/t2/revision-2.md",
+          "selectionPath": "wiki/review-fixture-source_p08_t2_r2.md",
+          "sourceRevision": "b4e24512d5fd36f5a9d300bd921024a82117d36d729ab2faf5a708da4df7a96e",
+          "start": 215,
+          "end": 395,
+          "sha256": "dddbe5953e207cd17d529d9e739f29fef6a573820a394934efb4e10f1001fe53",
+          "text": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed.",
+          "turnId": "span_p08_t2_r2_assistant",
+          "speaker": "assistant",
+          "recordTime": null,
+          "turnTime": "2026-10-02T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "span_p08_t2_r2_assistant"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_p08_t2_implementation_report",
+          "anchorSpanId": "span_p08_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p08_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p08_t2_r2_assistant",
+            "start": 215,
+            "end": 395,
+            "sha256": "dddbe5953e207cd17d529d9e739f29fef6a573820a394934efb4e10f1001fe53",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported implementing synthetic-p08-feature-2",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p08_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p08_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Attributed assistant implementation report; not independently verified execution."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p08_t2_test_report",
+          "anchorSpanId": "span_p08_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p08_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p08_t2_r2_assistant",
+            "start": 215,
+            "end": 395,
+            "sha256": "dddbe5953e207cd17d529d9e739f29fef6a573820a394934efb4e10f1001fe53",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported twelve passing synthetic unit tests",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p08_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p08_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Exactly twelve synthetic unit tests are reported passing.",
+            "A reported result is not an independent test receipt.",
+            "The test executor is not separately named."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_p08_t2_manual_not_performed",
+          "anchorSpanId": "span_p08_t2_r2_assistant",
+          "supportSpanIds": [
+            "span_p08_t2_r2_assistant"
+          ],
+          "sourceEvidence": {
+            "spanId": "span_p08_t2_r2_assistant",
+            "start": 215,
+            "end": 395,
+            "sha256": "dddbe5953e207cd17d529d9e739f29fef6a573820a394934efb4e10f1001fe53",
+            "quote": "2026-10-02T08:00:00Z · Assistant report: Implemented synthetic-p08-feature-2 and reported twelve passing synthetic unit tests. Installed-app manual verification was not performed."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "installed-app manual verification was not performed",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "literal_assistant_report_instant_with_no_separately_explicit_underlying_completion_time",
+            "recordImportFileTimeIsEventTime": false,
+            "explicitInstant": "2026-10-02T08:00:00Z",
+            "explicitInstantScope": "assistant_report_utterance",
+            "explicitInstantSupportSpanId": "span_p08_t2_r2_assistant",
+            "allowedExplicitUtteranceTime": {
+              "basis": "explicit",
+              "kind": "instant",
+              "value": "2026-10-02T08:00:00Z",
+              "supportSpanId": "span_p08_t2_r2_assistant",
+              "uncertainty": "known",
+              "scope": "assistant_report_utterance",
+              "supportedByLiteralOriginalText": true
+            },
+            "underlyingActionTime": {
+              "explicitDay": null,
+              "explicitInstant": null,
+              "unknownIsFaithful": true,
+              "scope": "underlying_action_or_result",
+              "utteranceInstantDoesNotIndependentlyEstablishActionCompletionTime": true
+            },
+            "unknownScope": "underlying_action_time_not_the_literal_utterance_timestamp"
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is explicit nonperformance, not a failed manual verification or a completed verification.",
+            "The passive statement does not independently identify a performer."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_p08_t2_implementation_report",
+        "F_p08_t2_test_report",
+        "F_p08_t2_manual_not_performed"
+      ]
+    },
+    {
+      "packetId": "whole-review-D4AB-rollout-invention",
+      "packetKind": "whole_packet_development",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "originalSpans": [
+        {
+          "id": "D4A",
+          "sourceId": "synthetic-dev-cancel-reopen-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+          "start": 0,
+          "end": 101,
+          "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+          "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+          "turnId": "D4A",
+          "speaker": "assistant",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-01T10:00:00Z",
+          "sourcePhase": null
+        },
+        {
+          "id": "D4B",
+          "sourceId": "synthetic-dev-cancel-reopen-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+          "start": 102,
+          "end": 184,
+          "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+          "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+          "turnId": "D4B",
+          "speaker": "user",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-02T10:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "D4A",
+        "D4B"
+      ],
+      "excludedSpanIds": [
+        "D4C"
+      ],
+      "facts": [
+        {
+          "id": "F_D4A_change_report",
+          "anchorSpanId": "D4A",
+          "supportSpanIds": [
+            "D4A"
+          ],
+          "sourceEvidence": {
+            "spanId": "D4A",
+            "start": 0,
+            "end": 101,
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "quote": "I completed a synthetic lantern connector change; this is my report, not an independent verification."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported completing a synthetic lantern connector change",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "event_or_state_not_explicitly_dated",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Completion is of the connector change, not rollout.",
+            "This is the assistant’s report rather than an independent verification."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D4B_cancelled_rollout",
+          "anchorSpanId": "D4B",
+          "supportSpanIds": [
+            "D4B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D4B",
+            "start": 102,
+            "end": 184,
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "quote": "I cancelled the synthetic lantern connector rollout because the preview was blank."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "cancelled the synthetic lantern connector rollout because the preview was blank",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_cancelled",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "event_or_state_not_explicitly_dated",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "user",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "The blank preview is the explicit cancellation cause.",
+            "Cancellation must remain distinct from completing or deploying the change."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_D4A_change_report",
+        "F_D4B_cancelled_rollout"
+      ]
+    },
+    {
+      "packetId": "whole-review-D3AB-duplicate-only",
+      "packetKind": "whole_packet_development",
+      "sourceCaseId": "synthetic-dev-actor-event-date",
+      "originalSpans": [
+        {
+          "id": "D3A",
+          "sourceId": "synthetic-dev-actor-event-date-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+          "sourceRevision": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+          "start": 0,
+          "end": 136,
+          "sha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+          "text": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result.",
+          "turnId": "D3A",
+          "speaker": "user",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-03T10:00:00Z",
+          "sourcePhase": null
+        },
+        {
+          "id": "D3B",
+          "sourceId": "synthetic-dev-actor-event-date-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-actor-event-date.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-actor-event-date.md",
+          "sourceRevision": "3bb62e1c35d991771e421599c4c712627efbb158c0cb227b959548a46fc8a4b8",
+          "start": 137,
+          "end": 226,
+          "sha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+          "text": "I cannot independently confirm that repair. This message contains no later repair result.",
+          "turnId": "D3B",
+          "speaker": "assistant",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-04T08:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "D3A",
+        "D3B"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_D3A_maintainer_repair",
+          "anchorSpanId": "D3A",
+          "supportSpanIds": [
+            "D3A"
+          ],
+          "sourceEvidence": {
+            "spanId": "D3A",
+            "start": 0,
+            "end": 136,
+            "sha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+            "quote": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result."
+          },
+          "actor": {
+            "role": "source",
+            "basis": "explicit_subject",
+            "entity": "the maintainer"
+          },
+          "action": "reported the maintainer repairing the synthetic loom adapter",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": "2026-10-01",
+            "supportSpanId": "D3A",
+            "unknownIsFaithful": false,
+            "allowedTurnInference": null,
+            "temporalMeaning": "explicit_repair_day",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "the maintainer",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "The user is the reporter, not the repair performer.",
+            "The repair is attributed, not independently verified by the user.",
+            "2026-10-01 is explicit event time; 2026-10-03 is the report turn time, not the repair day."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D3A_user_not_verified",
+          "anchorSpanId": "D3A",
+          "supportSpanIds": [
+            "D3A"
+          ],
+          "sourceEvidence": {
+            "spanId": "D3A",
+            "start": 0,
+            "end": 136,
+            "sha256": "4318848bad6a1c5be33359e948f003cb57cce38897b35c2586e90a7be78c956f",
+            "quote": "The maintainer repaired the synthetic loom adapter on 2026-10-01. I am reporting their work, not my own; I have not verified the result."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "the user has not verified the reported repair result",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-03",
+              "instantValue": "2026-10-03T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "negative_state_as_of_the_report",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "user",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Reporting another actor’s work does not establish independent verification.",
+            "The source does not report a later repair performed by the user."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D3B_cannot_confirm",
+          "anchorSpanId": "D3B",
+          "supportSpanIds": [
+            "D3B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D3B",
+            "start": 137,
+            "end": 226,
+            "sha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+            "quote": "I cannot independently confirm that repair. This message contains no later repair result."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "the assistant cannot independently confirm the reported repair",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-04",
+              "instantValue": "2026-10-04T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "epistemic_limit_as_of_the_original_turn",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "This is inability to independently confirm, not a new repair, a verified result or a refutation that the maintainer repaired it."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D3B_no_later_result",
+          "anchorSpanId": "D3B",
+          "supportSpanIds": [
+            "D3B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D3B",
+            "start": 137,
+            "end": 226,
+            "sha256": "4b6c6861e327141bf3d3a53d40a59675b13aeb4381c44b51225167b23abde8b8",
+            "quote": "I cannot independently confirm that repair. This message contains no later repair result."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "this message contains no later repair result",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-04",
+              "instantValue": "2026-10-04T08:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "message_scoped_absence_not_a_repair_event",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Absence is scoped to this supplied message.",
+            "Do not invent a later repair event, performer or event date."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_D3A_maintainer_repair",
+        "F_D3A_user_not_verified",
+        "F_D3B_cannot_confirm",
+        "F_D3B_no_later_result"
+      ]
+    },
+    {
+      "packetId": "whole-review-D4ABC-omit-nonrollout",
+      "packetKind": "whole_packet_development",
+      "sourceCaseId": "synthetic-dev-cancel-reopen",
+      "originalSpans": [
+        {
+          "id": "D4A",
+          "sourceId": "synthetic-dev-cancel-reopen-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+          "start": 0,
+          "end": 101,
+          "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+          "text": "I completed a synthetic lantern connector change; this is my report, not an independent verification.",
+          "turnId": "D4A",
+          "speaker": "assistant",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-01T10:00:00Z",
+          "sourcePhase": null
+        },
+        {
+          "id": "D4B",
+          "sourceId": "synthetic-dev-cancel-reopen-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+          "start": 102,
+          "end": 184,
+          "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+          "text": "I cancelled the synthetic lantern connector rollout because the preview was blank.",
+          "turnId": "D4B",
+          "speaker": "user",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-02T10:00:00Z",
+          "sourcePhase": null
+        },
+        {
+          "id": "D4C",
+          "sourceId": "synthetic-dev-cancel-reopen-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-cancel-reopen.md",
+          "sourceRevision": "5800400bbdfa4b855f3023af79f4489f7b7efc3a351a8deb127c31eedd0d7300",
+          "start": 185,
+          "end": 295,
+          "sha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+          "text": "I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out.",
+          "turnId": "D4C",
+          "speaker": "user",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-03T10:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "D4A",
+        "D4B",
+        "D4C"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_D4A_change_report",
+          "anchorSpanId": "D4A",
+          "supportSpanIds": [
+            "D4A"
+          ],
+          "sourceEvidence": {
+            "spanId": "D4A",
+            "start": 0,
+            "end": 101,
+            "sha256": "81c88d4816a62e03fc5e59aba748464fe396eaa769984c30949e4ab0ee89531e",
+            "quote": "I completed a synthetic lantern connector change; this is my report, not an independent verification."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "reported completing a synthetic lantern connector change",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "event_or_state_not_explicitly_dated",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Completion is of the connector change, not rollout.",
+            "This is the assistant’s report rather than an independent verification."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D4B_cancelled_rollout",
+          "anchorSpanId": "D4B",
+          "supportSpanIds": [
+            "D4B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D4B",
+            "start": 102,
+            "end": 184,
+            "sha256": "b34064988f17433e1aaaedb3913ccc4839b886b45a6aa0210a3f4ed810cc1d65",
+            "quote": "I cancelled the synthetic lantern connector rollout because the preview was blank."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "cancelled the synthetic lantern connector rollout because the preview was blank",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_cancelled",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "event_or_state_not_explicitly_dated",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "user",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "The blank preview is the explicit cancellation cause.",
+            "Cancellation must remain distinct from completing or deploying the change."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D4C_reopened_investigation",
+          "anchorSpanId": "D4C",
+          "supportSpanIds": [
+            "D4C"
+          ],
+          "sourceEvidence": {
+            "spanId": "D4C",
+            "start": 185,
+            "end": 295,
+            "sha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+            "quote": "I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "reopened the synthetic lantern connector rollout to investigate the blank preview",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-03",
+              "instantValue": "2026-10-03T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "event_or_state_not_explicitly_dated",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "user",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "The completed action is reopening the rollout investigation, not completing rollout.",
+            "Investigation of the blank preview is the stated purpose, not a proven fix."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D4C_not_rolled_out",
+          "anchorSpanId": "D4C",
+          "supportSpanIds": [
+            "D4C"
+          ],
+          "sourceEvidence": {
+            "spanId": "D4C",
+            "start": 185,
+            "end": 295,
+            "sha256": "654e8ae62914207b960acfab928bb6316cdfed4becb41af70f384fe0ac92d604",
+            "quote": "I reopened the synthetic lantern connector rollout to investigate the blank preview. I have not rolled it out."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "the user has not rolled out the synthetic lantern connector",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-03",
+              "instantValue": "2026-10-03T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "negative_state_as_of_the_original_turn",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "user",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Explicit nondeployment remains important after reopening.",
+            "Do not convert reopening into rollout completion or a failed rollout attempt."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_D4A_change_report",
+        "F_D4B_cancelled_rollout",
+        "F_D4C_reopened_investigation",
+        "F_D4C_not_rolled_out"
+      ]
+    },
+    {
+      "packetId": "whole-review-D1AB-omit-request",
+      "packetKind": "whole_packet_development",
+      "sourceCaseId": "synthetic-dev-plan-negation",
+      "originalSpans": [
+        {
+          "id": "D1A",
+          "sourceId": "synthetic-dev-plan-negation-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+          "sourceRevision": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+          "start": 0,
+          "end": 67,
+          "sha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+          "text": "Please repair the synthetic prism exporter. I have not repaired it.",
+          "turnId": "D1A",
+          "speaker": "user",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-01T10:00:00Z",
+          "sourcePhase": null
+        },
+        {
+          "id": "D1B",
+          "sourceId": "synthetic-dev-plan-negation-source",
+          "sourcePath": "raw/synthetic-development/synthetic-dev-plan-negation.md",
+          "selectionPath": "wiki/synthetic-development/synthetic-dev-plan-negation.md",
+          "sourceRevision": "a15ef448d29a361b76d7dddbd14056e5e3eeac3dbd015d8c68f7985792992e2c",
+          "start": 68,
+          "end": 182,
+          "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+          "text": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked.",
+          "turnId": "D1B",
+          "speaker": "assistant",
+          "recordTime": "2026-10-04T09:00:00Z",
+          "turnTime": "2026-10-02T10:00:00Z",
+          "sourcePhase": null
+        }
+      ],
+      "coverageRequiredSpanIds": [
+        "D1A",
+        "D1B"
+      ],
+      "excludedSpanIds": [],
+      "facts": [
+        {
+          "id": "F_D1A_request",
+          "anchorSpanId": "D1A",
+          "supportSpanIds": [
+            "D1A"
+          ],
+          "sourceEvidence": {
+            "spanId": "D1A",
+            "start": 0,
+            "end": 67,
+            "sha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+            "quote": "Please repair the synthetic prism exporter. I have not repaired it."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "requested repair of the synthetic prism exporter",
+          "polarity": "affirmed",
+          "speechAct": "request",
+          "status": "requested",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "request_attributed_to_the_original_turn",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": "user",
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "The user requests repair; the recipient is not explicitly named.",
+            "A request does not establish completion of repair."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D1A_user_not_repaired",
+          "anchorSpanId": "D1A",
+          "supportSpanIds": [
+            "D1A"
+          ],
+          "sourceEvidence": {
+            "spanId": "D1A",
+            "start": 0,
+            "end": 67,
+            "sha256": "d620986cdd7417f27c7724a186329d22ff4a9e8eccdfa85f6e4eb2036b937755",
+            "quote": "Please repair the synthetic prism exporter. I have not repaired it."
+          },
+          "actor": {
+            "role": "user",
+            "basis": "speaker",
+            "entity": "user"
+          },
+          "action": "the user has not repaired the synthetic prism exporter",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-01",
+              "instantValue": "2026-10-01T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "negative_state_as_of_the_original_turn",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "user",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "user",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Explicit user nonperformance; not a failed attempt or completed repair."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D1B_plan_drafted",
+          "anchorSpanId": "D1B",
+          "supportSpanIds": [
+            "D1B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D1B",
+            "start": 68,
+            "end": 182,
+            "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+            "quote": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked."
+          },
+          "actor": {
+            "role": "assistant",
+            "basis": "speaker",
+            "entity": "assistant"
+          },
+          "action": "finished drafting a repair plan for the synthetic prism exporter",
+          "polarity": "affirmed",
+          "speechAct": "report",
+          "status": "reported_completed",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "event_or_state_not_explicitly_dated",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": "assistant",
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Completion is of drafting the plan, not implementation of the exporter repair.",
+            "This is an attributed assistant report, not independent execution proof."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D1B_exporter_not_repaired",
+          "anchorSpanId": "D1B",
+          "supportSpanIds": [
+            "D1B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D1B",
+            "start": 68,
+            "end": 182,
+            "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+            "quote": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "the synthetic prism exporter has not been repaired",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "negative_state_as_of_the_report",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "The original uses passive repair nonperformance without naming a performer.",
+            "Do not turn absence of repair into an attempted repair failure."
+          ],
+          "requiredForLedgerCoverage": true
+        },
+        {
+          "id": "F_D1B_exporter_not_checked",
+          "anchorSpanId": "D1B",
+          "supportSpanIds": [
+            "D1B"
+          ],
+          "sourceEvidence": {
+            "spanId": "D1B",
+            "start": 68,
+            "end": 182,
+            "sha256": "1b7e4f6ebc7646c72204f5f335d03d4b1ddfd522fbd637910aa23259f7a61a55",
+            "quote": "I finished drafting a repair plan for the synthetic prism exporter. The exporter has not been repaired or checked."
+          },
+          "actor": {
+            "role": "unknown",
+            "basis": "unknown",
+            "entity": "unknown"
+          },
+          "action": "the synthetic prism exporter has not been checked",
+          "polarity": "negated",
+          "speechAct": "report",
+          "status": "unknown",
+          "eventTime": {
+            "explicitDay": null,
+            "supportSpanId": null,
+            "unknownIsFaithful": true,
+            "allowedTurnInference": {
+              "basis": "inferred_from_turn",
+              "dayValue": "2026-10-02",
+              "instantValue": "2026-10-02T10:00:00Z",
+              "uncertainty": "inferred",
+              "requiresQualification": true
+            },
+            "temporalMeaning": "negative_state_as_of_the_report",
+            "recordImportFileTimeIsEventTime": false
+          },
+          "attribution": {
+            "reportedBy": "assistant",
+            "requester": null,
+            "requestRecipient": null,
+            "reportedPerformer": null,
+            "independentVerification": false
+          },
+          "requiredQualifications": [
+            "Checking is separately absent; repair planning does not cover this qualification.",
+            "No independent verification or successful check is supplied."
+          ],
+          "requiredForLedgerCoverage": true
+        }
+      ],
+      "requiredCoverageFactIds": [
+        "F_D1A_request",
+        "F_D1A_user_not_repaired",
+        "F_D1B_plan_drafted",
+        "F_D1B_exporter_not_repaired",
+        "F_D1B_exporter_not_checked"
+      ]
+    }
+  ],
+  "preInferenceFreezeHistory": [
+    {
+      "reason": "Before any current inference, preserve literal request/report timestamp scope and disclose incidental non-target historical role-case audit exposure. Existing input artifacts and frozen review gates are unchanged.",
+      "referencePath": "local-wiki-development-ledger-reference-v1.json",
+      "referenceBytes": 122650,
+      "referenceSha256": "3387425cb1294aa3b53d0b54a85ff4ae782c1d8a1ca1cd895e3198e481452e6c",
+      "manifestPath": "local-wiki-development-ledger-reference-v1.manifest.json",
+      "manifestBytes": 3602,
+      "manifestSha256": "ce3f438bb666affb784beef22f3a19ce4bb236e4d68f1d83f39ea87d5adfff3d",
+      "inferenceOccurredBeforeRevision": false
+    }
+  ]
+}

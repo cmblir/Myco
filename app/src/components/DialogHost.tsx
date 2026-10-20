@@ -1,17 +1,45 @@
 // DialogHost renders the active prompt/confirm modal from dialogStore.
 // Mount it once near the root of the app.
 
-import { useEffect, useId, useRef, useState } from "react";
-import type { JSX, KeyboardEvent } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import type { JSX } from "react";
 import { useDialogStore } from "../stores/dialogStore";
+import type { DialogRequest } from "../stores/dialogStore";
 import { useUIStore } from "../stores/uiStore";
 import { STRINGS } from "../lib/i18n";
+import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
+import { useModalFocus } from "./useModalFocus";
 
-// Elements that can receive keyboard focus inside the dialog. Used to keep
-// Tab / Shift+Tab cycling within the modal (a lightweight focus trap).
-const FOCUSABLE =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+/** Where focus lands on open. A destructive confirm starts on Cancel: Enter
+ *  right after the click that opened it must not be the thing that destroys. */
+export function initialFocus(
+  req: Pick<DialogRequest, "kind" | "danger">,
+): "input" | "cancel" | "primary" {
+  if (req.kind === "prompt") return "input";
+  return req.kind === "confirm" && req.danger ? "cancel" : "primary";
+}
+
+export function primaryLabel(
+  req: Pick<DialogRequest, "kind" | "danger" | "confirmLabel">,
+  t: Strings,
+): string {
+  if (req.confirmLabel) return req.confirmLabel;
+  if (req.kind !== "confirm") return t.dlg_create;
+  return req.danger ? t.dlg_delete : t.dlg_ok;
+}
+
+/** Close with `value`, focus already back on the opener: the caller's code
+ *  after the await runs next and may disable or unmount that opener (History's
+ *  undo, Delete board). Restored only after that, focus falls to <body>. */
+export function settleDialog(
+  opener: { focus(): void } | null,
+  close: (value: string | null) => void,
+  value: string | null,
+): void {
+  opener?.focus();
+  close(value);
+}
 
 export default function DialogHost(): JSX.Element | null {
   const request = useDialogStore((s) => s.request);
@@ -22,98 +50,76 @@ export default function DialogHost(): JSX.Element | null {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const primaryRef = useRef<HTMLButtonElement | null>(null);
-  // Element focused before the dialog opened, so we can restore on close.
-  const previouslyFocused = useRef<HTMLElement | null>(null);
+  const cancelRef = useRef<HTMLButtonElement | null>(null);
   const titleId = useId();
 
-  useEffect(() => {
-    if (!request) return;
-    previouslyFocused.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    setValue(request.defaultValue ?? "");
-    // Focus the text input for prompts, otherwise the primary action button —
-    // or, when there is none (pick), the first focusable element in the body.
-    setTimeout(() => {
-      if (request.kind === "prompt") {
-        inputRef.current?.focus();
-        inputRef.current?.select();
-      } else {
-        (
-          primaryRef.current ??
-          dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)
-        )?.focus();
-      }
-    }, 0);
-    // Restore focus to the previously-focused element when the dialog closes.
-    return () => {
-      previouslyFocused.current?.focus();
-    };
-  }, [request]);
-
-  if (!request) return null;
-
   function cancel() {
-    close(null);
+    settleDialog(opener.current, close, null);
   }
 
   function submit() {
     if (!request) return;
     if (request.kind === "prompt") {
       const trimmed = value.trim();
-      close(trimmed.length > 0 ? trimmed : null);
+      settleDialog(opener.current, close, trimmed.length > 0 ? trimmed : null);
     } else {
-      close("ok");
+      settleDialog(opener.current, close, "ok");
     }
   }
 
-  // Trap Tab / Shift+Tab within the dialog and route Escape to cancel.
-  function onDialogKeyDown(e: KeyboardEvent<HTMLDivElement>) {
-    if (e.key === "Escape") {
-      e.stopPropagation();
-      cancel();
-      return;
-    }
-    if (e.key !== "Tab") return;
-    const dialog = dialogRef.current;
-    if (!dialog) return;
-    const focusable = Array.from(
-      dialog.querySelectorAll<HTMLElement>(FOCUSABLE),
-    ).filter((el) => el.offsetParent !== null || el === document.activeElement);
-    if (focusable.length === 0) {
-      e.preventDefault();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    const active = document.activeElement;
-    if (e.shiftKey) {
-      if (active === first || !dialog.contains(active)) {
-        e.preventDefault();
-        last.focus();
-      }
-    } else if (active === last || !dialog.contains(active)) {
-      e.preventDefault();
-      first.focus();
-    }
-  }
+  // A prompt's input, Cancel for a danger confirm, else the primary button —
+  // or, when there is none (pick), the first focusable element in the body.
+  const target = request ? initialFocus(request) : null;
+  const { onKeyDown, opener } = useModalFocus(dialogRef, {
+    open: request,
+    onEscape: cancel,
+    initial: () =>
+      target === "input"
+        ? inputRef.current
+        : target === "cancel"
+          ? cancelRef.current
+          : primaryRef.current,
+  });
 
-  const primaryLabel =
-    request.kind === "confirm"
-      ? request.danger
-        ? t.dlg_delete
-        : t.dlg_ok
-      : t.dlg_create;
+  // A dialog opened from the phone drawer (New note, Rename…) would sit in
+  // front of a drawer still open behind it: the drawer closes (UX S49).
+  useEffect(() => {
+    if (!request || !window.matchMedia("(max-width: 768px)").matches) return;
+    const ui = useUIStore.getState();
+    if (!ui.sidebarCollapsed) ui.setSidebarCollapsed(true);
+  }, [request]);
+
+  useLayoutEffect(() => {
+    if (!request) return;
+    setValue(request.defaultValue ?? "");
+    if (initialFocus(request) !== "input") return;
+    // Once the default value has rendered: select it for replacing — unless
+    // typing has already changed it, which selecting would swallow.
+    const id = setTimeout(() => {
+      const input = inputRef.current;
+      if (!input) return;
+      if (document.activeElement !== input) input.focus();
+      if (input.value === (request.defaultValue ?? "")) input.select();
+    }, 0);
+    return () => clearTimeout(id);
+  }, [request]);
+
+  if (!request) return null;
 
   return (
-    <div className="myco-modal__backdrop" onClick={cancel}>
+    <div
+      className={`myco-modal__backdrop${request.kind === "pick" ? " myco-modal__backdrop--pick" : ""}`}
+      onClick={cancel}
+    >
       <div
         ref={dialogRef}
         className="myco-modal"
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby={request.title ? titleId : undefined}
         onClick={(e) => e.stopPropagation()}
-        onKeyDown={onDialogKeyDown}
+        onKeyDown={onKeyDown}
       >
         <h2 id={titleId} className="myco-modal__title">
           {request.title}
@@ -145,7 +151,12 @@ export default function DialogHost(): JSX.Element | null {
           />
         ) : null}
         <div className="myco-modal__actions">
-          <button type="button" className="myco-modal__btn" onClick={cancel}>
+          <button
+            ref={cancelRef}
+            type="button"
+            className="myco-modal__btn"
+            onClick={cancel}
+          >
             {t.dlg_cancel}
           </button>
           {request.kind !== "pick" ? (
@@ -157,7 +168,7 @@ export default function DialogHost(): JSX.Element | null {
               }`}
               onClick={submit}
             >
-              {primaryLabel}
+              {primaryLabel(request, t)}
             </button>
           ) : null}
         </div>

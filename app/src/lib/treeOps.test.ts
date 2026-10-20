@@ -2,11 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { FileNode } from "./ipc";
 import {
   FAVORITES_ID,
+  ancestorDirs,
   dropNested,
   filterMovable,
   flattenVisible,
   folderChoices,
   rangeBetween,
+  treeKeyMove,
   rewritePrefix,
   syntheticGroup,
 } from "./treeOps";
@@ -139,5 +141,64 @@ describe("folderChoices", () => {
     expect(folderChoices(withGroups, R, [`${R}/welcome.md`]).map((c) => c.path)).not.toContain(
       FAVORITES_ID,
     );
+  });
+});
+
+describe("ancestorDirs", () => {
+  it("lists every folder between the vault root and the file, outermost first", () => {
+    expect(ancestorDirs(`${R}/wiki/sub/deep.md`, R)).toEqual([`${R}/wiki`, `${R}/wiki/sub`]);
+    expect(ancestorDirs(`${R}/welcome.md`, R)).toEqual([]);
+  });
+
+  it("opens nothing for a file outside the vault or a sibling sharing its prefix", () => {
+    expect(ancestorDirs("/elsewhere/notes/x.md", R)).toEqual([]);
+    expect(ancestorDirs("/vault2/wiki/x.md", "/vault")).toEqual([]);
+    expect(ancestorDirs(`${R}/wiki/a.md`, "")).toEqual([]);
+  });
+});
+
+// UX S28: the sidebar tree is one Tab stop walked with the arrow keys (WAI-ARIA
+// tree pattern). Rows are the rendered ones, top to bottom; null = a file.
+describe("treeKeyMove", () => {
+  const rows = [
+    { depth: 0, expanded: true }, //  0 wiki/ (open)
+    { depth: 1, expanded: null }, //  1   a
+    { depth: 1, expanded: false }, // 2   sub/ (closed)
+    { depth: 1, expanded: null }, //  3   b
+    { depth: 0, expanded: null }, //  4 top
+  ];
+
+  it("moves up and down one row and stops at either end", () => {
+    expect(treeKeyMove(rows, 1, "ArrowDown")).toEqual({ focus: 2 });
+    expect(treeKeyMove(rows, 1, "ArrowUp")).toEqual({ focus: 0 });
+    expect(treeKeyMove(rows, 4, "ArrowDown")).toBeNull();
+    expect(treeKeyMove(rows, 0, "ArrowUp")).toBeNull();
+  });
+
+  it("jumps to the first and last row with Home and End", () => {
+    expect(treeKeyMove(rows, 2, "Home")).toEqual({ focus: 0 });
+    expect(treeKeyMove(rows, 2, "End")).toEqual({ focus: 4 });
+  });
+
+  it("opens a closed folder with Right, then steps into its first child", () => {
+    expect(treeKeyMove(rows, 2, "ArrowRight")).toEqual({ toggle: 2 });
+    expect(treeKeyMove(rows, 0, "ArrowRight")).toEqual({ focus: 1 });
+    // An open folder with nothing in it, and a file, go nowhere.
+    expect(treeKeyMove([{ depth: 0, expanded: true }, { depth: 0, expanded: null }], 0, "ArrowRight")).toBeNull();
+    expect(treeKeyMove(rows, 1, "ArrowRight")).toBeNull();
+  });
+
+  it("closes an open folder with Left, else goes to the parent folder", () => {
+    expect(treeKeyMove(rows, 0, "ArrowLeft")).toEqual({ toggle: 0 });
+    expect(treeKeyMove(rows, 3, "ArrowLeft")).toEqual({ focus: 0 });
+    expect(treeKeyMove(rows, 2, "ArrowLeft")).toEqual({ focus: 0 });
+    // A top-level row has no parent.
+    expect(treeKeyMove(rows, 4, "ArrowLeft")).toBeNull();
+  });
+
+  it("leaves every other key to the row", () => {
+    expect(treeKeyMove(rows, 1, "Enter")).toBeNull();
+    expect(treeKeyMove(rows, 1, " ")).toBeNull();
+    expect(treeKeyMove([], 0, "ArrowDown")).toBeNull();
   });
 });

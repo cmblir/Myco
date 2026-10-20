@@ -7,8 +7,11 @@
 // we extract, validate, and de-dupe. Malformed output is retried once, then the
 // whole call fails loudly (never write partial cards).
 
-import { complete } from "./chat";
+import { canGenerate, complete, getActiveModel } from "./chat";
+import { ipc } from "./ipc";
 import type { Card } from "./cards";
+import { isQuoted, noteRef } from "./extractiveCards";
+import HEADS from "./mycoPromptHeads.json";
 
 export interface QuizQuestion {
   question: string;
@@ -22,23 +25,25 @@ export interface QuizQuestion {
 }
 
 const CARD_SYSTEM =
-  "You are myco's study-card generator. You turn a markdown note into concise " +
-  "active-recall flashcards. Each card is a single clear question and a short " +
-  "answer drawn ONLY from the note. Preserve source grounding: copy the nearest " +
-  "citation token ([^src-*] or [[stem]]) from the span the card is based on into " +
-  "sourceRef (empty string if none). Reply with ONLY a JSON array, no prose.";
+  `${HEADS.studyCards} You turn a markdown note into concise ` +
+  "active-recall flashcards. Each card is a single clear question and, as its " +
+  "answer, a short span COPIED WORD FOR WORD from the note — answers are checked " +
+  "against the note and any that are not found verbatim are dropped. Copy the " +
+  "nearest citation token ([^src-*] or [[stem]]) from the span the card is based " +
+  "on into sourceRef (empty string if none). Reply with ONLY a JSON array, no prose.";
 
 const QUIZ_SYSTEM =
-  "You are myco's quiz generator. You turn a markdown note into multiple-choice " +
+  `${HEADS.studyQuiz} You turn a markdown note into multiple-choice ` +
   "questions with exactly one correct option. Draw everything ONLY from the note. " +
   "Copy the nearest citation token ([^src-*] or [[stem]]) into sourceRef (empty " +
-  "string if none) and add a one-line explanation. Reply with ONLY a JSON array.";
+  "string if none). The explanation is the sentence of the note that answers the " +
+  "question, COPIED WORD FOR WORD — it is checked. Reply with ONLY a JSON array.";
 
 function cardPrompt(markdown: string, count: number): string {
   return (
     `Generate up to ${count} flashcards from the note below. ` +
     `Format: a JSON array of objects {"front": string, "back": string, "sourceRef": string}. ` +
-    `front = question, back = concise answer.\n\nNOTE:\n${markdown}`
+    `front = question, back = a short span copied verbatim from the note.\n\nNOTE:\n${markdown}`
   );
 }
 
@@ -80,8 +85,10 @@ function sliceArray(text: string): string | null {
   return null;
 }
 
+/** A reply field as one line: the deck stores a card per line, so the preview
+ *  shows a multi-line quote the way it is saved. */
 function str(v: unknown): string {
-  return typeof v === "string" ? v.trim() : "";
+  return typeof v === "string" ? v.replace(/\s+/g, " ").trim() : "";
 }
 
 /** Run the model, extract a JSON array, retrying once on malformed output. */
@@ -90,10 +97,24 @@ async function generateArray(
   system: string,
   user: string,
 ): Promise<unknown[]> {
+  const origin = Object.freeze(await ipc.agentVaultSession());
+  if (origin.vaultPath !== vaultPath || !origin.openingToken) {
+    throw new Error("the active vault changed before model execution");
+  }
+  const roleSnapshot = await ipc.captureModelRole(
+    origin,
+    "study",
+    "foreground",
+  );
+  const paths: string[] = [];
   for (let attempt = 0; attempt < 2; attempt++) {
     const reply = await complete({
       task: "generate",
+      featureRole: "study",
+      origin,
+      roleSnapshot,
       cwd: vaultPath,
+      paths,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -170,4 +191,39 @@ export async function generateQuiz(
     if (out.length >= count) break;
   }
   return out;
+}
+
+/** Whether the opt-in model path may run: Settings → Study's switch is on AND
+ *  a provider that writes prose is connected. Off, or with only the built-in
+ *  extractive model, every card and quiz is extractive. */
+export async function modelStudyOn(aiCards: boolean): Promise<boolean> {
+  if (!aiCards) return false;
+  const selected = await getActiveModel("study");
+  return canGenerate(selected.provider, selected.model);
+}
+
+/** Model cards for the opt-in path (spec 2026-09-29): a card survives only
+ *  when its back occurs verbatim in the note (normalised substring), and it
+ *  is then sourced at that note so the review can open it. */
+export async function generateQuotedCards(
+  vaultPath: string,
+  markdown: string,
+  stem: string,
+  count = 8,
+): Promise<Card[]> {
+  const cards = await generateCards(vaultPath, markdown, count);
+  return cards
+    .filter((c) => isQuoted(c.back, markdown))
+    .map((c) => ({ ...c, sourceRef: noteRef(stem) }));
+}
+
+/** Model quiz for the opt-in path: a question survives only when its
+ *  explanation is quoted from the source. */
+export async function generateQuotedQuiz(
+  vaultPath: string,
+  markdown: string,
+  count = 5,
+): Promise<QuizQuestion[]> {
+  const quiz = await generateQuiz(vaultPath, markdown, count);
+  return quiz.filter((q) => isQuoted(q.explanation, markdown));
 }

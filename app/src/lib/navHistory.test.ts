@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   HISTORY_CAP,
   pushRoute,
+  recentPages,
   replaceCurrent,
   sanitizeHistory,
   step,
@@ -63,5 +64,21 @@ describe("navHistory", () => {
     });
     const ok: NavHistory = { entries: ["overview", "query"], idx: 1 };
     expect(sanitizeHistory(ok, "query")).toEqual(ok);
+  });
+
+  it("recentPages lists distinct notes newest first, minus the open one", () => {
+    const h: NavHistory = {
+      entries: ["page:/v/a.md", "overview", "page:/v/b.md", "page:/v/a.md", "graph", "page:/v/c.md"],
+      idx: 5,
+    };
+    expect(recentPages(h, 5)).toEqual(["page:/v/a.md", "page:/v/b.md"]);
+    expect(recentPages(h, 1)).toEqual(["page:/v/a.md"]);
+    // From a non-page route nothing is excluded.
+    expect(recentPages({ entries: h.entries, idx: 4 }, 5)).toEqual([
+      "page:/v/c.md",
+      "page:/v/a.md",
+      "page:/v/b.md",
+    ]);
+    expect(recentPages(start, 5)).toEqual([]);
   });
 });

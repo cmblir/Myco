@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "id": "local-wiki-development-review-packets-v1",
+  "syntheticOnly": true,
+  "split": "development",
+  "labelStatus": "frozen_before_inference",
+  "sourceReviewStatus": "independent_automated_source_review_approved_for_development_reference_freeze",
+  "sourceAuditSha256": "8fe7e07c348451275d30aa7b79723fda485b2e0c21e4a011b98c2fe8ad5ccbc9",
+  "base": {
+    "path": "local-wiki-development-meaning-v1.json",
+    "bytes": 20012,
+    "sha256": "d697b33b60d555615a8e921158f3baeda1c003c6cac3c4a69d5cbe5d000f348c"
+  },
+  "artifact": {
+    "path": "local-wiki-development-review-packets-v1.json",
+    "bytes": 98226,
+    "sha256": "208f70a7c653e9c38ba3b1d4a4a39a09cc38d5f4be1c4fd7bd8dfabd0c005e31"
+  },
+  "counts": {
+    "pairs": 4,
+    "cases": 8,
+    "normal": 4,
+    "comparison": 4
+  },
+  "priorDevelopmentOutputsKnown": true,
+  "currentTrialOutputsInspected": false,
+  "heldOutInspected": false,
+  "humanReviewed": false,
+  "nativeAuthority": false,
+  "semanticAcceptance": "development_source_references_only; native USER and measured fit required before inference; no role or installed acceptance"
+}

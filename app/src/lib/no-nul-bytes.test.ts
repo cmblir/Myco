@@ -32,4 +32,14 @@ describe("source hygiene", () => {
     );
     expect(offenders).toEqual([]);
   });
+
+  // Status colours come from the theme tokens (--danger, --ok, --warn):
+  // a literal red or green in a style prop stays the light-theme shade in
+  // dark mode, where the tokens swap to lighter tones that read on #191919.
+  it("no component paints a status colour with a literal hex", () => {
+    const offenders = sourceFiles(ROOT)
+      .filter((p) => p.endsWith(".tsx"))
+      .filter((p) => /#(dc2626|16a34a|b45309|22c55e)\b/i.test(readFileSync(p, "utf8")));
+    expect(offenders).toEqual([]);
+  });
 });

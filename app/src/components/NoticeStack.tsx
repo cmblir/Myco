@@ -5,21 +5,64 @@
 // to a region that already existed, so the wrapper is never conditional.
 
 import { useEffect, useRef, useState } from "react";
-import type { JSX, KeyboardEvent } from "react";
+import type { FocusEvent, JSX, KeyboardEvent } from "react";
 import { ActivityIcon } from "./ActivityPanel";
+import { IconButton } from "./ui";
+import { Icon } from "../lib/icons";
+import { STRINGS } from "../lib/i18n";
 import { useNoticeStore } from "../stores/noticeStore";
 import type { Notice } from "../stores/noticeStore";
+import { useUIStore } from "../stores/uiStore";
 
 /** Matches `notice-out` in styles.css — the store entry is removed once the
  * slide-right has played. */
 const EXIT_MS = 240;
 
+/**
+ * Whose × takes focus when `closing` goes while focus is inside it: the next
+ * older toast (it slides into the closed one's place), else the newer one,
+ * skipping toasts already on their way out. null when none is left.
+ * `order` is display order, newest first.
+ */
+export function focusAfterClose(
+  order: readonly string[],
+  leaving: ReadonlySet<string>,
+  closing: string,
+): string | null {
+  const i = order.indexOf(closing);
+  const live = (id: string | undefined): id is string =>
+    id !== undefined && id !== closing && !leaving.has(id);
+  for (let j = i + 1; j < order.length; j++) if (live(order[j])) return order[j];
+  for (let j = i - 1; j >= 0; j--) if (live(order[j])) return order[j];
+  return null;
+}
+
 export default function NoticeStack(): JSX.Element {
   const notices = useNoticeStore((s) => s.notices);
   const dismiss = useNoticeStore((s) => s.dismiss);
+  const lang = useUIStore((s) => s.lang);
+  const closeLabel = (STRINGS[lang] ?? STRINGS.en).ui_close;
   const [leaving, setLeaving] = useState<ReadonlySet<string>>(new Set());
+  const stackRef = useRef<HTMLDivElement | null>(null);
+  /** What had focus before the user tabbed into the stack. */
+  const returnTo = useRef<HTMLElement | null>(null);
 
+  // A keyboard close (the ×, the action, Escape) removes the focused button:
+  // hand focus to the neighbouring toast, or back to where it came from once
+  // the stack empties, instead of letting it fall to <body>.
   const close = (id: string): void => {
+    const stack = stackRef.current;
+    const closing = stack?.querySelector(`[data-notice-id="${id}"]`);
+    if (stack && closing?.contains(document.activeElement)) {
+      const order = [...notices].reverse().map((n) => n.id);
+      const next = focusAfterClose(order, leaving, id);
+      const target = next
+        ? stack.querySelector<HTMLElement>(`[data-notice-id="${next}"] .notice-close`)
+        : returnTo.current?.isConnected
+          ? returnTo.current
+          : null;
+      target?.focus();
+    }
     setLeaving((s) => new Set(s).add(id));
     window.setTimeout(() => {
       dismiss(id);
@@ -41,12 +84,22 @@ export default function NoticeStack(): JSX.Element {
     close(newest.id);
   };
 
+  // Each entry from outside the stack records where focus came from (null
+  // from <body>), so an old opener is never handed focus later.
+  const onFocus = (e: FocusEvent<HTMLDivElement>): void => {
+    const from = e.relatedTarget;
+    if (from instanceof Node && e.currentTarget.contains(from)) return;
+    returnTo.current = from instanceof HTMLElement ? from : null;
+  };
+
   return (
     <div
+      ref={stackRef}
       className="notice-stack"
       role="status"
       aria-live="polite"
       onKeyDown={onKeyDown}
+      onFocus={onFocus}
     >
       {[...notices].reverse().map((n, depth) => (
         <Toast
@@ -54,6 +107,7 @@ export default function NoticeStack(): JSX.Element {
           notice={n}
           depth={depth}
           leaving={leaving.has(n.id)}
+          closeLabel={closeLabel}
           onClose={() => close(n.id)}
         />
       ))}
@@ -61,15 +115,19 @@ export default function NoticeStack(): JSX.Element {
   );
 }
 
-function Toast({
+/** Exported for the render test: SSR reads a store's initial state, so the
+ * test hands a toast its props directly. */
+export function Toast({
   notice,
   depth,
   leaving,
+  closeLabel,
   onClose,
 }: {
   notice: Notice;
   depth: number;
   leaving: boolean;
+  closeLabel: string;
   onClose: () => void;
 }): JSX.Element {
   const [held, setHeld] = useState(false);
@@ -101,6 +159,7 @@ function Toast({
   return (
     <div
       className={cls}
+      data-notice-id={notice.id}
       onMouseEnter={() => setHeld(true)}
       onMouseLeave={() => setHeld(false)}
       onFocus={() => setHeld(true)}
@@ -139,9 +198,17 @@ function Toast({
         >
           {notice.action.label}
         </button>
-      ) : (
-        <span />
-      )}
+      ) : null}
+      {/* No focus on press: a pointer close leaves focus in the editor or
+          field the user was typing in. */}
+      <IconButton
+        className="notice-close"
+        aria-label={closeLabel}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={onClose}
+      >
+        <Icon name="x" size={14} />
+      </IconButton>
       <i className="notice-life" style={{ animationDuration: `${notice.ttlMs}ms` }} />
     </div>
   );

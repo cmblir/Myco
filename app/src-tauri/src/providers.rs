@@ -1231,7 +1231,7 @@ pub fn build_openai_vision_body(
 ) -> serde_json::Value {
     serde_json::json!({
         "model": model,
-        "max_tokens": 1024,
+        "max_completion_tokens": 1024,
         "messages": [{
             "role": "user",
             "content": [
@@ -1265,6 +1265,28 @@ pub async fn describe_image(
     prompt: &str,
     api_key: Option<String>,
 ) -> Result<String, String> {
+    describe_image_authorized(
+        provider_id,
+        model,
+        image_bytes,
+        media_type,
+        prompt,
+        api_key,
+        &|| Ok(()),
+    )
+    .await
+}
+
+/// Check the captured manual-image permission before every transport attempt.
+pub(crate) async fn describe_image_authorized(
+    provider_id: &str,
+    model: &str,
+    image_bytes: &[u8],
+    media_type: &str,
+    prompt: &str,
+    api_key: Option<String>,
+    authorize: &(dyn Fn() -> Result<(), String> + Send + Sync),
+) -> Result<String, String> {
     let data = b64_encode(image_bytes);
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
@@ -1276,14 +1298,17 @@ pub async fn describe_image(
             let key = api_key.ok_or_else(|| "missing Anthropic API key".to_string())?;
             let body = build_anthropic_vision_body(model, media_type, &data, prompt);
             let url = url_anthropic();
-            let resp = send_with_retry(|| {
-                client
-                    .post(&url)
-                    .header("x-api-key", &key)
-                    .header("anthropic-version", "2023-06-01")
-                    .header("content-type", "application/json")
-                    .json(&body)
-            })
+            let resp = send_image_with_retry(
+                || {
+                    client
+                        .post(&url)
+                        .header("x-api-key", &key)
+                        .header("anthropic-version", "2023-06-01")
+                        .header("content-type", "application/json")
+                        .json(&body)
+                },
+                authorize,
+            )
             .await
             .map_err(|e| format!("anthropic request: {e}"))?;
             let status = resp.status();
@@ -1311,9 +1336,12 @@ pub async fn describe_image(
             let key = api_key.ok_or_else(|| "missing OpenAI API key".to_string())?;
             let body = build_openai_vision_body(model, media_type, &data, prompt);
             let url = url_openai();
-            let resp = send_with_retry(|| client.post(&url).bearer_auth(&key).json(&body))
-                .await
-                .map_err(|e| format!("openai request: {e}"))?;
+            let resp = send_image_with_retry(
+                || client.post(&url).bearer_auth(&key).json(&body),
+                authorize,
+            )
+            .await
+            .map_err(|e| format!("openai request: {e}"))?;
             let status = resp.status();
             let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
             if !status.is_success() {
@@ -1333,10 +1361,12 @@ pub async fn describe_image(
             let key = api_key.ok_or_else(|| "missing Google API key".to_string())?;
             let body = build_google_vision_body(media_type, &data, prompt);
             let url = url_google(model);
-            let resp =
-                send_with_retry(|| client.post(&url).header("x-goog-api-key", &key).json(&body))
-                    .await
-                    .map_err(|e| format!("gemini request: {e}"))?;
+            let resp = send_image_with_retry(
+                || client.post(&url).header("x-goog-api-key", &key).json(&body),
+                authorize,
+            )
+            .await
+            .map_err(|e| format!("gemini request: {e}"))?;
             let status = resp.status();
             let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
             if !status.is_success() {
@@ -1363,6 +1393,23 @@ pub async fn describe_image(
              or Google AI). '{other}' can't describe images — pick one under Settings → Model."
         )),
     }
+}
+
+async fn send_image_with_retry(
+    build: impl Fn() -> reqwest::RequestBuilder,
+    authorize: &(dyn Fn() -> Result<(), String> + Send + Sync),
+) -> Result<reqwest::Response, String> {
+    for &backoff_ms in RETRY_BACKOFFS_MS.iter() {
+        authorize()?;
+        match build().send().await {
+            Ok(resp) if !is_retryable_status(resp.status()) => return Ok(resp),
+            Ok(_) | Err(_) => {
+                tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+            }
+        }
+    }
+    authorize()?;
+    build().send().await.map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
@@ -1605,5 +1652,94 @@ mod tests {
             "image/gif"
         );
         assert_eq!(g["contents"][0]["parts"][1]["text"], "describe");
+    }
+
+    #[test]
+    fn openai_vision_uses_the_current_completion_token_limit() {
+        let body = build_openai_vision_body("gpt-5.4-mini", "image/png", "AAA", "describe");
+        assert_eq!(body["max_completion_tokens"], 1024);
+        assert!(body.get("max_tokens").is_none());
+        assert_eq!(body["model"], "gpt-5.4-mini");
+    }
+
+    #[tokio::test]
+    async fn image_permission_denial_precedes_request_construction() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        let server = wiremock::MockServer::start().await;
+        let client = reqwest::Client::new();
+        let builds = AtomicUsize::new(0);
+        let result = super::send_image_with_retry(
+            || {
+                builds.fetch_add(1, Ordering::SeqCst);
+                client.post(server.uri())
+            },
+            &|| Err("synthetic permission denied".into()),
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "synthetic permission denied");
+        assert_eq!(builds.load(Ordering::SeqCst), 0);
+        assert!(server.received_requests().await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn image_permission_revocation_blocks_the_retry() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(503))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let builds = AtomicUsize::new(0);
+        let checks = AtomicUsize::new(0);
+        let authorize = || {
+            checks.fetch_add(1, Ordering::SeqCst);
+            if builds.load(Ordering::SeqCst) == 0 {
+                Ok(())
+            } else {
+                Err("synthetic permission revoked".into())
+            }
+        };
+        let result = super::send_image_with_retry(
+            || {
+                builds.fetch_add(1, Ordering::SeqCst);
+                client.post(server.uri())
+            },
+            &authorize,
+        )
+        .await;
+        assert_eq!(result.unwrap_err(), "synthetic permission revoked");
+        assert_eq!(checks.load(Ordering::SeqCst), 2);
+        assert_eq!(builds.load(Ordering::SeqCst), 1);
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn image_valid_permission_allows_a_checked_retry() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(503))
+            .up_to_n_times(1)
+            .with_priority(1)
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(200))
+            .mount(&server)
+            .await;
+        let client = reqwest::Client::new();
+        let checks = AtomicUsize::new(0);
+        let result = super::send_image_with_retry(|| client.post(server.uri()), &|| {
+            checks.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        })
+        .await
+        .unwrap();
+        assert_eq!(result.status(), reqwest::StatusCode::OK);
+        assert_eq!(checks.load(Ordering::SeqCst), 2);
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
     }
 }

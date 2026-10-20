@@ -20,6 +20,7 @@ import { ipc } from "../lib/ipc";
 import type { TaskItem } from "../lib/ipc";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { promptText } from "../stores/dialogStore";
 import {
   notifyEnabled,
   runTaskNotifyPass,
@@ -30,6 +31,7 @@ import { readTaskNotes } from "../lib/taskNotes";
 import { extractLinks, extractTags, stripTokens } from "../lib/taskTokens";
 import { writeTaskHubs } from "../lib/taskHub";
 import { nextOccurrence } from "../lib/taskRecurrence";
+import { formatDue } from "../lib/taskDueKo";
 import {
   appendTaskLine,
   parseTaskMeta,
@@ -60,6 +62,13 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   // What the last hub regeneration did, shown until the next action.
   const [notice, setNotice] = useState<string | null>(null);
+  // The row just added, as `page:line`, lit briefly so the eye finds it.
+  const [added, setAdded] = useState<string | null>(null);
+  useEffect(() => {
+    if (!added) return;
+    const timer = setTimeout(() => setAdded(null), 1500);
+    return () => clearTimeout(timer);
+  }, [added]);
 
   /// Rescan, and hand the fresh list back — the hub writer renders from the
   /// lines as they now read, and `setTasks` cannot be read back this render.
@@ -87,16 +96,18 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   /// (calendar-shaped home for "things I have to do"); a roadmap target must
   /// already exist — its file vanishing mid-compose is an error, not a reason
   /// to silently write the task somewhere else.
-  async function addTask(task: ComposedTask): Promise<void> {
-    if (!currentVault || busy) return;
+  async function addTask(task: ComposedTask): Promise<boolean> {
+    if (!currentVault || busy) return false;
     setBusy(true);
     setError(null);
     try {
       let path: string;
+      let rel: string;
       let content: string;
       if (task.target.kind === "daily") {
         const day = today();
         const dir = `${currentVault.path}/daily`;
+        rel = `daily/${day}.md`;
         path = `${dir}/${day}.md`;
         try {
           content = (await ipc.readFile(path)).raw;
@@ -105,18 +116,28 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           await ipc
             .createFolder(currentVault.path, "daily")
             .catch(() => undefined);
-          await ipc.createFile(dir, `${day}.md`).catch(() => undefined);
+          // Creation is no-clobber. An unreadable existing note must never be
+          // replaced with a fresh heading after its read fails.
+          await ipc.createFile(dir, `${day}.md`);
           content = `# ${day}\n\n`;
         }
       } else {
-        path = `${currentVault.path}/${task.target.path}`;
+        rel = task.target.path;
+        path = `${currentVault.path}/${rel}`;
         content = (await ipc.readFile(path)).raw;
       }
       await ipc.writeFile(path, appendTaskLine(content, task.line));
-      await refresh();
+      const fresh = await refresh();
+      // Appended, so the last row of that note with this text is the new one.
+      const row = [...fresh]
+        .reverse()
+        .find((x) => x.page === rel && `- [ ] ${x.text}` === task.line);
+      if (row) setAdded(keyOf(row));
       void useVaultStore.getState().refreshTree();
+      return true;
     } catch (e: unknown) {
       setError(String(e));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -247,6 +268,16 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
       // month, so both months' pages are regenerated.
       const before = parseTaskMeta(task.text);
       const next = nextOccurrence(before);
+      if (status === "done" && next) {
+        // The next occurrence is inserted above the completed line. Keep an
+        // open detail panel on the original task, including its notes.
+        const completed = fresh.find((item) =>
+          item.page === task.page && item.line === task.line + 1 && item.done,
+        );
+        setSelected((key) => key === keyOf(task)
+          ? completed ? keyOf(completed) : null
+          : key);
+      }
       const months = monthsOf(
         before.start,
         before.scheduled,
@@ -339,7 +370,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
 
   return (
     <AppPage
-      eyebrow={t.nav_tasks ?? "Tasks"}
+      eyebrow={t.nav_workspace}
       title={t.tasks_title ?? "Tasks"}
       note={
         t.tasks_lede ??
@@ -421,8 +452,9 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         roadmaps={roadmaps}
         due={due}
         onDueChange={setDue}
-        onAdd={(task) => void addTask(task)}
+        onAdd={addTask}
         onNewRoadmap={newRoadmap}
+        view={view}
       />
 
       {loading ? (
@@ -430,7 +462,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           {t.tasks_loading ?? "Scanning notes…"}
         </div>
       ) : error ? (
-        <div className="card" style={{ padding: 12, color: "#dc2626" }}>
+        <div role="alert" className="card" style={{ padding: 12, color: "var(--danger)" }}>
           {error}
         </div>
       ) : view === "roadmap" ? (
@@ -441,11 +473,9 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           busy={busy}
           onToggle={(task) => void setStatus(task, task.done ? "todo" : "done")}
           onOpen={(task) => setSelected(keyOf(task))}
-          onNewRoadmap={() => {
-            const title = window.prompt(
-              t.tasks_new_roadmap_ph ?? "Roadmap title",
-            );
-            if (title?.trim()) void newRoadmap(title.trim());
+          onNewRoadmap={async () => {
+            const title = await promptText({ title: t.tasks_new_roadmap_ph });
+            if (title) void newRoadmap(title);
           }}
         />
       ) : view === "calendar" ? (
@@ -510,6 +540,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
                   <TaskRow
                     key={`${task.page}:${task.line}`}
                     task={task}
+                    isAdded={keyOf(task) === added}
                     onOpen={() => setSelected(keyOf(task))}
                     onToggle={() =>
                       void setStatus(task, task.done ? "todo" : "done")
@@ -540,6 +571,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
                   <TaskRow
                     key={`${task.page}:${task.line}`}
                     task={task}
+                    isAdded={keyOf(task) === added}
                     onOpen={() => setSelected(keyOf(task))}
                     onToggle={() =>
                       void setStatus(task, task.done ? "todo" : "done")
@@ -576,15 +608,18 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
 
 function TaskRow({
   task,
+  isAdded,
   onOpen,
   onToggle,
   busy,
 }: {
   task: TaskItem;
+  isAdded: boolean;
   onOpen: () => void;
   onToggle: () => void;
   busy: boolean;
 }): JSX.Element {
+  const lang = useUIStore((s) => s.lang);
   const meta = parseTaskMeta(task.text);
   // Category (#tag) and project ([[link]]) read as chips, not inline noise.
   const tags = extractTags(meta.title);
@@ -594,9 +629,9 @@ function TaskRow({
     // A row, not a button: the checkbox has to be clickable on its own, and a
     // button inside a button is invalid HTML (and unreachable by keyboard).
     <div
-      className="list-row"
+      className={isAdded ? "list-row task-row-added" : "list-row"}
       style={{
-        gridTemplateColumns: "18px 1fr auto",
+        gridTemplateColumns: "18px 1fr",
         gap: 10,
         alignItems: "center",
         width: "100%",
@@ -626,86 +661,87 @@ function TaskRow({
       >
         {task.done ? <Icon name="check" size={10} /> : null}
       </button>
-      {/* The title opens the detail panel; the panel links on to the note. */}
-      <button
-        type="button"
-        onClick={onOpen}
-        style={{
-          minWidth: 0,
-          background: "transparent",
-          border: 0,
-          padding: 0,
-          textAlign: "left",
-          cursor: "pointer",
-          display: "flex",
-          gap: 8,
-          alignItems: "baseline",
-          overflow: "hidden",
-        }}
-      >
-        <span
+      {/* The title opens the detail panel; the panel links on to the note. The
+          source note sits under it, so a long title cannot squeeze it to "m…". */}
+      <div style={{ minWidth: 0 }}>
+        <button
+          type="button"
+          onClick={onOpen}
           style={{
             minWidth: 0,
+            background: "transparent",
+            border: 0,
+            padding: 0,
+            textAlign: "left",
+            cursor: "pointer",
+            display: "flex",
+            gap: 8,
+            alignItems: "baseline",
+            overflow: "hidden",
+          }}
+        >
+          <span
+            style={{
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              textDecoration: task.done ? "line-through" : "none",
+              color: task.done ? "var(--ink-3)" : "var(--ink)",
+            }}
+          >
+            {title}
+          </span>
+          {tags.map((tag) => (
+            <span
+              key={`#${tag}`}
+              className="chip"
+              style={{ fontSize: 11, flexShrink: 0 }}
+            >
+              #{tag}
+            </span>
+          ))}
+          {links.map((link) => (
+            <span
+              key={`[[${link}`}
+              className="chip"
+              style={{ fontSize: 11, flexShrink: 0, color: "var(--c-overview)" }}
+            >
+              {link}
+            </span>
+          ))}
+          {meta.due ? (
+            <span
+              className="chip"
+              style={{
+                fontSize: 11,
+                flexShrink: 0,
+                // Overdue reads red; everything else stays quiet.
+                color:
+                  !task.done && meta.due < today() ? "var(--danger)" : "var(--ink-3)",
+              }}
+            >
+              {formatDue(meta.due, lang)}
+            </span>
+          ) : null}
+          {meta.priority ? (
+            <span className="chip" style={{ fontSize: 11, flexShrink: 0 }}>
+              p{meta.priority}
+            </span>
+          ) : null}
+        </button>
+        <div
+          className="muted"
+          style={{
+            fontSize: 12,
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            textDecoration: task.done ? "line-through" : "none",
-            color: task.done ? "var(--ink-3)" : "var(--ink)",
           }}
         >
-          {title}
-        </span>
-        {tags.map((tag) => (
-          <span
-            key={`#${tag}`}
-            className="chip"
-            style={{ fontSize: 11, flexShrink: 0 }}
-          >
-            #{tag}
-          </span>
-        ))}
-        {links.map((link) => (
-          <span
-            key={`[[${link}`}
-            className="chip"
-            style={{ fontSize: 11, flexShrink: 0, color: "var(--c-overview)" }}
-          >
-            {link}
-          </span>
-        ))}
-        {meta.due ? (
-          <span
-            className="chip"
-            style={{
-              fontSize: 11,
-              flexShrink: 0,
-              // Overdue reads red; everything else stays quiet.
-              color:
-                !task.done && meta.due < today() ? "#dc2626" : "var(--ink-3)",
-            }}
-          >
-            {meta.due.replace("T", " ")}
-          </span>
-        ) : null}
-        {meta.priority ? (
-          <span className="chip" style={{ fontSize: 11, flexShrink: 0 }}>
-            p{meta.priority}
-          </span>
-        ) : null}
-      </button>
-      <span
-        className="muted"
-        style={{
-          fontSize: 12,
-          flexShrink: 0,
-          maxWidth: "40%",
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {task.stem}
-      </span>
+          {task.stem}
+        </div>
+      </div>
     </div>
   );
 }
