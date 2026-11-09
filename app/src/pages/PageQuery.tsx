@@ -19,7 +19,10 @@ import {
   type AskOpts,
   type ChatTurn,
 } from "../stores/queryStore";
-import type { ScoredChunk, TierWeights } from "../lib/ipc";
+import { ipc, type ScoredChunk, type TierWeights } from "../lib/ipc";
+import { log } from "../lib/log";
+import { isMissingFile } from "../lib/sessionEvidence";
+import { filterChoices, parseWorkstreamFacts, workstreamChoices, type WorkstreamChoice } from "../lib/queryWorkstreams";
 import { consumeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
 import { SURFACE_CLIPS } from "../lib/mascotClips";
@@ -68,12 +71,15 @@ import { INTAKE_COPY } from "../lib/intakeCopy";
 import { BUILTIN_CHAT_MODEL } from "../lib/providers";
 import { formatTicker } from "../lib/time";
 import {
+  buildExplainQuestion,
   buildGuidedQuestion,
+  GUIDED_CHOICES,
   GUIDED_QUESTION_COPY,
-  GUIDED_QUESTION_INTENTS,
   isGuidedQuestionDate,
+  PROJECT_CHOICES,
   readGuidedQuestion,
-  type GuidedQuestionIntent,
+  type GuidedChoice,
+  type GuidedQuestionSelection,
 } from "../lib/guidedQuestion";
 import "../styles/intake.css";
 
@@ -87,6 +93,8 @@ const PROFILE_HINT_DISMISSED_KEY = "myco.profileHint.dismissed";
 const QUOTED_PAGES = 5;
 /** Sources the rail lists; the rest open in a side sheet (UX S33). */
 const RAIL_SOURCES = 3;
+/** Projects the guided picker shows; its filter finds the rest. */
+const PICKER_PROJECTS = 6;
 
 function localFallbackCopy(t: Strings, reason: NonNullable<ChatTurn["localFallback"]>): string {
   switch (reason) {
@@ -137,23 +145,50 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const settings = useSettingsStore((s) => s.settings);
   const [mode, setMode] = useState<"ask" | "agent">("ask");
   const [q, setQ] = useState("");
-  const [guidedIntent, setGuidedIntent] = useState<GuidedQuestionIntent | null>(null);
+  const [guidedIntent, setGuidedIntent] = useState<GuidedChoice | null>(null);
   const [guidedSubject, setGuidedSubject] = useState("");
   const [guidedAsOf, setGuidedAsOf] = useState("");
-  const guidedQuestion = guidedIntent ? readGuidedQuestion({
-    version: 1, intent: guidedIntent, subject: guidedSubject,
-    ...(guidedAsOf ? { asOf: guidedAsOf } : {}),
-  }) : undefined;
-  const composerQuestion = guidedIntent
-    ? (guidedQuestion ? buildGuidedQuestion(guidedQuestion, lang) : "")
-    : q;
+  // What the chosen question asks about `subject`: explain asks an ordinary
+  // typed question; a guided intent carries its selection beside the
+  // question it shows.
+  const guidedTurn = (subject: string): { question: string; guidedQuestion?: GuidedQuestionSelection } => {
+    if (guidedIntent === "explain") return { question: buildExplainQuestion(subject, lang) };
+    const selection = guidedIntent ? readGuidedQuestion({
+      version: 1, intent: guidedIntent, subject,
+      ...(guidedAsOf ? { asOf: guidedAsOf } : {}),
+    }) : undefined;
+    return selection ? { question: buildGuidedQuestion(selection, lang), guidedQuestion: selection } : { question: "" };
+  };
+  const composerQuestion = guidedIntent ? guidedTurn(guidedSubject).question : q;
+  const [projectChoices, setProjectChoices] = useState<WorkstreamChoice[] | null>(null);
+  const [projectFilter, setProjectFilter] = useState("");
   useEffect(() => {
     // A project typed for one vault must not silently become another vault's
     // target after a switch. Free-question prefill has its own existing path.
     setGuidedIntent(null);
     setGuidedSubject("");
     setGuidedAsOf("");
+    setProjectFilter("");
   }, [currentVault?.path, vaultToken]);
+  // The projects to pick from, read when a project question is chosen. No
+  // facts file (nothing imported yet) or one that breaks the contract keeps
+  // the subject field alone.
+  const picksProject = guidedIntent !== null && PROJECT_CHOICES.has(guidedIntent);
+  useEffect(() => {
+    setProjectChoices(null);
+    const vaultPath = currentVault?.path;
+    if (!picksProject || !vaultPath || isOpeningVault) return;
+    let current = true;
+    ipc.readFile(`${vaultPath}/.myco/workstreams.json`).then((file) => {
+      if (!current) return;
+      const facts = parseWorkstreamFacts(file.raw);
+      if (!facts) log.warn("ask.project_picker_facts_invalid");
+      setProjectChoices(facts ? workstreamChoices(facts, new Date()) : null);
+    }, (error: unknown) => {
+      if (current && !isMissingFile(error)) log.warn("ask.project_picker_facts_unavailable");
+    });
+    return () => { current = false; };
+  }, [picksProject, currentVault?.path, vaultToken, isOpeningVault]);
   const [citationChoice, setCitationChoice] = useState<{source: CitationSource; root: string; token: string} | null>(null);
   useEffect(() => { setCitationChoice(null); }, [currentVault?.path, vaultToken, isOpeningVault]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -393,13 +428,15 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   // The chat logic (activity routing, extractive path, provider call) lives in
   // queryStore.ask so it keeps running when this page unmounts. The page only
   // hands over the localized copy the store bakes into turns.
-  async function ask(): Promise<void> {
-    const question = composerQuestion.trim();
+  // A picked project asks at once, about the subject it names.
+  async function ask(subject = guidedSubject): Promise<void> {
+    const guided = guidedIntent ? guidedTurn(subject) : undefined;
+    const question = (guided ? guided.question : q).trim();
     if (!question || !currentVault || busy || isOpeningVault) return;
     if (!guidedIntent) setQ("");
     const opts: AskOpts = {
       ...(noteScope ? { note: noteScope } : {}),
-      ...(guidedQuestion ? { guidedQuestion } : {}),
+      ...(guided?.guidedQuestion ? { guidedQuestion: guided.guidedQuestion } : {}),
     };
     await askStore(question, lang, askCopy(t), Object.keys(opts).length ? opts : undefined);
   }
@@ -705,6 +742,13 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
             asOf={guidedAsOf}
             disabled={busy || !currentVault || isOpeningVault}
             subjectRef={guidedSubjectRef}
+            projects={picksProject ? projectChoices : null}
+            projectFilter={projectFilter}
+            onProjectFilter={setProjectFilter}
+            onProject={(choice) => {
+              setGuidedSubject(choice.subject);
+              void ask(choice.subject);
+            }}
             onIntent={(intent) => {
               setGuidedIntent(intent);
               requestAnimationFrame(() => {
@@ -931,31 +975,45 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   );
 }
 
-/** The chosen intent is submitted separately from the visible question. */
+/** The chosen intent is submitted separately from the visible question. A
+ * question about one project offers the projects to pick from (`projects`,
+ * null without a valid facts file) above the subject field, which stays for
+ * a topic that is no project. */
 export function GuidedQuestionPicker({ lang, intent, subject, asOf, disabled,
-  subjectRef, onIntent, onSubject, onAsOf, onSubmit,
+  subjectRef, projects, projectFilter = "", onProjectFilter, onProject, onIntent, onSubject, onAsOf, onSubmit,
 }: {
   lang: "en" | "ko" | "ja";
-  intent: GuidedQuestionIntent | null;
+  intent: GuidedChoice | null;
   subject: string;
   asOf: string;
   disabled: boolean;
   subjectRef?: { current: HTMLInputElement | null };
-  onIntent: (intent: GuidedQuestionIntent | null) => void;
+  projects?: WorkstreamChoice[] | null;
+  projectFilter?: string;
+  onProjectFilter?: (value: string) => void;
+  onProject?: (choice: WorkstreamChoice) => void;
+  onIntent: (intent: GuidedChoice | null) => void;
   onSubject: (value: string) => void;
   onAsOf: (value: string) => void;
   onSubmit: () => void;
 }): JSX.Element {
   const copy = GUIDED_QUESTION_COPY[lang];
   const invalidDate = Boolean(asOf && !isGuidedQuestionDate(asOf));
+  // While projects are offered, the subject field for a topic that is no
+  // project waits behind a button, and comes back when the filter matches none.
+  const [typing, setTyping] = useState(false);
+  const picking = Boolean(intent && projects && projects.length > 0 && onProject);
+  const showFields = Boolean(intent) && (!picking || typing || filterChoices(projects ?? [], projectFilter).length === 0);
+  // Explain answers from the project's whole record: no cutoff to choose.
+  const dated = intent !== null && intent !== "explain";
   return (
     <fieldset className="ask-guided" disabled={disabled}>
       <legend>{copy.label}</legend>
       <div className="ask-guided__choices">
-        {GUIDED_QUESTION_INTENTS.map((value) => (
+        {GUIDED_CHOICES.map((value) => (
           <button key={value} type="button" className="btn"
             aria-pressed={intent === value} onClick={() => onIntent(value)}>
-            {copy.intents[value]}
+            {value === "explain" ? copy.explain : copy.intents[value]}
           </button>
         ))}
         <button type="button" className="btn btn-ghost"
@@ -963,30 +1021,97 @@ export function GuidedQuestionPicker({ lang, intent, subject, asOf, disabled,
           {copy.free}
         </button>
       </div>
-      {intent ? (
+      {intent && projects && projects.length > 0 && onProject ? (
+        <ProjectPicker lang={lang} choices={projects} filter={projectFilter}
+          onFilter={onProjectFilter ?? (() => undefined)} onPick={onProject} />
+      ) : null}
+      {picking && !showFields ? (
+        <button type="button" className="btn btn-ghost ask-guided__type" onClick={() => setTyping(true)}>
+          {copy.typeSubject}
+        </button>
+      ) : null}
+      {showFields ? (
         <div className="ask-guided__fields">
           <label className="ask-guided__subject">
             <span>{copy.subject}</span>
             <input ref={subjectRef} className="input" value={subject}
               placeholder={copy.subjectPlaceholder} maxLength={240}
-              aria-describedby="ask-guided-hint ask-scope"
+              aria-describedby={dated ? "ask-guided-hint ask-scope" : "ask-scope"}
               onChange={(e) => onSubject(e.target.value)}
               onKeyDown={(e) => {
                 if (!isComposingKey(e) && e.key === "Enter") onSubmit();
               }} />
           </label>
-          <label className="ask-guided__date">
-            <span>{copy.asOf}</span>
-            <input type="date" className="input" value={asOf}
-              aria-invalid={invalidDate || undefined}
-              aria-describedby={invalidDate ? "ask-guided-date-error ask-guided-hint" : "ask-guided-hint"}
-              onChange={(e) => onAsOf(e.target.value)} />
-          </label>
-          <p id="ask-guided-hint" className="muted">{copy.hint}</p>
-          {invalidDate ? <p id="ask-guided-date-error" role="alert">{copy.invalidDate}</p> : null}
+          {dated ? (
+            <label className="ask-guided__date">
+              <span>{copy.asOf}</span>
+              <input type="date" className="input" value={asOf}
+                aria-invalid={invalidDate || undefined}
+                aria-describedby={invalidDate ? "ask-guided-date-error ask-guided-hint" : "ask-guided-hint"}
+                onChange={(e) => onAsOf(e.target.value)} />
+            </label>
+          ) : null}
+          {dated ? <p id="ask-guided-hint" className="muted">{copy.hint}</p> : null}
+          {dated && invalidDate ? <p id="ask-guided-date-error" role="alert">{copy.invalidDate}</p> : null}
         </div>
       ) : null}
     </fieldset>
+  );
+}
+
+/** The facts file's projects as buttons: the suggested one first, then by
+ * latest activity, `PICKER_PROJECTS` at a time. With more, a filter finds the
+ * rest, and Enter in it picks the one project it leaves. */
+export function ProjectPicker({ lang, choices, filter, onFilter, onPick }: {
+  lang: "en" | "ko" | "ja";
+  choices: WorkstreamChoice[];
+  filter: string;
+  onFilter: (value: string) => void;
+  onPick: (choice: WorkstreamChoice) => void;
+}): JSX.Element {
+  const copy = GUIDED_QUESTION_COPY[lang];
+  const matches = filterChoices(choices, filter);
+  // Month and day as the answers write them, with the year only when it is
+  // not this year.
+  const month = lang === "en" ? "short" : "long";
+  const thisYear = new Intl.DateTimeFormat(lang, { month, day: "numeric" });
+  const otherYear = new Intl.DateTimeFormat(lang, { year: "numeric", month, day: "numeric" });
+  const day = (epoch: number): string => {
+    const date = new Date(epoch * 1000);
+    return (date.getFullYear() === new Date().getFullYear() ? thisYear : otherYear).format(date);
+  };
+  const numbers = new Intl.NumberFormat(lang);
+  return (
+    <div className="ask-guided__projects" role="group" aria-labelledby="ask-guided-projects">
+      <div className="ask-guided__projects-head">
+        <span id="ask-guided-projects" className="ask-guided__projects-label">{copy.projects}</span>
+        {choices.length > PICKER_PROJECTS ? (
+          <input type="search" className="input ask-guided__filter" value={filter}
+            aria-label={copy.projectFilter} placeholder={copy.projectFilterPlaceholder}
+            onChange={(e) => onFilter(e.target.value)}
+            onKeyDown={(e) => {
+              if (isComposingKey(e) || e.key !== "Enter" || matches.length !== 1) return;
+              e.preventDefault();
+              onPick(matches[0]);
+            }} />
+        ) : null}
+      </div>
+      <ul className="ask-guided__project-list">
+        {matches.slice(0, PICKER_PROJECTS).map((choice) => (
+          <li key={choice.key}>
+            <button type="button" className="btn ask-guided__project" onClick={() => onPick(choice)}>
+              <span className="ask-guided__project-title">{choice.title}</span>{" "}
+              {choice.suggested ? <><span className="ask-guided__suggested">{copy.suggested}</span>{" "}</> : null}
+              <span className="ask-guided__project-meta">
+                {copy.projectMeta.replace("{date}", day(choice.last))
+                  .replace("{count}", numbers.format(choice.conversations))}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {matches.length ? null : <p role="status" className="muted">{copy.noProjectMatch}</p>}
+    </div>
   );
 }
 

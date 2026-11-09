@@ -16,7 +16,8 @@ vi.hoisted(() => {
     removeItem: (k: string) => void m.delete(k),
   });
 });
-import PageQuery, { ExtractiveAnswer, GuidedQuestionPicker, MissButton } from "./PageQuery";
+import PageQuery, { ExtractiveAnswer, GuidedQuestionPicker, MissButton, ProjectPicker } from "./PageQuery";
+import type { WorkstreamChoice } from "../lib/queryWorkstreams";
 import { STRINGS } from "../lib/i18n";
 import { DEFAULT_TIER_WEIGHTS } from "../lib/extractive";
 import { ipc, type AgentVaultSession, type MycoSettings, type ScoredChunk } from "../lib/ipc";
@@ -40,9 +41,9 @@ describe("guided question choices", () => {
     onAsOf: () => undefined, onSubmit: () => undefined,
   }));
 
-  it("offers four explicit task choices and a free-question escape", () => {
+  it("offers five explicit task choices and a free-question escape", () => {
     const html = picker(false);
-    for (const label of ["어디까지 했지?", "왜 이렇게 결정했지?", "남은 작업은?", "전에 이야기한 내용 찾기", "직접 질문하기"])
+    for (const label of ["어디까지 했지?", "왜 이렇게 결정했지?", "남은 작업은?", "전에 이야기한 내용 찾기", "설명해줘", "직접 질문하기"])
       expect(html).toContain(label);
     expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
     expect(html).not.toContain('type="date"');
@@ -58,6 +59,105 @@ describe("guided question choices", () => {
     expect(html).toContain("기준일 (선택)");
     expect(html).toContain("선택한 자료 범위 안에서 찾습니다.");
     expect(picker(true, true)).toContain('fieldset class="ask-guided" disabled=""');
+  });
+});
+
+// Synthetic projects only.
+const choice = (key: string, title: string, conversations: number, suggested = false): WorkstreamChoice =>
+  ({ key, title, subject: title, last: Date.parse("2026-11-02T01:00:00Z") / 1000, conversations, suggested });
+const PROJECTS = [choice("prj_halo", "Halo", 130, true), choice("nimbus", "Nimbus", 208), choice("kestrel", "Kestrel Lab", 4)];
+const MANY = [...PROJECTS, ...["Lyra", "Vega", "Orion", "Zephyr", "Atlas"].map((title) => choice(title.toLowerCase(), title, 2))];
+
+interface Rendered {
+  type: unknown;
+  props: { children?: unknown; type?: string; onKeyDown?: (event: unknown) => void; onClick?: () => void };
+}
+/** Every element in a rendered tree that `match` accepts. */
+function findAll(node: unknown, match: (element: Rendered) => boolean): Rendered[] {
+  if (Array.isArray(node)) return node.flatMap((child) => findAll(child, match));
+  if (!node || typeof node !== "object" || !("props" in node)) return [];
+  const element = node as Rendered;
+  return [...(match(element) ? [element] : []), ...findAll(element.props.children, match)];
+}
+const enter = (isComposing = false) => ({ key: "Enter", nativeEvent: { key: "Enter", isComposing, keyCode: isComposing ? 229 : 13 },
+  preventDefault: vi.fn() });
+
+describe("guided project picker", () => {
+  const picked = (intent: "progress" | "explain" | "decision", projects: WorkstreamChoice[] | null, projectFilter = "") =>
+    renderToStaticMarkup(h(GuidedQuestionPicker, {
+      lang: "ko", intent, subject: "", asOf: "", disabled: false, projects, projectFilter,
+      onProjectFilter: () => undefined, onProject: () => undefined,
+      onIntent: () => undefined, onSubject: () => undefined, onAsOf: () => undefined, onSubmit: () => undefined,
+    }));
+
+  it("shows the projects as buttons with their last activity and conversation count, the suggested one marked", () => {
+    const html = picked("progress", PROJECTS);
+    expect(html).toContain('role="group" aria-labelledby="ask-guided-projects"');
+    expect(html).toContain('<span id="ask-guided-projects" class="ask-guided__projects-label">프로젝트 고르기</span>');
+    const last = new Date("2026-11-02T01:00:00Z");
+    const date = new Intl.DateTimeFormat("ko", last.getFullYear() === new Date().getFullYear()
+      ? { month: "long", day: "numeric" } : { year: "numeric", month: "long", day: "numeric" }).format(last);
+    expect(html).toContain('<button type="button" class="btn ask-guided__project"><span class="ask-guided__project-title">Halo</span> ' +
+      `<span class="ask-guided__suggested">추천</span> <span class="ask-guided__project-meta">마지막 활동 ${date} · 대화 130건</span></button>`);
+    expect(html.match(/ask-guided__suggested/g)).toHaveLength(1);
+    expect(html.match(/class="btn ask-guided__project"/g)).toHaveLength(3);
+    // A few projects need no filter; the subject field for a topic waits
+    // behind a button while projects are offered.
+    expect(html).not.toContain('type="search"');
+    expect(html).toContain('<button type="button" class="btn btn-ghost ask-guided__type">다른 주제를 직접 입력</button>');
+    expect(html).not.toContain("프로젝트·주제");
+  });
+
+  it("shows six projects and a filter for the rest, and filters by title", () => {
+    const html = picked("progress", MANY);
+    expect(html.match(/class="btn ask-guided__project"/g)).toHaveLength(6);
+    expect(html).toContain('<input type="search" class="input ask-guided__filter" aria-label="프로젝트 찾기" placeholder="이름으로 찾기" value=""/>');
+    expect(html).not.toContain("Atlas");
+    const found = picked("progress", MANY, "atl");
+    expect(found.match(/class="btn ask-guided__project"/g)).toHaveLength(1);
+    expect(found).toContain("Atlas");
+    const none = picked("progress", MANY, "zzz");
+    expect(none).toContain('role="status"');
+    // No project matches: the subject field comes back without the button.
+    expect(none).toContain("프로젝트·주제");
+    expect(none).not.toContain("ask-guided__type");
+  });
+
+  it("picks with a click, or with Enter in the filter when it leaves one project, never mid-composition", () => {
+    const onPick = vi.fn();
+    const tree = (filter: string) => ProjectPicker({ lang: "ko", choices: MANY, filter, onFilter: () => undefined, onPick });
+    const field = (filter: string) => findAll(tree(filter), (element) => element.type === "input")[0];
+    field("ves").props.onKeyDown?.(enter());
+    expect(onPick).not.toHaveBeenCalled();
+    field("atl").props.onKeyDown?.(enter(true));
+    expect(onPick).not.toHaveBeenCalled();
+    const key = enter();
+    field("atl").props.onKeyDown?.(key);
+    expect(onPick).toHaveBeenCalledWith(MANY.at(-1));
+    expect(key.preventDefault).toHaveBeenCalled();
+    // Two projects hold "a": Enter picks neither.
+    field("a").props.onKeyDown?.(enter());
+    expect(onPick).toHaveBeenCalledOnce();
+    const buttons = findAll(tree(""), (element) => element.type === "button");
+    expect(buttons.map((button) => button.props.type)).toEqual(Array(6).fill("button"));
+    buttons[1].props.onClick?.();
+    expect(onPick).toHaveBeenLastCalledWith(MANY[1]);
+  });
+
+  it("keeps today's subject field alone without facts, and for questions not about one project", () => {
+    for (const html of [picked("progress", null), picked("progress", [])]) {
+      expect(html).not.toContain("ask-guided__projects");
+      expect(html).toContain("프로젝트·주제");
+      expect(html).toContain('type="date"');
+    }
+  });
+
+  it("asks explain without a cutoff date", () => {
+    const html = picked("explain", PROJECTS);
+    expect(html).toContain('aria-pressed="true">설명해줘');
+    expect(html).toContain("ask-guided__projects");
+    expect(html).not.toContain('type="date"');
+    expect(html).not.toContain("ask-guided-hint");
   });
 });
 
