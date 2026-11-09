@@ -329,5 +329,6 @@ export function evidencePrompt(batch: EvidenceChunk[]): string {
 
 /** Read failures must not turn an existing hand-edited note into an empty one. */
 export function isMissingFile(error: unknown): boolean {
-  return /ENOENT|not found|no such file/i.test(String(error));
+  // Windows says "cannot find the file/path specified. (os error 2/3)".
+  return /ENOENT|not found|no such file|cannot find the (?:file|path)|os error [23]\b/i.test(String(error));
 }

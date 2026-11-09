@@ -53,7 +53,10 @@ interface ActivityOptions {
   onExecution?: (event: AskExecutionEvent) => void;
 }
 
-/** A vague period is not permission to choose an arbitrary look-back window. */
+/** A vague "recent" question is answered for the last 7 days with the range
+ * stated (decision 2026-11-08); queryWorkstreams.ts does that from
+ * .myco/workstreams.json before this path. Without that file a provider route
+ * cannot choose a period itself, so it asks for one instead of inventing it. */
 export class ActivityPeriodRequired extends Error {
   constructor() {
     super("activity recall requires an explicit period for this provider");

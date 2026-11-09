@@ -15,6 +15,15 @@ export const GUIDED_QUESTION_INTENTS: readonly GuidedQuestionIntent[] = [
   "progress", "decision", "remaining", "recall",
 ];
 
+/** The choices the question row offers: the guided intents, and explain,
+ * which asks an ordinary typed question (buildExplainQuestion) that Ask
+ * answers from the project facts. It is no guided intent: the native
+ * validators, the history log and the model prompts know only the four. */
+export type GuidedChoice = GuidedQuestionIntent | "explain";
+export const GUIDED_CHOICES: readonly GuidedChoice[] = [...GUIDED_QUESTION_INTENTS, "explain"];
+/** Choices about one project, which offer the project picker. */
+export const PROJECT_CHOICES: ReadonlySet<GuidedChoice> = new Set<GuidedChoice>(["progress", "remaining", "explain"]);
+
 export const GUIDED_QUESTION_COPY = {
   ko: {
     label: "무엇을 알고 싶나요?",
@@ -24,7 +33,15 @@ export const GUIDED_QUESTION_COPY = {
       remaining: "남은 작업은?",
       recall: "전에 이야기한 내용 찾기",
     },
+    explain: "설명해줘",
     free: "직접 질문하기",
+    projects: "프로젝트 고르기",
+    projectFilter: "프로젝트 찾기",
+    projectFilterPlaceholder: "이름으로 찾기",
+    typeSubject: "다른 주제를 직접 입력",
+    suggested: "추천",
+    projectMeta: "마지막 활동 {date} · 대화 {count}건",
+    noProjectMatch: "맞는 프로젝트가 없습니다. 아래 칸에 직접 입력할 수 있습니다.",
     subject: "프로젝트·주제",
     subjectPlaceholder: "찾을 프로젝트나 주제를 입력하세요",
     asOf: "기준일 (선택)",
@@ -39,7 +56,15 @@ export const GUIDED_QUESTION_COPY = {
       remaining: "What is left to do?",
       recall: "Find an earlier conversation",
     },
+    explain: "Explain this project",
     free: "Write a question",
+    projects: "Pick a project",
+    projectFilter: "Find a project",
+    projectFilterPlaceholder: "Search by name",
+    typeSubject: "Type another subject",
+    suggested: "Suggested",
+    projectMeta: "Last active {date} · {count} conversations",
+    noProjectMatch: "No project matches. You can type a subject in the field below.",
     subject: "Project or topic",
     subjectPlaceholder: "Enter the project or topic to find",
     asOf: "As of date (optional)",
@@ -54,7 +79,15 @@ export const GUIDED_QUESTION_COPY = {
       remaining: "残っている作業は？",
       recall: "以前の会話を探す",
     },
+    explain: "このプロジェクトを説明して",
     free: "質問を入力する",
+    projects: "プロジェクトを選ぶ",
+    projectFilter: "プロジェクトを探す",
+    projectFilterPlaceholder: "名前で探す",
+    typeSubject: "別のテーマを入力",
+    suggested: "おすすめ",
+    projectMeta: "最終活動 {date} · 会話{count}件",
+    noProjectMatch: "一致するプロジェクトがありません。下の欄に直接入力できます。",
     subject: "プロジェクト・話題",
     subjectPlaceholder: "探すプロジェクトや話題を入力してください",
     asOf: "基準日（任意）",
@@ -64,7 +97,15 @@ export const GUIDED_QUESTION_COPY = {
 } satisfies Record<Lang, {
   label: string;
   intents: Record<GuidedQuestionIntent, string>;
+  explain: string;
   free: string;
+  projects: string;
+  projectFilter: string;
+  projectFilterPlaceholder: string;
+  typeSubject: string;
+  suggested: string;
+  projectMeta: string;
+  noProjectMatch: string;
   subject: string;
   subjectPlaceholder: string;
   asOf: string;
@@ -124,6 +165,15 @@ export function buildGuidedQuestion(selection: GuidedQuestionSelection, lang: La
     recall: `‘${subject}’에 대해 이야기한 원래 대화를 찾아줘.`,
   };
   return `${period}, ${questions[intent]}`;
+}
+
+/** The question the explain chip asks, shown as it is sent. */
+export function buildExplainQuestion(subject: string, lang: Lang = "ko"): string {
+  const name = subject.normalize("NFC").replace(/\s+/g, " ").trim();
+  if (!name || name.length > 240) return "";
+  if (lang === "en") return `Explain the ${name} project.`;
+  if (lang === "ja") return `「${name}」プロジェクトを説明して。`;
+  return `‘${name}’ 프로젝트를 설명해줘.`;
 }
 
 const FORMAT: Record<GuidedQuestionIntent, string> = {

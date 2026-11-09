@@ -22,7 +22,7 @@ import { queryDateRange } from "../lib/timeQuery";
 import { roleFixture, syntheticOrigin } from "../lib/modelRoles.testSupport";
 import { useSettingsStore } from "./settingsStore";
 import { ModelEvidenceAbstention } from "../lib/answerCitation";
-import { buildGuidedQuestion, guidedQuestionPrompt, type GuidedQuestionSelection } from "../lib/guidedQuestion";
+import { buildExplainQuestion, buildGuidedQuestion, guidedQuestionPrompt, type GuidedQuestionSelection } from "../lib/guidedQuestion";
 
 const copy = askCopy(STRINGS.en);
 const ask = (q: string, opts?: AskOpts) => useQueryStore.getState().ask(q, "en", copy, opts);
@@ -2444,4 +2444,164 @@ describe("Ask model execution survives history without changing the prompt",()=>
  it("leaves a legacy turn's execution unknown instead of using today's selection",()=>{
   expect(recordOf({q:"legacy",a:"old answer"},1).execution).toBeUndefined();
  });
+});
+
+// Slice 1 of the workstream upgrade: synthetic facts, not a real vault.
+describe("queryStore.ask workstream facts", () => {
+  const at = (iso: string): number => Date.parse(iso) / 1000;
+  const ledger = "codex:c0ffee01-0000-7000-8000-000000000001";
+  const facts = {
+    version: 4, last_record_epoch: at("2026-11-07T12:00:00Z"), unassigned: 0,
+    workstreams: { prj_lumen: { title: "Lumen", title_source: "readme", page: "wiki/workstreams/prj_lumen.md",
+      first_epoch: at("2026-11-07T10:00:00Z"), last_epoch: at("2026-11-07T12:00:00Z"), conversations: 1, roots: 1,
+      summary: "A synthetic reminder app.",
+      open_items: [{ epoch: at("2026-11-07T12:00:00Z"), text: "Retry the synthetic sync", conversation: ledger }] } },
+    conversations: { [ledger]: { automated: false, fp: "synthetic", vendor: "codex", id: "c0ffee01-0000-7000-8000-000000000001",
+      raw: "raw/conversations/codex/codex-c0ffee01-synthetic.md", first_epoch: at("2026-11-07T10:00:00Z"),
+      last_epoch: at("2026-11-07T12:00:00Z"), key: "prj_lumen", cwd_source: "state", root: ledger, subagent: false,
+      request: "Add synthetic reminders", report: { epoch: at("2026-11-07T12:00:00Z"), text: "Implemented the synthetic scheduler." },
+      parent_report: null } },
+  };
+  const factsFile = (raw: string) => vi.spyOn(ipc, "readFile")
+    .mockResolvedValue({ path: "/v/.myco/workstreams.json", raw, content: raw, frontmatter: null });
+  const koAsk = (question: string) => useQueryStore.getState().ask(question, "ko", askCopy(STRINGS.ko));
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-08T12:00:00Z"));
+    useVaultStore.setState({ currentVault: { path: "/v", name: "v" }, adjacency: null, isOpeningVault: false });
+    useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: false });
+    useQueryStore.getState().clear();
+    stubProvider();
+    vi.spyOn(ipc, "askHistoryAppend").mockResolvedValue(null);
+  });
+  afterEach(() => { useQueryStore.getState().clear(); vi.useRealTimers(); });
+
+  it.each([
+    ["Lumen 지금 어디까지 했어?", "[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트는 "],
+    ["지금 어디까지 했어?", "대화가 가장 많은 Lumen 프로젝트로 가정했습니다"],
+    ["내가 최근에 한 일이 뭐야?", "**[[wiki/workstreams/prj_lumen|Lumen]]** 대화 1건, 세션 1개"],
+  ])("answers %s from the facts file before any model or role check", async (question, expected) => {
+    const read = factsFile(JSON.stringify(facts));
+    const turn = await koAsk(question);
+    expect(read).toHaveBeenCalledWith("/v/.myco/workstreams.json");
+    expect(turn?.a).toContain(expected);
+    expect(turn?.a).toContain("Implemented the synthetic scheduler.\\\n  요청: Add synthetic reminders " +
+      "[[raw/conversations/codex/codex-c0ffee01-synthetic|원문]]");
+    expect(turn).toMatchObject({ execution: { answerKind: "application", calls: [] } });
+    expect(turn?.error).toBeUndefined();
+    expect(turn?.needsClarification).toBeUndefined();
+    expect(ipc.agentVaultSession).not.toHaveBeenCalled();
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
+    expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1]).toMatchObject({ q: question, a: turn!.a });
+  });
+
+  it.each([
+    ["missing", () => vi.spyOn(ipc, "readFile")
+      .mockRejectedValue("canonicalize failed for /v/.myco/workstreams.json: No such file or directory (os error 2)"), null],
+    ["missing on Windows", () => vi.spyOn(ipc, "readFile").mockRejectedValue(
+      "canonicalize failed for C:\\v\\.myco\\workstreams.json: The system cannot find the path specified. (os error 3)"), null],
+    ["invalid", () => factsFile("{\"version\":3}"), "query.workstreams_invalid"],
+    ["version 2, written before a program's sessions were told apart", () =>
+      factsFile(JSON.stringify({ ...facts, version: 2 })), "query.workstreams_invalid"],
+    ["version 3, written before summaries and open items", () =>
+      factsFile(JSON.stringify({ ...facts, version: 3 })), "query.workstreams_invalid"],
+    ["unreadable", () => vi.spyOn(ipc, "readFile").mockRejectedValue("read failed: Permission denied (os error 13)"),
+      "query.workstreams_unavailable"],
+  ] as const)("keeps the existing activity path when the facts file is %s", async (_, stub, warning) => {
+    stub();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const turn = await koAsk("최근에 한일");
+    expect(turn).toMatchObject({ needsClarification: true, activityPeriodNeeded: true, activityQuestion: "최근에 한일" });
+    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
+    const warned = warn.mock.calls.map(([line]) => String(line)).filter((line) => line.includes("query.workstreams_"));
+    expect(warned.map((line) => JSON.parse(line).event)).toEqual(warning ? [warning] : []);
+  });
+
+  it("drops a facts read that finishes after Stop", async () => {
+    let release!: (file: Awaited<ReturnType<typeof ipc.readFile>>) => void;
+    vi.spyOn(ipc, "readFile").mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const pending = koAsk("Lumen 지금 어디까지 했어?");
+    await vi.waitFor(() => expect(ipc.readFile).toHaveBeenCalledOnce());
+    useQueryStore.getState().stop();
+    await pending;
+    release({ path: "/v/.myco/workstreams.json", raw: JSON.stringify(facts), content: "", frontmatter: null });
+    await Promise.resolve();
+    expect(last()).toMatchObject({ stopped: true, a: "" });
+    expect(useQueryStore.getState().busy).toBe(false);
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+  });
+
+  it("answers the guided progress question about a project from the facts file", async () => {
+    const read = factsFile(JSON.stringify(facts));
+    const choice: GuidedQuestionSelection = { version: 1, intent: "progress", subject: "Lumen" };
+    const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
+      { guidedQuestion: choice });
+    expect(read).toHaveBeenCalledWith("/v/.myco/workstreams.json");
+    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트는 ");
+    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", execution: { answerKind: "application", calls: [] } });
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+  });
+
+  it("answers the guided remaining-work question about a picked project from the facts file", async () => {
+    factsFile(JSON.stringify(facts));
+    const choice: GuidedQuestionSelection = { version: 1, intent: "remaining", subject: "Lumen" };
+    const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
+      { guidedQuestion: choice });
+    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트의 최근 세션 보고에 남은 일로 적힌 항목이 1개 있습니다.");
+    expect(turn?.a).toContain("** Retry the synthetic sync [[raw/conversations/codex/codex-c0ffee01-synthetic|원문]]");
+    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", execution: { answerKind: "application", calls: [] } });
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+  });
+
+  it("answers the explain chip's typed question from the facts file", async () => {
+    factsFile(JSON.stringify(facts));
+    const turn = await koAsk(buildExplainQuestion("Lumen", "ko"));
+    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트\n\n- **README** A synthetic reminder app.\n");
+    expect(turn?.guidedQuestion).toBeUndefined();
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["a cutoff date", { version: 1, intent: "progress", subject: "Lumen", asOf: "2026-11-01" }],
+    ["another intent", { version: 1, intent: "decision", subject: "Lumen" }],
+  ] as const)("keeps the guided route for %s", async (_, choice) => {
+    const read = factsFile(JSON.stringify(facts));
+    await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
+      { guidedQuestion: choice });
+    expect(read).not.toHaveBeenCalled();
+    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
+  });
+
+  it("keeps the guided route for a long topic that only mentions a project", async () => {
+    factsFile(JSON.stringify(facts));
+    const choice: GuidedQuestionSelection = { version: 1, intent: "progress", subject: "Lumen reminder scheduler retry window" };
+    const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
+      { guidedQuestion: choice });
+    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
+    expect(turn?.a).not.toContain("wiki/workstreams/");
+  });
+
+  it("falls through when the named project is not in the facts file", async () => {
+    factsFile(JSON.stringify(facts));
+    const turn = await koAsk("Orbit 지금 어디까지 했어?");
+    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
+    expect(ipc.semanticSearch).toHaveBeenCalled();
+    expect(turn?.a).not.toContain("wiki/workstreams/");
+  });
+
+  it("does not read the facts file for other questions or over one note", async () => {
+    const read = factsFile(JSON.stringify(facts));
+    await koAsk("Lumen에 대해서 설명해줘");
+    const scoped = await useQueryStore.getState().ask("Lumen 지금 어디까지 했어?", "ko", askCopy(STRINGS.ko),
+      { note: { path: "/v/wiki/selected.md", title: "Selected note" } });
+    expect(read).not.toHaveBeenCalled();
+    expect(scoped?.note).toMatchObject({ title: "Selected note" });
+    expect(ipc.captureModelRole).toHaveBeenCalledTimes(2);
+  });
 });

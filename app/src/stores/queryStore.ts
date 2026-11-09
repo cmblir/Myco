@@ -42,6 +42,8 @@ import { formatTemporalRecall } from "../lib/queryTemporal";
 import { connectionOverview, connectionScopeNotice, isConnectionOverviewQuery } from "../lib/queryConnections";
 import { ActivitySynthesisError, LocalSynthesisError, LocalSynthesisSourceError, isSynthesisReviewFailure, tryLocalSynthesis, type ActivitySynthesisFailure, type LocalSynthesisFallbackReason } from "../lib/querySynthesis";
 import { ActivityPeriodRequired, activityPeriodClarification, isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "../lib/queryActivity";
+import { classifyWorkstreamQuestion, parseWorkstreamFacts, workstreamAnswer, type WorkstreamQuestion } from "../lib/queryWorkstreams";
+import { isMissingFile } from "../lib/sessionEvidence";
 import { activityResolution } from "../lib/queryResolution";
 import { checkedAskRole, isQueryAuthorizationError, QueryAuthorizationError } from "../lib/queryRole";
 import type { RoleSnapshot } from "../lib/modelRoles";
@@ -543,6 +545,39 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         needsClarification: true, abstainExplanation: copy.recallTopicNeeded });
       settle();
       return outcome;
+    }
+
+    // Imported conversations grouped into projects (.myco/workstreams.json,
+    // written natively) answer progress, remaining work, explain and recent
+    // work without a model, so before any role check. A missing or invalid
+    // file keeps the routes below. A guided "where did we leave off" or
+    // "what is left" without a cutoff names its project in the subject
+    // (picked from the list, or typed); the explain chip asks a typed
+    // question. Other guided intents, cutoffs and a subject that names no
+    // project keep their own route.
+    const guidedProject = guidedQuestion && !guidedQuestion.asOf &&
+      (guidedQuestion.intent === "progress" || guidedQuestion.intent === "remaining") ?
+      { kind: guidedQuestion.intent, name: guidedQuestion.subject.trim() } : null;
+    const workstreamQuestion: WorkstreamQuestion | null = paths || tp.range ? null :
+      guidedQuestion ? guidedProject : classifyWorkstreamQuestion(question, lang, queryTime);
+    if (workstreamQuestion) {
+      let answer: string | null = null;
+      try {
+        const file = await Promise.race([stopped(ctrl.signal), ipc.readFile(`${vault.path}/.myco/workstreams.json`)]);
+        const facts = parseWorkstreamFacts(file.raw);
+        // A file that breaks the contract falls through too, but not silently.
+        if (!facts && live()) log.warn("query.workstreams_invalid");
+        answer = facts && workstreamAnswer(workstreamQuestion, facts, lang, queryTime);
+      } catch (error) {
+        if (live() && !isMissingFile(error)) log.warn("query.workstreams_unavailable");
+      }
+      if (!live()) { settle(); return outcome; }
+      if (answer) {
+        // Read from the imported sessions whatever scope was chosen.
+        finishTurn({ a: answer, scope: "sessions" });
+        settle();
+        return outcome;
+      }
     }
 
     // The unrestricted recent git log cannot answer a date-restricted request,

@@ -13,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import { GRAPH_LOOK_COPY } from "./graphLookCopy";
 import { STRINGS } from "./i18n";
 import { INTAKE_COPY } from "./intakeCopy";
+import { WORKSTREAM_COPY } from "./queryWorkstreams";
 import { SETTINGS_NAVIGATION_COPY } from "./settingsNavigationCopy";
 import { SETTINGS_SAVE_COPY } from "./settingsSaveCopy";
 import { VAULT_ACCESS_COPY } from "./vaultAccessCopy";
@@ -56,6 +57,7 @@ function koEntries(): [string, string][] {
     ["settingsNav.", SETTINGS_NAVIGATION_COPY.ko],
     ["settingsSave.", SETTINGS_SAVE_COPY.ko],
     ["vaultAccess.", VAULT_ACCESS_COPY.ko],
+    ["workstreams.", WORKSTREAM_COPY.ko],
   ];
   return modules.flatMap(([prefix, table]) =>
     Object.entries(table).map(([k, v]: [string, unknown]): [string, string] => [
