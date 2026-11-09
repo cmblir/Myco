@@ -81,6 +81,10 @@ sha2 = "0.10"
 # Native publication capabilities; this exact version is already locked.
 getrandom = "=0.3.4"
 notify = "8.2.0"
+# Workstream cwd backfill (src/workstreams.rs) reads Codex's thread store
+# (`state_5.sqlite`) read-only and immutable. Bundled so no system SQLite is
+# linked; default features off: no statement cache and no wasm backend.
+rusqlite = { version = "=0.41.1", default-features = false, features = ["bundled"] }
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-process = "2"
 
