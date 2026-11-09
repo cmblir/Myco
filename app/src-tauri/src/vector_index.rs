@@ -114,6 +114,7 @@ pub fn is_cold_for(page: &str, search_archived_sessions: bool) -> bool {
         || page.starts_with("daily/archive/")
         || page.starts_with("weekly/archive/")
         || page.starts_with(".myco/")
+        || crate::workstreams::is_page_path(page)
 }
 
 impl VectorStore {
@@ -2211,6 +2212,12 @@ mod suggestion_scope_tests {
         assert!(!is_cold("sessions/2026-08/x.md"));
         assert!(!is_cold("daily/2026-08-10.md"));
         assert!(!is_cold("weekly/2026-W33.md"));
+        // Machine-owned workstream pages are never evidence or search hits,
+        // whatever case a case-insensitive disk kept the folder name in.
+        assert!(is_cold_for("wiki/workstreams/prj_nimbus.md", false));
+        assert!(is_cold_for("wiki/workstreams/prj_nimbus.md", true));
+        assert!(is_cold_for("wiki/Workstreams/prj_nimbus.md", false));
+        assert!(!is_cold_for("wiki/workstreams.md", false));
 
         // Opt-in archived sessions: only that one prefix thaws.
         assert!(is_cold_for("sessions/archive/2026-08/x.md", false));

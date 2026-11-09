@@ -109,6 +109,7 @@ pub mod webview_data;
 pub mod whisper;
 pub(crate) mod wiki_claim_review;
 pub mod wiki_claims;
+pub(crate) mod workstreams;
 pub mod youtube;
 
 use tauri::Manager as _;

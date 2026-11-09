@@ -426,12 +426,26 @@ fn task_page_path(root: &Path, page: &str) -> Result<PathBuf, String> {
 /// filesystem error would have carried.
 fn wiki_page_path(root: &Path, filename: &str) -> Result<PathBuf, String> {
     let abs = confined_subtree_path(root, "wiki", filename)?;
-    if !abs.is_file() {
+    if !abs.is_file() || is_workstream_page(&wiki_dir(root), &abs) {
         return Err(format!(
             "page not found: {filename} — call list_pages or search to find the right filename"
         ));
     }
     Ok(abs)
+}
+
+/// Machine-owned workstream pages hold transcript lines; agents do not list or
+/// read them (case-folded, since macOS paths are case-insensitive).
+fn is_workstream_page(wiki: &Path, abs: &Path) -> bool {
+    crate::workstreams::is_page_path(&format!("wiki/{}", rel_to(wiki, abs)))
+}
+
+/// Every wiki page an agent may see: `collect_md` without the workstream
+/// pages. Wiki enumerations that answer an agent go through this.
+fn collect_wiki_md(wiki: &Path) -> Vec<PathBuf> {
+    let mut pages = collect_md(wiki);
+    pages.retain(|abs| !is_workstream_page(wiki, abs));
+    pages
 }
 
 /// `list_pages` body: every wiki page (optionally under `folder`, of
@@ -451,6 +465,9 @@ fn list_wiki_pages(
     let scope = confined_subtree_path(root, "wiki", folder)?;
     let mut pages = Vec::new();
     for abs in collect_md(&scope) {
+        if is_workstream_page(&wiki, &abs) {
+            continue;
+        }
         let Ok(fc) = vault::read_file(&abs.to_string_lossy()) else {
             continue;
         };
@@ -3131,7 +3148,7 @@ fn resource_list(root: &Path) -> Vec<Resource> {
     let Ok(wiki) = confined_subtree_path(root, "wiki", "") else {
         return out;
     };
-    let mut pages = collect_md(&wiki);
+    let mut pages = collect_wiki_md(&wiki);
     pages.sort();
     for abs in pages.into_iter().take(RESOURCE_PAGE_LIMIT) {
         let rel = rel_to(&wiki, &abs).replace('\\', "/");
@@ -3177,7 +3194,7 @@ fn resource_read(root: &Path, uri: &str) -> Result<ResourceContents, String> {
 
 /// The `stats` tool's numbers, as one value both it and `myco://stats` use.
 fn vault_stats(root: &Path) -> Value {
-    let pages = collect_md(&wiki_dir(root));
+    let pages = collect_wiki_md(&wiki_dir(root));
     let raw_sources = collect_md(&raw_dir(root)).len();
     // total_links counts raw [[...]] occurrences (with duplicates), not
     // resolved graph edges.
@@ -3524,7 +3541,7 @@ fn contradiction_scan(root: &Path, focus: Option<&str>) -> Vec<Value> {
     // filename → (status, body, normalized links)
     let mut pages: std::collections::BTreeMap<String, (String, String, BTreeSet<String>)> =
         Default::default();
-    for abs in collect_md(&wiki) {
+    for abs in collect_wiki_md(&wiki) {
         let name = abs
             .file_name()
             .map(|s| s.to_string_lossy().to_string())
@@ -4077,7 +4094,7 @@ fn changed_since_at(
     let mut rows: Vec<(i64, String, Value)> = Vec::new();
     for abs in collect_md(&canon) {
         let rel = rel_to(&canon, &abs).replace('\\', "/");
-        if !Scope::Wiki.keeps(&rel) {
+        if !Scope::Wiki.keeps(&rel) || crate::workstreams::is_page_path(&rel) {
             continue;
         }
         let Ok(meta) = std::fs::metadata(&abs) else {
@@ -5821,6 +5838,47 @@ mod tests {
         );
         let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
         assert_eq!(err, "path escapes wiki/: ../raw/x.md");
+    }
+
+    #[test]
+    fn workstream_pages_are_neither_listed_nor_read() {
+        let dir = three_page_wiki();
+        let root = dir.path().canonicalize().unwrap();
+        write(
+            &root.join("wiki/workstreams/alpha.md"),
+            "---\ntitle: \"Alpha\"\ntype: overview\n---\nA synthetic machine page.\n",
+        );
+        let all = list_wiki_pages(&root, "", "", 200).unwrap();
+        assert_eq!(all["count"], 3);
+        let folder = list_wiki_pages(&root, "workstreams", "", 200).unwrap();
+        assert_eq!(folder["count"], 0);
+        for filename in [
+            "workstreams/alpha.md",
+            "Workstreams/alpha.md",
+            "x/../workstreams/alpha.md",
+        ] {
+            let err = read_wiki_page(&root, filename).unwrap_err();
+            assert!(err.starts_with("page not found"), "{filename}: {err}");
+        }
+        assert!(read_wiki_page(&root, "a.md").is_ok());
+        // Nor are they listed as resources, counted, scanned or reported changed.
+        let uris: Vec<String> = resource_list(&root).into_iter().map(|r| r.uri).collect();
+        assert!(
+            uris.iter().all(|uri| !uri.contains("workstreams")),
+            "{uris:?}"
+        );
+        assert_eq!(super::vault_stats(&root)["total_pages"], 3);
+        write(
+            &root.join("wiki/workstreams/beta.md"),
+            "---\ntitle: \"Beta\"\ntype: overview\nstatus: disputed\n---\nA synthetic page.\n",
+        );
+        assert!(contradiction_scan(&root, None).is_empty());
+        let changed = changed_since_at(&root, "24h", 100, false).unwrap();
+        let pages = changed["pages"].to_string();
+        assert!(
+            pages.contains("wiki/a.md") && !pages.contains("workstreams"),
+            "{pages}"
+        );
     }
 
     // ─── prompts and resources ────────────────────────────────────────────────

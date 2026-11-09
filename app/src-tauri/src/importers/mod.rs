@@ -903,7 +903,7 @@ fn is_mycos_own_run(c: &Conversation, body: &str) -> bool {
 }
 
 /// Keep only characters that are safe and stable in a filename.
-fn sanitize(s: &str) -> String {
+pub(crate) fn sanitize(s: &str) -> String {
     let safe: String = s
         .chars()
         .map(|c| {

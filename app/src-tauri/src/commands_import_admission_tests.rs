@@ -22,6 +22,114 @@ fn source(root: &Path, id: &str) -> PathBuf {
 }
 
 #[test]
+fn native_and_mcp_imports_publish_workstream_facts_and_pages() {
+    use crate::workstreams::fixtures::{claude_session, codex_rollout, write_rollout};
+    let codex_id = "00000000-0000-4000-8000-0000000000c1";
+    for explicit in [false, true] {
+        let vault = tempfile::tempdir().unwrap();
+        let home = tempfile::tempdir().unwrap();
+        crate::workstreams::set_test_codex_homes(vec![home.path().to_path_buf()]);
+        let claude = vault.path().join("claude.jsonl");
+        std::fs::write(
+            &claude,
+            claude_session(
+                "ws-claude",
+                "/Users/synthetic/projects/alpha",
+                "Index the alpha notes",
+                "Alpha notes indexed",
+            ),
+        )
+        .unwrap();
+        let rollout = codex_rollout(
+            codex_id,
+            "/Users/synthetic/orca/workspaces/beta/main",
+            None,
+            "Draft the beta plan",
+            "Beta plan drafted",
+        );
+        let files = [claude, write_rollout(home.path(), codex_id, &rollout)];
+        let outcome = if explicit {
+            run_explicit(vault.path(), &files, super::super::DEST_SESSIONS)
+        } else {
+            let state = VaultRoot::default();
+            open(&state, vault.path());
+            let origin = state.snapshot().unwrap();
+            run(
+                &state,
+                &origin,
+                &files,
+                super::super::DEST_SESSIONS,
+                || false,
+                |_| {},
+            )
+        };
+        assert!(outcome.failed.is_empty(), "explicit={explicit}");
+        assert_eq!(outcome.imported, 2);
+        let facts: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(vault.path().join(".myco/workstreams.json")).unwrap(),
+        )
+        .unwrap();
+        let conversations = &facts["conversations"];
+        assert_eq!(conversations["claude-code:ws-claude"]["key"], "alpha");
+        assert_eq!(conversations[format!("codex:{codex_id}")]["key"], "beta");
+        assert_eq!(
+            conversations[format!("codex:{codex_id}")]["cwd_source"],
+            "rollout"
+        );
+        for key in ["alpha", "beta"] {
+            let page = vault.path().join(format!("wiki/workstreams/{key}.md"));
+            let page = std::fs::read_to_string(page).unwrap();
+            assert!(
+                page.contains("<!-- myco:workstream:v1 "),
+                "explicit={explicit}"
+            );
+            assert!(page.contains("type: overview"));
+        }
+    }
+}
+
+#[test]
+fn workstream_backfill_writes_only_while_its_vault_is_open() {
+    use crate::workstreams::fixtures::claude_session;
+    crate::workstreams::set_test_codex_homes(Vec::new());
+    let vault = tempfile::tempdir().unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let input = vault.path().join("claude.jsonl");
+    let session = claude_session(
+        "ws-backfill",
+        "/Users/synthetic/projects/alpha",
+        "Index the alpha notes",
+        "Alpha notes indexed",
+    );
+    std::fs::write(&input, session).unwrap();
+    let outcome = run_explicit(vault.path(), &[input], super::super::DEST_SESSIONS);
+    assert_eq!(outcome.imported, 1);
+    // A vault imported before this feature: a ledger and raw/, no facts.
+    let facts = vault.path().join(".myco/workstreams.json");
+    std::fs::remove_file(&facts).unwrap();
+    let state = VaultRoot::default();
+    open(&state, vault.path());
+    let stale = state.snapshot().unwrap();
+    open(&state, other.path());
+    let Err(error) = backfill_workstreams(&state, &stale) else {
+        panic!("a backfill published into a vault that is no longer open");
+    };
+    assert!(error.contains("active vault changed"), "{error}");
+    assert!(!facts.exists());
+    open(&state, vault.path());
+    let origin = state.snapshot().unwrap();
+    let (written, plan) = backfill_workstreams(&state, &origin).unwrap();
+    assert_eq!(
+        (written, plan.recomputed),
+        (1, 1),
+        "the facts; the page is unchanged"
+    );
+    assert!(facts.is_file());
+    let (written, _) = backfill_workstreams(&state, &origin).unwrap();
+    assert_eq!(written, 0);
+}
+
+#[test]
 fn native_import_rejects_a_captured_origin_after_same_path_reopen() {
     let vault = tempfile::tempdir().unwrap();
     let state = VaultRoot::default();

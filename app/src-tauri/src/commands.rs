@@ -547,8 +547,9 @@ pub fn open_vault(
         // Rebind the background index updater to the newly-opened vault, so it
         // watches the right wiki/ and catches up a fresh/stale index.
         if let Some(u) = crate::INDEX_UPDATER.get() {
-            u.rebind(origin);
+            u.rebind(origin.clone());
         }
+        spawn_workstreams_backfill(app.clone(), origin);
         // Keep the active marker for external automation (best-effort: marker
         // failure must not block opening). Native MCP sessions use the opening
         // snapshot instead and must reinitialize after this transition.
@@ -580,6 +581,27 @@ pub fn open_vault(
         }
     })?;
     Ok(meta)
+}
+
+/// Backfill workstream facts and pages for a newly opened vault, off the UI
+/// thread. Reads and computes without locks, then publishes under the opening
+/// and import guards like a native import; a pass that lost a compare-and-swap
+/// to a concurrent import plans again from what that import wrote.
+fn spawn_workstreams_backfill(app: tauri::AppHandle, origin: AgentVaultSession) {
+    std::thread::spawn(move || {
+        match import_admission::backfill_workstreams(&app.state::<VaultRoot>(), &origin) {
+            Err(error) => eprintln!("workstreams backfill skipped: {error}"),
+            Ok((written, plan))
+                if written + plan.unread + plan.store_failures + plan.names_ignored > 0 =>
+            {
+                eprintln!(
+                    "workstreams backfill: {} conversations read, {} without a raw transcript, {written} files written, {} Codex store failures, {} workstream names ignored",
+                    plan.recomputed, plan.unread, plan.store_failures, plan.names_ignored
+                )
+            }
+            Ok(_) => {}
+        }
+    });
 }
 
 async fn run_file_task<T, F>(label: &'static str, task: F) -> Result<T, String>

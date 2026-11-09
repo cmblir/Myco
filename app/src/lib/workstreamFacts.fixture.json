@@ -1,0 +1,332 @@
+{
+  "conversations": {
+    "claude-code:fx-bracket": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "0000000000000001",
+      "id": "fx-bracket",
+      "key": "foo [old]",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-bracket-0000000000000001.md",
+      "report": {
+        "epoch": 1793070000,
+        "open": [
+          "Update the [old] links in the docs"
+        ],
+        "text": "Renamed the folder; tests pass."
+      },
+      "request": "Rename the [old] folder",
+      "root": "claude-code:fx-bracket",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-dot": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "0000000000000003",
+      "id": "fx-dot",
+      "key": ".dotfiles",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-dot-0000000000000003.md",
+      "report": {
+        "epoch": 1793070000,
+        "text": "Done."
+      },
+      "request": "Sync ~/.zshrc to the repo",
+      "root": "claude-code:fx-dot",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-hash": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "0000000000000002",
+      "id": "fx-hash",
+      "key": "c#",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-hash-0000000000000002.md",
+      "report": {
+        "epoch": 1793070000,
+        "text": "파서를 옮겼습니다"
+      },
+      "request": "Port the parser",
+      "root": "claude-code:fx-hash",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-helper": {
+      "automated": true,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "000000000000000e",
+      "id": "fx-helper",
+      "key": "fixture-lab",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-helper-000000000000000e.md",
+      "report": {
+        "epoch": 1793070000,
+        "text": "대시보드 사용법을 안내했습니다."
+      },
+      "request": "당신은 Orbital 대시보드의 안내 도우미입니다. 사용자의 질문에 답하세요.",
+      "root": "claude-code:fx-helper",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-nfd": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "0000000000000004",
+      "id": "fx-nfd",
+      "key": "노트",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-nfd-0000000000000004.md",
+      "report": null,
+      "request": "노트 앱 정리",
+      "root": "claude-code:fx-nfd",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-pipe": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "0000000000000005",
+      "id": "fx-pipe",
+      "key": "a|b",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-pipe-0000000000000005.md",
+      "report": {
+        "epoch": 1793070000,
+        "text": "Checked the pipe name."
+      },
+      "request": "Check the pipe name",
+      "root": "claude-code:fx-pipe",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-teammate": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793066400,
+      "fp": "000000000000000d",
+      "id": "fx-teammate",
+      "key": "foo [old]",
+      "last_epoch": 1793070000,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-teammate-000000000000000d.md",
+      "report": {
+        "epoch": 1793070000,
+        "text": "Checked the rename."
+      },
+      "request": null,
+      "root": "claude-code:fx-bracket",
+      "subagent": true,
+      "vendor": "claude-code"
+    },
+    "claude-code:fx-tmp": {
+      "automated": false,
+      "cwd_source": "sidecar",
+      "first_epoch": 1793073600,
+      "fp": "0000000000000006",
+      "id": "fx-tmp",
+      "key": null,
+      "last_epoch": 1793073600,
+      "parent_report": null,
+      "raw": "raw/conversations/claude-code/claude-code-fx-tmp-0000000000000006.md",
+      "report": {
+        "epoch": 1793070000,
+        "text": "Scratched."
+      },
+      "request": "Scratch work",
+      "root": "claude-code:fx-tmp",
+      "subagent": false,
+      "vendor": "claude-code"
+    },
+    "codex:00000000-0000-4000-8000-0000000000f1": {
+      "automated": false,
+      "cwd_source": "rollout",
+      "first_epoch": 1793073600,
+      "fp": "0000000000000007",
+      "id": "00000000-0000-4000-8000-0000000000f1",
+      "key": "fixture-lab",
+      "last_epoch": 1793077200,
+      "parent_report": null,
+      "raw": "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f1-0000000000000007.md",
+      "report": {
+        "epoch": 1793077200,
+        "open": [
+          "Pending: the review of the sensors."
+        ],
+        "text": "Lab ready"
+      },
+      "request": "Set up the lab from ORBITAL_LAB_GOAL.md",
+      "root": "codex:00000000-0000-4000-8000-0000000000f1",
+      "subagent": false,
+      "vendor": "codex"
+    },
+    "codex:00000000-0000-4000-8000-0000000000f2": {
+      "automated": false,
+      "cwd_source": "inherited",
+      "first_epoch": 1793077200,
+      "fp": "0000000000000008",
+      "id": "00000000-0000-4000-8000-0000000000f2",
+      "key": "fixture-lab",
+      "last_epoch": 1793080800,
+      "parent_report": {
+        "epoch": 1793077200,
+        "text": "Lab ready"
+      },
+      "raw": "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f2-0000000000000008.md",
+      "report": {
+        "epoch": 1793080800,
+        "text": "Review found one issue"
+      },
+      "request": "Review the lab",
+      "root": "codex:00000000-0000-4000-8000-0000000000f1",
+      "subagent": true,
+      "vendor": "codex"
+    },
+    "codex:00000000-0000-4000-8000-0000000000f3": {
+      "automated": false,
+      "cwd_source": "rollout",
+      "first_epoch": 1793084400,
+      "fp": "000000000000000b",
+      "id": "00000000-0000-4000-8000-0000000000f3",
+      "key": "fixture-lab",
+      "last_epoch": 1793086200,
+      "parent_report": {
+        "epoch": 1793083200,
+        "open": [
+          "궤도 시뮬레이션 실행"
+        ],
+        "text": "궤도 계획을 확정했습니다."
+      },
+      "raw": "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f3-000000000000000b.md",
+      "report": {
+        "epoch": 1793086200,
+        "text": "Orbital checks pass"
+      },
+      "request": "ORBITAL_LAB_GOAL.md",
+      "root": "codex:00000000-0000-4000-8000-0000000000f9",
+      "subagent": true,
+      "vendor": "codex"
+    },
+    "codex:00000000-0000-4000-8000-0000000000f4": {
+      "automated": false,
+      "cwd_source": "rollout",
+      "first_epoch": 1793082600,
+      "fp": "000000000000000c",
+      "id": "00000000-0000-4000-8000-0000000000f4",
+      "key": "fixture-lab",
+      "last_epoch": 1793084400,
+      "parent_report": null,
+      "raw": "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f4-000000000000000c.md",
+      "report": {
+        "epoch": 1793083800,
+        "text": "궤도 점검을 마쳤습니다."
+      },
+      "request": "ORBITAL_LAB_GOAL.md",
+      "root": "codex:00000000-0000-4000-8000-0000000000f9",
+      "subagent": true,
+      "vendor": "codex"
+    }
+  },
+  "last_record_epoch": 1793086200,
+  "unassigned": 1,
+  "version": 4,
+  "workstreams": {
+    ".dotfiles": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/-dotfiles-ed436a08.md",
+      "roots": 1,
+      "summary": null,
+      "title": ".dotfiles",
+      "title_source": "key"
+    },
+    "a|b": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/a-b-3f29c20e.md",
+      "roots": 1,
+      "summary": null,
+      "title": "a|b",
+      "title_source": "key"
+    },
+    "c#": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/c--45d13431.md",
+      "roots": 1,
+      "summary": null,
+      "title": "C Sharp Port",
+      "title_source": "user"
+    },
+    "fixture-lab": {
+      "conversations": 4,
+      "first_epoch": 1793073600,
+      "last_epoch": 1793086200,
+      "open_items": [
+        {
+          "conversation": "codex:00000000-0000-4000-8000-0000000000f3",
+          "epoch": 1793083200,
+          "text": "궤도 시뮬레이션 실행"
+        },
+        {
+          "conversation": "codex:00000000-0000-4000-8000-0000000000f1",
+          "epoch": 1793077200,
+          "text": "Pending: the review of the sensors."
+        }
+      ],
+      "page": "wiki/workstreams/fixture-lab.md",
+      "roots": 2,
+      "summary": null,
+      "title": "Orbital",
+      "title_source": "derived"
+    },
+    "foo [old]": {
+      "conversations": 2,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [
+        {
+          "conversation": "claude-code:fx-bracket",
+          "epoch": 1793070000,
+          "text": "Update the [old] links in the docs"
+        }
+      ],
+      "page": "wiki/workstreams/foo -old--683c5b61.md",
+      "roots": 1,
+      "summary": null,
+      "title": "foo [old]",
+      "title_source": "key"
+    },
+    "노트": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/노트.md",
+      "roots": 1,
+      "summary": null,
+      "title": "노트",
+      "title_source": "key"
+    }
+  }
+}

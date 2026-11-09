@@ -22,14 +22,37 @@ impl Publisher<'_> {
         };
         match self {
             Self::Native(state, origin) => state.with_origin(origin, publish),
-            Self::BoundRoot(root) => {
-                let root = root
-                    .canonicalize()
-                    .map_err(|error| format!("import vault unavailable: {error}"))?;
-                publish(&root)
-            }
+            Self::BoundRoot(root) => publish(&canonical(root)?),
         }
     }
+
+    /// Refresh workstream facts and pages: read and plan without the guards,
+    /// so a large batch never holds them while it reads; only the
+    /// compare-and-swap writes take them.
+    fn refresh_workstreams(&self) -> Result<(usize, crate::workstreams::Plan), String> {
+        let root = match self {
+            Self::Native(_, origin) => PathBuf::from(&origin.vault_path),
+            Self::BoundRoot(root) => canonical(root)?,
+        };
+        let homes = crate::workstreams::default_codex_homes();
+        crate::workstreams::refresh(&root, &homes, |plan| {
+            self.publish(|root| crate::workstreams::apply(root, plan))
+        })
+    }
+}
+
+fn canonical(root: &Path) -> Result<PathBuf, String> {
+    root.canonicalize()
+        .map_err(|error| format!("import vault unavailable: {error}"))
+}
+
+/// Workstream backfill for a newly opened vault; the caller runs it off the
+/// UI thread. A vault switched meanwhile fails the publish and writes nothing.
+pub(super) fn backfill_workstreams(
+    state: &VaultRoot,
+    origin: &AgentVaultSession,
+) -> Result<(usize, crate::workstreams::Plan), String> {
+    Publisher::Native(state, origin).refresh_workstreams()
 }
 
 pub(super) fn run(
@@ -172,6 +195,9 @@ fn run_with(
         return outcome;
     }
     let mut legacy_locations = None;
+    // Whether the batch admitted a Claude Code or Codex conversation, for the
+    // one workstream refresh after it.
+    let mut admitted_sessions = false;
     for (index, file) in files.iter().enumerate() {
         let path = file.to_string_lossy().into_owned();
         let stamp = super::file_stamp(file);
@@ -216,6 +242,10 @@ fn run_with(
                     .then(|| QueuePublication::load(root))
                     .transpose()?;
                 let plan = crate::importers::plan_conversations(&conversations, &ledger);
+                admitted_sessions |= plan
+                    .docs
+                    .iter()
+                    .any(|doc| crate::workstreams::is_tracked(&doc.key));
                 let (imported, skipped, quarantined, source) =
                     super::apply_import_plan(root, &mut ledger, plan, dest, &mut legacy_locations)?;
                 outcome.imported += imported;
@@ -268,6 +298,13 @@ fn run_with(
                 origin: None,
                 request_id: None,
             });
+        }
+    }
+    // A failure keeps the import result: every later refresh (the next import
+    // or vault open) reads each conversation the facts still lack.
+    if outcome.imported > 0 && admitted_sessions {
+        if let Err(error) = publisher.refresh_workstreams() {
+            eprintln!("workstreams refresh skipped: {error}");
         }
     }
     outcome

@@ -274,6 +274,11 @@ impl Ledger {
         self.entries.insert(key, fingerprint);
     }
 
+    /// Every recorded `<source>:<id>` key with its fingerprint, sorted.
+    pub(crate) fn entries(&self) -> &BTreeMap<String, String> {
+        &self.entries
+    }
+
     pub fn location(&self, dest: &str, key: &str) -> Option<&str> {
         self.locations
             .get(&format!("{dest}:{key}"))
