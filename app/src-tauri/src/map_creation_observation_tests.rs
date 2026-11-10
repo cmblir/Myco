@@ -42,6 +42,167 @@ fn read(
     })
 }
 
+fn discover(root: &Path, directory: &CompilerPinDirectory) -> Result<CreationContent, String> {
+    crate::vault::with_root_mutation(root, |canonical, guard| {
+        discover_creation(directory, canonical, RELATIVE, guard)
+    })
+}
+
+#[test]
+#[ignore = "invoked only by the isolated two-process discovery test"]
+fn synthetic_discovery_child() {
+    let data = PathBuf::from(std::env::var_os("MYCO_DATA_DIR").unwrap());
+    assert_eq!(
+        std::fs::read_to_string(data.join("synthetic.marker")).unwrap(),
+        "Synthetic map restart only"
+    );
+    match std::env::var("MYCO_MAP_DISCOVERY_PHASE").unwrap().as_str() {
+        "create" => {
+            let (root, _, _, baseline) = create(&data);
+            std::fs::write(
+                root.join(RELATIVE),
+                format!("{baseline}\nSynthetic restart annotation.\n"),
+            )
+            .unwrap();
+        }
+        "discover" => {
+            let root = data.join("vault").canonicalize().unwrap();
+            let directory = crate::vault::open_compiler_pin_directory(
+                &data.join("map-creation-custody").canonicalize().unwrap(),
+            )
+            .unwrap();
+            let found = discover(&root, &directory).unwrap();
+            assert_eq!(
+                found.current,
+                format!("{}\nSynthetic restart annotation.\n", found.baseline)
+            );
+            assert_eq!(
+                std::fs::read_to_string(root.join(RELATIVE)).unwrap(),
+                found.current
+            );
+        }
+        phase => panic!("unexpected synthetic discovery phase: {phase}"),
+    }
+}
+
+#[test]
+fn discovers_creation_in_a_new_process_after_writer_exit() {
+    let data = tempfile::Builder::new()
+        .prefix("myco-synthetic-map-restart-")
+        .tempdir()
+        .unwrap();
+    std::fs::write(
+        data.path().join("synthetic.marker"),
+        "Synthetic map restart only",
+    )
+    .unwrap();
+    for phase in ["create", "discover"] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "map_creation_observation::tests::synthetic_discovery_child",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("MYCO_MAP_DISCOVERY_PHASE", phase)
+            .env("MYCO_DATA_DIR", data.path())
+            .env_remove("MEMEX_DATA_DIR")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{phase} child failed: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(String::from_utf8_lossy(&output.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn discovers_without_generation_key_after_handles_close() {
+    with_isolated_data("map-discovery-reopen", |data| {
+        let (root, directory, _, baseline) = create(data);
+        let annotated = format!("{baseline}\nSynthetic human annotation.\n");
+        std::fs::write(root.join(RELATIVE), &annotated).unwrap();
+        let found = discover(&root, &directory).unwrap();
+        assert_eq!(found.baseline, baseline);
+        assert_eq!(found.current, annotated);
+
+        // Retained old generations must not prevent a new creation at this path.
+        std::fs::remove_file(root.join(RELATIVE)).unwrap();
+        let store = MapCreationStore::open(&root, RELATIVE).unwrap();
+        crate::vault::with_root_mutation(&root, |_, guard| {
+            let written = store.write(guard, root.join(RELATIVE).to_str().unwrap(), &baseline)?;
+            store.record(guard, &written, &baseline)?;
+            Ok(())
+        })
+        .unwrap();
+        drop(store);
+        assert_eq!(discover(&root, &directory).unwrap().current, baseline);
+    });
+}
+
+#[test]
+fn discovery_rejects_missing_corrupt_and_ambiguous_evidence() {
+    with_isolated_data("map-discovery-invalid", |data| {
+        let (root, directory, leaf, baseline) = create(data);
+        let record_path = directory.path().join(&leaf);
+        let bytes = std::fs::read(&record_path).unwrap();
+        std::fs::write(&record_path, b"{}").unwrap();
+        assert!(discover(&root, &directory).is_err());
+        std::fs::write(&record_path, &bytes).unwrap();
+        let other_leaf = format!(
+            "{}.{}.json",
+            leaf.split('.').next().unwrap(),
+            "f".repeat(32)
+        );
+        let duplicate = directory.path().join(other_leaf);
+        std::fs::copy(&record_path, &duplicate).unwrap();
+        assert!(discover(&root, &directory).is_err());
+        std::fs::remove_file(duplicate).unwrap();
+        std::fs::remove_file(record_path).unwrap();
+        assert!(discover(&root, &directory).is_err());
+        assert_eq!(
+            std::fs::read_to_string(root.join(RELATIVE)).unwrap(),
+            baseline
+        );
+    });
+}
+
+#[test]
+fn discovery_rejects_replaced_target_and_bounded_directory_overflow() {
+    with_isolated_data("map-discovery-replacement", |data| {
+        let (root, directory, _, baseline) = create(data);
+        let replacement = root.join("replacement.md");
+        std::fs::write(&replacement, &baseline).unwrap();
+        std::fs::rename(replacement, root.join(RELATIVE)).unwrap();
+        assert!(discover(&root, &directory)
+            .err()
+            .unwrap()
+            .contains("no creation observation"));
+        assert_eq!(
+            std::fs::read_to_string(root.join(RELATIVE)).unwrap(),
+            baseline
+        );
+    });
+    with_isolated_data("map-discovery-bounds", |data| {
+        let (root, directory, _, baseline) = create(data);
+        for index in 0..4096 {
+            std::fs::write(directory.path().join(format!("synthetic-{index}")), b"").unwrap();
+        }
+        assert!(discover(&root, &directory)
+            .err()
+            .unwrap()
+            .contains("entry budget"));
+        assert_eq!(
+            std::fs::read_to_string(root.join(RELATIVE)).unwrap(),
+            baseline
+        );
+    });
+}
+
 #[test]
 fn reopens_creation_evidence_after_handles_close_and_keeps_human_text_separate() {
     with_isolated_data("map-observation-reopen", |data| {

@@ -157,6 +157,10 @@ checks its exact bytes and file identity; unstable or unsafe records stop comple
 Creation observations also validate their schema, vault/target scope, baseline
 revision and retained file object. Reading a baseline and current human-edited
 text does not restore an update or deletion permit.
+Native creation now also discovers its observation by vault/path and current file
+identity, without relying on a remembered generation key. Missing, corrupt or
+ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory
+entries and 32 MiB of matching records; exceeding a bound requires recovery.
 Live undo can remove an unchanged map created in that opening; human edits block
 removal. The private baseline and file anchor remain retained after undo.
 After confirmed undo through History or Settings, drafting the topic again starts

@@ -45,6 +45,95 @@ pub(crate) struct CreationContent {
     pub current: String,
 }
 
+/// Find the current object's retained observation without a process-local key.
+/// This bounded discovery returns text only, never recovered mutation authority.
+pub(crate) fn discover_creation(
+    directory: &CompilerPinDirectory,
+    root: &Path,
+    relative: &str,
+    guard: &MutexGuard<'_, ()>,
+) -> Result<CreationContent, String> {
+    let key = relative
+        .strip_prefix("wiki/maps/")
+        .and_then(|name| name.strip_suffix(".md"))
+        .ok_or("map discovery target is outside wiki/maps")?;
+    if (crate::distill_publication::ManagedArtifact::Map { key: key.into() }).path()? != relative {
+        return Err("map discovery target is not canonical".into());
+    }
+    directory.verify()?;
+    let canonical = root.canonicalize().map_err(|error| error.to_string())?;
+    let root_metadata = std::fs::symlink_metadata(&canonical).map_err(|error| error.to_string())?;
+    let scope = Scope {
+        vault: canonical.to_str().ok_or("map vault is not UTF-8")?.into(),
+        device: root_metadata.dev(),
+        inode: root_metadata.ino(),
+        path: relative.into(),
+    };
+    let prefix = format!(
+        "{:x}.",
+        Sha256::digest(serde_json::to_vec(&scope).map_err(|error| error.to_string())?)
+    );
+    let target =
+        std::fs::symlink_metadata(canonical.join(relative)).map_err(|error| error.to_string())?;
+    if !target.is_file() {
+        return Err("map discovery target is not a regular file".into());
+    }
+    let before = std::fs::symlink_metadata(directory.path()).map_err(|error| error.to_string())?;
+    let mut found = None;
+    let mut total_bytes = 0usize;
+    for (index, entry) in std::fs::read_dir(directory.path())
+        .map_err(|error| error.to_string())?
+        .enumerate()
+    {
+        if index >= 4096 {
+            return Err("map creation discovery entry budget exceeded".into());
+        }
+        let entry = entry.map_err(|error| error.to_string())?;
+        let name = entry.file_name();
+        let Some(leaf) = name.to_str() else { continue };
+        if !leaf.starts_with(&prefix) || !leaf.ends_with(".json") {
+            continue;
+        }
+        let (held, bytes) = crate::map_custody_record::read_record(directory, leaf)?;
+        total_bytes += bytes.len();
+        if total_bytes > 32 * 1024 * 1024 {
+            return Err("map creation discovery byte budget exceeded".into());
+        }
+        let observation: Observation = serde_json::from_slice(&bytes)
+            .map_err(|_| "invalid map creation observation schema")?;
+        // An old, undone generation refers to another retained inode. It cannot
+        // establish custody of the current file merely by having the same path.
+        if (
+            observation.file_identity.device,
+            observation.file_identity.inode,
+        ) != (target.dev(), target.ino())
+        {
+            continue;
+        }
+        if found.is_some() {
+            return Err("multiple map creation observations match the current object".into());
+        }
+        found = Some(read_creation(directory, leaf, &canonical, relative, guard)?);
+        crate::map_custody_record::verify_held_record(directory, leaf, &held, &bytes)?;
+    }
+    directory.verify()?;
+    let after = std::fs::symlink_metadata(directory.path()).map_err(|error| error.to_string())?;
+    if (
+        before.mtime(),
+        before.mtime_nsec(),
+        before.ctime(),
+        before.ctime_nsec(),
+    ) != (
+        after.mtime(),
+        after.mtime_nsec(),
+        after.ctime(),
+        after.ctime_nsec(),
+    ) {
+        return Err("map creation store changed during discovery".into());
+    }
+    found.ok_or_else(|| "no creation observation matches the current map object".into())
+}
+
 /// Reopen stable private evidence and its exact file object. This function never
 /// rebuilds an old native receipt, nor proves current text is safe to overwrite.
 pub(crate) fn read_creation(

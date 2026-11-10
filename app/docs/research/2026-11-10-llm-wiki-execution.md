@@ -647,6 +647,39 @@ integration tests passed, with 38 ignored and no failures
 installed-app checks were not rerun for this native-only slice. The README now
 describes validated creation observations without claiming restored update rights.
 
+The next native slice adds bounded creation-record discovery from the canonical
+vault/target scope and current file identity. Production creation uses this lookup
+before confirming its live permit, exercising the same path that future restart
+recovery can use without remembering a generation key. Old generations referring
+to other inodes do not claim the current map; missing, malformed or multiple
+matching observations fail closed. Directory identity and timestamps are checked
+around enumeration, and the matched record is read again against its held file.
+Discovery returns only baseline/current text. It does not recover any write/undo
+permit or enable existing-map refresh.
+
+The scan is bounded to 4,096 entries and 32 MiB of matching record bytes. Exhaustion
+preserves the output and requires recovery; automatic retention cleanup remains
+unfinished. Added isolated native cases cover lookup without a generation key,
+closed creation handles, human annotations, new creation with old retained
+generations, corrupt/missing/ambiguous records, identical-byte target replacement,
+and entry-budget exhaustion. A further parent test launches a synthetic creation
+child, waits for successful process exit, then launches a fresh discovery child
+with only the isolated app-data path and phase. The second process finds the
+baseline and preserves the current human annotation without a remembered key.
+Both children use the existing test binary and an explicit synthetic marker.
+This proves native discovery across process exit, not installed-app restart or
+restored update authority. Next implement owned section conflict checks and
+source-bound update authority, then wire recovery into the existing-map path.
+
+Validation: the full Rust suite passed 2,669 library and 28 integration tests,
+with 38 ignored (`/tmp/myco-map-discovery-full.log`). After adding the two-process
+test, the focused suite passed 8 tests; its one ignored child helper was explicitly
+executed in both phases by the parent (`/tmp/myco-map-discovery-restart.log`).
+Final formatting and all-target strict Clippy passed
+(`/tmp/myco-map-discovery-final-clippy.log`). The full suite preceded that test-only
+addition; runtime code did not change afterward. Frontend, model and Windows
+acceptance were not rerun. README documents lookup and exhaustion behavior.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

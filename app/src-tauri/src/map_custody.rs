@@ -151,9 +151,8 @@ mod platform {
                 &file,
                 &bytes,
             )?;
-            let observation = crate::map_creation_observation::read_creation(
+            let observation = crate::map_creation_observation::discover_creation(
                 &self.directory,
-                &format!("{}.json", self.key),
                 Path::new(&self.scope.vault),
                 &self.scope.path,
                 guard,
