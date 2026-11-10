@@ -234,7 +234,7 @@ fn partial_pack_retry_reads_the_zip_member_with_no_remaining_original() {
     .unwrap();
     let archive_path = root.join(format!("{BUCKET}.zip"));
     let mut archive = zip::ZipArchive::new(std::fs::File::open(&archive_path).unwrap()).unwrap();
-    let offset = archive.by_name("a.md").unwrap().data_start() as usize;
+    let offset = archive.by_name("a.md").unwrap().data_start().unwrap() as usize;
     drop(archive);
     let mut corrupted = std::fs::read(&archive_path).unwrap();
     corrupted[offset] ^= 0x40;

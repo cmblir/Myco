@@ -38,7 +38,7 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 futures-util = { version = "0.3", default-features = false }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
-calamine = "0.36.1"
+calamine = "0.38.0"
 pdf-extract = "0.10.0"
 # Embedded local model (bundled SEED 0.5B GGUF). Pure in-process inference — no
 # daemon, no Python. Metal is on by default on macOS. Vendors + compiles
@@ -53,7 +53,7 @@ llama-cpp-2 = "0.1.150"
 # SECOND copy of llama.cpp, and `=` turns that into a resolution error instead
 # of a silent disaster. Bump both lines together, never one alone.
 llama-cpp-sys-2 = { version = "=0.1.150", optional = true }
-zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
+zip = { version = "9.5.0", default-features = false, features = ["deflate"] }
 # NFC normalization for search/link/filename text. macOS file APIs hand back
 # NFD Hangul (decomposed jamo), which silently misses NFC query text in every
 # lexical comparison — see norm.rs. Already in the lockfile transitively.

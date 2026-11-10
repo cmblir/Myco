@@ -417,7 +417,7 @@ fn extract_pptx(p: &Path) -> Result<String, String> {
     let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("pptx not a zip: {e}"))?;
     // Collect slide entry names first (borrow of `zip` ends before we read).
     let mut slides: Vec<String> = (0..zip.len())
-        .filter_map(|i| zip.by_index(i).ok().map(|e| e.name().to_string()))
+        .filter_map(|i| zip.by_index(i).ok()?.name().ok().map(|n| n.into_owned()))
         .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
         .collect();
     slides.sort(); // slide1, slide2, … (lexical is fine for typical decks)
@@ -594,6 +594,40 @@ mod tests {
         let out = extract_text(p.to_str().unwrap()).unwrap();
         assert!(out.contains("Quarterly report body"), "got: {out}");
         let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn extracts_xlsx_cells() {
+        // The smallest workbook calamine reads: package rels, workbook, its
+        // rels and one sheet.
+        let p = std::env::temp_dir().join(format!("myco-extract-{}-s.xlsx", std::process::id()));
+        let mut zw = zip::ZipWriter::new(fs::File::create(&p).unwrap());
+        for (entry, xml) in [
+            (
+                "_rels/.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/workbook.xml",
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Plan" sheetId="1" r:id="rId1"/></sheets></workbook>"#,
+            ),
+            (
+                "xl/_rels/workbook.xml.rels",
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>"#,
+            ),
+            (
+                "xl/worksheets/sheet1.xml",
+                r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Task</t></is></c><c r="B1"><v>3</v></c></row></sheetData></worksheet>"#,
+            ),
+        ] {
+            zw.start_file(entry, zip::write::SimpleFileOptions::default())
+                .unwrap();
+            zw.write_all(xml.as_bytes()).unwrap();
+        }
+        zw.finish().unwrap();
+        let out = extract_text(p.to_str().unwrap());
+        let _ = fs::remove_file(&p);
+        assert_eq!(out.unwrap(), "## Sheet: Plan\n\nTask, 3");
     }
 
     #[test]

@@ -737,7 +737,10 @@ fn archive_contents(file: &std::fs::File) -> Result<ArchiveContents, String> {
         let mut entry = archive
             .by_index(index)
             .map_err(|error| format!("entry {index} unreadable: {error}"))?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|error| format!("entry {index} name unreadable: {error}"))?
+            .into_owned();
         let file_type = entry.unix_mode().map(|mode| mode & 0o170000).unwrap_or(0);
         if !plain_archive_name(&name)
             || !entry.is_file()
@@ -1216,7 +1219,10 @@ fn restore_impl(
         let mut entry = archive
             .by_index(index)
             .map_err(|error| format!("entry {index} unreadable: {error}"))?;
-        let name = entry.name().to_string();
+        let name = entry
+            .name()
+            .map_err(|error| format!("entry {index} name unreadable: {error}"))?
+            .into_owned();
         let mut bytes = Vec::new();
         entry
             .read_to_end(&mut bytes)
