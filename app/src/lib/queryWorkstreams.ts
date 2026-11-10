@@ -41,7 +41,7 @@ interface WorkstreamConversation {
   parent_report: Report | null;
 }
 
-const TITLE_SOURCES = ["user", "readme", "package", "derived", "key"] as const;
+const TITLE_SOURCES = ["user", "readme", "package", "derived", "key", "folder"] as const;
 
 /** A line a recent session's report leaves open. */
 interface OpenItem {
@@ -57,6 +57,8 @@ interface Workstream {
    * its conversations use distinctively, or else the key. */
   title_source: (typeof TITLE_SOURCES)[number];
   page: string;
+  /** Retained page bytes differ from current facts; native ownership is unproven. */
+  page_refresh_pending?: boolean;
   first_epoch: number;
   last_epoch: number;
   conversations: number;
@@ -67,10 +69,10 @@ interface Workstream {
   open_items: OpenItem[];
 }
 
-/** `.myco/workstreams.json` version 4, written by the native reconcile. Any
+/** `.myco/workstreams.json` version 5, written by the native reconcile. Any
  * other version is not read; the next reconcile rewrites it. */
 export interface WorkstreamFacts {
-  version: 4;
+  version: 5;
   last_record_epoch: number;
   unassigned: number;
   workstreams: Record<string, Workstream>;
@@ -102,6 +104,7 @@ function isWorkstream(value: unknown, key: string, conversations: Record<string,
   return isObject(value) && isText(value.title, 1024) &&
     (TITLE_SOURCES as readonly unknown[]).includes(value.title_source) &&
     isLinkPath(value.page, "wiki/workstreams/") &&
+    (value.page_refresh_pending === undefined || typeof value.page_refresh_pending === "boolean") &&
     [value.first_epoch, value.last_epoch, value.conversations, value.roots].every(isEpoch) &&
     (value.summary === null || isText(value.summary, 1024)) &&
     Array.isArray(value.open_items) && value.open_items.length <= 10 &&
@@ -126,7 +129,7 @@ function isConversation(value: unknown, workstreams: Record<string, unknown>): b
 
 /** Hand-written contract check; the file sits in the vault and may be edited. */
 function isWorkstreamFacts(value: unknown): value is WorkstreamFacts {
-  if (!isObject(value) || value.version !== 4 || !isEpoch(value.last_record_epoch) || !isEpoch(value.unassigned))
+  if (!isObject(value) || value.version !== 5 || !isEpoch(value.last_record_epoch) || !isEpoch(value.unassigned))
     return false;
   const { workstreams, conversations } = value;
   return isObject(workstreams) && isObject(conversations) &&
@@ -337,6 +340,7 @@ const EN = {
   link: "{host} link",
   more: "{count} older sessions are on the {page}.",
   pageLink: "project page",
+  pageRefreshPending: "page refresh pending; existing content was preserved",
   window: "the last 7 days ({start} – {end})",
   emptyWindow: "No conversation from the last 7 days ({start} – {end}) belongs to a project.",
   choosePeriod: "Name a project or ask with explicit dates to search older records.",
@@ -374,6 +378,7 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     link: "{host} 링크",
     more: "이전 세션 {count}개는 {page}에서 볼 수 있습니다.",
     pageLink: "프로젝트 페이지",
+    pageRefreshPending: "페이지 갱신 대기: 기존 내용을 보존했습니다",
     window: "최근 7일({start} – {end})",
     emptyWindow: "최근 7일({start} – {end})에는 프로젝트로 묶인 대화가 없습니다.",
     choosePeriod: "이전 기록을 보려면 프로젝트 이름이나 원하는 날짜를 넣어 다시 물어보세요.",
@@ -408,6 +413,7 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     link: "{host}のリンク",
     more: "以前のセッション{count}件は{page}で確認できます。",
     pageLink: "プロジェクトページ",
+    pageRefreshPending: "ページ更新待ち：既存の内容を保持しました",
     window: "直近7日間（{start}〜{end}）",
     emptyWindow: "直近7日間（{start}〜{end}）には、プロジェクトにまとめられた会話がありません。",
     choosePeriod: "以前の記録を探すには、プロジェクト名か具体的な日付を指定して質問してください。",
@@ -469,16 +475,19 @@ function newest(entries: Entry[], at: (c: WorkstreamConversation) => number | un
 /** Letters only a report in that UI language has: Hangul for ko, kana for ja. */
 const UI_SCRIPT: Partial<Record<Lang, RegExp>> = { ko: /\p{Script=Hangul}/u, ja: /[\p{Script=Hiragana}\p{Script=Katakana}]/u };
 
-/** The report a session shows and the conversation it was read from: what
- * came back in the person's own thread, else that thread's answer a
- * sub-agent copied in when it forked (the thread may not be in the vault),
- * else what a sub-agent reported; within each, one written in the UI
- * language, then the latest; ties take the greater ledger key. */
+/** A parent link proves lineage, not project identity. */
+function copiedReport(entries: Entry[], conversation: WorkstreamConversation): Report | null {
+  return conversation.key !== null && entries.some(([id, parent]) =>
+    id === conversation.root && parent.key === conversation.key) ? conversation.parent_report : null;
+}
+
+/** Prefer the person's own report, then a positively same-project copy,
+ * then a sub-agent's report; within each, the UI language and latest time. */
 function preferredReport(entries: Entry[], lang: Lang): { entry: Entry; report: Report } | undefined {
   const script = UI_SCRIPT[lang];
   const shown = entries.flatMap((entry) => {
     const [, c] = entry;
-    return ([[c.subagent ? 0 : 2, c.report], [1, c.parent_report]] as const)
+    return ([[c.subagent ? 0 : 2, c.report], [1, copiedReport(entries, c)]] as const)
       .filter(([, report]) => report?.text.trim())
       .map(([tier, report]) => ({ entry, report: report!, tier, inLang: Number(script?.test(report!.text) ?? false) }));
   });
@@ -489,7 +498,7 @@ function preferredReport(entries: Entry[], lang: Lang): { entry: Entry; report: 
 /** Whether a session has anything to show: a request or a report. A helper
  * session that only named a git branch has neither. */
 const hasWords = (members: Entry[]): boolean =>
-  members.some(([, c]) => c.request?.trim() || c.report?.text.trim() || c.parent_report?.text.trim());
+  members.some(([, c]) => c.request?.trim() || c.report?.text.trim() || copiedReport(members, c)?.text.trim());
 
 function groupBy(entries: Entry[], keyOf: (c: WorkstreamConversation) => string | null): [string, Entry[]][] {
   const groups = new Map<string, Entry[]>();
@@ -534,7 +543,9 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
   // A program's sessions are the person's work nowhere in an answer.
   const entries = Object.entries(facts.conversations).filter(([, c]) => !c.automated);
   const title = (key: string): string => facts.workstreams[key].title.replace(/\s+/g, " ").trim() || key;
-  const page = (key: string): string => chunkCitation({ page: facts.workstreams[key].page, stem: title(key) });
+  const page = (key: string, label = title(key)): string =>
+    chunkCitation({ page: facts.workstreams[key].page, stem: label }) +
+    (facts.workstreams[key].page_refresh_pending ? ` (${copy.pageRefreshPending})` : "");
   const source = ([, c]: Entry): string => chunkCitation({ page: c.raw, stem: copy.source });
   /** A request that is only a link reads as its site, not a long URL. */
   const asked = (request: string): string => {
@@ -592,7 +603,7 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
       fill(copy.progress, { page: named(key, name), roots: count(workstream.roots), conversations: count(workstream.conversations),
         first: day(workstream.first_epoch), last: day(workstream.last_epoch) }),
       roots.slice(0, PROGRESS_ROOTS).map(({ members, last }) => dated(members, last)).join("\n"),
-      more > 0 ? fill(copy.more, { count: count(more), page: chunkCitation({ page: workstream.page, stem: copy.pageLink }) }) : "",
+      more > 0 ? fill(copy.more, { count: count(more), page: page(key, copy.pageLink) }) : "",
       copy.reportedOnly,
     ].filter(Boolean).join("\n\n");
   };

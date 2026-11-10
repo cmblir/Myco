@@ -1,26 +1,26 @@
 //! Workstreams: deterministic project grouping of imported Claude Code and
 //! Codex conversations (LLM wiki upgrade 2026-11-08, slice 1).
 //!
-//! A conversation's workstream is a pure key over its working folder
-//! (`thread_key`, ported from the P0 measurement). A Codex sub-thread joins the
+//! A conversation's workstream is an opaque key over its full recorded cwd.
+//! This is not repository-equivalence proof for subdirectories or worktrees.
+//! `thread_key` survives only as non-authoritative legacy naming. A Codex sub-thread joins the
 //! session of the thread it was spawned from (`root_of`), even when that
 //! thread was never imported, and a Claude Code agent-team teammate joins its
 //! lead's. `refresh` publishes the result twice:
-//! `.myco/workstreams.json`, the facts Ask answers from without a model, and
-//! one machine-owned page per workstream under `wiki/workstreams/`. A
+//! `.myco/workstreams.json`, the candidate facts Ask reads, and
+//! one create-only page per workstream under `wiki/workstreams/`. A
 //! workstream is titled by the person's `.myco/workstream-names.json` (only
 //! read), else its project's README or package name, else a word its own
-//! conversations use distinctively, else its key. It also carries the first
+//! conversations use distinctively, else its folder's display name. It carries the first
 //! paragraph under that README title and the lines its latest sessions'
-//! reports leave open (facts version 4), so Ask can explain a project and say
-//! what is left without a model.
+//! reports leave open. Current-state answers still require source-bound review.
 //!
 //! Reads the import ledger, the vault's raw transcripts and sidecars, and for a
 //! Codex working folder the vendor stores, read-only: `state_5.sqlite` opened
 //! immutable, then the rollout's first line, then the parent chain. Writes only
-//! the facts file and pages whose marker block is intact, each by
-//! compare-and-swap; raw/ is never written. Only conversations that are new or
-//! whose ledger fingerprint changed are read again; a Codex thread still
+//! the facts file and missing pages, each by compare-and-swap; existing page
+//! bytes and raw/ are never changed. All records are reread on a version
+//! migration; otherwise new or changed ledger revisions are read. A Codex thread still
 //! without a working folder is looked up in the vendor stores again. The facts
 //! hold derived keys, never cwd strings, which carry the home path.
 
@@ -31,6 +31,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+mod identity;
+use identity::project_key;
+
 /// Vault-relative folder of the machine-owned pages. Cold for every index,
 /// evidence and MCP read path.
 pub(crate) const PAGE_DIR: &str = "wiki/workstreams/";
@@ -40,7 +43,7 @@ const NAMES_FILE: &str = "workstream-names.json";
 /// The longest name that file may give.
 const MAX_NAME_CHARS: usize = 80;
 /// Facts of another version are treated as absent: everything is read again.
-const VERSION: u32 = 4;
+const VERSION: u32 = 5;
 /// Open items a workstream keeps, from the reports of this many of its latest
 /// sessions (the sessions a progress answer lists).
 const OPEN_ITEMS: usize = 10;
@@ -87,6 +90,7 @@ pub(crate) enum TitleSource {
     Package,
     Derived,
     Key,
+    Folder,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -152,6 +156,9 @@ pub(crate) struct WorkstreamFacts {
     /// (`open_items`), newest first.
     open_items: Vec<OpenItem>,
     page: String,
+    /// Existing bytes lack private publication custody and are never replaced.
+    #[serde(default)]
+    page_refresh_pending: bool,
     roots: usize,
     /// The first paragraph under the README title the display name is read
     /// from (`readme_summary`), else `None`.
@@ -164,6 +171,10 @@ pub(crate) struct WorkstreamFacts {
 pub(crate) struct Facts {
     conversations: BTreeMap<String, ConversationFacts>,
     last_record_epoch: i64,
+    /// Non-authoritative legacy-name membership. Never used for grouping.
+    /// Missing members continue to block automatic name adoption after rebuild.
+    #[serde(default)]
+    legacy_members: BTreeMap<String, BTreeSet<String>>,
     unassigned: usize,
     version: u32,
     workstreams: BTreeMap<String, WorkstreamFacts>,
@@ -186,6 +197,7 @@ pub(crate) struct Plan {
     /// at most 80 characters that passes the secret scan), or 1 when the file
     /// itself is not a readable JSON object.
     pub(crate) names_ignored: usize,
+    pub(crate) pages_pending: usize,
 }
 
 /// Plan without any lock, publish through `publish` (which takes the
@@ -230,11 +242,26 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
         .map(|(key, fp)| (key.as_str(), fp.as_str()))
         .collect();
     let previous_text = read_existing(&facts_path(root))?;
-    let previous = previous_text
+    let previous_any = previous_text
         .as_deref()
         .and_then(|text| serde_json::from_str::<Facts>(text).ok())
-        .filter(|facts| facts.version == VERSION)
         .unwrap_or_default();
+    let mut legacy_members = previous_any.legacy_members.clone();
+    if previous_any.version == 4 {
+        for (id, conversation) in &previous_any.conversations {
+            if let Some(key) = &conversation.key {
+                legacy_members
+                    .entry(key.clone())
+                    .or_default()
+                    .insert(id.clone());
+            }
+        }
+    }
+    let previous = if previous_any.version == VERSION {
+        previous_any
+    } else {
+        Facts::default()
+    };
     let mut plan = Plan::default();
     if tracked.is_empty() && previous_text.is_none() {
         return Ok(plan);
@@ -258,10 +285,22 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
             continue;
         };
         let mut cwd = read.cwd;
-        if conversation.vendor == "codex" {
+        for alias in read.legacy_keys {
+            legacy_members
+                .entry(alias)
+                .or_default()
+                .insert(key.to_string());
+        }
+        if conversation.vendor == "codex" && !conversation.cwd_source.is_own() {
             if let Some((found, source)) = stores.cwd(&conversation.id) {
                 conversation.key = project_key(&found);
                 conversation.cwd_source = source;
+                if let Some(alias) = legacy_key(&found) {
+                    legacy_members
+                        .entry(alias)
+                        .or_default()
+                        .insert(key.to_string());
+                }
                 cwd = Some(found);
             }
         }
@@ -290,6 +329,9 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
         if let Some((found, source)) = stores.cwd(&conversation.id) {
             conversation.key = project_key(&found);
             conversation.cwd_source = source;
+            if let Some(alias) = legacy_key(&found) {
+                legacy_members.entry(alias).or_default().insert(key.clone());
+            }
             cwds.push((key.clone(), conversation.last_epoch, found));
         }
     }
@@ -355,7 +397,6 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
             }
         }
     }
-
     let mut members: BTreeMap<&str, Vec<&ConversationFacts>> = BTreeMap::new();
     for conversation in conversations.values() {
         if let Some(key) = conversation.key.as_deref() {
@@ -365,6 +406,19 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
     let (user, names_ignored) = user_names(root);
     plan.names_ignored = names_ignored;
     let distinctive = derived_names(&conversations);
+    let mut aliases: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for (alias, ids) in &legacy_members {
+        let keys: Option<BTreeSet<&str>> = ids
+            .iter()
+            .map(|id| conversations.get(id)?.key.as_deref())
+            .collect();
+        if let Some(keys) = keys.filter(|keys| keys.len() == 1) {
+            aliases
+                .entry((*keys.first().unwrap()).to_string())
+                .or_default()
+                .push(alias.clone());
+        }
+    }
     let mut workstreams = BTreeMap::new();
     for (key, group) in &members {
         let mut named: Vec<(i64, String)> = cwds
@@ -381,6 +435,14 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
         // because the facts file may have been edited since.
         let (title, title_source) = user
             .get(*key)
+            .or_else(|| {
+                let names: BTreeSet<_> = aliases
+                    .get(*key)?
+                    .iter()
+                    .filter_map(|alias| user.get(alias))
+                    .collect();
+                (names.len() == 1).then(|| *names.first().unwrap())
+            })
             .map(|name| (name.clone(), TitleSource::User))
             .or_else(|| {
                 found
@@ -397,7 +459,19 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
                 Some((clean_title(&known.title)?, known.title_source))
             })
             .or_else(|| Some((distinctive.get(*key)?.clone(), TitleSource::Derived)))
-            .unwrap_or_else(|| (key.to_string(), TitleSource::Key));
+            .or_else(|| {
+                named
+                    .iter()
+                    .find_map(|(_, cwd)| identity::folder_title(cwd))
+                    .map(|title| (title, TitleSource::Folder))
+            })
+            .or_else(|| {
+                known
+                    .filter(|known| matches!(known.title_source, TitleSource::Folder))
+                    .and_then(|known| clean_title(&known.title))
+                    .map(|title| (title, TitleSource::Folder))
+            })
+            .unwrap_or_else(|| ("Project".into(), TitleSource::Folder));
         // So does a summary, as the name does.
         let summary = match found {
             Some((.., summary)) => summary,
@@ -418,6 +492,7 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
                 last_epoch: timed.iter().map(|c| c.last_epoch).max().unwrap_or(0),
                 open_items: open_items(&sessions(key, &conversations)),
                 page: format!("{PAGE_DIR}{}.md", page_name(key)),
+                page_refresh_pending: false,
                 roots: person
                     .iter()
                     .map(|c| c.root.as_str())
@@ -432,12 +507,26 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
     let person = || conversations.values().filter(|c| !c.automated);
     plan.facts = Facts {
         last_record_epoch: person().map(|c| c.last_epoch).max().unwrap_or(0),
+        legacy_members,
         unassigned: person().filter(|c| c.key.is_none()).count(),
         version: VERSION,
         workstreams,
         conversations,
     };
 
+    // Public markers and editable prior facts are not private ownership proof.
+    // Create missing v5 pages only; retain every existing differing byte.
+    for (key, workstream) in &mut plan.facts.workstreams {
+        let page = render_page(key, workstream, &plan.facts.conversations);
+        match read_existing(&root.join(&workstream.page)) {
+            Ok(None) => plan.pages.push((workstream.page.clone(), page, None)),
+            Ok(Some(existing)) if existing == page => {}
+            _ => {
+                workstream.page_refresh_pending = true;
+                plan.pages_pending += 1;
+            }
+        }
+    }
     // ponytail: one JSON file for the whole vault. Ask reads it through
     // vault::read_file, which refuses files over 16 MB (roughly 10k-30k
     // conversations); split it per workstream before a vault nears that.
@@ -449,20 +538,6 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
             .as_deref()
             .map(crate::importers::wikify::source_revision);
         plan.facts_write = Some((text, expected));
-    }
-    for (key, workstream) in &plan.facts.workstreams {
-        let page = render_page(key, workstream, &plan.facts.conversations);
-        // A page whose marker block is gone belongs to a person now.
-        match read_existing(&root.join(&workstream.page)) {
-            Ok(None) => plan.pages.push((workstream.page.clone(), page, None)),
-            Ok(Some(existing)) if existing == page => {}
-            Ok(Some(existing)) if is_owned(&existing) => {
-                let expected = crate::importers::wikify::source_revision(&existing);
-                plan.pages
-                    .push((workstream.page.clone(), page, Some(expected)));
-            }
-            _ => {}
-        }
     }
     Ok(plan)
 }
@@ -579,8 +654,8 @@ fn epoch(seconds: i64) -> Option<i64> {
     (0..=MAX_EPOCH).contains(&seconds).then_some(seconds)
 }
 
-/// The project key of a working folder; the "(...)" buckets name none.
-fn project_key(cwd: &str) -> Option<String> {
+/// Legacy display-name alias only; never a project identity.
+fn legacy_key(cwd: &str) -> Option<String> {
     thread_key(cwd).filter(|key| !key.starts_with('('))
 }
 
@@ -592,6 +667,7 @@ fn is_fingerprint(fp: &str) -> bool {
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
+#[cfg(test)]
 fn is_owned(page: &str) -> bool {
     page.contains(MARKER_OPEN) && page.contains(MARKER_CLOSE)
 }
@@ -694,8 +770,8 @@ fn patterns() -> &'static Patterns {
     })
 }
 
-/// P0 `thread_key` (p0_measure.py): a pure map from a cwd string to a project
-/// key. Reads no filesystem and expands nothing; a cwd that names no project
+/// P0 `thread_key` (p0_measure.py), retained only for legacy naming aliases.
+/// Reads no filesystem and expands nothing; a cwd that names no project
 /// maps to a "(...)" bucket. Keys are lowercased and NFC because macOS paths
 /// are case- and normalization-insensitive, and Windows paths may use '\'.
 pub(crate) fn thread_key(cwd: &str) -> Option<String> {
@@ -1147,6 +1223,8 @@ fn cut(text: String, max: usize) -> String {
 /// the rules read are decoded; content is decoded once, for the chosen report.
 #[derive(Deserialize)]
 struct Record {
+    #[serde(rename = "type")]
+    kind: Option<String>,
     cwd: Option<String>,
     message: Option<RecordMessage>,
     payload: Option<RecordPayload>,
@@ -1164,6 +1242,7 @@ struct RecordPayload {
     kind: Option<String>,
     role: Option<String>,
     phase: Option<String>,
+    cwd: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -1201,9 +1280,30 @@ struct SidecarScan<'a> {
     votes: BTreeMap<String, usize>,
     latest_cwd: BTreeMap<String, String>,
     saw_cwd: bool,
+    invalid_cwd: bool,
+    legacy_keys: BTreeSet<String>,
     report: Option<&'a str>,
     /// The last final answer copied in from the thread this one forked from.
     copied: Option<&'a str>,
+}
+
+impl SidecarScan<'_> {
+    fn record_cwd(&mut self, cwd: Option<&str>) {
+        self.saw_cwd = true;
+        let Some(cwd) = cwd else {
+            self.invalid_cwd = true;
+            return;
+        };
+        if let Some(alias) = legacy_key(cwd) {
+            self.legacy_keys.insert(alias);
+        }
+        if let Some(key) = project_key(cwd) {
+            *self.votes.entry(key.clone()).or_default() += 1;
+            self.latest_cwd.insert(key, cwd.to_string());
+        } else {
+            self.invalid_cwd = true;
+        }
+    }
 }
 
 fn scan_sidecar(text: &str, codex: bool) -> SidecarScan<'_> {
@@ -1212,12 +1312,15 @@ fn scan_sidecar(text: &str, codex: bool) -> SidecarScan<'_> {
         let Ok(record) = serde_json::from_str::<Record>(line) else {
             continue;
         };
-        if let Some(cwd) = record.cwd.as_deref().filter(|cwd| !cwd.trim().is_empty()) {
-            scan.saw_cwd = true;
-            if let Some(key) = thread_key(cwd) {
-                *scan.votes.entry(key.clone()).or_default() += 1;
-                scan.latest_cwd.insert(key, cwd.to_string());
-            }
+        let cwd = if codex {
+            (record.kind.as_deref() == Some("session_meta"))
+                .then(|| record.payload.as_ref()?.cwd.as_deref())
+                .flatten()
+        } else {
+            record.cwd.as_deref()
+        };
+        if let Some(cwd) = cwd {
+            scan.record_cwd(Some(cwd));
         }
         if is_report(&record, codex) {
             scan.report = Some(line);
@@ -1462,7 +1565,16 @@ fn session_report<'a>(
         .iter()
         .flat_map(|&(id, c)| {
             let own = (if c.subagent { 0 } else { 2 }, c.report.as_ref());
-            [own, (1, c.parent_report.as_ref())]
+            // Lineage alone does not prove the copied report's project. Keep
+            // the source facts, but require the imported root in this group.
+            let copied = group
+                .iter()
+                .any(|(parent_id, parent)| {
+                    *parent_id == c.root && c.key.is_some() && c.key == parent.key
+                })
+                .then_some(c.parent_report.as_ref())
+                .flatten();
+            [own, (1, copied)]
                 .into_iter()
                 .filter_map(move |(tier, report)| Some((tier, report?.epoch, id, c, report?)))
         })
@@ -1501,6 +1613,7 @@ struct Transcript {
     last_activity: Option<i64>,
     parent: Option<String>,
     user_turns: Vec<String>,
+    cwds: Vec<serde_json::Value>,
 }
 
 fn parse_transcript(text: &str) -> Transcript {
@@ -1510,6 +1623,7 @@ fn parse_transcript(text: &str) -> Transcript {
         last_activity: None,
         parent: None,
         user_turns: Vec::new(),
+        cwds: Vec::new(),
     };
     let mut body = 0;
     if lines.first() == Some(&"---") {
@@ -1524,7 +1638,15 @@ fn parse_transcript(text: &str) -> Transcript {
                     transcript.last_activity = value.trim().parse().ok()
                 }
                 Some(("turn_metadata", value)) => {
-                    transcript.parent = first_turn(value).and_then(|turn| parent_in(&turn))
+                    if let Some(turn) = first_turn(value) {
+                        transcript.parent = parent_in(&turn);
+                        transcript.cwds = turn["session_provenance"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|record| record.get("cwd").cloned())
+                            .collect();
+                    }
                 }
                 _ => {}
             }
@@ -1637,6 +1759,7 @@ fn first_line(path: &Path) -> Option<Vec<u8>> {
 struct Read {
     parent: Option<String>,
     cwd: Option<String>,
+    legacy_keys: BTreeSet<String>,
 }
 
 /// Facts for one ledger revision from its raw transcript and sidecar. Codex
@@ -1654,7 +1777,12 @@ fn read_conversation(root: &Path, key: &str, fp: &str) -> Option<(ConversationFa
     let (first_epoch, last_epoch) = (start.min(end), start.max(end));
     let codex = vendor == "codex";
     let sidecar = std::fs::read_to_string(root.join(format!("{stem}.jsonl"))).unwrap_or_default();
-    let scan = scan_sidecar(&sidecar, codex);
+    let mut scan = scan_sidecar(&sidecar, codex);
+    if codex {
+        for cwd in &transcript.cwds {
+            scan.record_cwd(cwd.as_str());
+        }
+    }
     let parent = if codex {
         transcript.parent.as_ref().map(|id| format!("codex:{id}"))
     } else {
@@ -1669,11 +1797,14 @@ fn read_conversation(root: &Path, key: &str, fp: &str) -> Option<(ConversationFa
     let mut read = Read {
         parent: parent.clone(),
         cwd: None,
+        legacy_keys: scan.legacy_keys.clone(),
     };
-    let (own_key, cwd_source) = if codex {
-        (None, CwdSource::Missing)
-    } else {
-        let own_key = majority(&scan.votes);
+    let (own_key, cwd_source) = {
+        // A conversation containing different recorded roots cannot be
+        // assigned wholesale to whichever root happened to appear most.
+        let own_key = (scan.votes.len() == 1 && !scan.invalid_cwd)
+            .then(|| majority(&scan.votes))
+            .flatten();
         read.cwd = own_key
             .as_ref()
             .and_then(|key| scan.latest_cwd.get(key))
@@ -2285,7 +2416,8 @@ fn plain(text: &str) -> String {
     out
 }
 
-/// The whole page, rewritten whole while its marker block stays. No clock is
+/// A page proposed for create-only publication. Public markers never authorize
+/// replacement of existing content. No clock is
 /// read, so the same facts render the same bytes. It holds only dates, the
 /// conversations' own words and links: the app's UI language is not known
 /// here, and Ask states the counts in that language from the facts.
@@ -2717,8 +2849,15 @@ mod tests {
             conversation(members[2].0)["root"],
             "claude-code:session-99999999"
         );
-        assert_eq!(facts["workstreams"]["alpha"]["roots"], 2);
-        let page = std::fs::read_to_string(root.join("wiki/workstreams/alpha.md")).unwrap();
+        assert_eq!(
+            facts["workstreams"][project_key("/Users/synthetic/projects/alpha").unwrap()]["roots"],
+            2
+        );
+        let page = std::fs::read_to_string(root.join(format!(
+            "wiki/workstreams/{}.md",
+            project_key("/Users/synthetic/projects/alpha").unwrap()
+        )))
+        .unwrap();
         assert!(
             page.contains(" · Plan the alpha release → Release planned [[raw/conversations/claude-code/claude-code-0a1b2c3d-"),
             "{page}"
@@ -2891,7 +3030,11 @@ mod tests {
             report_from(scan.report.unwrap(), false, 0).unwrap().text,
             "All green"
         );
-        assert_eq!(scan.votes.get("alpha"), Some(&2));
+        assert_eq!(
+            scan.votes
+                .get(&project_key("/Users/a/projects/alpha").unwrap()),
+            Some(&2)
+        );
         assert_eq!(report_from("{\"payload\":{}}", true, 0), None);
         // A timestamp before 1970 falls back to the conversation's own time.
         let early = serde_json::json!({"timestamp":"1969-12-31T23:00:00Z",
@@ -3255,6 +3398,7 @@ mod tests {
             ),
         ]);
         let workstream = WorkstreamFacts {
+            page_refresh_pending: false,
             conversations: 3,
             first_epoch: 1_780_000_000,
             last_epoch: 1_790_100_060,
@@ -3433,7 +3577,7 @@ mod tests {
 
     // ---- tempdir vaults, imported through the native admission path ----
 
-    fn import(vault: &Path, file: &Path) {
+    pub(super) fn import(vault: &Path, file: &Path) {
         let outcome = crate::commands::run_import_admitted(
             vault,
             &[file.to_path_buf()],
@@ -3500,7 +3644,8 @@ mod tests {
         let child = vault.path().join("child.jsonl");
         std::fs::write(
             &child,
-            codex_rollout(CODEX_B, "/x", Some(CODEX_A), "Check beta", "Beta checked"),
+            codex_rollout(CODEX_B, "", Some(CODEX_A), "Check beta", "Beta checked")
+                .replace("\"cwd\":\"\",", ""),
         )
         .unwrap();
         import(vault.path(), &child);
@@ -3512,31 +3657,47 @@ mod tests {
         let (vault, _home) = vault_with_sessions();
         let root = vault.path().canonicalize().unwrap();
         let facts = facts(&root);
-        assert_eq!(facts["version"], 4);
+        assert_eq!(facts["version"], 5);
         assert_eq!(facts["unassigned"], 0);
         let claude = &facts["conversations"]["claude-code:cc-1"];
-        assert_eq!(claude["key"], "alpha");
+        assert_eq!(
+            claude["key"],
+            project_key("/Users/synthetic/projects/alpha").unwrap()
+        );
         assert_eq!(claude["cwd_source"], "sidecar");
         assert_eq!(claude["request"], "Build the alpha reader");
         assert_eq!(claude["report"]["text"], "Alpha reader built");
         let parent = &facts["conversations"][format!("codex:{CODEX_A}")];
-        assert_eq!(parent["cwd_source"], "rollout");
+        assert_eq!(parent["cwd_source"], "sidecar");
         assert_eq!(parent["subagent"], false);
         let child = &facts["conversations"][format!("codex:{CODEX_B}")];
-        assert_eq!(child["key"], "beta");
+        assert_eq!(
+            child["key"],
+            project_key("/Users/synthetic/projects/beta").unwrap()
+        );
         assert_eq!(child["cwd_source"], "inherited");
         assert_eq!(child["subagent"], true);
         assert_eq!(child["root"], format!("codex:{CODEX_A}"));
-        let beta = &facts["workstreams"]["beta"];
+        let beta = &facts["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()];
         assert_eq!(
             (beta["conversations"].as_u64(), beta["roots"].as_u64()),
             (Some(2), Some(1))
         );
-        assert_eq!(beta["title_source"], "key");
-        assert_eq!(beta["page"], "wiki/workstreams/beta.md");
+        assert_eq!(beta["title_source"], "folder");
+        assert_eq!(
+            beta["page"],
+            format!(
+                "wiki/workstreams/{}.md",
+                project_key("/Users/synthetic/projects/beta").unwrap()
+            )
+        );
         let text = std::fs::read_to_string(facts_path(&root)).unwrap();
         assert!(!text.contains("/Users/"), "no cwd string reaches the facts");
-        let page = std::fs::read_to_string(root.join("wiki/workstreams/beta.md")).unwrap();
+        let page = std::fs::read_to_string(root.join(format!(
+            "wiki/workstreams/{}.md",
+            project_key("/Users/synthetic/projects/beta").unwrap()
+        )))
+        .unwrap();
         // The root thread's own report, not its sub-thread's later one.
         assert!(
             page.contains(&format!(
@@ -3574,10 +3735,13 @@ mod tests {
         );
         import(&root, &write_rollout(home.path(), next, &rollout));
         let facts = facts(&root);
-        assert_eq!(facts["conversations"]["claude-code:cc-1"]["key"], "alpha");
+        assert_eq!(
+            facts["conversations"]["claude-code:cc-1"]["key"],
+            project_key("/Users/synthetic/projects/alpha").unwrap()
+        );
         assert_eq!(
             facts["conversations"][format!("codex:{next}")]["key"],
-            "gamma"
+            project_key("/Users/synthetic/projects/gamma").unwrap()
         );
         assert!(facts["conversations"].get("claude-code:no-raw").is_none());
         let plan = plan(&root, &default_codex_homes()).unwrap();
@@ -3598,7 +3762,11 @@ mod tests {
         );
         // Imported from a copy no Codex home holds yet.
         let copy = root.join("late.jsonl");
-        std::fs::write(&copy, &rollout).unwrap();
+        std::fs::write(
+            &copy,
+            rollout.replace("\"cwd\":\"/Users/synthetic/projects/delta\",", ""),
+        )
+        .unwrap();
         import(&root, &copy);
         let key = format!("codex:{late}");
         assert_eq!(facts(&root)["conversations"][&key]["cwd_source"], "none");
@@ -3606,9 +3774,17 @@ mod tests {
         write_rollout(home.path(), late, &rollout);
         assert!(reconcile(&root) > 0);
         let facts = facts(&root);
-        assert_eq!(facts["conversations"][&key]["key"], "delta");
+        assert_eq!(
+            facts["conversations"][&key]["key"],
+            project_key("/Users/synthetic/projects/delta").unwrap()
+        );
         assert_eq!(facts["conversations"][&key]["cwd_source"], "rollout");
-        assert!(root.join("wiki/workstreams/delta.md").is_file());
+        assert!(root
+            .join(format!(
+                "wiki/workstreams/{}.md",
+                project_key("/Users/synthetic/projects/delta").unwrap()
+            ))
+            .is_file());
     }
 
     #[test]
@@ -3646,7 +3822,7 @@ mod tests {
     }
 
     /// Writes one raw revision and its sidecar the way the importer names them.
-    fn seed(
+    pub(super) fn seed(
         root: &Path,
         key: &str,
         fp: &str,
@@ -3850,7 +4026,7 @@ mod tests {
                 id,
                 &codex_rollout(
                     id,
-                    "/Users/synthetic/orca/workspaces/fixture-lab/side",
+                    "/Users/synthetic/orca/workspaces/fixture-lab/main",
                     Some(unseen),
                     "x",
                     "y",
@@ -3874,7 +4050,8 @@ mod tests {
             "src/lib/workstreamFacts.fixture.json is out of date; the writer now produces:\n{text}"
         );
         let facts = facts(&root);
-        let lab_facts = &facts["workstreams"]["fixture-lab"];
+        let lab_facts = &facts["workstreams"]
+            [project_key("/Users/synthetic/orca/workspaces/fixture-lab/main").unwrap()];
         assert_eq!(
             (
                 lab_facts["title"].as_str(),
@@ -3889,14 +4066,24 @@ mod tests {
             ),
             (Some(4), Some(2))
         );
-        assert_eq!(facts["workstreams"]["c#"]["title_source"], "user");
+        assert_eq!(
+            facts["workstreams"][project_key("/Users/synthetic/projects/c#").unwrap()]
+                ["title_source"],
+            "user"
+        );
         let helper = &facts["conversations"]["claude-code:fx-helper"];
         assert_eq!(
             (helper["automated"].as_bool(), helper["key"].as_str()),
-            (Some(true), Some("fixture-lab"))
+            (
+                Some(true),
+                project_key("/Users/synthetic/orca/workspaces/fixture-lab/main").as_deref()
+            )
         );
-        let lab_page =
-            std::fs::read_to_string(root.join("wiki/workstreams/fixture-lab.md")).unwrap();
+        let lab_page = std::fs::read_to_string(root.join(format!(
+            "wiki/workstreams/{}.md",
+            project_key("/Users/synthetic/orca/workspaces/fixture-lab/main").unwrap()
+        )))
+        .unwrap();
         assert!(
             lab_page.contains(&format!("\n{AUTOMATED_LABEL}: 1\n")) && !lab_page.contains("도우미"),
             "{lab_page}"
@@ -3921,7 +4108,11 @@ mod tests {
             (teammate["subagent"].as_bool(), teammate["root"].as_str()),
             (Some(true), Some("claude-code:fx-bracket"))
         );
-        assert_eq!(facts["workstreams"]["foo [old]"]["roots"], 1);
+        assert_eq!(
+            facts["workstreams"][project_key("/Users/synthetic/projects/foo [old]").unwrap()]
+                ["roots"],
+            1
+        );
         // What the sessions' reports leave open, newest first: the copied
         // answer a sub-agent carries, then the lab thread's own report.
         let open: Vec<(&str, &str)> = lab_facts["open_items"]
@@ -3935,16 +4126,14 @@ mod tests {
                 )
             })
             .collect();
-        let (f3, lab_key) = (format!("codex:{}", siblings[0].0), format!("codex:{lab}"));
+        let lab_key = format!("codex:{lab}");
         assert_eq!(
             open,
-            [
-                ("궤도 시뮬레이션 실행", f3.as_str()),
-                ("Pending: the review of the sensors.", lab_key.as_str())
-            ]
+            [("Pending: the review of the sensors.", lab_key.as_str())]
         );
         assert_eq!(
-            facts["workstreams"]["foo [old]"]["open_items"],
+            facts["workstreams"][project_key("/Users/synthetic/projects/foo [old]").unwrap()]
+                ["open_items"],
             serde_json::json!([{"conversation": "claude-code:fx-bracket", "epoch": 1793070000,
                 "text": "Update the [old] links in the docs"}])
         );
@@ -3987,10 +4176,13 @@ mod tests {
         let (vault, home) = vault_with_sessions();
         let root = vault.path().canonicalize().unwrap();
         let mut known = facts(&root);
-        known["workstreams"]["beta"]["title"] = "Beta Planner".into();
-        known["workstreams"]["beta"]["title_source"] = "readme".into();
+        known["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]["title"] =
+            "Beta Planner".into();
+        known["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+            ["title_source"] = "readme".into();
         // Edited since: the summary is cleaned again, as the title is.
-        known["workstreams"]["beta"]["summary"] = "Plans   synthetic trips.".into();
+        known["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]["summary"] =
+            "Plans   synthetic trips.".into();
         std::fs::write(
             facts_path(&root),
             serde_json::to_string_pretty(&known).unwrap(),
@@ -4016,12 +4208,22 @@ mod tests {
             parent["report"]["text"], "Beta shipped",
             "the new revision was read"
         );
-        assert_eq!(parent["key"], "beta");
-        assert_eq!(parent["cwd_source"], "rollout");
-        assert_eq!(facts["workstreams"]["beta"]["title"], "Beta Planner");
-        assert_eq!(facts["workstreams"]["beta"]["title_source"], "readme");
         assert_eq!(
-            facts["workstreams"]["beta"]["summary"],
+            parent["key"],
+            project_key("/Users/synthetic/projects/beta").unwrap()
+        );
+        assert_eq!(parent["cwd_source"], "sidecar");
+        assert_eq!(
+            facts["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]["title"],
+            "Beta Planner"
+        );
+        assert_eq!(
+            facts["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+                ["title_source"],
+            "readme"
+        );
+        assert_eq!(
+            facts["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]["summary"],
             "Plans synthetic trips."
         );
     }
@@ -4030,7 +4232,10 @@ mod tests {
     fn a_page_without_its_marker_belongs_to_a_person() {
         let (vault, home) = vault_with_sessions();
         let root = vault.path().canonicalize().unwrap();
-        let page = root.join("wiki/workstreams/beta.md");
+        let page = root.join(format!(
+            "wiki/workstreams/{}.md",
+            project_key("/Users/synthetic/projects/beta").unwrap()
+        ));
         std::fs::write(&page, "# Beta\n\nMy own notes.\n").unwrap();
         let next = "00000000-0000-4000-8000-00000000000c";
         let rollout = codex_rollout(
@@ -4045,7 +4250,11 @@ mod tests {
             std::fs::read_to_string(&page).unwrap(),
             "# Beta\n\nMy own notes.\n"
         );
-        assert_eq!(facts(&root)["workstreams"]["beta"]["conversations"], 3);
+        assert_eq!(
+            facts(&root)["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+                ["conversations"],
+            3
+        );
     }
 
     /// A conversation fact for the pure rules; synthetic words only.
@@ -4276,11 +4485,31 @@ mod tests {
         std::fs::write(&names, &body).unwrap();
         assert!(reconcile(&root) > 0);
         let known = facts(&root);
-        assert_eq!(known["workstreams"]["beta"]["title"], "Beta Planner");
-        assert_eq!(known["workstreams"]["beta"]["title_source"], "user");
-        assert_eq!(known["workstreams"]["alpha"]["title_source"], "key");
-        let page = std::fs::read_to_string(root.join("wiki/workstreams/beta.md")).unwrap();
-        assert!(page.starts_with("---\ntitle: \"Beta Planner\"\n"), "{page}");
+        assert_eq!(
+            known["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]["title"],
+            "Beta Planner"
+        );
+        assert_eq!(
+            known["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+                ["title_source"],
+            "user"
+        );
+        assert_eq!(
+            known["workstreams"][project_key("/Users/synthetic/projects/alpha").unwrap()]
+                ["title_source"],
+            "folder"
+        );
+        let page = std::fs::read_to_string(root.join(format!(
+            "wiki/workstreams/{}.md",
+            project_key("/Users/synthetic/projects/beta").unwrap()
+        )))
+        .unwrap();
+        assert!(page.starts_with("---\ntitle: \"beta\"\n"), "{page}");
+        assert_eq!(
+            known["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+                ["page_refresh_pending"],
+            true
+        );
         assert_eq!(
             plan(&root, &default_codex_homes()).unwrap().names_ignored,
             3
@@ -4289,7 +4518,11 @@ mod tests {
         // A file that is not a JSON object is counted once; the key returns.
         std::fs::write(&names, "[\"Beta\"]").unwrap();
         assert!(reconcile(&root) > 0);
-        assert_eq!(facts(&root)["workstreams"]["beta"]["title_source"], "key");
+        assert_eq!(
+            facts(&root)["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+                ["title_source"],
+            "folder"
+        );
         assert_eq!(
             plan(&root, &default_codex_homes()).unwrap().names_ignored,
             1
@@ -4297,7 +4530,11 @@ mod tests {
         // Saved with a byte order mark, as Windows editors may.
         std::fs::write(&names, format!("\u{feff}{body}")).unwrap();
         assert!(reconcile(&root) > 0);
-        assert_eq!(facts(&root)["workstreams"]["beta"]["title_source"], "user");
+        assert_eq!(
+            facts(&root)["workstreams"][project_key("/Users/synthetic/projects/beta").unwrap()]
+                ["title_source"],
+            "user"
+        );
         assert_eq!(
             plan(&root, &default_codex_homes()).unwrap().names_ignored,
             3
@@ -4354,6 +4591,7 @@ mod tests {
             helper_sub,
         ]);
         let workstream = WorkstreamFacts {
+            page_refresh_pending: false,
             conversations: all.len(),
             first_epoch: 1_760_000_000,
             last_epoch: 1_790_100_060,
@@ -4369,9 +4607,17 @@ mod tests {
         let raw = |id: &str| format!("[[raw/conversations/codex/codex-{id}-0123456789abcdef]]");
         assert_eq!(rows.len(), 4, "{page}");
         assert!(
-            rows[3].ends_with(&format!(" · Ask w1 → What came back before {}", raw("w2"))),
+            rows[3].ends_with(&format!(" · Ask w1 → Inner detail {}", raw("w1"))),
             "{}",
             rows[3]
+        );
+        assert_eq!(
+            all["codex:w2"].parent_report.as_ref().unwrap().text,
+            "What came back before"
+        );
+        assert!(
+            !page.contains("What came back before"),
+            "an unimported parent's copy is not project evidence"
         );
         assert!(
             rows[0].ends_with(&format!(" · Ask p1 → What came back {}", raw("p1"))),
@@ -4462,3 +4708,7 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "workstreams/identity_tests.rs"]
+mod identity_tests;

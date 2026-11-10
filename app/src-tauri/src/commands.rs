@@ -644,11 +644,16 @@ fn spawn_workstreams_backfill(app: tauri::AppHandle, origin: AgentVaultSession) 
         match import_admission::backfill_workstreams(&app.state::<VaultRoot>(), &origin) {
             Err(error) => eprintln!("workstreams backfill skipped: {error}"),
             Ok((written, plan))
-                if written + plan.unread + plan.store_failures + plan.names_ignored > 0 =>
+                if written
+                    + plan.unread
+                    + plan.store_failures
+                    + plan.names_ignored
+                    + plan.pages_pending
+                    > 0 =>
             {
                 eprintln!(
-                    "workstreams backfill: {} conversations read, {} without a raw transcript, {written} files written, {} Codex store failures, {} workstream names ignored",
-                    plan.recomputed, plan.unread, plan.store_failures, plan.names_ignored
+                    "workstreams backfill: {} conversations read, {} without a raw transcript, {written} files written, {} Codex store failures, {} workstream names ignored, {} project pages awaiting refresh",
+                    plan.recomputed, plan.unread, plan.store_failures, plan.names_ignored, plan.pages_pending
                 )
             }
             Ok(_) => {}

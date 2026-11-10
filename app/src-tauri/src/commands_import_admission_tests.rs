@@ -24,6 +24,9 @@ fn source(root: &Path, id: &str) -> PathBuf {
 #[test]
 fn native_and_mcp_imports_publish_workstream_facts_and_pages() {
     use crate::workstreams::fixtures::{claude_session, codex_rollout, write_rollout};
+    // Fixed v5 identities for the exact synthetic recorded cwd values below.
+    let alpha = "p5-20c92dae5359d8f20be4ace745aa296e1c525c1b278e0af0be303683977a45eb";
+    let beta = "p5-9f3874f203d435e2ff5b158509d6fd95e51ab9e3d266a70f1de1b7f920b2896f";
     let codex_id = "00000000-0000-4000-8000-0000000000c1";
     for explicit in [false, true] {
         let vault = tempfile::tempdir().unwrap();
@@ -69,15 +72,18 @@ fn native_and_mcp_imports_publish_workstream_facts_and_pages() {
             &std::fs::read_to_string(vault.path().join(".myco/workstreams.json")).unwrap(),
         )
         .unwrap();
+        assert_eq!(facts["version"], 5);
         let conversations = &facts["conversations"];
-        assert_eq!(conversations["claude-code:ws-claude"]["key"], "alpha");
-        assert_eq!(conversations[format!("codex:{codex_id}")]["key"], "beta");
+        assert_eq!(conversations["claude-code:ws-claude"]["key"], alpha);
+        assert_eq!(conversations[format!("codex:{codex_id}")]["key"], beta);
         assert_eq!(
             conversations[format!("codex:{codex_id}")]["cwd_source"],
-            "rollout"
+            "sidecar"
         );
-        for key in ["alpha", "beta"] {
-            let page = vault.path().join(format!("wiki/workstreams/{key}.md"));
+        for key in [alpha, beta] {
+            let relative = format!("wiki/workstreams/{key}.md");
+            assert_eq!(facts["workstreams"][key]["page"], relative);
+            let page = vault.path().join(relative);
             let page = std::fs::read_to_string(page).unwrap();
             assert!(
                 page.contains("<!-- myco:workstream:v1 "),

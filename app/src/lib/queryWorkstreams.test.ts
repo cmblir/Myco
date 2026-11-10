@@ -61,7 +61,7 @@ function facts(): WorkstreamFacts {
     request: `Older synthetic step ${i}`, report: { epoch: at(`2026-10-0${i + 1}T10:00:00Z`), text: `Finished older step ${i}.` },
   }));
   return {
-    version: 4,
+    version: 5,
     last_record_epoch: at("2026-11-07T12:30:00Z"),
     unassigned: 3,
     workstreams: {
@@ -210,7 +210,7 @@ describe("parseWorkstreamFacts", () => {
   };
   type Loose = Record<string, unknown>;
 
-  it("accepts the version 4 contract, user and derived titles, a copied report and a program's session included", () => {
+  it("accepts the version 5 contract, user and derived titles, a copied report and a program's session included", () => {
     expect(parseWorkstreamFacts(JSON.stringify(facts()))).toEqual(facts());
     const titled = facts();
     titled.workstreams.prj_lumen.title_source = "user";
@@ -229,7 +229,8 @@ describe("parseWorkstreamFacts", () => {
     ["version 2 facts", broken((value) => { (value as unknown as Loose).version = 2; })],
     // Version 3 facts had no README summary or open items; they are not read.
     ["version 3 facts", broken((value) => { (value as unknown as Loose).version = 3; })],
-    ["a later version", broken((value) => { (value as unknown as Loose).version = 5; })],
+    ["version 4 basename identities", broken((value) => { (value as unknown as Loose).version = 4; })],
+    ["a later version", broken((value) => { (value as unknown as Loose).version = 6; })],
     ["no summary field", broken((value) => { delete (value.workstreams.chart as unknown as Loose).summary; })],
     ["a non-text summary", broken((value) => { (value.workstreams.chart as unknown as Loose).summary = 7; })],
     ["a summary past 1024 characters", broken((value) => { value.workstreams.chart.summary = "x".repeat(1025); })],
@@ -262,6 +263,32 @@ describe("parseWorkstreamFacts", () => {
 });
 
 describe("resolveWorkstream", () => {
+  it("keeps equal display names ambiguous across distinct opaque project identities", () => {
+    const value = facts();
+    const first = `p5-${"a".repeat(64)}`;
+    const second = `p5-${"b".repeat(64)}`;
+    value.workstreams = {
+      [first]: { ...value.workstreams.prj_lumen, title: "Atlas" },
+      [second]: { ...value.workstreams["chart-lab"], title: "Atlas" },
+    };
+    expect(resolveWorkstream("Atlas", value)).toBeNull();
+    expect(workstreamAnswer({ kind: "progress", name: "Atlas" }, value, "en", NOW)).toBeNull();
+    expect(resolveWorkstream(first, value)).toBe(first);
+    expect(resolveWorkstream(second, value)).toBe(second);
+  });
+
+  it.each(["en", "ko", "ja"] as const)("discloses retained stale project pages in %s answers", (lang) => {
+    const value = facts();
+    value.workstreams.prj_lumen.page_refresh_pending = true;
+    const answer = workstreamAnswer({ kind: "progress", name: "Lumen" }, value, lang, NOW)!;
+    const message = { en: "page refresh pending; existing content was preserved",
+      ko: "페이지 갱신 대기: 기존 내용을 보존했습니다", ja: "ページ更新待ち：既存の内容を保持しました" }[lang];
+    expect(answer).toContain(message);
+    expect(answer).toContain(ROOT_RAW);
+    value.workstreams.prj_lumen.page_refresh_pending = false;
+    expect(workstreamAnswer({ kind: "progress", name: "Lumen" }, value, lang, NOW)).not.toContain(message);
+  });
+
   it.each([
     ["Lumen", "prj_lumen"],
     ["LUMEN 프로젝트", "prj_lumen"],
@@ -417,12 +444,19 @@ describe("workstreamAnswer progress", () => {
     expect(latest("ko")).toBe(`- **${day("2026-11-06T12:00:00Z")}** 차트 축을 고쳤습니다.${BR}요청: Sub-agent step 4 (하위 작업 4개) ${link(1)}`);
     expect(latest("ja")).toContain(`** 軸を直しました。${BR}依頼: Sub-agent step 4 (サブタスク4件) ${link(3, "ja")}`);
     expect(latest("en")).toContain(`** 軸を直しました。${BR}Asked: Sub-agent step 4 (4 sub-tasks) ${link(3, "en")}`);
-    // The missing thread's own answer, copied in by a sub-agent that forked
-    // from it, comes before every sub-agent's report, in any language.
+    // Preserve the copy, but an unseen parent's project is unconfirmed.
     const copier = value.conversations["codex:c0ffee94-0000-7000-8000-000000000094"];
     copier.parent_report = { epoch: at("2026-11-06T08:00:00Z"), text: "Plan approved." };
+    for (const lang of ["ko", "ja", "en"] as const) expect(latest(lang)).not.toContain("Plan approved.");
+    expect(copier.parent_report.text).toBe("Plan approved.");
+    // Positive same-project evidence permits reuse when the imported root
+    // has no report of its own; a different project still cannot contribute.
+    value.conversations[unseen] = conversation(unseen, { key: "chart-lab" })[1];
     for (const lang of ["ko", "ja", "en"] as const) expect(latest(lang)).toContain(`** Plan approved.${BR}`);
     expect(latest("en")).toContain(`** Plan approved.${BR}Asked: Sub-agent step 4 (4 sub-tasks) ${link(4, "en")}`);
+    value.conversations[unseen].key = "prj_lumen";
+    expect(latest("en")).not.toContain("Plan approved.");
+    delete value.conversations[unseen];
     copier.parent_report = null;
     // Without any report, the session's newest conversation is cited.
     for (const n of [1, 2, 3]) value.conversations[`codex:c0ffee9${n}-0000-7000-8000-00000000009${n}`].report = null;
@@ -709,10 +743,15 @@ describe("workstreamChoices", () => {
 
 describe("the native writer's facts (shared fixture)", () => {
   const facts = parseWorkstreamFacts(JSON.stringify(WRITER_FIXTURE));
+  const keyOf = (id: string): string => facts!.conversations[id].key!;
+  const labKey = (): string => keyOf("codex:00000000-0000-4000-8000-0000000000f1");
 
   it("passes the reader's contract as a whole", () => {
     expect(facts).not.toBeNull();
-    expect(Object.keys(facts!.workstreams).sort()).toEqual([".dotfiles", "a|b", "c#", "fixture-lab", "foo [old]", "노트"].sort());
+    expect(Object.keys(facts!.workstreams)).toHaveLength(7);
+    expect(Object.keys(facts!.workstreams).every(key => /^p5-[0-9a-f]{64}$/.test(key))).toBe(true);
+    expect(Object.values(facts!.workstreams).map(project => project.title.normalize("NFC")).sort())
+      .toEqual([".dotfiles", "a|b", "C Sharp Port", "Orbital", "foo [old]", "노트", "scratch"].sort());
   });
 
   it("names every project, and its answer links the page and sources as working links", () => {
@@ -730,26 +769,27 @@ describe("the native writer's facts (shared fixture)", () => {
   });
 
   it("reads the writer's derived and user titles, and one session under a parent never imported", () => {
-    const lab = facts!.workstreams["fixture-lab"];
+    const lab = facts!.workstreams[labKey()];
     expect([lab.title, lab.title_source, lab.conversations, lab.roots]).toEqual(["Orbital", "derived", 4, 2]);
-    expect([facts!.workstreams["c#"].title, facts!.workstreams["c#"].title_source]).toEqual(["C Sharp Port", "user"]);
-    expect(resolveWorkstream("Orbital", facts!)).toBe("fixture-lab");
+    expect([facts!.workstreams[keyOf("claude-code:fx-hash")].title, facts!.workstreams[keyOf("claude-code:fx-hash")].title_source]).toEqual(["C Sharp Port", "user"]);
+    expect(resolveWorkstream("Orbital", facts!)).toBe(labKey());
     const sessions = (lang: "en" | "ko") => listItems(workstreamAnswer({ kind: "progress", name: "Orbital" }, facts!, lang, NOW)!
       .split("\n\n")[1]);
     const [en, ko] = [sessions("en"), sessions("ko")];
     expect(en).toHaveLength(2);
-    // The never-imported parent's answer, which one of its sub-agents copied
-    // in, before either sub-agent's own report, in any language.
+    // The never-imported parent's copy remains source data, but its project
+    // is unconfirmed and cannot replace the sub-agents' own reports.
     const copier = "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f3-000000000000000b";
-    expect(en[0]).toContain(`** 궤도 계획을 확정했습니다.${BR}Asked: ORBITAL\\_LAB\\_GOAL.md (2 sub-tasks) ${cite(copier, "en")}`);
-    expect(ko[0]).toContain(`** 궤도 계획을 확정했습니다.${BR}요청: ORBITAL\\_LAB\\_GOAL.md (하위 작업 2개) ${cite(copier)}`);
+    expect(facts!.conversations["codex:00000000-0000-4000-8000-0000000000f3"].parent_report?.text).toBe("궤도 계획을 확정했습니다.");
+    expect(en[0]).toContain(`** Orbital checks pass${BR}Asked: ORBITAL\\_LAB\\_GOAL.md (2 sub-tasks) ${cite(copier, "en")}`);
+    expect(ko[0]).toContain(`** 궤도 점검을 마쳤습니다.${BR}요청: ORBITAL\\_LAB\\_GOAL.md (하위 작업 2개) `);
     // The lab's own thread reported before its sub-agent did.
     expect(en[1]).toContain(`** Lab ready${BR}Asked: Set up the lab from ORBITAL\\_LAB\\_GOAL.md (1 sub-tasks) `);
   });
 
   it("leaves the writer's automated helper session out of the lab's counts and rows", () => {
     const helper = facts!.conversations["claude-code:fx-helper"];
-    expect([helper.automated, helper.key, helper.request]).toEqual([true, "fixture-lab",
+    expect([helper.automated, helper.key, helper.request]).toEqual([true, labKey(),
       "당신은 Orbital 대시보드의 안내 도우미입니다. 사용자의 질문에 답하세요."]);
     const answer = workstreamAnswer({ kind: "progress", name: "Orbital" }, facts!, "ko", NOW)!;
     expect(answer).toContain("세션 2개, 대화 4건");
@@ -762,7 +802,6 @@ describe("the native writer's facts (shared fixture)", () => {
     const lab = cite("raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f1-0000000000000007", "en");
     const [, items] = workstreamAnswer({ kind: "remaining", name: "Orbital" }, facts!, "en", NOW)!.split("\n\n");
     expect(items.split("\n")).toEqual([
-      `- **${day("2026-10-27T06:40:00Z", "en")}** 궤도 시뮬레이션 실행 ${sub}`,
       `- **${day("2026-10-27T05:00:00Z", "en")}** Pending: the review of the sensors. ${lab}`,
     ]);
     expect(workstreamAnswer({ kind: "remaining", name: ".dotfiles" }, facts!, "en", NOW))
@@ -771,11 +810,11 @@ describe("the native writer's facts (shared fixture)", () => {
     expect(explained).toContain("- **README** no summary found\n");
     expect(explained).toContain("- **First request** ");
     expect(explained).toContain(`, Set up the lab from ORBITAL\\_LAB\\_GOAL.md ${lab}`);
-    expect(explained).toContain(`- **Latest report** ${day("2026-10-27T06:40:00Z", "en")}, 궤도 계획을 확정했습니다. ${sub}`);
+    expect(explained).toContain(`- **Latest report** ${day("2026-10-27T07:30:00Z", "en")}, Orbital checks pass ${sub}`);
   });
 
   it("counts a Claude Code teammate in its lead's session", () => {
-    const foo = facts!.workstreams["foo [old]"];
+    const foo = facts!.workstreams[keyOf("claude-code:fx-bracket")];
     expect([foo.conversations, foo.roots]).toEqual([2, 1]);
     const [, list] = workstreamAnswer({ kind: "progress", name: "foo [old]" }, facts!, "en", NOW)!.split("\n\n");
     expect(listItems(list)).toHaveLength(1);
@@ -793,7 +832,7 @@ describe("workstreamAnswer layout details", () => {
     const long = conversation("codex:c0ffee52-0000-7000-8000-000000000052", { key: "solo",
       first_epoch: at("2026-11-06T09:00:00Z"), last_epoch: at("2026-11-06T10:00:00Z"),
       request: "가".repeat(120), report: { epoch: at("2026-11-06T10:00:00Z"), text: "Done with the long one." } });
-    const data: WorkstreamFacts = { version: 4, last_record_epoch: at("2026-11-06T10:00:00Z"), unassigned: 0,
+    const data: WorkstreamFacts = { version: 5, last_record_epoch: at("2026-11-06T10:00:00Z"), unassigned: 0,
       workstreams: { solo: { title: "Solo", title_source: "readme", page: "wiki/workstreams/solo.md",
         first_epoch: at("2025-12-30T09:00:00Z"), last_epoch: at("2026-11-06T10:00:00Z"), conversations: 2, roots: 2,
         summary: null, open_items: [] } },

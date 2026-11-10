@@ -61,6 +61,7 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
                 "parent_thread_id",
                 "forked_from_id",
                 "thread_source",
+                "cwd",
             ]
             .into_iter()
             .filter_map(|key| payload.get(key).map(|value| (key.into(), value.clone())))
