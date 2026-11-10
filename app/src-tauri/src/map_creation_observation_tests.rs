@@ -225,6 +225,60 @@ fn recovery_catalog_rejects_changes_during_scan_and_stale_openings() {
 }
 
 #[test]
+fn recovery_reads_retained_snapshots_when_map_parent_directories_are_missing() {
+    with_isolated_data("map-recovery-missing-parents", |data| {
+        let (root, directory, _, baseline) = create(data);
+        std::fs::remove_file(root.join(RELATIVE)).unwrap();
+        for relative_parent in ["wiki/maps", "wiki"] {
+            std::fs::remove_dir(root.join(relative_parent)).unwrap();
+            let rows = recovery::inspect(&directory, &root, RELATIVE).unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(
+                rows[0].evidence,
+                crate::map_recovery::Evidence::PublicationUnknown
+            );
+            assert_eq!(rows[0].after.as_deref(), Some(baseline.as_str()));
+            assert!(!root.join(relative_parent).exists());
+            assert_eq!(
+                catalog::discover(&directory, &root).unwrap().keys,
+                vec!["synthetic"]
+            );
+        }
+        let state = crate::vault_session::VaultRoot::default();
+        let generation = state.begin_open().unwrap();
+        state.finish_open(generation, root.clone(), || ()).unwrap();
+        let origin = state.snapshot().unwrap();
+        let rows = crate::map_recovery::inspect(&state, &origin, "synthetic").unwrap();
+        assert_eq!(rows.records[0].after.as_deref(), Some(baseline.as_str()));
+        assert!(!root.join("wiki").exists());
+    });
+}
+
+#[test]
+fn recovery_rejects_missing_parent_reappearance_during_read() {
+    for replacement in ["directory", "symlink"] {
+        with_isolated_data("map-recovery-parent-reappearance", |data| {
+            let (root, directory, _, _) = create(data);
+            std::fs::remove_file(root.join(RELATIVE)).unwrap();
+            std::fs::remove_dir(root.join("wiki/maps")).unwrap();
+            let elsewhere = data.join("synthetic-other");
+            std::fs::create_dir(&elsewhere).unwrap();
+            let error = recovery::inspect_at(&directory, &root, RELATIVE, || {
+                if replacement == "directory" {
+                    std::fs::create_dir(root.join("wiki/maps")).map_err(|e| e.to_string())
+                } else {
+                    std::os::unix::fs::symlink(&elsewhere, root.join("wiki/maps"))
+                        .map_err(|e| e.to_string())
+                }
+            })
+            .unwrap_err();
+            assert!(error.contains("changed during inspection"));
+            assert!(std::fs::symlink_metadata(root.join("wiki/maps")).is_ok());
+        });
+    }
+}
+
+#[test]
 #[ignore = "invoked only by the isolated two-process discovery test"]
 fn synthetic_discovery_child() {
     let data = PathBuf::from(std::env::var_os("MYCO_DATA_DIR").unwrap());

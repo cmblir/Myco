@@ -210,9 +210,11 @@ reading a nonexistent current map. The opening-bound `retained_map_keys` command
 validates vault identity, canonical map names, record hashes and anchors before
 returning names. It scans at most 4,096 entries and 32 MiB of private records and
 returns at most 256 unique names. Unidentifiable records produce an incomplete-list
-warning, never guessed names or text from another vault. Corrupt-record repair,
-restoring deleted maps and inspection after removal of map parent directories
-remain incomplete.
+warning, never guessed names or text from another vault. Saved snapshots remain
+readable when `wiki/maps` or `wiki` has also been removed: inspection follows no
+descendants below the first missing parent and checks that it remains absent.
+It creates no folders or files. Reappearing paths, including symlinks, abort the
+read. Corrupt-record repair and restoring deleted maps remain incomplete.
 Refresh issues no creation/undo receipt. Manual map proposals show the native
 merged diff before applying an existing-map update. Cancelling or switching vaults
 stops the update; sources and the target revision are rechecked after approval.

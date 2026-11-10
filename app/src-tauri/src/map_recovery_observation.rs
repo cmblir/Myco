@@ -51,23 +51,37 @@ pub(super) fn inspect_at(
     directory.verify()?;
     // Reject symlink parents before inspecting the current object's identity.
     let mut parents = Vec::new();
+    let mut missing_parent = None;
     for path in [
         canonical.clone(),
         canonical.join("wiki"),
         canonical.join("wiki/maps"),
     ] {
-        let metadata = std::fs::symlink_metadata(&path).map_err(|error| error.to_string())?;
+        let metadata = match std::fs::symlink_metadata(&path) {
+            Ok(metadata) => metadata,
+            Err(error) if path != canonical && error.kind() == std::io::ErrorKind::NotFound => {
+                // Do not probe descendants through a parent that could appear
+                // after this observation. Retained record text needs no target.
+                missing_parent = Some(path);
+                break;
+            }
+            Err(error) => return Err(error.to_string()),
+        };
         if !metadata.is_dir() {
             return Err("map recovery parent is not a directory".into());
         }
         parents.push((path, metadata));
     }
     let target_path = canonical.join(relative);
-    let target = match std::fs::symlink_metadata(&target_path) {
-        Ok(metadata) if metadata.is_file() => Some(metadata),
-        Ok(_) => return Err("map recovery target is not a regular file".into()),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.to_string()),
+    let target = if missing_parent.is_some() {
+        None
+    } else {
+        match std::fs::symlink_metadata(&target_path) {
+            Ok(metadata) if metadata.is_file() => Some(metadata),
+            Ok(_) => return Err("map recovery target is not a regular file".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string()),
+        }
     };
     let scope = Scope {
         vault: canonical.to_str().ok_or("map vault is not UTF-8")?.into(),
@@ -146,10 +160,21 @@ pub(super) fn inspect_at(
             return Err("map recovery objects changed during inspection".into());
         }
     }
-    let after = match std::fs::symlink_metadata(target_path) {
-        Ok(metadata) => Some(metadata),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(error) => return Err(error.to_string()),
+    if let Some(parent) = &missing_parent {
+        match std::fs::symlink_metadata(parent) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+            Err(error) => return Err(error.to_string()),
+            Ok(_) => return Err("map recovery missing parent changed during inspection".into()),
+        }
+    }
+    let after = if missing_parent.is_some() {
+        None
+    } else {
+        match std::fs::symlink_metadata(target_path) {
+            Ok(metadata) => Some(metadata),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(error) => return Err(error.to_string()),
+        }
     };
     if target.as_ref().map(snapshot) != after.as_ref().map(snapshot)
         || snapshot(&store_before)

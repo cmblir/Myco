@@ -18,6 +18,44 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retained snapshots survive missing map directories
+
+The new regression first failed on unchanged production code with
+`Result::unwrap() on Err: No such file or directory (os error 2)` at
+`map_creation_observation_tests.rs:234` after deleting the synthetic map and its
+empty `wiki/maps` directory. Baseline log:
+`/tmp/myco-map-missing-parent-baseline.log`.
+
+Snapshot inspection now records the first missing non-root parent and does not
+probe descendants beneath it. The vault root must still exist and match its
+native scope; private records and retained anchors keep their existing checks.
+At return, existing parents and records are revalidated and the missing parent
+must still be absent. A directory or symlink appearing during the read rejects
+the result. The operation creates no folders, restores no files and returns
+`publicationUnknown` for the stored snapshots.
+
+Tests remove `wiki/maps`, then `wiki`, confirm that both catalog discovery and
+snapshot reading still work, exercise the opening-bound command, and prove the
+directories remain absent afterward. Race cases inject a new directory or symlink
+and verify rejection without deleting either replacement. Targeted map checks
+passed 88 tests (three child-only ignored); strict all-target Clippy passed.
+The full native suite passed 2,701 library and 28 integration tests, with 42
+ignored tests overall. Formatting and diff whitespace checks passed. Full results
+are recorded in `/tmp/myco-map-missing-parent-full.log`; these checks do not
+establish installed-app, Windows or actual-model acceptance.
+README now documents this read-only recovery behavior. Frontend code did not change.
+
+The next priority returns to the original acceptance matrix's D1/D2 installed
+draft navigation/restart and vault-isolation cases. Preparation inspection found
+that the normal first-run fallback creates a Documents vault, while App's existing
+`?vault=` startup route can select an explicit synthetic directory. A native run
+must therefore use a distinct app/WebView identifier, isolated `MYCO_DATA_DIR`,
+explicit synthetic startup vault, and disabled automatic session import before
+launch. The existing native-index QA configuration has a separate fixture frontend;
+it cannot be represented as installed full-app acceptance. No app was launched
+in this preparation step. A read-only GitHub runners query returned no self-hosted
+runners; that does not establish hosted Windows availability or pass Windows tests.
+
 ## November 11: discover retained maps missing from the file list
 
 The opening-bound `retained_map_keys` command discovers canonical map names from
