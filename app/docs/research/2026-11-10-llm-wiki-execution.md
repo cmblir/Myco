@@ -18,7 +18,7 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
-## November 11: frozen minimal prose-reading diagnostic
+## November 11: actual minimal prose reading still fails action fidelity
 
 The [prose-reading contract](2026-11-11-request-prose-reading.json) keeps all
 seven original strings, speakers and semantic labels. It asks the cached model
@@ -33,6 +33,30 @@ test whether basic interpretation is available in a smaller task. It cannot
 attribute a difference to any one component. Prose carries no native claim
 binding, review approval or publication authority. The whole compiler and all
 original extraction controls remain required even if these judgments succeed.
+
+Runner `42db3c02` completed seven actual offline generations with the pinned
+cached model and isolated synthetic state. All 16 records are retained in the
+receipt. Complete source-based review matched R5/R6/R7 only. R1 correctly named
+a request and unknown performer but changed requesting a report into generating
+one. R2 likewise substituted report generation and did not preserve the explicitly
+named assistant performing the request. R4 recognized future intent but again
+substituted generation and assigned an unknown performer instead of the assistant.
+R3 correctly described the assistant's past request, then asserted without evidence
+that report generation/analysis had not been completed. Partial recognition does
+not compensate for unsupported additional claims.
+
+These errors occur without JSON grammar or a provenance payload in this run, so
+the complex extraction format is not required for action substitution or invented
+noncompletion. This does not establish a single cause, model-wide incapacity or
+repeatability. No prose fallback or prompt was promoted. Further semantic review
+must explicitly preserve the described action and its actor and reject unsupported
+outcome assertions; existing extraction/full-compiler gates remain unchanged.
+
+Validation: ten request QA tests passed (six opt-in tests ignored), five existing
+prose-sampler tests passed, strict feature all-target Clippy and formatting passed.
+Actual generation passed its transport-only assertion in 210.74s, with 213.81s
+wrapper wall time and 3,036,807,168-byte maximum RSS. Every output includes real
+prefill/sampling telemetry. README is unchanged because product behavior is unchanged.
 
 ## November 11: actual vocabulary diagnostic failed meaning gates
 
