@@ -18,6 +18,27 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: stop an in-flight orbit retarget on reduced motion
+
+Inspection at `d93069e8` found that changing the OS reduced-motion preference
+completed `camTween` but left `targetTween` running. The latter eases the orbit
+pivot during multiverse navigation. A regression starts a retarget, advances
+partway, then enables reduced motion: it failed against the unchanged scene
+because the target remained between its endpoints (7 passed, 1 failed).
+
+`applyMotionPreference` now uses the existing reduced-motion retarget behavior
+to finish that movement immediately and clear its tween before finishing any
+camera flight. The regression also advances another frame and checks that no
+retarget movement resumes. No graph layout, inference or native code changed.
+
+Validation: 8 focused motion tests passed; the full frontend suite passed
+6,497 tests in 405 files. ESLint passed with the two existing `notchDriver.ts`
+hook-dependency warnings, and `npm run build` passed TypeScript and Vite.
+Logs: `/tmp/myco-orbit-motion-{baseline,full,lint,build}.log`.
+The app README now mentions active orbit retargets. This is a unit-tested
+runtime preference fix, not a new installed-app/OS accessibility acceptance
+receipt. Native visual, other-theme and wider accessibility gates remain open.
+
 ## November 11: Windows port prerequisites revalidated
 
 Current local tooling still has only the macOS Rust target and no discovered

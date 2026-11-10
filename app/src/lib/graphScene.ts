@@ -1892,6 +1892,10 @@ export class GraphScene {
       this.autoRotateWanted() && !this.interacting && this.rotateResumeTimer == null;
     this.pulse.points.visible =
       this.ambientOn() && !this.perfLod && !this.settings.arrows && !this.interacting;
+    if (reducedMotion && this.targetTween) {
+      this.setOrbitTarget(this.targetTween.to);
+      this.controls.update();
+    }
     if (reducedMotion && this.camTween) {
       const tween = this.camTween;
       this.camTween = null;

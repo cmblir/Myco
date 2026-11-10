@@ -80,6 +80,25 @@ it("finishes an active camera flight exactly once when reduced motion is enabled
   expect(onDone).toHaveBeenCalledTimes(1);
 });
 
+it("finishes an active orbit retarget when reduced motion is enabled", () => {
+  const { scene } = arrowScene(false);
+  const target = new Vector3();
+  const destination = new Vector3(10, 20, 30);
+  Object.assign(scene, {
+    controls: { target, update: vi.fn(), autoRotate: true },
+    pulse: { points: { visible: true } }, rotateResumeTimer: null,
+    camTween: null, targetTween: null,
+  });
+  scene.setOrbitTarget(destination);
+  Reflect.get(scene, "targetTweenTick").call(scene, 0.05);
+  expect(target.equals(destination)).toBe(false);
+  Reflect.get(scene, "applyMotionPreference").call(scene, true);
+  expect(target.toArray()).toEqual(destination.toArray());
+  expect(Reflect.get(scene, "targetTween")).toBeNull();
+  Reflect.get(scene, "targetTweenTick").call(scene, 0.05);
+  expect(target.toArray()).toEqual(destination.toArray());
+});
+
 it.each([
   { ambientMotion: false, interacting: false, atlasMode: false },
   { ambientMotion: true, interacting: true, atlasMode: false },

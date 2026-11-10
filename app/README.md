@@ -254,7 +254,7 @@ so cancellation cannot leave an automatic approval behind. Proposal completion
 uses a revision-checked write. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
-Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight completes at its destination once. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.
+Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight or orbit retarget completes at its destination immediately. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.
 
 ### Writing
 
