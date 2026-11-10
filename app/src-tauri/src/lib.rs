@@ -399,6 +399,7 @@ pub fn run() {
             commands::digestable_session_days,
             commands::publish_distill_note,
             map_refresh::preview_map_refresh,
+            map_refresh::apply_map_refresh,
             commands::capture_map_sources,
             commands::check_map_sources,
             commands::release_map_sources,

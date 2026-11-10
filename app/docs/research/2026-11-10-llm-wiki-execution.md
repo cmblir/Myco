@@ -729,6 +729,38 @@ Logs: `/tmp/myco-map-refresh-preview-tests.log`,
 contract and its missing UI/publication integration. Frontend, actual-model,
 Windows and installed-app checks were not run for this native slice.
 
+The following native slice registers `apply_map_refresh`. It independently checks
+the active vault and organization role, exact native source grant, expected current
+revision, retained record and held target object. It rebuilds the merge, rechecks
+sources, and uses the existing anchored compare-and-swap writer. Changed content
+receives a create-only version-2 `refreshObserved` record whose full baseline
+includes preserved human text. Subsequent discovery validates the version/state
+pair and owned-section format; version-1 creation admission remains strict.
+Identical merged content returns `changed: false` without another anchor/record.
+Successful refresh returns only path/revision/changed, never creation or undo
+authority. Old creation undo cannot remove the replacement. Source/record/output
+failures after persistence report retained output requiring manual recovery.
+
+Native cases cover successive refreshes and preserved human text, stale CAS,
+unchanged-repeat behavior with stable record count, changed source/closed origin,
+an intervening external edit before the held-object check, and source verification
+failure after persistence. The unchanged-content path also rechecks the held
+target after its final source check; a fault test changes human text at that
+checkpoint and verifies rejection without new records. A separate synthetic parent test launches creation,
+first-refresh and second-refresh in three sequential child processes, each fresh
+refresh obtaining a new vault origin, role and source grant. This exercises the
+version-2 baseline without carrying private handles between processes. Installed
+UI, actual-model meaning, Windows, interruption recovery and History/undo remain
+unverified; frontend drafting still refuses existing maps until review/apply and
+outcome tracking are wired. Legacy managed publication still refuses map updates.
+Final validation passed formatting, all-target strict Clippy and the full Rust
+suite: 2,679 library and 28 integration tests, 40 ignored, no failures
+(`/tmp/myco-map-refresh-write-final-clippy.log`,
+`/tmp/myco-map-refresh-write-final-full.log`). The ignored synthetic child helpers
+are invoked explicitly by their parent process tests. README and the goal status
+table reflect native refresh availability and the remaining product integration.
+No frontend, Windows, actual-model or installed-app checks were run in this slice.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

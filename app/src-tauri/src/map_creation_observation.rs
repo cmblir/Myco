@@ -44,6 +44,32 @@ pub(crate) struct CreationContent {
     pub baseline: String,
     pub current: String,
     pub has_owned_content_edits: bool,
+    pin: crate::vault::CompilerPriorFilePin,
+    record: std::fs::File,
+    record_bytes: Vec<u8>,
+    record_leaf: String,
+    directory: CompilerPinDirectory,
+}
+
+impl CreationContent {
+    /// Revalidate the retained record and exact target snapshot before exposing
+    /// the held inode to the separately authorized refresh writer.
+    pub(crate) fn checked_prior(
+        &self,
+        guard: &MutexGuard<'_, ()>,
+    ) -> Result<&crate::vault::CompilerPriorFilePin, String> {
+        crate::map_custody_record::verify_held_record(
+            &self.directory,
+            &self.record_leaf,
+            &self.record,
+            &self.record_bytes,
+        )?;
+        let (current, _) = crate::vault::read_compiler_prior_file_pin_locked(guard, &self.pin)?;
+        if current != self.current || self.has_owned_content_edits {
+            return Err("map changed after refresh preparation; current content preserved".into());
+        }
+        Ok(&self.pin)
+    }
 }
 
 /// Find the current object's retained observation without a process-local key.
@@ -189,8 +215,9 @@ fn read_at(
         leaf.strip_suffix(".json")
             .ok_or("invalid map observation leaf")?
     );
-    if observation.version != 1
-        || observation.state != "creationObserved"
+    let is_creation = observation.version == 1 && observation.state == "creationObserved";
+    let is_refresh = observation.version == 2 && observation.state == "refreshObserved";
+    if (!is_creation && !is_refresh)
         || observation.scope != expected
         || !leaf.starts_with(&format!("{scope_hash}."))
         || observation.anchor != expected_anchor
@@ -198,7 +225,14 @@ fn read_at(
     {
         return Err("map creation observation scope, generation or baseline differs".into());
     }
-    crate::map_content::validate_new_draft(&observation.baseline)?;
+    if is_creation {
+        crate::map_content::validate_new_draft(&observation.baseline)?;
+    } else if !crate::map_content::owned_sections_unchanged(
+        &observation.baseline,
+        &observation.baseline,
+    ) {
+        return Err("map refresh baseline has invalid generated sections".into());
+    }
     let anchor = std::fs::symlink_metadata(directory.path().join(&observation.anchor))
         .map_err(|error| format!("inspect map creation anchor: {error}"))?;
     if !anchor.is_file()
@@ -230,6 +264,11 @@ fn read_at(
         ),
         baseline: observation.baseline,
         current,
+        pin,
+        record: held_record,
+        record_bytes: bytes,
+        record_leaf: leaf.into(),
+        directory: directory.clone(),
     })
 }
 

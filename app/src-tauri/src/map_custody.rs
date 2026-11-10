@@ -1,5 +1,5 @@
-//! Durable observations of native map creation. No restart update or undo grant
-//! is restored here; recovery must separately validate the record and anchor.
+//! Durable native creation/refresh observations. Fresh source authorization and
+//! target checks are required for refresh; no old update/undo grant is restored.
 
 /// Issued only after a checked live creation record; never deserialized from disk.
 #[derive(Clone)]
@@ -113,18 +113,84 @@ mod platform {
             written: &RecordedWriteReceipt,
             content: &str,
         ) -> Result<super::MapCreationUndo, String> {
+            self.record_observation(guard, written, content, true)?;
+            Ok(super::MapCreationUndo {
+                receipt: written.clone(),
+            })
+        }
+
+        /// Refresh only a privately retained, unedited generated section. This
+        /// path never issues a creation or deletion permit.
+        pub(crate) fn refresh(
+            &self,
+            guard: &MutexGuard<'_, ()>,
+            candidate: &str,
+            expected: &str,
+            verify_sources: &dyn Fn() -> Result<(), String>,
+        ) -> Result<Option<RecordedWriteReceipt>, String> {
+            let observation = crate::map_creation_observation::discover_creation(
+                &self.directory,
+                Path::new(&self.scope.vault),
+                &self.scope.path,
+                guard,
+            )?;
+            if expected != format!("{:x}", Sha256::digest(observation.current.as_bytes())) {
+                return Err("map revision changed since preview; current content preserved".into());
+            }
+            let merged = crate::map_content::merge_owned_sections(
+                &observation.baseline,
+                &observation.current,
+                candidate,
+            )?;
+            verify_sources()?;
+            let prior = observation.checked_prior(guard)?;
+            if merged == observation.current {
+                verify_sources()?;
+                observation.checked_prior(guard)?;
+                return Ok(None);
+            }
+            let written = crate::vault::write_compiler_file_anchored_locked(
+                guard,
+                Path::new(&self.scope.vault)
+                    .join(&self.scope.path)
+                    .to_str()
+                    .ok_or("map path is not UTF-8")?,
+                &merged,
+                Some(prior),
+                Some(expected),
+                &self.directory,
+                &format!("{}.anchor", self.key),
+            )?;
+            let retained = |error| {
+                format!("map refresh bytes persisted but verification failed: {error}; output retained for manual recovery")
+            };
+            verify_sources().map_err(retained)?;
+            self.record_observation(guard, &written, &merged, false)
+                .map_err(retained)?;
+            verify_sources().map_err(retained)?;
+            crate::vault::verify_recorded_file_unlocked(&written).map_err(retained)?;
+            Ok(Some(written))
+        }
+
+        fn record_observation(
+            &self,
+            guard: &MutexGuard<'_, ()>,
+            written: &RecordedWriteReceipt,
+            content: &str,
+            is_creation: bool,
+        ) -> Result<(), String> {
             self.directory.verify()?;
             crate::vault::verify_recorded_file_unlocked(written)?;
-            if !written.native_created
+            if written.native_created != is_creation
                 || written.compiler_anchor_leaf() != Some(format!("{}.anchor", self.key).as_str())
                 || written.path != Path::new(&self.scope.vault).join(&self.scope.path)
                 || written.revision != format!("{:x}", Sha256::digest(content.as_bytes()))
             {
                 return Err("map custody record differs from native creation".into());
             }
-            // This is an observation of exact native-created bytes, not a
+            // This is an observation of exact native-written bytes, not a
             // serialized capability, publication completion or source review.
-            let record = serde_json::json!({ "version": 1, "state": "creationObserved",
+            let record = serde_json::json!({ "version": if is_creation { 1 } else { 2 }, "state": if is_creation { "creationObserved" } else { "refreshObserved" },
                 "scope": self.scope, "anchor": format!("{}.anchor", self.key),
                 "revision": written.revision, "fileIdentity": written.file_identity,
                 "baseline": content });
@@ -164,9 +230,7 @@ mod platform {
                 return Err("map creation observation differs from native output".into());
             }
             crate::vault::verify_recorded_file_unlocked(written)?;
-            Ok(super::MapCreationUndo {
-                receipt: written.clone(),
-            })
+            Ok(())
         }
     }
 }

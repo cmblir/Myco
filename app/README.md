@@ -150,8 +150,8 @@ On supported Unix filesystems, new maps also retain their native file object and
 creation baseline under `<app-data>/map-creation-custody`. This requires vault and
 app data to support hard links on the same filesystem. Conflicting or failed
 records preserve output for recovery instead of confirming publication. These
-records are not yet reopened into update authority; automatic refresh and custody
-cleanup remain incomplete.
+records can support a freshly authorized native refresh; frontend automatic
+refresh and custody cleanup remain incomplete.
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.
 Creation observations also validate their schema, vault/target scope, baseline
@@ -165,8 +165,14 @@ The native `preview_map_refresh` command returns merged review text and the curr
 file revision after checking the active vault/organization role, native source
 snapshot and private creation record. It replaces only generated body and
 evidence/descriptor values, preserving titles and outside annotations. It writes
-no map and grants no update or undo permission. The frontend review UI and actual
-refresh publication are not yet connected.
+no map and grants no update or undo permission.
+The native `apply_map_refresh` command independently repeats authorization,
+source checks, private record checks and merge, and requires the preview's current
+revision. It retains a new file anchor and version-2 refresh baseline after a
+successful update. Identical content is a no-op; changed targets are rejected.
+Failures after persistence retain output for manual recovery instead of reporting
+success. Refresh issues no creation/undo receipt. The frontend review/apply flow,
+refresh History/undo integration and interruption recovery are not yet connected.
 Native creation now also discovers its observation by vault/path and current file
 identity, without relying on a remembered generation key. Missing, corrupt or
 ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory
