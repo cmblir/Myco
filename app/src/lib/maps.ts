@@ -15,7 +15,7 @@ import { matchWikilinkAt } from "./wikilinks";
 import { WorkflowOperationError } from "./workflowOutcome";
 import { publicationClaim, publishManagedNote, requireNativeCreation, requirePublicationOrigin } from "./distillPublication";
 import { isMissingFile } from "./sessionEvidence";
-import { mapEvidencePrompt, mapMemberStem, readMapEvidence, recheckMapEvidence } from "./mapEvidence";
+import { mapEvidencePrompt, mapMemberStem, withMapEvidence } from "./mapEvidence";
 
 interface PendingMapPublication { manifestId: string; publication: DistillPublicationReceipt }
 // Session-local recovery only; restart discovery requires the native journal.
@@ -201,56 +201,57 @@ export async function draftMap(
   assertCurrent();
   if (existing) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} has no native creation capability in this opening; manual recovery required`);
 
-  const evidence = await readMapEvidence(vaultPath, members, assertCurrent);
-  assertCurrent();
+  return withMapEvidence(origin, roleSnapshot, members, assertCurrent, async (evidence, snapshotId, recheck) => {
+    assertCurrent();
 
-  const body = await complete({
-    task: "generate", featureRole: "organization", origin, roleSnapshot, usage,
-    sourceContext: "supplied",
-    cwd: vaultPath,
-    messages: [
-      { role: "system", content: mapSystemPrompt() },
-      { role: "user", content: mapEvidencePrompt(evidence, cluster) },
-    ],
+    const body = await complete({
+      task: "generate", featureRole: "organization", origin, roleSnapshot, usage,
+      sourceContext: "supplied",
+      cwd: vaultPath,
+      messages: [
+        { role: "system", content: mapSystemPrompt() },
+        { role: "user", content: mapEvidencePrompt(evidence, cluster) },
+      ],
+    });
+    assertCurrent();
+    // Guard: the system prompt asks for "markdown body only", but a model can
+    // still emit its own frontmatter fence out of habit — strip it so code's
+    // own frontmatter block below is the only one in the file.
+    const clean = stripFrontmatter(body).trim();
+    const allowedPaths = new Map(evidence.map(member => [member.path.replace(/\.md$/i, "").normalize("NFC").toLowerCase(), member.path]));
+    const { body: safeBody, strippedCount } = stripUnknownWikilinks(clean, allowedPaths);
+    if (strippedCount > 0) {
+      console.warn(
+        `[maps] draftMap(${cluster}): stripped ${strippedCount} wikilink(s) not in the member list`,
+      );
+    }
+
+    const created = new Date().toISOString().slice(0, 10);
+    const content =
+      `---\n` +
+      `title: ${JSON.stringify(`Map: ${cluster}`)}\n` +
+      `type: map\n` +
+      `cluster: ${JSON.stringify(cluster)}\n` +
+      `created: ${created}\n` +
+      `confidence: medium\n` +
+      `status: draft\n` +
+      `map_evidence: ${JSON.stringify({ version: 1, members: evidence.map(({ path, revision, sourceChars, excerpt, truncated }) =>
+        ({ path, revision, sourceChars, excerptChars: Array.from(excerpt).length, truncated })) })}\n` +
+      `tags: [map]\n` +
+      `---\n\n${safeBody}\n`;
+
+    assertCurrent();
+    const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
+    assertCurrent();
+    const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
+    const key = rel.slice("wiki/maps/".length).replace(/\.md$/, "");
+    await recheck();
+    assertCurrent();
+    const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot, snapshotId);
+    pendingPublications.set(publicationKey, { manifestId, publication });
+    assertCurrent();
+    await recordPublication(vaultPath, origin, { manifestId, publication });
+    assertCurrent();
+    return rel;
   });
-  assertCurrent();
-  // Guard: the system prompt asks for "markdown body only", but a model can
-  // still emit its own frontmatter fence out of habit — strip it so code's
-  // own frontmatter block below is the only one in the file.
-  const clean = stripFrontmatter(body).trim();
-  const allowedPaths = new Map(evidence.map(member => [member.path.replace(/\.md$/i, "").normalize("NFC").toLowerCase(), member.path]));
-  const { body: safeBody, strippedCount } = stripUnknownWikilinks(clean, allowedPaths);
-  if (strippedCount > 0) {
-    console.warn(
-      `[maps] draftMap(${cluster}): stripped ${strippedCount} wikilink(s) not in the member list`,
-    );
-  }
-
-  const created = new Date().toISOString().slice(0, 10);
-  const content =
-    `---\n` +
-    `title: ${JSON.stringify(`Map: ${cluster}`)}\n` +
-    `type: map\n` +
-    `cluster: ${JSON.stringify(cluster)}\n` +
-    `created: ${created}\n` +
-    `confidence: medium\n` +
-    `status: draft\n` +
-    `map_evidence: ${JSON.stringify({ version: 1, members: evidence.map(({ path, revision, sourceChars, excerpt, truncated }) =>
-      ({ path, revision, sourceChars, excerptChars: Array.from(excerpt).length, truncated })) })}\n` +
-    `tags: [map]\n` +
-    `---\n\n${safeBody}\n`;
-
-  assertCurrent();
-  const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
-  assertCurrent();
-  const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
-  const key = rel.slice("wiki/maps/".length).replace(/\.md$/, "");
-  await recheckMapEvidence(vaultPath, evidence, assertCurrent);
-  assertCurrent();
-  const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot);
-  pendingPublications.set(publicationKey, { manifestId, publication });
-  assertCurrent();
-  await recordPublication(vaultPath, origin, { manifestId, publication });
-  assertCurrent();
-  return rel;
 }

@@ -1139,6 +1139,13 @@ export interface AgentVaultSession {
   readonly openingToken: string;
 }
 
+/** Text receipt only; the opaque id must resolve to a native retained source grant. */
+export interface MapSourceSnapshot {
+  snapshotId: string;
+  origin: AgentVaultSession;
+  members: { path: string; revision: string; raw: string }[];
+}
+
 /** Public identity of a private native-held Audio source job. */
 export interface AudioOverviewJobContext {
   readonly jobId: string;
@@ -1675,6 +1682,12 @@ export const ipc = {
   getSettings: () => invoke<MycoSettings>("get_settings"),
   captureModelRole: (origin: AgentVaultSession, role: RoleId, usage: RoleUsage = "foreground") =>
     invoke<RoleSnapshot>("capture_model_role", { origin, role, usage }),
+  captureMapSources: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, members: readonly string[]) =>
+    invoke<MapSourceSnapshot>("capture_map_sources", { origin, roleSnapshot, members }),
+  checkMapSources: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, snapshotId: string) =>
+    invoke<void>("check_map_sources", { origin, roleSnapshot, snapshotId }),
+  releaseMapSources: (origin: AgentVaultSession, snapshotId: string) =>
+    invoke<void>("release_map_sources", { origin, snapshotId }),
   selectModelRole: (request: RoleSelectionRequest) =>
     invoke<MycoSettings>("select_model_role", { request }),
   setRoleAutomaticUse: (role: RoleId, allowed: boolean, expectedAuthorizationRevision: string) =>
@@ -1800,10 +1813,11 @@ export const ipc = {
     content: string,
     expectedSha256: string | null,
     roleSnapshot?: RoleSnapshot,
+    mapSourceSnapshotId?: string,
   ) => {
     if (!origin?.vaultPath || !origin.openingToken) return Promise.reject(new Error("Native publication requires a vault opening identity"));
     if (!roleSnapshot) return Promise.reject(new Error("Managed publication requires its generation role snapshot"));
-    return invoke<DistillPublicationReceipt>("publish_distill_note", { origin, operationId, artifact, content, expectedSha256, roleSnapshot });
+    return invoke<DistillPublicationReceipt>("publish_distill_note", { origin, operationId, artifact, content, expectedSha256, roleSnapshot, ...(mapSourceSnapshotId === undefined ? {} : { mapSourceSnapshotId }) });
   },
   agentToolsSchema: () =>
     invoke<AgentToolDescriptor[]>("agent_tools_schema", {}),

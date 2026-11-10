@@ -40,6 +40,8 @@ pub(crate) mod local_query_plan;
 pub mod local_synthesis;
 pub mod local_transform;
 pub mod machine_session;
+mod map_source_io;
+pub(crate) mod map_sources;
 pub mod mcp_native;
 mod model_context;
 pub mod myco_pro;
@@ -204,6 +206,7 @@ pub fn run() {
         .manage(audio_overview::AudioOverviewRegistry::default())
         .manage(study_deck_io::StudyDeckRegistry::default())
         .manage(distill_publication::DistillPublicationRegistry::default())
+        .manage(map_sources::MapSourceRegistry::default())
         // Embedded local model — lazily loaded on first local_* command.
     .manage(commands::LocalLlmState::default())
     .manage(local_generation::LocalChatState::default())
@@ -388,6 +391,9 @@ pub fn run() {
             commands::extend_quarantine,
             commands::digestable_session_days,
             commands::publish_distill_note,
+            commands::capture_map_sources,
+            commands::check_map_sources,
+            commands::release_map_sources,
             commands::archive_digested_sessions,
             commands::rollupable_buckets,
             commands::archive_rolled,

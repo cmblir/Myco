@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // `apply()`'s draft-map branch calls the REAL `draftMap` (not mocked) so
-// this exercises its actual idempotency check — only `complete` (the LLM
-// call inside it) is stubbed, mirroring `maps.test.ts`'s own mock.
+// this exercises its actual idempotency check. The LLM and native IPC use
+// synthetic fixtures, mirroring `maps.test.ts`'s boundary mocks.
 const complete = vi.fn();
 // What getActiveModel("generate") reports — a provider that writes by
 // default, so the draft-map tests below reach draftMap; canGenerate stays real.
@@ -34,12 +34,26 @@ import type { FileNode, MycoSettings } from "../lib/ipc";
 import type { DistillStatus } from "../lib/distill";
 import { roleFixture, selectedRolesFixture } from "../lib/modelRoles.testSupport";
 import { BUILTIN_CHAT_MODEL } from "../lib/providers";
+import { sha256 } from "../lib/tidyRun";
 
 function mockOrganizationRole(): void {
   vi.spyOn(ipc, "captureModelRole").mockImplementation(async (origin, role, usage) => {
     expect(role).toBe("organization");
     return roleFixture(role, generateProvider, generateProvider === "builtin-local" ? "extractive-ingest" : "synthetic-writer", origin, usage);
   });
+}
+
+function mockMapSources() {
+  const capture = vi.spyOn(ipc, "captureMapSources").mockImplementation(async (origin, role, members) => {
+    expect(role.role).toBe("organization");
+    expect(role.origin).toEqual(origin);
+    const raw = "Synthetic selected member requires an implementation review.";
+    return { snapshotId: "d".repeat(64), origin, members: await Promise.all(members.map(async path =>
+      ({ path, raw, revision: await sha256(raw) }))) };
+  });
+  const check = vi.spyOn(ipc, "checkMapSources").mockResolvedValue(undefined);
+  const release = vi.spyOn(ipc, "releaseMapSources").mockResolvedValue(undefined);
+  return { capture, check, release };
 }
 
 const STATUS: DistillStatus = {
@@ -275,6 +289,7 @@ describe("useDistillStore", () => {
   });
 
   it("apply reports CHAT_MODEL_MISSING in the UI language, not the backend's English", async () => {
+    const sources = mockMapSources();
     const raw = [
       "---",
       "type: distill-proposal",
@@ -302,6 +317,12 @@ describe("useDistillStore", () => {
     await useDistillStore.getState().apply("work/feedback/map.md");
 
     expect(useDistillStore.getState().error).toBe(STRINGS.ko.pf_map_needs_writer);
+    expect(complete).toHaveBeenCalledOnce();
+    expect(sources.capture).toHaveBeenCalledWith(
+      { vaultPath: "/v", openingToken: "synthetic-native-opening" }, expect.objectContaining({ role: "organization" }), ["wiki/a.md"],
+    );
+    expect(sources.check).not.toHaveBeenCalled();
+    expect(sources.release).toHaveBeenCalledWith({ vaultPath: "/v", openingToken: "synthetic-native-opening" }, "d".repeat(64));
     useUIStore.setState({ lang });
   });
 
@@ -827,6 +848,7 @@ describe("proposal actions retain their originating vault session", () => {
   });
 
   it("passes the original session guard into a map's delayed generation", async () => {
+    const sources = mockMapSources();
     const raw = PROPOSAL_RAW.replace("action: admit-cluster", "action: draft-map")
       .replace("status: pending", "status: approved")
       .replace(/^payload:.*$/m, 'payload: {"cluster":"synthetic-topic","members":["wiki/a.md"]}');
@@ -844,6 +866,9 @@ describe("proposal actions retain their originating vault session", () => {
     expect(ipc.writeFile).not.toHaveBeenCalled();
     expect(manifest).not.toHaveBeenCalled();
     expect(ipc.distillStatus).not.toHaveBeenCalled();
+    expect(sources.capture).toHaveBeenCalledOnce();
+    expect(sources.check).not.toHaveBeenCalled();
+    expect(sources.release).toHaveBeenCalledWith({ vaultPath: "/v", openingToken: "synthetic-native-origin" }, "d".repeat(64));
   });
 
   it("stops a map after native origin capture resolves across a same-path reopen", async () => {

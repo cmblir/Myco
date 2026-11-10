@@ -34,6 +34,7 @@ import { DIGEST_SYSTEM } from "./sessionDigest";
 import { MONTHLY_SYSTEM, ROLLUP_SYSTEM } from "./rollup";
 import { generateCards, generateQuiz } from "./study";
 import { draftMap } from "./maps";
+import { sha256 } from "./tidyRun";
 
 describe("myco's prompt heads", () => {
   it("every frontend prompt opens with its head, and every frontend head is sent", async () => {
@@ -50,6 +51,14 @@ describe("myco's prompt heads", () => {
         organization: { providerId: "codex-cli", modelId: "" },
       }) } as never);
     vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+    const mapSources = vi.spyOn(ipc, "captureMapSources").mockImplementation(async (origin, role, members) => {
+      expect(role.role).toBe("organization");
+      expect(role.origin).toEqual(origin);
+      const raw = "Synthetic note for prompt-head checks.";
+      return { snapshotId: "d".repeat(64), origin, members: await Promise.all(members.map(async path =>
+        ({ path, raw, revision: await sha256(raw) }))) };
+    });
+    const releaseMapSources = vi.spyOn(ipc, "releaseMapSources").mockResolvedValue(undefined);
     vi.spyOn(ipc, "readFile").mockImplementation(async (path) => ({
       path,
       raw: "Synthetic note for prompt-head checks.",
@@ -66,7 +75,14 @@ describe("myco's prompt heads", () => {
     await settle(useLintStore.getState().runLint());
     await settle(generateCards("/v", "a note"));
     await settle(generateQuiz("/v", "a note"));
+    const beforeMap = complete.mock.calls.length;
     await settle(draftMap("/v", "rope", ["wiki/a.md"]));
+    expect(complete).toHaveBeenCalledTimes(beforeMap + 1);
+    expect(complete.mock.calls[beforeMap][0].messages[0].content.startsWith(HEADS.map)).toBe(true);
+    expect(mapSources).toHaveBeenCalledWith(
+      { vaultPath: "/v", openingToken: "native-test" }, expect.objectContaining({ role: "organization" }), ["wiki/a.md"],
+    );
+    expect(releaseMapSources).toHaveBeenCalledWith({ vaultPath: "/v", openingToken: "native-test" }, "d".repeat(64));
     // Lint on the Claude CLI streams its prompt instead of calling complete().
     lintProvider = "anthropic-cli";
     settings.mockResolvedValue({ query_provider: "anthropic-cli", model_roles: selectedRolesFixture({

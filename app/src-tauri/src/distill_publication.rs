@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
@@ -110,8 +110,26 @@ struct Entry {
     path: String,
     content_revision: String,
     expected_revision: Option<String>,
+    source_snapshot_id: Option<String>,
     phase: PublicationPhase,
     written: Option<RecordedWriteReceipt>,
+}
+
+/// A native source-registry caller supplies this after checking its private grant.
+/// This input cannot be deserialized into publication or update authority.
+pub(crate) struct MapPublication<'a> {
+    pub operation: &'a str,
+    pub key: &'a str,
+    pub content: &'a str,
+    pub source_snapshot_id: &'a str,
+}
+
+struct WriteInput<'a> {
+    operation: &'a str,
+    artifact: &'a ManagedArtifact,
+    content: &'a str,
+    expected_revision: Option<&'a str>,
+    source_snapshot_id: Option<&'a str>,
 }
 
 #[derive(Default)]
@@ -135,6 +153,9 @@ fn receipt(id: &str, entry: &Entry) -> Result<PublicationReceipt, String> {
         .written
         .as_ref()
         .ok_or("publication has no native write receipt")?;
+    if entry.source_snapshot_id.is_some() && !written.native_created {
+        return Err("map publication requires native creation authority".into());
+    }
     Ok(PublicationReceipt {
         publication_id: id.into(),
         operation_id: entry.operation.clone(),
@@ -183,13 +204,95 @@ pub(crate) fn publish_at(
     content: &str,
     expected_revision: Option<&str>,
 ) -> Result<PublicationReceipt, String> {
+    if matches!(artifact, ManagedArtifact::Map { .. }) {
+        return Err("map publication requires a checked native source snapshot".into());
+    }
+    crate::vault::with_root_mutation(root, |canonical, guard| {
+        publish_locked(
+            canonical,
+            guard,
+            registry,
+            origin,
+            WriteInput {
+                operation,
+                artifact,
+                content,
+                expected_revision,
+                source_snapshot_id: None,
+            },
+            &|| Ok(()),
+        )
+    })
+}
+
+/// Source checks and publication share the caller's cooperating-writer guard.
+/// External editors are only detected by pre/post checks, not atomically excluded.
+pub(crate) fn publish_map_locked(
+    root: &Path,
+    guard: &MutexGuard<'_, ()>,
+    registry: &DistillPublicationRegistry,
+    origin: &AgentVaultSession,
+    input: MapPublication<'_>,
+    verify_sources: &dyn Fn() -> Result<(), String>,
+) -> Result<PublicationReceipt, String> {
+    if input.source_snapshot_id.is_empty() {
+        return Err("map publication requires a checked native source snapshot".into());
+    }
+    publish_locked(
+        root,
+        guard,
+        registry,
+        origin,
+        WriteInput {
+            operation: input.operation,
+            artifact: &ManagedArtifact::Map {
+                key: input.key.into(),
+            },
+            content: input.content,
+            // Existing maps have no restart-durable native update custody yet.
+            expected_revision: None,
+            source_snapshot_id: Some(input.source_snapshot_id),
+        },
+        verify_sources,
+    )
+}
+
+fn publish_locked(
+    root: &Path,
+    guard: &MutexGuard<'_, ()>,
+    registry: &DistillPublicationRegistry,
+    origin: &AgentVaultSession,
+    input: WriteInput<'_>,
+    verify_sources: &dyn Fn() -> Result<(), String>,
+) -> Result<PublicationReceipt, String> {
+    let WriteInput {
+        operation,
+        artifact,
+        content,
+        expected_revision,
+        source_snapshot_id,
+    } = input;
     validate_operation(operation)?;
     let rel = artifact.path()?;
     #[cfg(not(unix))]
-    return Err("native publication identity is not yet supported on this platform".into());
+    {
+        let _ = (
+            root,
+            guard,
+            registry,
+            origin,
+            content,
+            expected_revision,
+            source_snapshot_id,
+            verify_sources,
+            rel,
+        );
+        Err("native publication identity is not yet supported on this platform".into())
+    }
     #[cfg(unix)]
     {
         let path = target(root, &rel)?;
+        verify_sources()?;
         let content_revision = format!("{:x}", Sha256::digest(content.as_bytes()));
         let existing = {
             let entries = registry
@@ -202,6 +305,14 @@ pub(crate) fn publish_at(
                     && e.phase == PublicationPhase::Consumed
             }) {
                 return Err("publication operation has already been consumed".into());
+            }
+            if entries.values().any(|entry| {
+                same_origin(&entry.origin, origin)
+                    && entry.operation == operation
+                    && entry.path == rel
+                    && entry.source_snapshot_id.as_deref() != source_snapshot_id
+            }) {
+                return Err("publication operation is bound to a different source snapshot".into());
             }
             entries
                 .iter()
@@ -223,8 +334,11 @@ pub(crate) fn publish_at(
                         "publication retry precondition differs from its native receipt".into(),
                     );
                 }
-                crate::vault::verify_recorded_file(written)?;
+                crate::vault::verify_recorded_file_unlocked(written)?;
                 return receipt(&id, &entry);
+            }
+            if entry.written.is_some() {
+                return Err("publication bytes were already persisted without publication authority; output retained for manual recovery".into());
             }
             if entry.expected_revision.as_deref() != expected_revision {
                 return Err(
@@ -255,6 +369,7 @@ pub(crate) fn publish_at(
                     path: rel.clone(),
                     content_revision,
                     expected_revision: expected_revision.map(str::to_owned),
+                    source_snapshot_id: source_snapshot_id.map(str::to_owned),
                     phase: PublicationPhase::Prepared,
                     written: None,
                 },
@@ -273,11 +388,22 @@ pub(crate) fn publish_at(
         std::fs::create_dir_all(&parent)
             .map_err(|e| format!("create managed publication directory: {e}"))?;
         let path = target(root, &rel)?;
-        let written = crate::vault::write_file_if_unchanged_recorded(
+        verify_sources()?;
+        let written = crate::vault::write_file_if_unchanged_recorded_locked(
+            guard,
             &path.to_string_lossy(),
             content,
             expected_revision,
         )?;
+        {
+            let mut entries = registry.entries.lock().map_err(|_| "publication bytes persisted but registry lock poisoned; output retained for manual recovery")?;
+            let entry = entries.get_mut(&id).ok_or("publication bytes persisted but prepared identity disappeared; output retained for manual recovery")?;
+            // Keep the exact private receipt even if later checks fail. Prepared
+            // written entries never gain normal retry, manifest or undo authority.
+            entry.written = Some(written.clone());
+        }
+        verify_sources().map_err(|error| format!("publication bytes persisted but source verification failed: {error}; output retained for manual recovery"))?;
+        crate::vault::verify_recorded_file_unlocked(&written).map_err(|error| format!("publication bytes persisted but output verification failed: {error}; output retained for manual recovery"))?;
         #[cfg(test)]
         if registry
             .fail_after_persist

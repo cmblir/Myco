@@ -9,6 +9,10 @@ vi.mock("./chat", () => ({ complete: (...a: unknown[]) => complete(...a) }));
 
 const captureModelRole = vi.fn();
 const readFile = vi.fn();
+const sourceRead = vi.fn();
+const captureSources = vi.fn();
+const checkSources = vi.fn();
+const releaseSources = vi.fn();
 const writeFile = vi.fn();
 const publishDistillNote = vi.fn();
 const ORIGIN = { vaultPath: "/v", openingToken: "synthetic-opening" };
@@ -22,6 +26,9 @@ vi.mock("./ipc", () => ({
     captureModelRole: (...a: unknown[]) => captureModelRole(...a),
     publishDistillNote: (...a: unknown[]) => publishDistillNote(...a),
     readFile: (...a: unknown[]) => readFile(...a),
+    captureMapSources: (...a: unknown[]) => captureSources(...a),
+    checkMapSources: (...a: unknown[]) => checkSources(...a),
+    releaseMapSources: (...a: unknown[]) => releaseSources(...a),
     writeFile: (...a: unknown[]) => writeFile(...a),
     createFolder: (...a: unknown[]) => createFolder(...a),
     listFiles: (...a: unknown[]) => listFiles(...a),
@@ -55,6 +62,21 @@ beforeEach(() => {
     expect(role).toBe("organization");
     return roleFixture(role, "builtin-local", BUILTIN_CHAT_MODEL, origin, usage);
   });
+  sourceRead.mockReset().mockImplementation(readFixture);
+  let captured: { path: string; revision: string; raw: string }[] = [];
+  captureSources.mockReset().mockImplementation(async (_origin, _role, paths: string[]) => {
+    captured = await Promise.all(paths.map(async path => {
+      const { raw } = await sourceRead(`/v/${path}`);
+      return { path, raw, revision: await sha256(raw) };
+    }));
+    return { snapshotId: "c".repeat(64), origin: ORIGIN, members: captured };
+  });
+  checkSources.mockReset().mockImplementation(async () => {
+    for (const member of captured) {
+      if (await sha256((await sourceRead(`/v/${member.path}`)).raw) !== member.revision) throw new Error("synthetic source revision changed");
+    }
+  });
+  releaseSources.mockReset().mockResolvedValue(undefined);
   complete.mockReset();
   readFile.mockReset().mockImplementation(readFixture);
   writeFile.mockReset();
@@ -108,7 +130,7 @@ describe("draftMap", () => {
 
   it("grounds the prompt in current member bodies and exact revisions, not titles alone", async () => {
     const raw = "---\ntitle: Synthetic misleading title\n---\n\nThe synthetic cache uses an explicit invalidation journal.";
-    readFile.mockImplementation(async (path: string) => {
+    sourceRead.mockImplementation(async (path: string) => {
       if (path === "/v/wiki/a.md") return { path, raw, content: raw, frontmatter: {} };
       throw new Error("not found");
     });
@@ -122,7 +144,7 @@ describe("draftMap", () => {
 
   it("does not generate or publish when a member cannot be read", async () => {
     complete.mockResolvedValue("Synthetic body. [[wiki/a.md|a]]");
-    readFile.mockRejectedValue(new Error("permission denied"));
+    sourceRead.mockRejectedValue(new Error("permission denied"));
     await expect(draftMap("/v", "unreadable", ["wiki/a.md"]))
       .rejects.toMatchObject({ status: "pending" });
     expect(complete).not.toHaveBeenCalled();
@@ -131,7 +153,7 @@ describe("draftMap", () => {
 
   it("rejects a member revision changed during generation before publication", async () => {
     let raw = "The synthetic original requires a review.";
-    readFile.mockImplementation(async (path: string) => {
+    sourceRead.mockImplementation(async (path: string) => {
       if (path === "/v/wiki/a.md") return { path, raw, content: raw, frontmatter: {} };
       throw new Error("not found");
     });

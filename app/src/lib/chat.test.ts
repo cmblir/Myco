@@ -152,6 +152,9 @@ describe("complete() selected-source generation", () => {
         if (path === "/v/wiki/a.md") return { path, raw, content: raw, frontmatter: {} };
         throw new Error("ENOENT: no such file or directory");
       });
+      const sources = vi.spyOn(ipc, "captureMapSources").mockResolvedValue({ snapshotId: "c".repeat(64), origin, members: [{ path: "wiki/a.md", raw, revision: await sha256(raw) }] });
+      vi.spyOn(ipc, "checkMapSources").mockResolvedValue(undefined);
+      const release = vi.spyOn(ipc, "releaseMapSources").mockResolvedValue(undefined);
       const status = vi.spyOn(ipc, "embeddingsStatus").mockRejectedValue(new Error("synthetic unavailable index"));
       const search = vi.spyOn(ipc, "semanticSearch");
       const context = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("UNSELECTED_SYNTHETIC_RED_TILES");
@@ -170,7 +173,9 @@ describe("complete() selected-source generation", () => {
       expect(status).not.toHaveBeenCalled();
       expect(search).not.toHaveBeenCalled();
       expect(context).not.toHaveBeenCalled();
-      expect(read.mock.calls.filter(([path]) => path === "/v/wiki/a.md")).toHaveLength(2);
+      expect(read).not.toHaveBeenCalledWith("/v/wiki/a.md");
+      expect(sources).toHaveBeenCalledWith(origin, snapshot, ["wiki/a.md"]);
+      expect(release).toHaveBeenCalledWith(origin, "c".repeat(64));
       const prompt = provider === "builtin-local" ? local.mock.calls[0][0]
         : http.mock.calls[0][0].messages.map(message => message.content).join("\n");
       expect(prompt).toContain(raw);
@@ -186,6 +191,7 @@ describe("complete() selected-source generation", () => {
       }
       expect(publish.mock.calls[0][3]).toContain("[[wiki/a.md|a]]");
       expect(publish.mock.calls[0][5]).toEqual(snapshot);
+      expect(publish.mock.calls[0][6]).toBe("c".repeat(64));
     },
   );
 

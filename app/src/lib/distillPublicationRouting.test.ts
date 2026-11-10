@@ -9,7 +9,7 @@ import { roleFixture } from "./modelRoles.testSupport";
 // is covered independently by distill_publication_boundary_tests.rs.
 const mocks = vi.hoisted(() => ({
   role: vi.fn(), origin: vi.fn(), publish: vi.fn(), archive: vi.fn(), append: vi.fn(),
-  read: vi.fn(), write: vi.fn(), conditional: vi.fn(), complete: vi.fn(),
+  capture: vi.fn(), check: vi.fn(), release: vi.fn(), read: vi.fn(), write: vi.fn(), conditional: vi.fn(), complete: vi.fn(),
 }));
 vi.mock("./ipc", () => ({ ipc: {
   agentVaultSession: (...args: unknown[]) => mocks.origin(...args),
@@ -18,6 +18,9 @@ vi.mock("./ipc", () => ({ ipc: {
   archiveDigestedSessions: (...args: unknown[]) => mocks.archive(...args),
   appendDistillManifest: (...args: unknown[]) => mocks.append(...args),
   readFile: (...args: unknown[]) => mocks.read(...args),
+  captureMapSources: (...args: unknown[]) => mocks.capture(...args),
+  checkMapSources: (...args: unknown[]) => mocks.check(...args),
+  releaseMapSources: (...args: unknown[]) => mocks.release(...args),
   writeFile: (...args: unknown[]) => mocks.write(...args),
   writeFileIfUnchanged: (...args: unknown[]) => mocks.conditional(...args),
   createFolder: async () => "synthetic",
@@ -45,6 +48,15 @@ beforeEach(() => {
     expect(role).toBe("organization");
     return roleFixture(role, "anthropic-api", "synthetic", origin, usage);
   });
+  mocks.capture.mockImplementation(async (_origin, _role, paths: string[]) => ({
+    snapshotId: "c".repeat(64), origin: ORIGIN, members: await Promise.all(paths.map(async path => {
+      const raw = notes.get(`/v/${path}`);
+      if (!raw) throw new Error("synthetic missing source");
+      return { path, raw, revision: await sha256(raw) };
+    })),
+  }));
+  mocks.check.mockResolvedValue(undefined);
+  mocks.release.mockResolvedValue(undefined);
   mocks.complete.mockResolvedValue("- Completed a synthetic implementation review.");
   mocks.read.mockImplementation(async (path: string) => {
     if (!notes.has(path)) throw new Error("ENOENT: no such file or directory");
@@ -106,7 +118,7 @@ it("creates a map through the native issuer and records its opaque ID", async ()
   const { draftMap } = await import("./maps");
   await expect(draftMap("/v", "synthetic-topic", ["wiki/a.md"], "llm-123")).resolves.toBe("wiki/maps/synthetic-topic.md");
   expect(mocks.publish).toHaveBeenCalledWith(ORIGIN, "llm-123", { kind: "map", key: "synthetic-topic" }, expect.any(String), null,
-    roleFixture("organization", "anthropic-api", "synthetic", ORIGIN));
+    roleFixture("organization", "anthropic-api", "synthetic", ORIGIN), "c".repeat(64));
   expect(mocks.append.mock.calls[0][6]).toEqual(["b".repeat(64)]);
   expect(mocks.write).not.toHaveBeenCalled();
 });
