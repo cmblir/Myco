@@ -10,13 +10,65 @@ requirements and must not be mistaken for passing results.
 | Package | State | Evidence and remaining work |
 | --- | --- | --- |
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
-| G1 Ingest drafts | Implemented; installed restart pending | Vault-scoped durable title/body, revision-aware completion and storage recovery. Unit and synthetic browser regressions passed. |
+| G1 Ingest drafts | Implemented; bundled macOS D1/D2 passed | Vault-scoped durable title/body, revision-aware completion and storage recovery. Unit and synthetic browser regressions passed. Native debug app navigation, restart and two-vault isolation passed; installed D3/D4 and other platforms remain unverified. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: bundled macOS draft navigation and restart
+
+D1 and the restart variant of D2 passed using the full production frontend and
+native IPC in an unsigned debug `.app`, built from clean commit `9095ba8e` on
+macOS 26.5.1 arm64. This is bundled-app evidence, not a signed release installer,
+Windows result, model-quality result, or acceptance of every G1 failure path.
+
+The temporary fixture root is recorded in `/tmp/myco-installed-drafts-path.txt`.
+It contains separate Alpha/Beta folders, each with one synthetic Markdown reader
+note, plus a separate `state/settings.json`. Automatic import, ingest, reflect,
+reindex, notch and global shortcut were disabled. The build override selected
+`dev.cmblir.myco.draft-acceptance-20261111`, a separate deep-link scheme and an
+explicit `index.html?vault=<synthetic Alpha path>` startup URL. The original
+production app was not opened. No source was submitted and no model ran.
+
+Build command, run from `app/`:
+
+```sh
+npx tauri build --debug --bundles app --no-sign --config "$(cat /tmp/myco-installed-drafts-path.txt)/tauri.override.json"
+```
+
+Build passed; log: `/tmp/myco-installed-drafts-build.log`. The bundled executable
+SHA-256 is `d8a5dbd63997b0d20cc786abc0f7f117307d00ab9cabc61dceff9e2a41f0b5f0`.
+Launch used `MYCO_DATA_DIR=<fixture>/state`, `MYCO_REAL_DIAGNOSTIC=1` and
+`MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER=1`. This existing diagnostic mode avoids
+production WebView/keychain migration, MCP serving and global shortcut setup.
+It does not replace the frontend, storage or vault commands with mocks.
+
+Native accessibility observations through `cua_repl` established:
+
+- D1: entered title `Synthetic source` and body `Synthetic report draft` in
+  Alpha; visited Ask, Settings and the synthetic Reader; returned to Ingest and
+  observed both exact strings.
+- D2: quit the process (exit 0), relaunched the same bundle and observed both
+  exact Alpha strings. Used Settings → My Space to switch to Beta; both inputs
+  were initially blank. Entered body `Different synthetic draft`, switched to
+  Alpha and observed its original title/body, then switched back to Beta and
+  observed its own body with an empty title.
+- A first-use wizard appeared on the first Beta switch; the ordinary Skip action
+  returned to Settings without entering another path. This observation is not
+  evidence of a draft failure or an assertion that onboarding is fully correct.
+
+The second process was also quit and returned exit 0. Runtime log:
+`/tmp/myco-installed-drafts-runtime.log`. No storage failure, delayed submission,
+partial import, WebView reload or signed/release build was exercised here.
+The `computer-use` skill's `orca` CLI was unavailable (`command not found`);
+native UI inspection/input used the provided CUA tool instead.
+
+README did not change: this slice adds validation evidence, not product behavior.
+Next acceptance priorities are D3/D4 native failure handling and Q1/Q2 native
+scope behavior, while Windows and actual-model semantic gates remain open.
 
 ## November 11: retained snapshots survive missing map directories
 
