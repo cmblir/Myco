@@ -114,11 +114,15 @@ fn native_ask_activity_explicit_external_selection_can_read_date_grounded_source
         assert!(result.hits[0].text.contains("SYNTHETIC_ASK_ROLE_SENTINEL"));
         // Selection changes still revoke the original read authority.
         crate::role_authorization::select_role(crate::role_authorization::RoleSelectionRequest {
-            role: RoleId::Ask, provider_id: "openai-api".into(),
-            model_id: "another-synthetic-model".into(), effort: "(default)".into(),
+            role: RoleId::Ask,
+            provider_id: "openai-api".into(),
+            model_id: "another-synthetic-model".into(),
+            effort: "(default)".into(),
             expected_authorization_revision: crate::role_authorization::settings_snapshot()
-                .unwrap().role_authorization_revision,
-        }).unwrap();
+                .unwrap()
+                .role_authorization_revision,
+        })
+        .unwrap();
         assert!(activity_read(&state, &index, &request, false).is_err());
     });
 }

@@ -158,21 +158,17 @@ fn native_role_legacy_endpoint_change_revokes_the_existing_foreground_grant() {
                 .map_err(|error| error.to_string())
         })
         .unwrap();
-    crate::commands::authorized_role(&vault, &origin, &snapshot, RoleId::Ask, |_| Ok(()))
-        .unwrap();
+    crate::commands::authorized_role(&vault, &origin, &snapshot, RoleId::Ask, |_| Ok(())).unwrap();
 
     std::env::set_var("MEMEX_OLLAMA_URL", "http://127.0.0.1:11432");
     let dispatched = std::cell::Cell::new(false);
-    let result = crate::commands::authorized_role(
-        &vault,
-        &origin,
-        &snapshot,
-        RoleId::Ask,
-        |_| {
-            dispatched.set(true);
-            Ok(())
-        },
-    );
+    let result = crate::commands::authorized_role(&vault, &origin, &snapshot, RoleId::Ask, |_| {
+        dispatched.set(true);
+        Ok(())
+    });
     assert!(result.unwrap_err().contains("snapshot_stale"));
-    assert!(!dispatched.get(), "a changed endpoint reached source/transport dispatch");
+    assert!(
+        !dispatched.get(),
+        "a changed endpoint reached source/transport dispatch"
+    );
 }

@@ -5,29 +5,44 @@ use std::sync::{Mutex, OnceLock};
 const LIMIT: usize = 16 * 1024 * 1024;
 const ENTRIES: usize = 128;
 #[derive(Default)]
-struct Cache { entries: VecDeque<(String, Vec<String>, usize)>, bytes: usize }
+struct Cache {
+    entries: VecDeque<(String, Vec<String>, usize)>,
+    bytes: usize,
+}
 impl Cache {
     fn find(&self, text: &str) -> Option<Vec<String>> {
-        self.entries.iter().find(|(input, _, _)| input == text).map(|(_, chunks, _)| chunks.clone())
+        self.entries
+            .iter()
+            .find(|(input, _, _)| input == text)
+            .map(|(_, chunks, _)| chunks.clone())
     }
     fn insert(&mut self, text: &str, chunks: &[String], limit: usize) {
         let size = text.len() + chunks.iter().map(String::len).sum::<usize>();
-        if size > limit || self.entries.iter().any(|(input,_,_)| input == text) { return; }
+        if size > limit || self.entries.iter().any(|(input, _, _)| input == text) {
+            return;
+        }
         while self.bytes + size > limit || self.entries.len() >= ENTRIES {
-            let Some((_,_,bytes)) = self.entries.pop_front() else { break; };
+            let Some((_, _, bytes)) = self.entries.pop_front() else {
+                break;
+            };
             self.bytes -= bytes;
         }
-        self.entries.push_back((text.into(), chunks.to_vec(), size)); self.bytes += size;
+        self.entries.push_back((text.into(), chunks.to_vec(), size));
+        self.bytes += size;
     }
 }
 pub(super) fn get(text: &str, compute: impl FnOnce(&str) -> Vec<String>) -> Vec<String> {
     static CACHE: OnceLock<Mutex<Cache>> = OnceLock::new();
     let cache = CACHE.get_or_init(Mutex::default);
     if let Ok(guard) = cache.lock() {
-        if let Some(chunks) = guard.find(text) { return chunks; }
+        if let Some(chunks) = guard.find(text) {
+            return chunks;
+        }
     }
     let chunks = compute(text);
-    if let Ok(mut guard) = cache.lock() { guard.insert(text, &chunks, LIMIT); }
+    if let Ok(mut guard) = cache.lock() {
+        guard.insert(text, &chunks, LIMIT);
+    }
     chunks
 }
 #[cfg(test)]
@@ -47,10 +62,17 @@ mod tests {
     }
     #[test]
     fn cached_chunks_equal_uncached_for_unicode_and_changed_metadata() {
-        for source in ["---\ntitle: 한글\n---\n**User:**\n완료 아님", "---\ntitle: 수정\n---\n**User:**\n완료 아님", "# e\u{301}\n수정된 원문"] {
+        for source in [
+            "---\ntitle: 한글\n---\n**User:**\n완료 아님",
+            "---\ntitle: 수정\n---\n**User:**\n완료 아님",
+            "# e\u{301}\n수정된 원문",
+        ] {
             let expected = super::super::chunk_page_uncached(source);
             assert_eq!(get(source, super::super::chunk_page_uncached), expected);
-            assert_eq!(get(source, |_| panic!("unchanged bytes should reuse chunks")), expected);
+            assert_eq!(
+                get(source, |_| panic!("unchanged bytes should reuse chunks")),
+                expected
+            );
         }
     }
 }

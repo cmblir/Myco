@@ -388,7 +388,9 @@ pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
         )?;
         let production = canonical_data_location(&production)?;
         if canonical.starts_with(&production) || production.starts_with(&canonical) {
-            return Err("diagnostic data directory must be separate from production app data".into());
+            return Err(
+                "diagnostic data directory must be separate from production app data".into(),
+            );
         }
     }
     Ok(true)
@@ -411,7 +413,9 @@ fn canonical_data_location(path: &Path) -> Result<PathBuf, String> {
                 return Ok(resolved);
             }
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                let name = ancestor.file_name().ok_or("data directory has no existing ancestor")?;
+                let name = ancestor
+                    .file_name()
+                    .ok_or("data directory has no existing ancestor")?;
                 suffix.push(name.to_os_string());
                 ancestor.pop();
             }
@@ -911,7 +915,12 @@ mod tests {
             settings.ollama_url = "http://127.0.0.1:11436".into();
             save(&settings).unwrap();
             assert_eq!(read_checked().unwrap().ollama_url, settings.ollama_url);
-            for value in ["file:///etc/passwd", "http://remote.example:11436", "https://user:secret@example.org", "https://example.org/?token=secret"] {
+            for value in [
+                "file:///etc/passwd",
+                "http://remote.example:11436",
+                "https://user:secret@example.org",
+                "https://example.org/?token=secret",
+            ] {
                 settings.ollama_url = value.into();
                 assert!(save(&settings).is_err(), "accepted {value}");
             }

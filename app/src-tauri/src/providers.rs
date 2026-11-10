@@ -112,16 +112,29 @@ pub(crate) fn override_allowed(value: &str) -> bool {
 /// The persisted endpoint and runtime override share one native resolver.
 /// Invalid saved values fail settings admission instead of silently rerouting.
 pub(crate) fn validate_ollama_url(value: &str) -> Result<(), String> {
-    if value.is_empty() { return Ok(()); }
+    if value.is_empty() {
+        return Ok(());
+    }
     let url = reqwest::Url::parse(value).map_err(|_| "invalid Ollama endpoint URL")?;
-    if !url.username().is_empty() || url.password().is_some() || url.query().is_some()
-        || url.fragment().is_some() || !override_allowed(value) {
-        return Err("Ollama endpoint must use HTTPS or loopback HTTP without credentials/query/fragment".into());
+    if !url.username().is_empty()
+        || url.password().is_some()
+        || url.query().is_some()
+        || url.fragment().is_some()
+        || !override_allowed(value)
+    {
+        return Err(
+            "Ollama endpoint must use HTTPS or loopback HTTP without credentials/query/fragment"
+                .into(),
+        );
     }
     Ok(())
 }
 pub(crate) fn ollama_endpoint(settings: &crate::settings::Settings) -> String {
-    let saved = if settings.ollama_url.is_empty() { "http://localhost:11434" } else { &settings.ollama_url };
+    let saved = if settings.ollama_url.is_empty() {
+        "http://localhost:11434"
+    } else {
+        &settings.ollama_url
+    };
     http_url_or(saved, "MYCO_OLLAMA_URL")
 }
 fn selected_ollama_endpoint() -> Result<String, String> {
@@ -1511,8 +1524,8 @@ mod tests {
             if let Some(metadata) = metadata {
                 value[field] = metadata;
             }
-            let parsed = serde_json::from_value::<T>(value)
-                .expect("optional identity cannot reject answer");
+            let parsed =
+                serde_json::from_value::<T>(value).expect("optional identity cannot reject answer");
             let (reported, content) = extract(parsed);
             assert_eq!(reported, expected);
             assert_eq!(content, "usable answer");

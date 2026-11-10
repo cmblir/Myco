@@ -38,11 +38,20 @@ pub struct AskTurn {
     /// Stems of the notes the answer cited.
     #[serde(default)]
     pub cited: Vec<String>,
-    #[serde(default, rename = "citationEvidence", deserialize_with = "read_citation_evidence", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "citationEvidence",
+        deserialize_with = "read_citation_evidence",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub citation_evidence: Option<CitationEvidence>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub abstained: bool,
-    #[serde(default, rename = "abstainReason", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "abstainReason",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub abstain_reason: Option<AbstainReason>,
     #[serde(default, skip_serializing_if = "is_false")]
     pub stopped: bool,
@@ -54,10 +63,19 @@ pub struct AskTurn {
     pub note: Option<NoteRef>,
     /// Applied retrieval limits and partial evidence as the answer showed them.
     /// Metadata only: it grants no source access and is not a correctness verdict.
-    #[serde(default, rename = "searchContext", deserialize_with = "read_search_context", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        rename = "searchContext",
+        deserialize_with = "read_search_context",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub search_context: Option<AskSearchContext>,
     /// App command provenance, not proof of GPU use or semantic correctness.
-    #[serde(default, deserialize_with = "read_execution", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "read_execution",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub execution: Option<AskExecution>,
 }
 
@@ -80,15 +98,29 @@ pub struct AskRequestedModel {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AskAnswerKind { None, Clarification, Extractive, Application, ModelResponse }
+pub enum AskAnswerKind {
+    None,
+    Clarification,
+    Extractive,
+    Application,
+    ModelResponse,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AskRequestPurpose { Answer, PeriodPlan }
+pub enum AskRequestPurpose {
+    Answer,
+    PeriodPlan,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AskRequestState { Submitted, ResponseReceived, Failed, Cancelled }
+pub enum AskRequestState {
+    Submitted,
+    ResponseReceived,
+    Failed,
+    Cancelled,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,27 +142,51 @@ pub struct AskModelIdentity {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum AskIdentitySource { ProviderResponse, LocalManifest }
+pub enum AskIdentitySource {
+    ProviderResponse,
+    LocalManifest,
+}
 
-fn read_execution<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<AskExecution>, D::Error> {
+fn read_execution<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<AskExecution>, D::Error> {
     let value = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value::<AskExecution>(value).ok().filter(|execution| {
-        let id = |value: &str, limit: usize, empty: bool| value.len() <= limit &&
-            (empty || !value.trim().is_empty()) && !value.chars().any(char::is_control);
-        let route = |value: &AskRequestedModel| id(&value.provider_id,128,false) && id(&value.model_id,512,true);
-        let mut ids = std::collections::HashSet::new();
-        execution.version == 1 && execution.calls.len() <= 32 &&
-        (execution.answer_kind != AskAnswerKind::ModelResponse || execution.calls.iter().any(|call|
-            call.purpose == AskRequestPurpose::Answer && call.state == AskRequestState::ResponseReceived)) &&
-        execution.selected.as_ref().map_or(true, route) && execution.calls.iter().all(|call| {
-            id(&call.id,200,false) && ids.insert(&call.id) && route(&call.requested) &&
-            execution.selected.as_ref().map_or(true, |selected| *selected == call.requested) &&
-            call.identity.as_ref().map_or(true, |identity| {
-                call.state == AskRequestState::ResponseReceived && id(&identity.model_id,512,false) &&
-                (identity.source == AskIdentitySource::LocalManifest) == (call.requested.provider_id == "builtin-local")
-            })
-        })
-    }))
+    Ok(serde_json::from_value::<AskExecution>(value)
+        .ok()
+        .filter(|execution| {
+            let id = |value: &str, limit: usize, empty: bool| {
+                value.len() <= limit
+                    && (empty || !value.trim().is_empty())
+                    && !value.chars().any(char::is_control)
+            };
+            let route = |value: &AskRequestedModel| {
+                id(&value.provider_id, 128, false) && id(&value.model_id, 512, true)
+            };
+            let mut ids = std::collections::HashSet::new();
+            execution.version == 1
+                && execution.calls.len() <= 32
+                && (execution.answer_kind != AskAnswerKind::ModelResponse
+                    || execution.calls.iter().any(|call| {
+                        call.purpose == AskRequestPurpose::Answer
+                            && call.state == AskRequestState::ResponseReceived
+                    }))
+                && execution.selected.as_ref().map_or(true, route)
+                && execution.calls.iter().all(|call| {
+                    id(&call.id, 200, false)
+                        && ids.insert(&call.id)
+                        && route(&call.requested)
+                        && execution
+                            .selected
+                            .as_ref()
+                            .map_or(true, |selected| *selected == call.requested)
+                        && call.identity.as_ref().map_or(true, |identity| {
+                            call.state == AskRequestState::ResponseReceived
+                                && id(&identity.model_id, 512, false)
+                                && (identity.source == AskIdentitySource::LocalManifest)
+                                    == (call.requested.provider_id == "builtin-local")
+                        })
+                })
+        }))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -139,7 +195,11 @@ pub struct AskSearchContext {
     pub version: u8,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guided_question: Option<serde_json::Value>,
-    #[serde(default, deserialize_with = "read_historical_coverage", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        deserialize_with = "read_historical_coverage",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub historical: Option<AskHistoricalCoverage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub range: Option<AskDateRange>,
@@ -165,12 +225,19 @@ pub struct AskHistoricalCoverage {
     pub date_unverified: u64,
 }
 
-fn read_historical_coverage<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<AskHistoricalCoverage>, D::Error> {
+fn read_historical_coverage<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<AskHistoricalCoverage>, D::Error> {
     let value = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value::<AskHistoricalCoverage>(value).ok().filter(|h| {
-        h.as_of.len() == 10 && h.as_of.is_ascii() && crate::distill::iso_week(&h.as_of).is_some() &&
-        h.after_cutoff <= 9_007_199_254_740_991 && h.date_unverified <= 9_007_199_254_740_991
-    }))
+    Ok(serde_json::from_value::<AskHistoricalCoverage>(value)
+        .ok()
+        .filter(|h| {
+            h.as_of.len() == 10
+                && h.as_of.is_ascii()
+                && crate::distill::iso_week(&h.as_of).is_some()
+                && h.after_cutoff <= 9_007_199_254_740_991
+                && h.date_unverified <= 9_007_199_254_740_991
+        }))
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -196,37 +263,63 @@ pub struct AskActivityCoverage {
 }
 
 fn valid_guided_question(value: &serde_json::Value) -> bool {
-    value.get("version").and_then(|v| v.as_u64()) == Some(1) &&
-    matches!(value.get("intent").and_then(|v| v.as_str()), Some("progress" | "decision" | "remaining" | "recall")) &&
-    value.get("subject").and_then(|v| v.as_str()).map_or(false, |s| !s.trim().is_empty() && s.chars().count() <= 240) &&
-    value.get("asOf").map_or(true, |v| v.as_str().map_or(false, |s| s.len() == 10 && s.is_ascii() && crate::distill::iso_week(s).is_some()))
+    value.get("version").and_then(|v| v.as_u64()) == Some(1)
+        && matches!(
+            value.get("intent").and_then(|v| v.as_str()),
+            Some("progress" | "decision" | "remaining" | "recall")
+        )
+        && value
+            .get("subject")
+            .and_then(|v| v.as_str())
+            .map_or(false, |s| !s.trim().is_empty() && s.chars().count() <= 240)
+        && value.get("asOf").map_or(true, |v| {
+            v.as_str().map_or(false, |s| {
+                s.len() == 10 && s.is_ascii() && crate::distill::iso_week(s).is_some()
+            })
+        })
 }
 
 // A new or malformed optional field must not discard an older readable turn.
-fn read_search_context<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<AskSearchContext>, D::Error> {
+fn read_search_context<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<AskSearchContext>, D::Error> {
     let value = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value::<AskSearchContext>(value).ok().map(|mut context| {
-        context.guided_question = context.guided_question.filter(valid_guided_question);
-        context
-    }).filter(|context| {
-        const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
-        context.version == 1 &&
-        context.range_ignored.map_or(true, |value| value) &&
-        context.period_clarification.map_or(true, |value| value) &&
-        context.range.as_ref().map_or(true, |range| {
-            let day = |s: &str| s.len() == 10 && s.is_ascii() &&
-                s.bytes().enumerate().all(|(i, b)| if i == 4 || i == 7 { b == b'-' } else { b.is_ascii_digit() }) &&
-                crate::distill::iso_week(s).is_some();
-            day(&range.start) && day(&range.end) && range.start <= range.end
-        }) &&
-        context.packing.as_ref().map_or(true, |packing| {
-            packing.selected_passages <= MAX_SAFE_INTEGER && packing.omitted_passages <= MAX_SAFE_INTEGER &&
-            packing.omitted_on_included_pages <= packing.omitted_passages
-        }) &&
-        context.activity_coverage.as_ref().map_or(true, |coverage| {
-            coverage.scanned_pages <= MAX_SAFE_INTEGER && coverage.sources <= MAX_SAFE_INTEGER
+    Ok(serde_json::from_value::<AskSearchContext>(value)
+        .ok()
+        .map(|mut context| {
+            context.guided_question = context.guided_question.filter(valid_guided_question);
+            context
         })
-    }))
+        .filter(|context| {
+            const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
+            context.version == 1
+                && context.range_ignored.map_or(true, |value| value)
+                && context.period_clarification.map_or(true, |value| value)
+                && context.range.as_ref().map_or(true, |range| {
+                    let day = |s: &str| {
+                        s.len() == 10
+                            && s.is_ascii()
+                            && s.bytes().enumerate().all(|(i, b)| {
+                                if i == 4 || i == 7 {
+                                    b == b'-'
+                                } else {
+                                    b.is_ascii_digit()
+                                }
+                            })
+                            && crate::distill::iso_week(s).is_some()
+                    };
+                    day(&range.start) && day(&range.end) && range.start <= range.end
+                })
+                && context.packing.as_ref().map_or(true, |packing| {
+                    packing.selected_passages <= MAX_SAFE_INTEGER
+                        && packing.omitted_passages <= MAX_SAFE_INTEGER
+                        && packing.omitted_on_included_pages <= packing.omitted_passages
+                })
+                && context.activity_coverage.as_ref().map_or(true, |coverage| {
+                    coverage.scanned_pages <= MAX_SAFE_INTEGER
+                        && coverage.sources <= MAX_SAFE_INTEGER
+                })
+        }))
 }
 
 /// UI-only delivered originals. Never evidence of semantic acceptance.
@@ -254,28 +347,62 @@ pub struct CitationSpan {
 }
 
 // Malformed optional metadata must not erase an otherwise readable answer.
-fn read_citation_evidence<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Option<CitationEvidence>, D::Error> {
+fn read_citation_evidence<'de, D: serde::Deserializer<'de>>(
+    d: D,
+) -> Result<Option<CitationEvidence>, D::Error> {
     let value = serde_json::Value::deserialize(d)?;
-    Ok(serde_json::from_value::<CitationEvidence>(value).ok().filter(valid_citation_evidence))
+    Ok(serde_json::from_value::<CitationEvidence>(value)
+        .ok()
+        .filter(valid_citation_evidence))
 }
 fn valid_citation_evidence(e: &CitationEvidence) -> bool {
-    let hash = |s: &str| s.len() == 64 && s.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b));
-    if e.version != 1 || e.sources.is_empty() || e.sources.len() > 12 { return false; }
+    let hash = |s: &str| {
+        s.len() == 64
+            && s.bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    };
+    if e.version != 1 || e.sources.is_empty() || e.sources.len() > 12 {
+        return false;
+    }
     let mut paths = std::collections::HashSet::new();
     let mut count = 0usize;
     let mut bytes = 0usize;
     for source in &e.sources {
-        if !source.path.ends_with(".md") || source.path.starts_with('/') ||
-           source.path.chars().any(|c| c == '\\' || c == '#' || c == '|' || c.is_control()) ||
-           source.path.split('/').any(|p| p.is_empty() || p == "." || p == "..") ||
-           !paths.insert(&source.path) || !hash(&source.revision) || source.spans.is_empty() { return false; }
+        if !source.path.ends_with(".md")
+            || source.path.starts_with('/')
+            || source
+                .path
+                .chars()
+                .any(|c| c == '\\' || c == '#' || c == '|' || c.is_control())
+            || source
+                .path
+                .split('/')
+                .any(|p| p.is_empty() || p == "." || p == "..")
+            || !paths.insert(&source.path)
+            || !hash(&source.revision)
+            || source.spans.is_empty()
+        {
+            return false;
+        }
         let mut ids = std::collections::HashSet::new();
         for span in &source.spans {
-            count += 1; bytes = bytes.saturating_add(span.text.len());
-            if count > 128 || bytes > 524288 || span.id.is_empty() || span.id.len() > 200 || !ids.insert(&span.id) ||
-               span.start > 9_007_199_254_740_991 || span.end > 9_007_199_254_740_991 ||
-               span.end.checked_sub(span.start) != Some(span.text.len() as u64) || span.text.trim().is_empty() ||
-               !hash(&span.sha256) || span.speaker.len() > 64 || span.turn_time.as_ref().is_some_and(|s| s.len() > 80) { return false; }
+            count += 1;
+            bytes = bytes.saturating_add(span.text.len());
+            if count > 128
+                || bytes > 524288
+                || span.id.is_empty()
+                || span.id.len() > 200
+                || !ids.insert(&span.id)
+                || span.start > 9_007_199_254_740_991
+                || span.end > 9_007_199_254_740_991
+                || span.end.checked_sub(span.start) != Some(span.text.len() as u64)
+                || span.text.trim().is_empty()
+                || !hash(&span.sha256)
+                || span.speaker.len() > 64
+                || span.turn_time.as_ref().is_some_and(|s| s.len() > 80)
+            {
+                return false;
+            }
         }
     }
     true
@@ -413,32 +540,47 @@ mod tests {
 
     #[test]
     fn model_execution_identity_survives_disk_and_compaction() {
-        let p=log_path("model-execution");
-        let mut rec=turn("which model?",5);
-        rec.execution=Some(AskExecution {
-            version:1, selected:Some(AskRequestedModel { provider_id:"ollama".into(), model_id:"requested-alias".into() }),
-            answer_kind:AskAnswerKind::ModelResponse,
-            calls:vec![AskExecutionCall { id:"answer-1".into(), purpose:AskRequestPurpose::Answer,
-                requested:AskRequestedModel { provider_id:"ollama".into(), model_id:"requested-alias".into() },
-                state:AskRequestState::ResponseReceived,
-                identity:Some(AskModelIdentity { model_id:"reported-model".into(), source:AskIdentitySource::ProviderResponse }) }],
+        let p = log_path("model-execution");
+        let mut rec = turn("which model?", 5);
+        rec.execution = Some(AskExecution {
+            version: 1,
+            selected: Some(AskRequestedModel {
+                provider_id: "ollama".into(),
+                model_id: "requested-alias".into(),
+            }),
+            answer_kind: AskAnswerKind::ModelResponse,
+            calls: vec![AskExecutionCall {
+                id: "answer-1".into(),
+                purpose: AskRequestPurpose::Answer,
+                requested: AskRequestedModel {
+                    provider_id: "ollama".into(),
+                    model_id: "requested-alias".into(),
+                },
+                state: AskRequestState::ResponseReceived,
+                identity: Some(AskModelIdentity {
+                    model_id: "reported-model".into(),
+                    source: AskIdentitySource::ProviderResponse,
+                }),
+            }],
         });
-        append(&p,&rec).unwrap();
-        let line=std::fs::read_to_string(&p).unwrap();
+        append(&p, &rec).unwrap();
+        let line = std::fs::read_to_string(&p).unwrap();
         assert!(line.contains("requested-alias") && line.contains("reported-model"));
-        assert_eq!(load(&p).unwrap(),vec![rec.clone()]);
-        std::fs::write(&p,line.repeat(CAP+SLACK)).unwrap();
-        append(&p,&rec).unwrap();
-        let loaded=load(&p).unwrap();
-        assert_eq!(loaded.len(),CAP);
-        assert!(loaded.iter().all(|row|row.execution==rec.execution));
+        assert_eq!(load(&p).unwrap(), vec![rec.clone()]);
+        std::fs::write(&p, line.repeat(CAP + SLACK)).unwrap();
+        append(&p, &rec).unwrap();
+        let loaded = load(&p).unwrap();
+        assert_eq!(loaded.len(), CAP);
+        assert!(loaded.iter().all(|row| row.execution == rec.execution));
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
     #[test]
     fn invalid_execution_metadata_preserves_answer_and_legacy_stays_unknown() {
-        let call=serde_json::json!({"id":"a","purpose":"answer","requested":{"providerId":"ollama","modelId":"chosen"},"state":"response_received"});
-        for execution in [serde_json::json!(null),serde_json::json!("broken"),
+        let call = serde_json::json!({"id":"a","purpose":"answer","requested":{"providerId":"ollama","modelId":"chosen"},"state":"response_received"});
+        for execution in [
+            serde_json::json!(null),
+            serde_json::json!("broken"),
             serde_json::json!({"version":2,"answerKind":"none","calls":[]}),
             serde_json::json!({"version":1,"answerKind":"model_response","calls":[]}),
             serde_json::json!({"version":1,"answerKind":"model_response","calls":[{
@@ -460,13 +602,18 @@ mod tests {
                 "id":"a","purpose":"answer","requested":{"providerId":"ollama","modelId":"chosen"},
                 "state":"response_received","identity":{"modelId":"한".repeat(171),"source":"provider_response"}}]}),
         ] {
-            let parsed:AskTurn=serde_json::from_value(serde_json::json!({"at":1,"q":"q","a":"saved","execution":execution})).unwrap();
-            assert_eq!(parsed.a,"saved");
+            let parsed: AskTurn = serde_json::from_value(
+                serde_json::json!({"at":1,"q":"q","a":"saved","execution":execution}),
+            )
+            .unwrap();
+            assert_eq!(parsed.a, "saved");
             assert!(parsed.execution.is_none());
         }
-        let legacy:AskTurn=serde_json::from_str(r#"{"at":1,"q":"q","a":"legacy"}"#).unwrap();
+        let legacy: AskTurn = serde_json::from_str(r#"{"at":1,"q":"q","a":"legacy"}"#).unwrap();
         assert!(legacy.execution.is_none());
-        assert!(!serde_json::to_string(&legacy).unwrap().contains("execution"));
+        assert!(!serde_json::to_string(&legacy)
+            .unwrap()
+            .contains("execution"));
     }
 
     #[test]
@@ -476,10 +623,16 @@ mod tests {
             serde_json::json!({"version":1,"answerKind":"none","calls":[{"id":"a","purpose":"answer","requested":{"providerId":"ollama","modelId":"chosen"},"state":"cancelled"}]}),
             serde_json::json!({"version":1,"answerKind":"none","calls":[{"id":"a","purpose":"answer","requested":{"providerId":"builtin-local","modelId":"local"},"state":"response_received","identity":{"modelId":"local","source":"local_manifest"}}]}),
         ] {
-            let parsed:AskTurn=serde_json::from_value(serde_json::json!({"at":1,"q":"q","a":"a","execution":execution})).unwrap();
-            let saved=serde_json::to_value(&parsed).unwrap();
-            assert_eq!(saved["execution"],execution);
-            assert_ne!(parsed.execution.unwrap().answer_kind,AskAnswerKind::ModelResponse);
+            let parsed: AskTurn = serde_json::from_value(
+                serde_json::json!({"at":1,"q":"q","a":"a","execution":execution}),
+            )
+            .unwrap();
+            let saved = serde_json::to_value(&parsed).unwrap();
+            assert_eq!(saved["execution"], execution);
+            assert_ne!(
+                parsed.execution.unwrap().answer_kind,
+                AskAnswerKind::ModelResponse
+            );
         }
         let parsed:AskTurn=serde_json::from_value(serde_json::json!({"at":1,"q":"q","execution":{
             "version":1,"answerKind":"model_response","calls":[{"id":"a","purpose":"answer","requested":{"providerId":"ollama","modelId":"chosen"},"state":"response_received"}]}})).unwrap();
@@ -492,13 +645,30 @@ mod tests {
         let mut rec = turn("this week", 4);
         rec.search_context = Some(AskSearchContext {
             version: 1,
-            guided_question: Some(serde_json::json!({"version":1,"intent":"remaining","subject":"synthetic library","asOf":"2026-10-30"})),
-            historical: Some(AskHistoricalCoverage {as_of:"2026-10-30".into(),after_cutoff:1,date_unverified:1}),
-            range: Some(AskDateRange { start: "2026-10-26".into(), end: "2026-10-30".into() }),
+            guided_question: Some(
+                serde_json::json!({"version":1,"intent":"remaining","subject":"synthetic library","asOf":"2026-10-30"}),
+            ),
+            historical: Some(AskHistoricalCoverage {
+                as_of: "2026-10-30".into(),
+                after_cutoff: 1,
+                date_unverified: 1,
+            }),
+            range: Some(AskDateRange {
+                start: "2026-10-26".into(),
+                end: "2026-10-30".into(),
+            }),
             range_ignored: None,
             paths: Some(vec!["sessions/work.md".into()]),
-            packing: Some(AskPackingCoverage { selected_passages: 2, omitted_passages: 3, omitted_on_included_pages: 2 }),
-            activity_coverage: Some(AskActivityCoverage { scanned_pages: 50, sources: 1, incomplete: true }),
+            packing: Some(AskPackingCoverage {
+                selected_passages: 2,
+                omitted_passages: 3,
+                omitted_on_included_pages: 2,
+            }),
+            activity_coverage: Some(AskActivityCoverage {
+                scanned_pages: 50,
+                sources: 1,
+                incomplete: true,
+            }),
             activity_question: Some("What did I work on recently?".into()),
             period_clarification: None,
         });
@@ -511,7 +681,9 @@ mod tests {
         append(&p, &rec).unwrap();
         let loaded = load(&p).unwrap();
         assert_eq!(loaded.len(), CAP);
-        assert!(loaded.iter().all(|row| row.search_context == rec.search_context));
+        assert!(loaded
+            .iter()
+            .all(|row| row.search_context == rec.search_context));
         std::fs::remove_dir_all(p.parent().unwrap()).unwrap();
     }
 
@@ -522,11 +694,12 @@ mod tests {
                 "version":1,"guidedQuestion":{"version":1,"intent":"unknown","subject":"x"},
                 "packing":{"selectedPassages":2,"omittedPassages":1,"omittedOnIncludedPages":0}
             }
-        })).unwrap();
-        assert_eq!(parsed.a,"retained answer");
-        let context=parsed.search_context.unwrap();
+        }))
+        .unwrap();
+        assert_eq!(parsed.a, "retained answer");
+        let context = parsed.search_context.unwrap();
         assert!(context.guided_question.is_none());
-        assert_eq!(context.packing.unwrap().selected_passages,2);
+        assert_eq!(context.packing.unwrap().selected_passages, 2);
     }
 
     #[test]
@@ -535,11 +708,12 @@ mod tests {
             "at":1,"q":"q","a":"kept","searchContext":{"version":1,
                 "historical":{"asOf":"2026-10-08","afterCutoff":-1,"dateUnverified":0},
                 "packing":{"selectedPassages":1,"omittedPassages":2,"omittedOnIncludedPages":1}}
-        })).unwrap();
-        let context=parsed.search_context.unwrap();
+        }))
+        .unwrap();
+        let context = parsed.search_context.unwrap();
         assert!(context.historical.is_none());
-        assert_eq!(context.packing.unwrap().omitted_passages,2);
-        assert_eq!(parsed.a,"kept");
+        assert_eq!(context.packing.unwrap().omitted_passages, 2);
+        assert_eq!(parsed.a, "kept");
     }
 
     #[test]
@@ -555,32 +729,50 @@ mod tests {
         ] {
             let parsed: AskTurn = serde_json::from_value(serde_json::json!({
                 "at":4,"q":"q","a":"saved answer","searchContext":context
-            })).unwrap();
+            }))
+            .unwrap();
             assert_eq!(parsed.a, "saved answer");
             assert!(parsed.search_context.is_none());
         }
         let legacy: AskTurn = serde_json::from_str(r#"{"at":1,"q":"q","a":"legacy"}"#).unwrap();
         assert!(legacy.search_context.is_none());
-        assert!(!serde_json::to_string(&legacy).unwrap().contains("searchContext"));
+        assert!(!serde_json::to_string(&legacy)
+            .unwrap()
+            .contains("searchContext"));
         let clarification: AskTurn = serde_json::from_value(serde_json::json!({
             "at":5,"q":"recent work","a":"Which period?", "searchContext":{
                 "version":1,"periodClarification":true,"activityQuestion":"recent work"
             }
-        })).unwrap();
-        let back: AskTurn = serde_json::from_str(&serde_json::to_string(&clarification).unwrap()).unwrap();
-        assert_eq!(back.search_context.unwrap().period_clarification, Some(true));
+        }))
+        .unwrap();
+        let back: AskTurn =
+            serde_json::from_str(&serde_json::to_string(&clarification).unwrap()).unwrap();
+        assert_eq!(
+            back.search_context.unwrap().period_clarification,
+            Some(true)
+        );
     }
 
     #[test]
     fn citation_evidence_survives_disk_and_compaction() {
         let p = log_path("citation-originals");
         let mut rec = turn("which original?", 1);
-        rec.citation_evidence = Some(CitationEvidence { version: 1, sources: vec![CitationSource {
-            path: "raw/record.md".into(), revision: "a".repeat(64), spans: vec![CitationSpan {
-                id: "original-1".into(), start: 20, end: 26, text: "원문".into(),
-                sha256: "b".repeat(64), speaker: "user".into(), turn_time: None,
+        rec.citation_evidence = Some(CitationEvidence {
+            version: 1,
+            sources: vec![CitationSource {
+                path: "raw/record.md".into(),
+                revision: "a".repeat(64),
+                spans: vec![CitationSpan {
+                    id: "original-1".into(),
+                    start: 20,
+                    end: 26,
+                    text: "원문".into(),
+                    sha256: "b".repeat(64),
+                    speaker: "user".into(),
+                    turn_time: None,
+                }],
             }],
-        }] });
+        });
         append(&p, &rec).unwrap();
         assert_eq!(load(&p).unwrap(), vec![rec.clone()]);
         // Force compaction using the same metadata without changing its bytes.
@@ -589,14 +781,20 @@ mod tests {
         append(&p, &rec).unwrap();
         let loaded = load(&p).unwrap();
         assert_eq!(loaded.len(), CAP);
-        assert!(loaded.iter().all(|row| row.citation_evidence == rec.citation_evidence));
+        assert!(loaded
+            .iter()
+            .all(|row| row.citation_evidence == rec.citation_evidence));
     }
 
     #[test]
     fn malformed_optional_citation_metadata_preserves_answer() {
-        for evidence in [serde_json::json!(null), serde_json::json!("broken"),
-                         serde_json::json!({"version":1,"sources":[{"path":"../outside.md"}]})] {
-            let value = serde_json::json!({"at":2,"q":"q","a":"saved answer","citationEvidence":evidence});
+        for evidence in [
+            serde_json::json!(null),
+            serde_json::json!("broken"),
+            serde_json::json!({"version":1,"sources":[{"path":"../outside.md"}]}),
+        ] {
+            let value =
+                serde_json::json!({"at":2,"q":"q","a":"saved answer","citationEvidence":evidence});
             let parsed: AskTurn = serde_json::from_value(value).unwrap();
             assert_eq!(parsed.a, "saved answer");
             assert!(parsed.citation_evidence.is_none());
@@ -609,11 +807,14 @@ mod tests {
     fn model_evidence_reason_survives_disk_roundtrip() {
         let p = log_path("model-evidence");
         let mut rec = turn("grounded question", 3);
-        rec.a.clear(); rec.cited.clear(); rec.abstained = true;
+        rec.a.clear();
+        rec.cited.clear();
+        rec.abstained = true;
         rec.abstain_reason = Some(AbstainReason::ModelEvidence);
         append(&p, &rec).unwrap();
         assert_eq!(load(&p).unwrap(), vec![rec]);
-        let legacy: AskTurn = serde_json::from_str(r#"{"at":1,"q":"legacy","abstained":true}"#).unwrap();
+        let legacy: AskTurn =
+            serde_json::from_str(r#"{"at":1,"q":"legacy","abstained":true}"#).unwrap();
         assert!(legacy.abstain_reason.is_none());
     }
 

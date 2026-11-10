@@ -594,16 +594,17 @@ fn checked_evidence_selection(
                 hit.page.clone(),
                 format!("{:x}", Sha256::digest(content.as_bytes())),
             );
-            let requested_sections: Vec<_> = if request.activity_overview || diagnostic_selected_turns {
-                request
-                    .hits
-                    .iter()
-                    .filter(|selected| selected.page == hit.page)
-                    .map(|selected| selected.section)
-                    .collect()
-            } else {
-                (0..chunks.len()).collect()
-            };
+            let requested_sections: Vec<_> =
+                if request.activity_overview || diagnostic_selected_turns {
+                    request
+                        .hits
+                        .iter()
+                        .filter(|selected| selected.page == hit.page)
+                        .map(|selected| selected.section)
+                        .collect()
+                } else {
+                    (0..chunks.len()).collect()
+                };
             let (activity_sections, section_times) = {
                 let bound = crate::activity_recall::original_activity_inputs(
                     root,
@@ -1595,7 +1596,10 @@ mod tests {
         std::fs::write(dir.path().join("wiki/a.md"), body).unwrap();
         let chunks = crate::embeddings::chunk_page(body);
         index.upsert_page("wiki/a.md", "a", &chunks);
-        request.hits[0].section = chunks.iter().position(|text| text.contains("Please prepare")).unwrap();
+        request.hits[0].section = chunks
+            .iter()
+            .position(|text| text.contains("Please prepare"))
+            .unwrap();
         request.hits[0].text = chunks[request.hits[0].section].clone();
         let whole = checked_evidence(dir.path(), &index, &request).unwrap();
         let selected = checked_evidence_selection(dir.path(), &index, &request, true).unwrap();
@@ -1624,33 +1628,74 @@ mod tests {
         request.lang = "en".into();
         request.question = "What does the synthetic record contain?".into();
         let packet = diagnostic_ask::exchange(dir.path(), &index, &request, None, None).unwrap();
-        let payload: serde_json::Value = serde_json::from_str(packet["user"].as_str().unwrap()).unwrap();
-        assert!(payload["sources"][0]["originalSpans"][0]["text"].as_str().unwrap().contains("SYNTHETIC_ONLY_FACT"));
+        let payload: serde_json::Value =
+            serde_json::from_str(packet["user"].as_str().unwrap()).unwrap();
+        assert!(payload["sources"][0]["originalSpans"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("SYNTHETIC_ONLY_FACT"));
         let revision = packet["revision"].as_str();
         let raw = r#"{"answer":"The record contains original evidence.","sources":["S1"]}"#;
-        let review = diagnostic_ask::review_input(dir.path(), &index, &request, raw, revision).unwrap();
-        let review_payload: serde_json::Value = serde_json::from_str(review["user"].as_str().unwrap()).unwrap();
-        assert_eq!(review_payload["answer"]["proseWithoutModelLinkLabels"], "The record contains original evidence.");
-        assert!(review_payload["originalSpans"][0]["sha256"].as_str().is_some());
+        let review =
+            diagnostic_ask::review_input(dir.path(), &index, &request, raw, revision).unwrap();
+        let review_payload: serde_json::Value =
+            serde_json::from_str(review["user"].as_str().unwrap()).unwrap();
+        assert_eq!(
+            review_payload["answer"]["proseWithoutModelLinkLabels"],
+            "The record contains original evidence."
+        );
+        assert!(review_payload["originalSpans"][0]["sha256"]
+            .as_str()
+            .is_some());
         assert_eq!(review["modelExecuted"], false);
         assert_eq!(review["productionAccepted"], false);
-        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, raw, Some("stale")).is_err());
-        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, &raw.replace("S1", "S999"), revision).is_err());
-        let rendered = diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), revision).unwrap();
+        assert!(
+            diagnostic_ask::review_input(dir.path(), &index, &request, raw, Some("stale")).is_err()
+        );
+        assert!(diagnostic_ask::review_input(
+            dir.path(),
+            &index,
+            &request,
+            &raw.replace("S1", "S999"),
+            revision
+        )
+        .is_err());
+        let rendered =
+            diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), revision).unwrap();
         assert_eq!(rendered["paths"], serde_json::json!(["wiki/a.md"]));
         let blank = r#"{"answer":"","sources":[]}"#;
-        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, blank, revision).is_err());
-        let declined = diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), revision).unwrap();
+        assert!(
+            diagnostic_ask::review_input(dir.path(), &index, &request, blank, revision).is_err()
+        );
+        let declined =
+            diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), revision).unwrap();
         assert_eq!(declined["abstained"], true);
         assert_eq!(declined["semanticAccepted"], false);
         assert_eq!(declined["paths"], serde_json::json!([]));
-        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), Some("stale")).is_err());
-        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), Some("stale")).is_err());
-        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(&raw.replace("S1", "S999")), revision).is_err());
+        assert!(
+            diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), Some("stale"))
+                .is_err()
+        );
+        assert!(
+            diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), Some("stale"))
+                .is_err()
+        );
+        assert!(diagnostic_ask::exchange(
+            dir.path(),
+            &index,
+            &request,
+            Some(&raw.replace("S1", "S999")),
+            revision
+        )
+        .is_err());
         std::fs::write(dir.path().join("wiki/a.md"), "changed source").unwrap();
         assert!(diagnostic_ask::review_input(dir.path(), &index, &request, raw, revision).is_err());
-        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), revision).is_err());
-        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), revision).is_err());
+        assert!(
+            diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), revision).is_err()
+        );
+        assert!(
+            diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), revision).is_err()
+        );
     }
 
     #[test]

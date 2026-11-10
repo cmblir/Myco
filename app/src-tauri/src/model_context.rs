@@ -252,11 +252,20 @@ fn retrieval_trace(value: &serde_json::Value) -> Result<serde_json::Value, Strin
     let hits = hits
         .iter()
         .map(|hit| {
-            if hit["page"].as_str().is_none_or(|page| page.len() > 4096) || hit["section"].as_u64().is_none() {
+            if hit["page"].as_str().is_none_or(|page| page.len() > 4096)
+                || hit["section"].as_u64().is_none()
+            {
                 return Err("invalid context audit retrieval hit".to_string());
             }
             let mut row = serde_json::Map::new();
-            for key in ["page", "section", "scoreRrf", "scoreFinal", "similarity", "exactMatch"] {
+            for key in [
+                "page",
+                "section",
+                "scoreRrf",
+                "scoreFinal",
+                "similarity",
+                "exactMatch",
+            ] {
                 if let Some(v) = hit.get(key).filter(|v| !v.is_object() && !v.is_array()) {
                     row.insert(key.into(), v.clone());
                 }
@@ -429,7 +438,10 @@ mod tests {
             "hits":[{"page":"raw/conversations/synthetic.md","section":3,"scoreRrf":0.016,"scoreFinal":0.016,
                      "similarity":null,"exactMatch":true,"text":"Synthetic original."}]}))
         .unwrap();
-        assert_eq!(trace["denseSkipped"], "no embedding index for this vault yet");
+        assert_eq!(
+            trace["denseSkipped"],
+            "no embedding index for this vault yet"
+        );
         assert_eq!(trace["hits"][0]["section"], 3);
         assert!(trace["hits"][0].get("text").is_none());
         assert!(retrieval_trace(&serde_json::json!({"hits":[{"page":"raw/x.md"}]})).is_err());

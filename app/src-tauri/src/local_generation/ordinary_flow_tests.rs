@@ -83,42 +83,63 @@ fn accepted_review() -> Value {
 
 #[test]
 fn guided_ordinary_format_keeps_complete_originals_json_and_the_separate_review() {
-    let (mut request,evidence,sources)=fixture();
-    request.guided_question=Some(serde_json::from_value(json!({
-        "version":1,"intent":"decision","subject":"Synthetic service port"
-    })).unwrap());
-    let mut calls=0;
-    let answer=run(&request,&evidence,&sources,request.origin.as_ref().unwrap(),|_,_|Ok(100),
-        |system,user,_,_,schema| {
-            calls+=1;
-            let payload:Value=serde_json::from_str(user).unwrap();
+    let (mut request, evidence, sources) = fixture();
+    request.guided_question = Some(
+        serde_json::from_value(json!({
+            "version":1,"intent":"decision","subject":"Synthetic service port"
+        }))
+        .unwrap(),
+    );
+    let mut calls = 0;
+    let answer = run(
+        &request,
+        &evidence,
+        &sources,
+        request.origin.as_ref().unwrap(),
+        |_, _| Ok(100),
+        |system, user, _, _, schema| {
+            calls += 1;
+            let payload: Value = serde_json::from_str(user).unwrap();
             match schema {
-                GenerationSchema::AskAnswerV1=>{
-                    assert!(system.contains("Decision / Reason at the time / Later changes / Evidence"));
-                    assert_eq!(payload["guidedQuestion"]["intent"],"decision");
-                    assert_eq!(payload["coverage"]["omittedSuppliedOriginalSpans"],0);
+                GenerationSchema::AskAnswerV1 => {
+                    assert!(
+                        system.contains("Decision / Reason at the time / Later changes / Evidence")
+                    );
+                    assert_eq!(payload["guidedQuestion"]["intent"], "decision");
+                    assert_eq!(payload["coverage"]["omittedSuppliedOriginalSpans"], 0);
                     assert!(user.contains("correct port is 4119"));
                     assert!(!user.contains("invented port 9999"));
                     Ok(draft())
                 }
-                GenerationSchema::AskAnswerReviewV1=>Ok(accepted_review().to_string()),
-                _=>panic!("guided ordinary request changed the established JSON/review schemas"),
+                GenerationSchema::AskAnswerReviewV1 => Ok(accepted_review().to_string()),
+                _ => panic!("guided ordinary request changed the established JSON/review schemas"),
             }
-        }).unwrap();
-    assert_eq!(calls,2);
-    assert_eq!(answer.used_sources,vec!["wiki/ordinary.md"]);
+        },
+    )
+    .unwrap();
+    assert_eq!(calls, 2);
+    assert_eq!(answer.used_sources, vec!["wiki/ordinary.md"]);
     assert!(answer.answer.contains("[[wiki/ordinary|Synthetic note]]"));
 }
 
 #[test]
 fn native_guided_historical_cutoff_fails_before_generation_instead_of_using_future_closure() {
-    let (mut request,evidence,sources)=fixture();
-    request.guided_question=Some(serde_json::from_value(json!({
-        "version":1,"intent":"progress","subject":"Synthetic service","asOf":"2026-09-15"
-    })).unwrap());
-    let result=run(&request,&evidence,&sources,request.origin.as_ref().unwrap(),|_,_|Ok(100),
-        |_,_,_,_,_|panic!("unsupported historical selection must not generate"));
-    assert_eq!(result.unwrap_err().code,"historical_cutoff_unsupported");
+    let (mut request, evidence, sources) = fixture();
+    request.guided_question = Some(
+        serde_json::from_value(json!({
+            "version":1,"intent":"progress","subject":"Synthetic service","asOf":"2026-09-15"
+        }))
+        .unwrap(),
+    );
+    let result = run(
+        &request,
+        &evidence,
+        &sources,
+        request.origin.as_ref().unwrap(),
+        |_, _| Ok(100),
+        |_, _, _, _, _| panic!("unsupported historical selection must not generate"),
+    );
+    assert_eq!(result.unwrap_err().code, "historical_cutoff_unsupported");
 }
 
 #[test]

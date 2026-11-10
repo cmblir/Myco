@@ -14,13 +14,20 @@ fn index_key(request: &Request) -> String {
         "scope":request.scope,"range":request.range.as_ref().map(|r| (&r.start, &r.end, r.start_epoch, r.end_epoch)),"paths":request.paths}).to_string()
 }
 #[derive(Default)]
-struct IndexMemo { entry: Option<(String, std::sync::Arc<Bm25Index>)> }
+struct IndexMemo {
+    entry: Option<(String, std::sync::Arc<Bm25Index>)>,
+}
 impl IndexMemo {
     fn get(&self, key: &str) -> Option<std::sync::Arc<Bm25Index>> {
-        self.entry.as_ref().filter(|(saved,_)| saved == key).map(|(_, index)| index.clone())
+        self.entry
+            .as_ref()
+            .filter(|(saved, _)| saved == key)
+            .map(|(_, index)| index.clone())
     }
     fn clear(&mut self, key: &str) {
-        if self.entry.as_ref().is_some_and(|(saved,_)| saved == key) { self.entry = None; }
+        if self.entry.as_ref().is_some_and(|(saved, _)| saved == key) {
+            self.entry = None;
+        }
     }
 }
 fn index_memo() -> &'static std::sync::Mutex<IndexMemo> {
@@ -31,18 +38,25 @@ pub(crate) fn packed_index(request: &Request) -> Option<std::sync::Arc<Bm25Index
     index_memo().lock().ok()?.get(&index_key(request))
 }
 pub(crate) fn remember_index(request: &Request, index: std::sync::Arc<Bm25Index>) {
-    if let Ok(mut memo) = index_memo().lock() { memo.entry = Some((index_key(request), index)); }
+    if let Ok(mut memo) = index_memo().lock() {
+        memo.entry = Some((index_key(request), index));
+    }
 }
 pub(crate) fn forget_index(request: &Request) {
-    if let Ok(mut memo) = index_memo().lock() { memo.clear(&index_key(request)); }
+    if let Ok(mut memo) = index_memo().lock() {
+        memo.clear(&index_key(request));
+    }
 }
 
 fn prepare(root: &Path, index: &Bm25Index, request: &Request) -> Result<Prompt, String> {
     prepare_bound(root, index, request).map(|(prompt, _, _)| prompt)
 }
 
-fn prepare_bound(root: &Path, index: &Bm25Index, request: &Request)
-    -> Result<(Prompt, crate::wiki_claims::SourceSet, AskReviewContext), String> {
+fn prepare_bound(
+    root: &Path,
+    index: &Bm25Index,
+    request: &Request,
+) -> Result<(Prompt, crate::wiki_claims::SourceSet, AskReviewContext), String> {
     if request.activity_overview || request.resolution.is_some() {
         return Err("diagnostic bridge only accepts ordinary source reading".into());
     }
@@ -50,13 +64,29 @@ fn prepare_bound(root: &Path, index: &Bm25Index, request: &Request)
     if checked.original_inputs_incomplete {
         return Err("diagnostic original inputs incomplete".into());
     }
-    let origin = request.origin.as_ref().ok_or("diagnostic opening missing")?;
-    let role = request.role_snapshot.as_ref().ok_or("diagnostic role missing")?;
-    let context = AskReviewContext::for_question(origin, role, &request.request_id,
-        &request.question, request.previous_question.as_deref(), &request.lang,
-        request.scope, request.range.as_ref(), request.paths.as_deref())
-        .map_err(|error| error.to_string())?;
-    let originals = checked.originals.ok_or("diagnostic original packet missing")?;
+    let origin = request
+        .origin
+        .as_ref()
+        .ok_or("diagnostic opening missing")?;
+    let role = request
+        .role_snapshot
+        .as_ref()
+        .ok_or("diagnostic role missing")?;
+    let context = AskReviewContext::for_question(
+        origin,
+        role,
+        &request.request_id,
+        &request.question,
+        request.previous_question.as_deref(),
+        &request.lang,
+        request.scope,
+        request.range.as_ref(),
+        request.paths.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
+    let originals = checked
+        .originals
+        .ok_or("diagnostic original packet missing")?;
     let prompt = ordinary_flow::original_prompt(request, &checked.evidence, &originals, &context)
         .map_err(|error| error.detail)?;
     Ok((prompt, originals, context))
@@ -64,8 +94,13 @@ fn prepare_bound(root: &Path, index: &Bm25Index, request: &Request)
 
 /// Export only after the same fresh source/revision binding as answer rendering.
 /// Keep the native review's complete packet; do not apply the draft projection.
-pub(crate) fn review_input(root: &Path, index: &Bm25Index, request: &Request,
-    raw: &str, expected_revision: Option<&str>) -> Result<Value, String> {
+pub(crate) fn review_input(
+    root: &Path,
+    index: &Bm25Index,
+    request: &Request,
+    raw: &str,
+    expected_revision: Option<&str>,
+) -> Result<Value, String> {
     let (prompt, originals, context) = prepare_bound(root, index, request)?;
     let projected = model_view(&prompt.user)?;
     let revision = packet_revision(&prompt.system, &projected, &prompt.user)?;
@@ -75,7 +110,8 @@ pub(crate) fn review_input(root: &Path, index: &Bm25Index, request: &Request,
     if is_declared_abstention(raw) {
         return Err("diagnostic review requires a nonempty answer draft".into());
     }
-    let draft = crate::local_synthesis::answer_draft::validate_answer_draft(raw, &prompt, &request.lang)?;
+    let draft =
+        crate::local_synthesis::answer_draft::validate_answer_draft(raw, &prompt, &request.lang)?;
     crate::local_synthesis::answer_review::diagnostic_input(&context, &originals, &prompt, &draft)
         .map_err(|error| error.to_string())
 }
@@ -91,26 +127,44 @@ fn packet_revision(system: &str, user: &str, original: &str) -> Result<String, S
 /// This is a measured input projection, not a claim of identical training inputs.
 fn model_view(original: &str) -> Result<String, String> {
     let mut value: Value = serde_json::from_str(original).map_err(|error| error.to_string())?;
-    let sources = value.get_mut("sources").and_then(Value::as_array_mut)
+    let sources = value
+        .get_mut("sources")
+        .and_then(Value::as_array_mut)
         .ok_or("diagnostic source list missing")?;
     let mut ordinal = 0;
     for source in sources {
-        let spans = source.get_mut("originalSpans").and_then(Value::as_array_mut)
+        let spans = source
+            .get_mut("originalSpans")
+            .and_then(Value::as_array_mut)
             .ok_or("diagnostic original spans missing")?;
         for span in spans {
-            let object = span.as_object_mut().ok_or("diagnostic span is not an object")?;
+            let object = span
+                .as_object_mut()
+                .ok_or("diagnostic span is not an object")?;
             if !object.get("text").is_some_and(Value::is_string)
-                || !object.get("speaker").is_some_and(Value::is_string) {
+                || !object.get("speaker").is_some_and(Value::is_string)
+            {
                 return Err("diagnostic original text or speaker missing".into());
             }
-            for key in ["sourceId", "sourcePath", "selectionPath", "sourceRevision", "start", "end", "sha256"] {
+            for key in [
+                "sourceId",
+                "sourcePath",
+                "selectionPath",
+                "sourceRevision",
+                "start",
+                "end",
+                "sha256",
+            ] {
                 object.remove(key);
             }
             ordinal += 1;
             object.insert("id".into(), json!(format!("Q{ordinal}")));
         }
     }
-    value.as_object_mut().ok_or("diagnostic packet missing")?.remove("contextRevision");
+    value
+        .as_object_mut()
+        .ok_or("diagnostic packet missing")?
+        .remove("contextRevision");
     serde_json::to_string(&value).map_err(|error| error.to_string())
 }
 
@@ -119,15 +173,24 @@ fn model_view(original: &str) -> Result<String, String> {
 fn is_declared_abstention(raw: &str) -> bool {
     #[derive(serde::Deserialize)]
     #[serde(deny_unknown_fields)]
-    struct Unanswered { answer: String, sources: Vec<String> }
-    raw.len() <= 8192 && serde_json::from_str::<Unanswered>(raw)
-        .is_ok_and(|value| value.answer.is_empty() && value.sources.is_empty())
+    struct Unanswered {
+        answer: String,
+        sources: Vec<String>,
+    }
+    raw.len() <= 8192
+        && serde_json::from_str::<Unanswered>(raw)
+            .is_ok_and(|value| value.answer.is_empty() && value.sources.is_empty())
 }
 
 /// The command authenticates the current opening/role before entering this helper.
 /// Rendering rebinds current original bytes and compares the exact prompt revision.
-pub(crate) fn exchange(root: &Path, index: &Bm25Index, request: &Request,
-    raw_answer: Option<&str>, expected_revision: Option<&str>) -> Result<Value, String> {
+pub(crate) fn exchange(
+    root: &Path,
+    index: &Bm25Index,
+    request: &Request,
+    raw_answer: Option<&str>,
+    expected_revision: Option<&str>,
+) -> Result<Value, String> {
     let mut prompt = prepare(root, index, request)?;
     let original_packet = prompt.user.clone();
     prompt.user = model_view(&original_packet)?;
@@ -137,17 +200,21 @@ pub(crate) fn exchange(root: &Path, index: &Bm25Index, request: &Request,
             return Err("diagnostic source or input changed during generation".into());
         }
         if is_declared_abstention(raw) {
-            return Ok(json!({"answer":"","paths":[],"abstained":true,"revision":revision,
-                "semanticAccepted":false,"productionAccepted":false}));
+            return Ok(
+                json!({"answer":"","paths":[],"abstained":true,"revision":revision,
+                "semanticAccepted":false,"productionAccepted":false}),
+            );
         }
         let (answer, paths) = crate::local_synthesis::validate_answer(raw, &prompt, &request.lang)?;
         return Ok(json!({"answer":answer,"paths":paths,"revision":revision,
             "semanticAccepted":false,"productionAccepted":false}));
     }
-    Ok(json!({"system":prompt.system,"user":prompt.user,"revision":revision,
+    Ok(
+        json!({"system":prompt.system,"user":prompt.user,"revision":revision,
         "evidence":prompt.evidence,"originalPacket":original_packet,
         "modelProjection":"original-text-attribution-v1","boundedOriginalSelection":true,
-        "semanticAccepted":false,"productionAccepted":false}))
+        "semanticAccepted":false,"productionAccepted":false}),
+    )
 }
 
 #[cfg(test)]
@@ -156,9 +223,15 @@ mod tests {
     #[test]
     fn abstention_requires_exact_policy_shape_not_malformed_or_uncited_prose() {
         assert!(is_declared_abstention(r#"{"answer":"","sources":[]}"#));
-        for raw in [r#"{"answer":" ","sources":[]}"#, r#"{"answer":"","sources":["S1"]}"#,
-            r#"{"answer":"Unsupported","sources":[]}"#, r#"{"answer":"","sources":[],"extra":true}"#,
-            r#"{"answer":"","answer":"","sources":[]}"#, r#"{"answer":null,"sources":[]}"#, ""] {
+        for raw in [
+            r#"{"answer":" ","sources":[]}"#,
+            r#"{"answer":"","sources":["S1"]}"#,
+            r#"{"answer":"Unsupported","sources":[]}"#,
+            r#"{"answer":"","sources":[],"extra":true}"#,
+            r#"{"answer":"","answer":"","sources":[]}"#,
+            r#"{"answer":null,"sources":[]}"#,
+            "",
+        ] {
             assert!(!is_declared_abstention(raw), "{raw}");
         }
     }
@@ -167,7 +240,10 @@ mod tests {
         let mut memo = IndexMemo::default();
         let index = std::sync::Arc::new(Bm25Index::new());
         memo.entry = Some(("opening-role-question-A".into(), index.clone()));
-        assert!(std::sync::Arc::ptr_eq(&memo.get("opening-role-question-A").unwrap(), &index));
+        assert!(std::sync::Arc::ptr_eq(
+            &memo.get("opening-role-question-A").unwrap(),
+            &index
+        ));
         assert!(memo.get("opening-role-question-B").is_none());
         memo.clear("opening-role-question-B");
         assert!(memo.get("opening-role-question-A").is_some());
@@ -181,13 +257,20 @@ mod tests {
             "hits":[], "expectedVault":"/synthetic/a", "scope":"all"});
         let key = index_key(&serde_json::from_value::<Request>(base.clone()).unwrap());
         for (field, value) in [
-            ("requestId", json!("synthetic-b")), ("expectedVault", json!("/synthetic/b")),
-            ("question", json!("Why?")), ("previousQuestion", json!("Earlier topic")),
+            ("requestId", json!("synthetic-b")),
+            ("expectedVault", json!("/synthetic/b")),
+            ("question", json!("Why?")),
+            ("previousQuestion", json!("Earlier topic")),
             ("range", json!({"start":"2026-10-01","end":"2026-10-02"})),
-            ("scope", json!("wiki")), ("paths", json!(["wiki/project.md"])),
-            ("origin", json!({"vaultPath":"/synthetic/a", "openingToken":"new-opening"})),
+            ("scope", json!("wiki")),
+            ("paths", json!(["wiki/project.md"])),
+            (
+                "origin",
+                json!({"vaultPath":"/synthetic/a", "openingToken":"new-opening"}),
+            ),
         ] {
-            let mut changed = base.clone(); changed[field] = value;
+            let mut changed = base.clone();
+            changed[field] = value;
             let request: Request = serde_json::from_value(changed).unwrap();
             assert_ne!(key, index_key(&request), "cache must separate {field}");
         }
@@ -202,16 +285,30 @@ mod tests {
             "start":30,"end":75,"sha256":"span-hash"});
         let original = json!({"question":"Status?", "contextRevision":"private-context-hash",
             "allowed_source_ids":["S1"],"sources":[{"id":"S1","path":"raw/a.md","originalSpans":[span.clone()]}]});
-        let projected: Value = serde_json::from_str(&model_view(&original.to_string()).unwrap()).unwrap();
+        let projected: Value =
+            serde_json::from_str(&model_view(&original.to_string()).unwrap()).unwrap();
         let model = &projected["sources"][0]["originalSpans"][0];
-        for key in ["text","speaker","turnId","turnTime","recordTime","sourcePhase"] {
+        for key in [
+            "text",
+            "speaker",
+            "turnId",
+            "turnTime",
+            "recordTime",
+            "sourcePhase",
+        ] {
             assert_eq!(model[key], span[key]);
         }
         assert_eq!(model["id"], "Q1");
         assert!(model.get("sha256").is_none());
         assert!(projected.get("contextRevision").is_none());
-        assert_eq!(projected["allowed_source_ids"], original["allowed_source_ids"]);
+        assert_eq!(
+            projected["allowed_source_ids"],
+            original["allowed_source_ids"]
+        );
         assert_eq!(projected["sources"][0]["path"], "raw/a.md");
-        assert_eq!(original["sources"][0]["originalSpans"][0]["sha256"], "span-hash");
+        assert_eq!(
+            original["sources"][0]["originalSpans"][0]["sha256"],
+            "span-hash"
+        );
     }
 }

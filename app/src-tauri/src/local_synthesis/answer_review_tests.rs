@@ -11,18 +11,31 @@ fn diagnostic_export_matches_actual_flat_review_input_without_approval() {
         &prompt, "en",
     ).unwrap();
     let exported = diagnostic_input(&context, &packet, &prompt, &draft).unwrap();
-    for flag in ["tokenFitVerified", "modelExecuted", "semanticAccepted", "productionAccepted"] {
+    for flag in [
+        "tokenFitVerified",
+        "modelExecuted",
+        "semanticAccepted",
+        "productionAccepted",
+    ] {
         assert_eq!(exported[flag], false);
     }
     let mut called = false;
-    run(&context, &packet, &prompt, &draft, |_, _| Ok(1000), |system, user, output_tokens, window| {
-        called = true;
-        assert_eq!(exported["system"], system);
-        assert_eq!(exported["user"], user);
-        assert_eq!(exported["outputTokens"], output_tokens);
-        assert_eq!(exported["contextTokens"], window);
-        Ok(output().to_string())
-    }).unwrap();
+    run(
+        &context,
+        &packet,
+        &prompt,
+        &draft,
+        |_, _| Ok(1000),
+        |system, user, output_tokens, window| {
+            called = true;
+            assert_eq!(exported["system"], system);
+            assert_eq!(exported["user"], user);
+            assert_eq!(exported["outputTokens"], output_tokens);
+            assert_eq!(exported["contextTokens"], window);
+            Ok(output().to_string())
+        },
+    )
+    .unwrap();
     assert!(called);
     let mut changed = prompt;
     changed.question.push_str(" changed");

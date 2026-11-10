@@ -1547,11 +1547,23 @@ mod tests {
             strip_speaker_meta("캔버스 내보내기 세션을 주제별로 묶자는 사용자의 발언"),
             "캔버스 내보내기 세션을 주제별로 묶자는"
         );
-        assert_eq!(strip_speaker_meta("배포를 미루자고 내가 말한 내용"), "배포를 미루자고");
-        assert_eq!(strip_speaker_meta("what the user said about grouping sessions"), "grouping sessions");
-        assert_eq!(strip_speaker_meta("I asked that exports keep dates"), "exports keep dates");
+        assert_eq!(
+            strip_speaker_meta("배포를 미루자고 내가 말한 내용"),
+            "배포를 미루자고"
+        );
+        assert_eq!(
+            strip_speaker_meta("what the user said about grouping sessions"),
+            "grouping sessions"
+        );
+        assert_eq!(
+            strip_speaker_meta("I asked that exports keep dates"),
+            "exports keep dates"
+        );
         // No attribution, or nothing but the attribution: the query is kept.
-        assert_eq!(strip_speaker_meta("캔버스 내보내기  세션 정리"), "캔버스 내보내기 세션 정리");
+        assert_eq!(
+            strip_speaker_meta("캔버스 내보내기  세션 정리"),
+            "캔버스 내보내기 세션 정리"
+        );
         assert_eq!(strip_speaker_meta("사용자의 발언"), "사용자의 발언");
     }
     #[test]

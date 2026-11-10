@@ -282,39 +282,91 @@ pub async fn diagnostic_ask_packet(
     export_review: Option<bool>,
 ) -> Result<serde_json::Value, String> {
     #[cfg(not(debug_assertions))]
-    { let _ = (vault, bm25_cache, request, raw_answer, expected_revision, fresh_index, export_review);
-      return Err("diagnostic bridge unavailable".into()); }
+    {
+        let _ = (
+            vault,
+            bm25_cache,
+            request,
+            raw_answer,
+            expected_revision,
+            fresh_index,
+            export_review,
+        );
+        return Err("diagnostic bridge unavailable".into());
+    }
     #[cfg(debug_assertions)]
     {
         if std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1") {
             return Err("diagnostic bridge requires isolated diagnostic mode".into());
         }
-        let origin = request.origin.as_ref().ok_or("diagnostic opening missing")?;
-        let snapshot = request.role_snapshot.as_ref().ok_or("diagnostic role missing")?;
-        let root = authorized_role(&vault, origin, snapshot, crate::role_authorization::RoleId::Ask,
-            |root| { check_expected_vault(root, Some(&request.expected_vault))?; Ok(root.to_path_buf()) })?;
+        let origin = request
+            .origin
+            .as_ref()
+            .ok_or("diagnostic opening missing")?;
+        let snapshot = request
+            .role_snapshot
+            .as_ref()
+            .ok_or("diagnostic role missing")?;
+        let root = authorized_role(
+            &vault,
+            origin,
+            snapshot,
+            crate::role_authorization::RoleId::Ask,
+            |root| {
+                check_expected_vault(root, Some(&request.expected_vault))?;
+                Ok(root.to_path_buf())
+            },
+        )?;
         let force_fresh = fresh_index.unwrap_or(false) || raw_answer.is_some();
-        if force_fresh { crate::local_generation::diagnostic_ask::forget_index(&request); }
+        if force_fresh {
+            crate::local_generation::diagnostic_ask::forget_index(&request);
+        }
         let index = match crate::local_generation::diagnostic_ask::packed_index(&request) {
             Some(index) => index,
-            None => bm25_cache.get_async(crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?).await?,
+            None => {
+                bm25_cache
+                    .get_async(crate::retrieval::Bm25Index::path_for(
+                        &root.to_string_lossy(),
+                    )?)
+                    .await?
+            }
         };
-        authorized_role(&vault, origin, snapshot, crate::role_authorization::RoleId::Ask, |current| {
-            if current != root { return Err("diagnostic opening changed".into()); }
-            crate::local_generation::diagnostic_ask::remember_index(&request, index.clone());
-            let result = if export_review.unwrap_or(false) {
-                match raw_answer.as_deref() {
-                    Some(raw) => crate::local_generation::diagnostic_ask::review_input(current, &index,
-                        &request, raw, expected_revision.as_deref()),
-                    None => Err("diagnostic review requires a raw answer".into()),
+        authorized_role(
+            &vault,
+            origin,
+            snapshot,
+            crate::role_authorization::RoleId::Ask,
+            |current| {
+                if current != root {
+                    return Err("diagnostic opening changed".into());
                 }
-            } else {
-                crate::local_generation::diagnostic_ask::exchange(current, &index, &request,
-                    raw_answer.as_deref(), expected_revision.as_deref())
-            };
-            if raw_answer.is_some() { crate::local_generation::diagnostic_ask::forget_index(&request); }
-            result
-        })
+                crate::local_generation::diagnostic_ask::remember_index(&request, index.clone());
+                let result = if export_review.unwrap_or(false) {
+                    match raw_answer.as_deref() {
+                        Some(raw) => crate::local_generation::diagnostic_ask::review_input(
+                            current,
+                            &index,
+                            &request,
+                            raw,
+                            expected_revision.as_deref(),
+                        ),
+                        None => Err("diagnostic review requires a raw answer".into()),
+                    }
+                } else {
+                    crate::local_generation::diagnostic_ask::exchange(
+                        current,
+                        &index,
+                        &request,
+                        raw_answer.as_deref(),
+                        expected_revision.as_deref(),
+                    )
+                };
+                if raw_answer.is_some() {
+                    crate::local_generation::diagnostic_ask::forget_index(&request);
+                }
+                result
+            },
+        )
     }
 }
 
@@ -5998,7 +6050,11 @@ pub(crate) async fn embed_one_page(
     bm25_pages: &std::collections::HashSet<String>,
     origin: &AgentVaultSession,
 ) -> Result<EmbedOutcome, String> {
-    embed_one_page_with_policy(app, llm, provider, model, rel, stem, content, existing, store, bm25, bm25_pages, origin, false).await
+    embed_one_page_with_policy(
+        app, llm, provider, model, rel, stem, content, existing, store, bm25, bm25_pages, origin,
+        false,
+    )
+    .await
 }
 
 /// Automatic actor entry; manual reindex keeps the existing policy.
@@ -6017,7 +6073,11 @@ pub(crate) async fn embed_one_page_automatic(
     bm25_pages: &std::collections::HashSet<String>,
     origin: &AgentVaultSession,
 ) -> Result<EmbedOutcome, String> {
-    embed_one_page_with_policy(app, llm, provider, model, rel, stem, content, existing, store, bm25, bm25_pages, origin, true).await
+    embed_one_page_with_policy(
+        app, llm, provider, model, rel, stem, content, existing, store, bm25, bm25_pages, origin,
+        true,
+    )
+    .await
 }
 
 /// Automatic work rechecks opt-in at every bounded GPU batch, including
@@ -6083,14 +6143,18 @@ async fn embed_one_page_with_policy(
     for batch in todo.chunks(DENSE_BATCH_CHUNKS) {
         app.state::<VaultRoot>().with_origin(origin, |_| Ok(()))?;
         let texts = batch.iter().map(|&i| chunks[i].clone()).collect();
-        let embedded = checked_automatic_embedding_batch(automatic, embed_texts_checked(
-            app.clone(),
-            (*llm).clone(),
-            provider,
-            model,
-            crate::local_llm::EmbedRole::Document,
-            texts,
-        )).await?;
+        let embedded = checked_automatic_embedding_batch(
+            automatic,
+            embed_texts_checked(
+                app.clone(),
+                (*llm).clone(),
+                provider,
+                model,
+                crate::local_llm::EmbedRole::Document,
+                texts,
+            ),
+        )
+        .await?;
         if embedded.space.model != store.model || embedded.space.signature != store.signature {
             return Err("index embedding batch representation changed".into());
         }
@@ -6426,9 +6490,16 @@ fn timestamp_in_date_range(timestamp: i64, range: &DateRange) -> bool {
 }
 
 pub(crate) fn chunk_in_date_range(
-    page: &str, content: &str, chunks: &[String], section: usize, range: &DateRange,
+    page: &str,
+    content: &str,
+    chunks: &[String],
+    section: usize,
+    range: &DateRange,
 ) -> bool {
-    chunk_date_mask(page, content, chunks, range).get(section).copied().unwrap_or(false)
+    chunk_date_mask(page, content, chunks, range)
+        .get(section)
+        .copied()
+        .unwrap_or(false)
 }
 
 /// Compute attribution once per page and date window, not once per candidate.
@@ -6499,12 +6570,15 @@ fn legacy_chunk_in_date_range(
     page_in_date_range(page, range)
 }
 
-
 fn chunk_date_mask(page: &str, content: &str, chunks: &[String], range: &DateRange) -> Vec<bool> {
     #[derive(serde::Deserialize, Default)]
-    struct TurnDate { timestamp: Option<String> }
+    struct TurnDate {
+        timestamp: Option<String>,
+    }
     let metadata = gray_matter::Matter::<gray_matter::engine::YAML>::new()
-        .parse::<serde_json::Value>(content).ok().and_then(|p| p.data);
+        .parse::<serde_json::Value>(content)
+        .ok()
+        .and_then(|p| p.data);
     let Some(value) = metadata.as_ref().and_then(|m| m.get("turn_metadata")) else {
         return crate::retrieval_dates::rollup_mask(page, chunks, range)
             .unwrap_or_else(|| vec![page_in_date_range(page, range); chunks.len()]);
@@ -6512,7 +6586,12 @@ fn chunk_date_mask(page: &str, content: &str, chunks: &[String], range: &DateRan
     let Ok(dates) = serde_json::from_value::<Vec<TurnDate>>(value.clone()) else {
         return vec![false; chunks.len()];
     };
-    if content.lines().filter(|line| embeddings::is_transcript_turn_header(line)).count() != dates.len() {
+    if content
+        .lines()
+        .filter(|line| embeddings::is_transcript_turn_header(line))
+        .count()
+        != dates.len()
+    {
         return vec![false; chunks.len()];
     }
     let mut prefix = vec![0usize];
@@ -6520,7 +6599,9 @@ fn chunk_date_mask(page: &str, content: &str, chunks: &[String], range: &DateRan
     let mut active = false;
     for line in content.lines() {
         if embeddings::is_transcript_turn_header(line) {
-            active = dates.get(ordinal).and_then(|t| t.timestamp.as_deref())
+            active = dates
+                .get(ordinal)
+                .and_then(|t| t.timestamp.as_deref())
                 .and_then(crate::importers::parse_iso8601)
                 .is_some_and(|ts| timestamp_in_date_range(ts, range));
             ordinal += 1;
@@ -6533,26 +6614,40 @@ fn chunk_date_mask(page: &str, content: &str, chunks: &[String], range: &DateRan
     let mut previous = 0;
     let mut line = 1;
     for text in chunks {
-        let found = normalized[cursor..].find(text).map(|at| cursor + at).or_else(|| {
-            let first = text.lines().find(|line| !line.trim().is_empty())?;
-            normalized[cursor..].find(first).map(|at| cursor + at)
-        });
+        let found = normalized[cursor..]
+            .find(text)
+            .map(|at| cursor + at)
+            .or_else(|| {
+                let first = text.lines().find(|line| !line.trim().is_empty())?;
+                normalized[cursor..].find(first).map(|at| cursor + at)
+            });
         if let Some(start) = found {
-            line += normalized[previous..start].bytes().filter(|b| *b == b'\n').count();
+            line += normalized[previous..start]
+                .bytes()
+                .filter(|b| *b == b'\n')
+                .count();
             positions.push(line);
             previous = start;
             cursor = (start + text.len()).min(normalized.len());
-            while cursor < normalized.len() && !normalized.is_char_boundary(cursor) { cursor += 1; }
+            while cursor < normalized.len() && !normalized.is_char_boundary(cursor) {
+                cursor += 1;
+            }
         } else {
             // Keep the legacy fallback, including its treatment of repeated text.
             positions.push(chunk_line(&normalized, text));
         }
     }
-    positions.iter().enumerate().map(|(i, start)| {
-        let start = start.saturating_sub(1).min(prefix.len() - 1);
-        let end = positions.get(i + 1).map_or(prefix.len() - 1, |n| n.saturating_sub(1).min(prefix.len() - 1));
-        end > start && prefix[end] > prefix[start]
-    }).collect()
+    positions
+        .iter()
+        .enumerate()
+        .map(|(i, start)| {
+            let start = start.saturating_sub(1).min(prefix.len() - 1);
+            let end = positions.get(i + 1).map_or(prefix.len() - 1, |n| {
+                n.saturating_sub(1).min(prefix.len() - 1)
+            });
+            end > start && prefix[end] > prefix[start]
+        })
+        .collect()
 }
 
 /// The sortable date string a dated-tier page derives its recency from:
@@ -6693,8 +6788,23 @@ pub(crate) async fn hybrid_search(
     paths: Option<&[String]>,
     tier_weights: &crate::retrieval::TierWeights,
 ) -> Result<HybridSearch, String> {
-    hybrid_search_as_of(app, llm, cache, bm25_cache, root, query, k, provider, model,
-        range, scope, paths, tier_weights, None).await
+    hybrid_search_as_of(
+        app,
+        llm,
+        cache,
+        bm25_cache,
+        root,
+        query,
+        k,
+        provider,
+        model,
+        range,
+        scope,
+        paths,
+        tier_weights,
+        None,
+    )
+    .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -6842,9 +6952,7 @@ fn source_duplicate_chunks(
     hashes
         .into_iter()
         .enumerate()
-        .filter(|(section, _)| {
-            dated.as_ref().map_or(true, |mask| mask[*section])
-        })
+        .filter(|(section, _)| dated.as_ref().map_or(true, |mask| mask[*section]))
         .map(|(_, hash)| hash)
         .collect()
 }
@@ -6862,7 +6970,19 @@ pub(crate) fn rank_hybrid(
     paths: Option<&[String]>,
     tier_weights: &crate::retrieval::TierWeights,
 ) -> Result<Vec<HybridHit>, String> {
-    rank_hybrid_as_of(root, store, query_vec, bm25, query, k, range, scope, paths, tier_weights, None)
+    rank_hybrid_as_of(
+        root,
+        store,
+        query_vec,
+        bm25,
+        query,
+        k,
+        range,
+        scope,
+        paths,
+        tier_weights,
+        None,
+    )
 }
 
 /// Historical eligibility is checked by both candidate arms before pool/page cuts.
@@ -6906,7 +7026,8 @@ pub(crate) fn rank_hybrid_as_of(
     let mut revision_keys = std::collections::HashMap::<String, Vec<Option<String>>>::new();
     let mut candidate_keys = std::collections::HashMap::<(String, usize), String>::new();
     let mut date_masks = std::collections::HashMap::<String, Vec<bool>>::new();
-    let mut historical = std::collections::HashMap::<String, crate::retrieval_dates::HistoricalOriginals>::new();
+    let mut historical =
+        std::collections::HashMap::<String, crate::retrieval_dates::HistoricalOriginals>::new();
     let records: std::collections::HashMap<(&str, usize), &crate::vector_index::Record> = store
         .records
         .iter()
@@ -6931,9 +7052,17 @@ pub(crate) fn rank_hybrid_as_of(
         if let Some(end) = as_of_end {
             let original = historical.entry(page.to_string()).or_insert_with(|| {
                 let hashes = bm25.page_hashes(page);
-                crate::retrieval_dates::historical_originals(page, content, chunks, hashes.as_deref(), end)
+                crate::retrieval_dates::historical_originals(
+                    page,
+                    content,
+                    chunks,
+                    hashes.as_deref(),
+                    end,
+                )
             });
-            if !original.eligible.get(section).copied().unwrap_or(false) { return None; }
+            if !original.eligible.get(section).copied().unwrap_or(false) {
+                return None;
+            }
         }
         let valid = hash.is_some_and(|hash| {
             hash == embeddings::content_hash(text)
@@ -6946,19 +7075,37 @@ pub(crate) fn rank_hybrid_as_of(
         }) && !text.trim().is_empty()
             && crate::retrieval::text_matches_phrases(text, &phrases)
             && range.map_or(true, |r| {
-                date_masks.entry(page.to_string()).or_insert_with(|| chunk_date_mask(page, content, chunks, r))
-                    .get(section).copied().unwrap_or(false)
+                date_masks
+                    .entry(page.to_string())
+                    .or_insert_with(|| chunk_date_mask(page, content, chunks, r))
+                    .get(section)
+                    .copied()
+                    .unwrap_or(false)
             });
-        if !valid { return None; }
+        if !valid {
+            return None;
+        }
         let key = if paths.is_none() {
             if as_of_end.is_some() {
-                historical.get(page).and_then(|original| original.keys.get(section)).cloned().flatten()
+                historical
+                    .get(page)
+                    .and_then(|original| original.keys.get(section))
+                    .cloned()
+                    .flatten()
             } else {
-                revision_keys.entry(page.to_string()).or_insert_with(||
-                    crate::retrieval_revisions::chunk_keys(page, content, chunks)
-                ).get(section).cloned().flatten()
+                revision_keys
+                    .entry(page.to_string())
+                    .or_insert_with(|| {
+                        crate::retrieval_revisions::chunk_keys(page, content, chunks)
+                    })
+                    .get(section)
+                    .cloned()
+                    .flatten()
             }
-        } else { None }.unwrap_or_else(|| format!("page:{page}#{section}"));
+        } else {
+            None
+        }
+        .unwrap_or_else(|| format!("page:{page}#{section}"));
         candidate_keys.insert((page.to_string(), section), key.clone());
         Some(key)
     };
@@ -6978,8 +7125,12 @@ pub(crate) fn rank_hybrid_as_of(
                     &h.page,
                     h.section,
                     records.get(&(h.page.as_str(), h.section)).map(|r| r.hash),
-                ) else { return false; };
-                if !dense_seen.insert(key) { return false; }
+                ) else {
+                    return false;
+                };
+                if !dense_seen.insert(key) {
+                    return false;
+                }
                 let n = dense_pages.entry(h.page.clone()).or_default();
                 *n += 1;
                 *n <= PAGE_CAP
@@ -6997,8 +7148,12 @@ pub(crate) fn rank_hybrid_as_of(
             if lexical_pages.get(&h.page).is_some_and(|n| *n >= PAGE_CAP) {
                 return false;
             }
-            let Some(key) = current(&h.page, h.section, bm25.chunk_hash(&h.page, h.section)) else { return false; };
-            if !lexical_seen.insert(key) { return false; }
+            let Some(key) = current(&h.page, h.section, bm25.chunk_hash(&h.page, h.section)) else {
+                return false;
+            };
+            if !lexical_seen.insert(key) {
+                return false;
+            }
             let n = lexical_pages.entry(h.page.clone()).or_default();
             *n += 1;
             *n <= PAGE_CAP
@@ -7015,8 +7170,16 @@ pub(crate) fn rank_hybrid_as_of(
     }
     let deduplicate = |hits: Vec<VecHit>| {
         let mut seen = std::collections::HashSet::new();
-        hits.into_iter().filter(|h| seen.insert(candidate_keys.get(&(h.page.clone(), h.section)).cloned()
-            .unwrap_or_else(|| format!("page:{}#{}", h.page, h.section)))).collect::<Vec<_>>()
+        hits.into_iter()
+            .filter(|h| {
+                seen.insert(
+                    candidate_keys
+                        .get(&(h.page.clone(), h.section))
+                        .cloned()
+                        .unwrap_or_else(|| format!("page:{}#{}", h.page, h.section)),
+                )
+            })
+            .collect::<Vec<_>>()
     };
     let baseline: std::collections::HashMap<(String, usize), usize> =
         crate::retrieval::cap_per_page(deduplicate(fused.clone()), PAGE_CAP, fused.len())
@@ -7125,7 +7288,10 @@ pub async fn semantic_search(
         }
     };
     diagnostic_trace("entered");
-    let as_of_end = as_of.as_ref().map(crate::retrieval_dates::historical_end).transpose()?;
+    let as_of_end = as_of
+        .as_ref()
+        .map(crate::retrieval_dates::historical_end)
+        .transpose()?;
     let origin = vault.snapshot()?;
     let root = std::path::PathBuf::from(&origin.vault_path);
     let scope = scope.unwrap_or_default();
@@ -7168,7 +7334,8 @@ pub async fn semantic_search(
     diagnostic_trace("hybrid complete");
     let dense_skipped = found.dense_skipped;
     let mut fresh_space = None;
-    if found.dense_skipped.is_some() && !found.hits.is_empty()
+    if found.dense_skipped.is_some()
+        && !found.hits.is_empty()
         && found.hits.iter().any(|hit| !hit.exact_match)
         && matches!(provider.as_str(), "" | "builtin-local")
     {
@@ -7177,34 +7344,73 @@ pub async fn semantic_search(
         // candidates with the installed local encoder; never lower the floor
         // or treat BM25 rank as cosine. No persistent index or remote call.
         let (_, cleaned) = crate::retrieval::parse_phrases(&retrieval_query);
-        let query_batch = embed_texts_checked(app.clone(), llm.clone(), &provider, &model,
-            crate::local_llm::EmbedRole::Query, vec![cleaned]).await?;
+        let query_batch = embed_texts_checked(
+            app.clone(),
+            llm.clone(),
+            &provider,
+            &model,
+            crate::local_llm::EmbedRole::Query,
+            vec![cleaned],
+        )
+        .await?;
         diagnostic_trace("query embedding complete");
         for candidates in found.hits.chunks_mut(4) {
-            let documents = embed_texts_checked(app.clone(), llm.clone(), &provider, &model,
+            let documents = embed_texts_checked(
+                app.clone(),
+                llm.clone(),
+                &provider,
+                &model,
                 crate::local_llm::EmbedRole::Document,
-                candidates.iter().map(|hit| hit.text.clone()).collect()).await?;
+                candidates.iter().map(|hit| hit.text.clone()).collect(),
+            )
+            .await?;
             diagnostic_trace("candidate embedding batch complete");
             measure_candidate_cosines(candidates, &query_batch, &documents)?;
         }
-        if embedding_index_signature(&app, &provider, &model).await? != query_batch.space.signature {
+        if embedding_index_signature(&app, &provider, &model).await? != query_batch.space.signature
+        {
             return Err("embedding model changed during candidate scoring".into());
         }
         // Recheck the current source and date after model work, before any
         // result is allowed to become answer context.
         let historical_index = if as_of_end.is_some() {
-            Some(crate::index_publication::snapshot(root.clone()).await?.lexical.clone())
-        } else { None };
+            Some(
+                crate::index_publication::snapshot(root.clone())
+                    .await?
+                    .lexical
+                    .clone(),
+            )
+        } else {
+            None
+        };
         found.hits.retain(|hit| {
-            let Ok(path) = vault::confine_path(&root, &root.join(&hit.page).to_string_lossy()) else { return false; };
-            let Ok(content) = std::fs::read_to_string(path) else { return false; };
+            let Ok(path) = vault::confine_path(&root, &root.join(&hit.page).to_string_lossy())
+            else {
+                return false;
+            };
+            let Ok(content) = std::fs::read_to_string(path) else {
+                return false;
+            };
             let chunks = embeddings::chunk_page(&content);
             chunks.get(hit.section) == Some(&hit.text)
-                && range.as_ref().map_or(true, |r| chunk_in_date_range(&hit.page, &content, &chunks, hit.section, r))
+                && range.as_ref().map_or(true, |r| {
+                    chunk_in_date_range(&hit.page, &content, &chunks, hit.section, r)
+                })
                 && as_of_end.map_or(true, |end| {
-                    let hashes = historical_index.as_ref().and_then(|index| index.page_hashes(&hit.page));
-                    crate::retrieval_dates::historical_originals(&hit.page, &content, &chunks, hashes.as_deref(), end)
-                        .eligible.get(hit.section).copied().unwrap_or(false)
+                    let hashes = historical_index
+                        .as_ref()
+                        .and_then(|index| index.page_hashes(&hit.page));
+                    crate::retrieval_dates::historical_originals(
+                        &hit.page,
+                        &content,
+                        &chunks,
+                        hashes.as_deref(),
+                        end,
+                    )
+                    .eligible
+                    .get(hit.section)
+                    .copied()
+                    .unwrap_or(false)
                 })
         });
         fresh_space = Some(query_batch.space);
@@ -7219,8 +7425,20 @@ pub async fn semantic_search(
         let index = pair.lexical.clone();
         let anchors = response.hits.clone();
         response.related_context = tauri::async_runtime::spawn_blocking(move || {
-            crate::retrieval_context::retrieve_with_cutoff(&root, &index, &anchors, range.as_ref(), scope, paths.as_deref(), &query, as_of_end, guided_intent.as_ref())
-        }).await.map_err(|e| format!("related context failed: {e}"))?;
+            crate::retrieval_context::retrieve_with_cutoff(
+                &root,
+                &index,
+                &anchors,
+                range.as_ref(),
+                scope,
+                paths.as_deref(),
+                &query,
+                as_of_end,
+                guided_intent.as_ref(),
+            )
+        })
+        .await
+        .map_err(|e| format!("related context failed: {e}"))?;
     }
     diagnostic_trace("returning result");
     vault.with_origin(&origin, |_| Ok(response))
@@ -7228,13 +7446,20 @@ pub async fn semantic_search(
 
 /// Validate the actual producer identity before comparing query and document vectors.
 fn measure_candidate_cosines(
-    hits: &mut [HybridHit], query: &embeddings::EmbeddedBatch, documents: &embeddings::EmbeddedBatch,
+    hits: &mut [HybridHit],
+    query: &embeddings::EmbeddedBatch,
+    documents: &embeddings::EmbeddedBatch,
 ) -> Result<(), String> {
     query.validate(&query.space, 1)?;
     documents.validate(&query.space, hits.len())?;
-    let scores = documents.vectors.iter().map(|vector| embeddings::checked_cosine(&query.vectors[0], vector))
+    let scores = documents
+        .vectors
+        .iter()
+        .map(|vector| embeddings::checked_cosine(&query.vectors[0], vector))
         .collect::<Result<Vec<_>, _>>()?;
-    for (hit, score) in hits.iter_mut().zip(scores) { hit.similarity = Some(score); }
+    for (hit, score) in hits.iter_mut().zip(scores) {
+        hit.similarity = Some(score);
+    }
     Ok(())
 }
 
@@ -7299,16 +7524,22 @@ fn with_activity_ask<T>(
     request: &ActivityRecallRequest,
     dispatch: impl FnOnce(&std::path::Path) -> Result<T, String>,
 ) -> Result<T, String> {
-    let snapshot = request.role_snapshot.as_ref()
+    let snapshot = request
+        .role_snapshot
+        .as_ref()
         .ok_or("activity recall requires a native foreground Ask snapshot")?;
     vault.with_origin(&request.origin, |root| {
         crate::role_authorization::with_current_role_at(
-            &request.origin, snapshot, crate::role_authorization::RoleId::Ask,
-            crate::role_authorization::RoleUsage::Foreground, || {
+            &request.origin,
+            snapshot,
+            crate::role_authorization::RoleId::Ask,
+            crate::role_authorization::RoleUsage::Foreground,
+            || {
                 check_expected_vault(root, Some(&request.expected_vault))?;
                 dispatch(root)
             },
-        ).map_err(|error| error.to_string())
+        )
+        .map_err(|error| error.to_string())
     })
 }
 
@@ -7319,8 +7550,14 @@ fn activity_read(
     include_archived: bool,
 ) -> Result<crate::activity_recall::Recall, String> {
     with_activity_ask(vault, request, |root| {
-        crate::activity_recall::recall(root, index, &request.range, request.scope,
-            request.paths.as_deref(), include_archived)
+        crate::activity_recall::recall(
+            root,
+            index,
+            &request.range,
+            request.scope,
+            request.paths.as_deref(),
+            include_archived,
+        )
     })
 }
 
@@ -8519,17 +8756,53 @@ mod tests {
         let mut paths = Vec::new();
         for i in 0..70 {
             let path = format!("raw/conversations/fixture/{i:03}.md");
-            indexed_page(dir.path(), &mut store, &mut bm25, &path, body, vec![1.0, 0.0]);
+            indexed_page(
+                dir.path(),
+                &mut store,
+                &mut bm25,
+                &path,
+                body,
+                vec![1.0, 0.0],
+            );
             paths.push(path);
         }
-        indexed_page(dir.path(), &mut store, &mut bm25, "raw/conversations/fixture/unique.md", &body.replace("selected A", "selected B"), vec![0.9, 0.1]);
+        indexed_page(
+            dir.path(),
+            &mut store,
+            &mut bm25,
+            "raw/conversations/fixture/unique.md",
+            &body.replace("selected A", "selected B"),
+            vec![0.9, 0.1],
+        );
         for vector in [None, Some(&[1.0_f32, 0.0][..])] {
-            let hits = super::rank_hybrid(dir.path(), &store, vector, &bm25, "DECISION_TOKEN", 5, None,
-                crate::retrieval::Scope::All, None, &crate::retrieval::TierWeights::FLAT).unwrap();
+            let hits = super::rank_hybrid(
+                dir.path(),
+                &store,
+                vector,
+                &bm25,
+                "DECISION_TOKEN",
+                5,
+                None,
+                crate::retrieval::Scope::All,
+                None,
+                &crate::retrieval::TierWeights::FLAT,
+            )
+            .unwrap();
             assert_eq!(hits.len(), 2);
             assert!(hits.iter().any(|h| h.text.contains("selected B")));
-            let explicit = super::rank_hybrid(dir.path(), &store, vector, &bm25, "DECISION_TOKEN", 5, None,
-                crate::retrieval::Scope::All, Some(&paths[..2]), &crate::retrieval::TierWeights::FLAT).unwrap();
+            let explicit = super::rank_hybrid(
+                dir.path(),
+                &store,
+                vector,
+                &bm25,
+                "DECISION_TOKEN",
+                5,
+                None,
+                crate::retrieval::Scope::All,
+                Some(&paths[..2]),
+                &crate::retrieval::TierWeights::FLAT,
+            )
+            .unwrap();
             assert_eq!(explicit.len(), 2);
         }
     }
@@ -8539,33 +8812,71 @@ mod tests {
     #[ignore]
     fn diagnostic_revision_retrieval_probe() {
         let root = std::path::PathBuf::from(std::env::var("MYCO_PROBE_VAULT").unwrap());
-        let index = Bm25Index::load_checked(std::path::Path::new(&std::env::var("MYCO_PROBE_INDEX").unwrap())).unwrap();
-        let cases: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("MYCO_PROBE_QUERIES").unwrap()).unwrap()).unwrap();
+        let index = Bm25Index::load_checked(std::path::Path::new(
+            &std::env::var("MYCO_PROBE_INDEX").unwrap(),
+        ))
+        .unwrap();
+        let cases: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(std::env::var("MYCO_PROBE_QUERIES").unwrap()).unwrap(),
+        )
+        .unwrap();
         let mut results = Vec::new();
         for case in cases.as_array().unwrap() {
             let range: Option<DateRange> = serde_json::from_value(case["range"].clone()).unwrap();
             let start = std::time::Instant::now();
-            let hits = super::rank_hybrid(&root, &crate::vector_index::VectorStore::default(), None, &index,
-                case["query"].as_str().unwrap(), 12, range.as_ref(), crate::retrieval::Scope::All, None,
-                &crate::retrieval::TierWeights::FLAT).unwrap();
+            let hits = super::rank_hybrid(
+                &root,
+                &crate::vector_index::VectorStore::default(),
+                None,
+                &index,
+                case["query"].as_str().unwrap(),
+                12,
+                range.as_ref(),
+                crate::retrieval::Scope::All,
+                None,
+                &crate::retrieval::TierWeights::FLAT,
+            )
+            .unwrap();
             let mut context_windows = Vec::new();
             if std::env::var("MYCO_PROBE_CONTEXT").as_deref() == Ok("1") {
                 // Diagnostic only: candidates have not passed fresh cosine scoring.
                 // Observe source-adjacent evidence; never call it accepted context.
                 for hit in &hits {
-                    let path = crate::vault::confine_path(&root, &root.join(&hit.page).to_string_lossy()).unwrap();
+                    let path =
+                        crate::vault::confine_path(&root, &root.join(&hit.page).to_string_lossy())
+                            .unwrap();
                     let content = std::fs::read_to_string(path).unwrap();
                     let chunks = crate::embeddings::chunk_page(&content);
-                    let Some(events) = crate::retrieval_revisions::transcript_chunks(&hit.page, &content, &chunks) else { continue; };
-                    let eligible = range.as_ref().map(|r| super::chunk_date_mask(&hit.page, &content, &chunks, r))
+                    let Some(events) =
+                        crate::retrieval_revisions::transcript_chunks(&hit.page, &content, &chunks)
+                    else {
+                        continue;
+                    };
+                    let eligible = range
+                        .as_ref()
+                        .map(|r| super::chunk_date_mask(&hit.page, &content, &chunks, r))
                         .unwrap_or_else(|| vec![true; chunks.len()]);
-                    let Some(anchor) = events.iter().find(|event| event.section == hit.section) else { continue; };
-                    let mut latest: Vec<_> = events.iter().filter(|event| eligible[event.section])
-                        .map(|event| (event.timestamp, event.turn)).collect();
-                    latest.sort_unstable(); latest.dedup();
-                    let last_turns: HashSet<_> = latest.iter().rev().take(4).map(|(_, turn)| *turn).collect();
-                    let adjacent: Vec<_> = events.iter().filter(|event| eligible[event.section] &&
-                        (event.turn.abs_diff(anchor.turn) <= 2 || last_turns.contains(&event.turn))).collect();
+                    let Some(anchor) = events.iter().find(|event| event.section == hit.section)
+                    else {
+                        continue;
+                    };
+                    let mut latest: Vec<_> = events
+                        .iter()
+                        .filter(|event| eligible[event.section])
+                        .map(|event| (event.timestamp, event.turn))
+                        .collect();
+                    latest.sort_unstable();
+                    latest.dedup();
+                    let last_turns: HashSet<_> =
+                        latest.iter().rev().take(4).map(|(_, turn)| *turn).collect();
+                    let adjacent: Vec<_> = events
+                        .iter()
+                        .filter(|event| {
+                            eligible[event.section]
+                                && (event.turn.abs_diff(anchor.turn) <= 2
+                                    || last_turns.contains(&event.turn))
+                        })
+                        .collect();
                     context_windows.push(serde_json::json!({"page":hit.page,"anchor_section":hit.section,
                         "kind":"unscored same-page candidate neighbors plus last four eligible turns; diagnostic only",
                         "passages":adjacent.iter().map(|event| serde_json::json!({"identity":event,
@@ -8573,19 +8884,42 @@ mod tests {
                             "text":chunks[event.section]})).collect::<Vec<_>>()}));
                 }
             }
-            let diagnostic_anchors: Vec<_> = hits.iter().map(|h| super::ScoredChunk {
-                page:h.page.clone(),stem:h.stem.clone(),section:h.section,text:h.text.clone(),score:h.score,
-                score_rrf:h.score_rrf,score_final:h.score,tier:h.tier,prior:h.prior,rank_change:h.rank_change,
-                similarity:h.similarity,exact_match:h.exact_match,
-            }).collect();
-            let bounded_context = crate::retrieval_context::retrieve(&root, &index, &diagnostic_anchors,
-                range.as_ref(), crate::retrieval::Scope::All, None, case["query"].as_str().unwrap());
+            let diagnostic_anchors: Vec<_> = hits
+                .iter()
+                .map(|h| super::ScoredChunk {
+                    page: h.page.clone(),
+                    stem: h.stem.clone(),
+                    section: h.section,
+                    text: h.text.clone(),
+                    score: h.score,
+                    score_rrf: h.score_rrf,
+                    score_final: h.score,
+                    tier: h.tier,
+                    prior: h.prior,
+                    rank_change: h.rank_change,
+                    similarity: h.similarity,
+                    exact_match: h.exact_match,
+                })
+                .collect();
+            let bounded_context = crate::retrieval_context::retrieve(
+                &root,
+                &index,
+                &diagnostic_anchors,
+                range.as_ref(),
+                crate::retrieval::Scope::All,
+                None,
+                case["query"].as_str().unwrap(),
+            );
             results.push(serde_json::json!({"case":case,"elapsed_seconds":start.elapsed().as_secs_f64(),
                 "bounded_context_diagnostic_only":bounded_context,
                 "context_windows":context_windows,
                 "hits":hits.iter().map(|h| serde_json::json!({"page":h.page,"section":h.section,"line":h.line,"text":h.text,"score":h.score})).collect::<Vec<_>>()}));
         }
-        let output = std::fs::OpenOptions::new().write(true).create_new(true).open(std::env::var("MYCO_PROBE_OUTPUT").unwrap()).unwrap();
+        let output = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(std::env::var("MYCO_PROBE_OUTPUT").unwrap())
+            .unwrap();
         serde_json::to_writer_pretty(output, &serde_json::json!({"kind":"retrieval-only; no model generation or app qualification", "results":results})).unwrap();
     }
 
@@ -8608,17 +8942,43 @@ mod tests {
     #[test]
     fn date_mask_matches_legacy_attribution() {
         let body = format!("---\nturn_metadata:\n- timestamp: '2026-10-01T15:30:00Z'\n- timestamp: null\n- timestamp: '2026-10-03T15:30:00Z'\n---\n# Synthetic\n\n**User:**\n{}\n\n**Assistant:**\n{}\n\n**User:**\n{}", "반복 quote é\n".repeat(80), "unknown\n".repeat(60), "반복 quote é\n".repeat(80));
-        for content in [&body, &body.replace("timestamp: null", "timestamp: 'invalid'"), &body.replace("unknown", "**Tool:**"), &body.replace("turn_metadata:", "other:")] {
+        for content in [
+            &body,
+            &body.replace("timestamp: null", "timestamp: 'invalid'"),
+            &body.replace("unknown", "**Tool:**"),
+            &body.replace("turn_metadata:", "other:"),
+        ] {
             let chunks = crate::embeddings::chunk_page(content);
-            for (start, end) in [("2026-10-01", "2026-10-01"), ("2026-10-02", "2026-10-02"), ("2026-10-01", "2026-10-04")] {
+            for (start, end) in [
+                ("2026-10-01", "2026-10-01"),
+                ("2026-10-02", "2026-10-02"),
+                ("2026-10-01", "2026-10-04"),
+            ] {
                 let mut range = dr(start, end);
                 for local in [false, true] {
                     if local {
-                        range.start_epoch = crate::importers::parse_iso8601(&format!("{start}T00:00:00+09:00"));
-                        range.end_epoch = crate::importers::parse_iso8601(&format!("{end}T23:59:59+09:00"));
+                        range.start_epoch =
+                            crate::importers::parse_iso8601(&format!("{start}T00:00:00+09:00"));
+                        range.end_epoch =
+                            crate::importers::parse_iso8601(&format!("{end}T23:59:59+09:00"));
                     }
-                    let got = super::chunk_date_mask("sessions/2026-10/test.md", content, &chunks, &range);
-                    let expected: Vec<bool> = (0..chunks.len()).map(|i| super::legacy_chunk_in_date_range("sessions/2026-10/test.md", content, &chunks, i, &range)).collect();
+                    let got = super::chunk_date_mask(
+                        "sessions/2026-10/test.md",
+                        content,
+                        &chunks,
+                        &range,
+                    );
+                    let expected: Vec<bool> = (0..chunks.len())
+                        .map(|i| {
+                            super::legacy_chunk_in_date_range(
+                                "sessions/2026-10/test.md",
+                                content,
+                                &chunks,
+                                i,
+                                &range,
+                            )
+                        })
+                        .collect();
                     assert_eq!(got, expected);
                 }
             }
@@ -8630,28 +8990,84 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut store = crate::vector_index::VectorStore::default();
         let mut bm25 = Bm25Index::new();
-        let original = |conversation: &str, time: &str, text: &str| format!(
-            "---\nsource: fixture\nconversation_id: {conversation}\nturn_metadata: [{{\"message_id\":\"one\",\"original_role\":\"user\",\"timestamp\":\"{time}\"}}]\n---\n# Original\n\n**User:**\n\n{text}\n");
+        let original = |conversation: &str, time: &str, text: &str| {
+            format!(
+            "---\nsource: fixture\nconversation_id: {conversation}\nturn_metadata: [{{\"message_id\":\"one\",\"original_role\":\"user\",\"timestamp\":\"{time}\"}}]\n---\n# Original\n\n**User:**\n\n{text}\n")
+        };
         for i in 0..40 {
-            indexed_page(dir.path(), &mut store, &mut bm25, &format!("raw/conversations/future-{i}.md"),
-                &original(&format!("future-{i}"), "2026-10-30T00:00:00Z", "CALENDAR_RECEIPT decision CALENDAR_RECEIPT"), vec![1.0,0.0]);
-            indexed_page(dir.path(), &mut store, &mut bm25, &format!("wiki/unknown-{i}.md"),
-                "# CALENDAR_RECEIPT\n2026-10-01 quoted decision CALENDAR_RECEIPT", vec![1.0,0.0]);
+            indexed_page(
+                dir.path(),
+                &mut store,
+                &mut bm25,
+                &format!("raw/conversations/future-{i}.md"),
+                &original(
+                    &format!("future-{i}"),
+                    "2026-10-30T00:00:00Z",
+                    "CALENDAR_RECEIPT decision CALENDAR_RECEIPT",
+                ),
+                vec![1.0, 0.0],
+            );
+            indexed_page(
+                dir.path(),
+                &mut store,
+                &mut bm25,
+                &format!("wiki/unknown-{i}.md"),
+                "# CALENDAR_RECEIPT\n2026-10-01 quoted decision CALENDAR_RECEIPT",
+                vec![1.0, 0.0],
+            );
         }
-        let page="raw/conversations/earlier-original.md";
-        indexed_page(dir.path(), &mut store, &mut bm25, page,
-            &original("earlier", "2026-09-01T00:00:00Z", "CALENDAR_RECEIPT earlier decision"), vec![0.8,0.6]);
-        let cutoff=crate::importers::parse_iso8601("2026-10-09T00:00:00Z").unwrap();
-        for (vector,query) in [(None,"CALENDAR_RECEIPT"),(Some(&[1.0f32,0.0][..]),"unmatched_dense_only_query")] {
-            let found=super::rank_hybrid_as_of(dir.path(),&store,vector,&bm25,query,1,None,
-                crate::retrieval::Scope::All,None,&crate::retrieval::TierWeights::FLAT,Some(cutoff)).unwrap();
-            assert_eq!(found.len(),1);assert_eq!(found[0].page,page);
+        let page = "raw/conversations/earlier-original.md";
+        indexed_page(
+            dir.path(),
+            &mut store,
+            &mut bm25,
+            page,
+            &original(
+                "earlier",
+                "2026-09-01T00:00:00Z",
+                "CALENDAR_RECEIPT earlier decision",
+            ),
+            vec![0.8, 0.6],
+        );
+        let cutoff = crate::importers::parse_iso8601("2026-10-09T00:00:00Z").unwrap();
+        for (vector, query) in [
+            (None, "CALENDAR_RECEIPT"),
+            (Some(&[1.0f32, 0.0][..]), "unmatched_dense_only_query"),
+        ] {
+            let found = super::rank_hybrid_as_of(
+                dir.path(),
+                &store,
+                vector,
+                &bm25,
+                query,
+                1,
+                None,
+                crate::retrieval::Scope::All,
+                None,
+                &crate::retrieval::TierWeights::FLAT,
+                Some(cutoff),
+            )
+            .unwrap();
+            assert_eq!(found.len(), 1);
+            assert_eq!(found[0].page, page);
             assert!(found[0].text.contains("earlier decision"));
         }
         // Free queries retain their earlier eligibility/ranking surface.
-        let free=super::rank_hybrid(dir.path(),&store,Some(&[1.0,0.0]),&bm25,"CALENDAR_RECEIPT",1,None,
-            crate::retrieval::Scope::All,None,&crate::retrieval::TierWeights::FLAT).unwrap();
-        assert!(!free.is_empty());assert_ne!(free[0].page,page);
+        let free = super::rank_hybrid(
+            dir.path(),
+            &store,
+            Some(&[1.0, 0.0]),
+            &bm25,
+            "CALENDAR_RECEIPT",
+            1,
+            None,
+            crate::retrieval::Scope::All,
+            None,
+            &crate::retrieval::TierWeights::FLAT,
+        )
+        .unwrap();
+        assert!(!free.is_empty());
+        assert_ne!(free[0].page, page);
     }
 
     #[test]
@@ -9583,34 +9999,68 @@ mod tests {
 
     #[test]
     fn automatic_embedding_boundary_never_polls_when_disabled_and_rechecks_mid_batch() {
-        crate::settings::test_support::with_isolated_data("automatic-embedding-batch", |directory| {
-            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
-            let calls = std::cell::Cell::new(0);
-            let mut settings = crate::settings::Settings::default();
-            crate::settings::save(&settings).unwrap();
-            let operation = || async { calls.set(calls.get()+1); Ok::<_,String>(42) };
-            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).is_err());
-            assert_eq!(calls.get(),0);
-            settings.auto_reindex_enabled=true;
-            crate::settings::save(&settings).unwrap();
-            assert_eq!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).unwrap(),42);
-            assert_eq!(calls.get(),1);
-            let changing_operation = async {
-                calls.set(calls.get()+1);
-                settings.auto_reindex_enabled=false;
+        crate::settings::test_support::with_isolated_data(
+            "automatic-embedding-batch",
+            |directory| {
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let calls = std::cell::Cell::new(0);
+                let mut settings = crate::settings::Settings::default();
                 crate::settings::save(&settings).unwrap();
-                Ok::<_,String>(42)
-            };
-            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,changing_operation)).is_err());
-            assert_eq!(calls.get(),2);
-            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).is_err());
-            assert_eq!(calls.get(),2);
-            // The automatic toggle does not disable explicitly requested reindex.
-            assert_eq!(runtime.block_on(super::checked_automatic_embedding_batch(false,operation())).unwrap(),42);
-            std::fs::write(directory.join("settings.json"),"corrupt synthetic settings").unwrap();
-            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).is_err());
-            assert_eq!(calls.get(),3);
-        });
+                let operation = || async {
+                    calls.set(calls.get() + 1);
+                    Ok::<_, String>(42)
+                };
+                assert!(runtime
+                    .block_on(super::checked_automatic_embedding_batch(true, operation()))
+                    .is_err());
+                assert_eq!(calls.get(), 0);
+                settings.auto_reindex_enabled = true;
+                crate::settings::save(&settings).unwrap();
+                assert_eq!(
+                    runtime
+                        .block_on(super::checked_automatic_embedding_batch(true, operation()))
+                        .unwrap(),
+                    42
+                );
+                assert_eq!(calls.get(), 1);
+                let changing_operation = async {
+                    calls.set(calls.get() + 1);
+                    settings.auto_reindex_enabled = false;
+                    crate::settings::save(&settings).unwrap();
+                    Ok::<_, String>(42)
+                };
+                assert!(runtime
+                    .block_on(super::checked_automatic_embedding_batch(
+                        true,
+                        changing_operation
+                    ))
+                    .is_err());
+                assert_eq!(calls.get(), 2);
+                assert!(runtime
+                    .block_on(super::checked_automatic_embedding_batch(true, operation()))
+                    .is_err());
+                assert_eq!(calls.get(), 2);
+                // The automatic toggle does not disable explicitly requested reindex.
+                assert_eq!(
+                    runtime
+                        .block_on(super::checked_automatic_embedding_batch(false, operation()))
+                        .unwrap(),
+                    42
+                );
+                std::fs::write(
+                    directory.join("settings.json"),
+                    "corrupt synthetic settings",
+                )
+                .unwrap();
+                assert!(runtime
+                    .block_on(super::checked_automatic_embedding_batch(true, operation()))
+                    .is_err());
+                assert_eq!(calls.get(), 3);
+            },
+        );
     }
 
     #[test]
@@ -10027,17 +10477,35 @@ mod tests {
 
     #[test]
     fn candidate_cosines_require_current_shared_encoder_and_valid_vectors() {
-        let space = crate::embeddings::EmbeddingSpace { model: "synthetic".into(), signature: "encoder-1".into(), dim: 2 };
-        let query = crate::embeddings::EmbeddedBatch { space: space.clone(), vectors: vec![vec![1., 0.]] };
-        let mut docs = crate::embeddings::EmbeddedBatch { space: space.clone(), vectors: vec![vec![0., 1.], vec![1., 0.]] };
-        let mut hits = vec![hybrid_hit("wiki/noise.md", 0.9, None), hybrid_hit("wiki/relevant.md", 0.1, None)];
-        for hit in &mut hits { hit.exact_match = false; }
+        let space = crate::embeddings::EmbeddingSpace {
+            model: "synthetic".into(),
+            signature: "encoder-1".into(),
+            dim: 2,
+        };
+        let query = crate::embeddings::EmbeddedBatch {
+            space: space.clone(),
+            vectors: vec![vec![1., 0.]],
+        };
+        let mut docs = crate::embeddings::EmbeddedBatch {
+            space: space.clone(),
+            vectors: vec![vec![0., 1.], vec![1., 0.]],
+        };
+        let mut hits = vec![
+            hybrid_hit("wiki/noise.md", 0.9, None),
+            hybrid_hit("wiki/relevant.md", 0.1, None),
+        ];
+        for hit in &mut hits {
+            hit.exact_match = false;
+        }
         super::measure_candidate_cosines(&mut hits, &query, &docs).unwrap();
         assert_eq!(hits[0].similarity, Some(0.));
         assert_eq!(hits[1].similarity, Some(1.));
         assert_eq!(super::ask_response(hits).hits.len(), 1);
         docs.space.signature = "other-encoder".into();
-        let mut hits = vec![hybrid_hit("wiki/a.md", 1., None), hybrid_hit("wiki/b.md", 0.1, None)];
+        let mut hits = vec![
+            hybrid_hit("wiki/a.md", 1., None),
+            hybrid_hit("wiki/b.md", 0.1, None),
+        ];
         assert!(super::measure_candidate_cosines(&mut hits, &query, &docs).is_err());
         assert!(hits.iter().all(|hit| hit.similarity.is_none()));
         docs.space = space;
@@ -10173,10 +10641,24 @@ mod tests {
     #[test]
     fn rollup_day_range_keeps_matching_source_and_excludes_other_days() {
         let text="# 2026-09\n\n### Source evidence\n\n#### 2026-W37 · daily/2026-09-08.md\n\nTARGET_DAY decision.\n\nSource: [[daily/2026-09-08.md]]\n\n#### 2026-W37 · daily/2026-09-11.md\n\nOTHER_DAY decision.\n\nSource: [[daily/2026-09-11.md]]\n";
-        let chunks=crate::embeddings::chunk_page(text);
-        let mask=super::chunk_date_mask("monthly/2026-09.md",text,&chunks,&dr("2026-09-08","2026-09-08"));
-        assert!(chunks.iter().zip(&mask).any(|(c,keep)|*keep && c.contains("TARGET_DAY")));
-        assert!(!chunks.iter().zip(&mask).any(|(c,keep)|*keep && c.contains("OTHER_DAY")), "month overlap must not admit another day's source section");
+        let chunks = crate::embeddings::chunk_page(text);
+        let mask = super::chunk_date_mask(
+            "monthly/2026-09.md",
+            text,
+            &chunks,
+            &dr("2026-09-08", "2026-09-08"),
+        );
+        assert!(chunks
+            .iter()
+            .zip(&mask)
+            .any(|(c, keep)| *keep && c.contains("TARGET_DAY")));
+        assert!(
+            !chunks
+                .iter()
+                .zip(&mask)
+                .any(|(c, keep)| *keep && c.contains("OTHER_DAY")),
+            "month overlap must not admit another day's source section"
+        );
     }
 
     #[test]
@@ -10919,54 +11401,124 @@ mod tests {
     fn real_vault_dense_pool_rerank_probe() {
         use crate::local_llm::{embed_spec_by_id, EmbedRole, LocalLlm};
         use std::collections::BTreeSet;
-        let Ok(spec_path) = std::env::var("MYCO_POOL_PROBE") else { return; };
-        let spec: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(spec_path).unwrap()).unwrap();
+        let Ok(spec_path) = std::env::var("MYCO_POOL_PROBE") else {
+            return;
+        };
+        let spec: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(spec_path).unwrap()).unwrap();
         let root = std::path::PathBuf::from(spec["vault"].as_str().unwrap());
-        let pair = tauri::async_runtime::block_on(crate::index_publication::snapshot(root.clone())).unwrap();
+        let pair = tauri::async_runtime::block_on(crate::index_publication::snapshot(root.clone()))
+            .unwrap();
         let bm25 = &pair.lexical;
         let empty = crate::vector_index::VectorStore::default();
-        struct Pool { id: String, intent: String, query: String, hits: Vec<HybridHit>, expected: HashSet<(String, usize)>, extra: Vec<(String, usize, String)> }
+        struct Pool {
+            id: String,
+            intent: String,
+            query: String,
+            hits: Vec<HybridHit>,
+            expected: HashSet<(String, usize)>,
+            extra: Vec<(String, usize, String)>,
+        }
         let mut pools = Vec::new();
         for case in spec["cases"].as_array().unwrap() {
             let intent = case["intent"].as_str().unwrap().to_string();
             let subject = case["subject"].as_str().unwrap();
             // Exactly what semantic_search sends for a guided question (subject only; recall strips speaker words).
-            let query = if intent == "recall" { crate::retrieval::strip_speaker_meta(subject) } else { subject.to_string() };
+            let query = if intent == "recall" {
+                crate::retrieval::strip_speaker_meta(subject)
+            } else {
+                subject.to_string()
+            };
             let end = case["as_of_end_epoch"].as_i64().unwrap();
-            let hits = super::rank_hybrid_as_of(&root, &empty, None, bm25, &query, 50, None, crate::retrieval::Scope::All, None,
-                &crate::retrieval::TierWeights::FLAT, Some(end)).unwrap();
-            let expected: HashSet<(String, usize)> = case["expected"].as_array().unwrap().iter()
-                .map(|e| (e["page"].as_str().unwrap().to_string(), e["section"].as_u64().unwrap() as usize)).collect();
-            let in_pool: HashSet<(String, usize)> = hits.iter().map(|h| (h.page.clone(), h.section)).collect();
+            let hits = super::rank_hybrid_as_of(
+                &root,
+                &empty,
+                None,
+                bm25,
+                &query,
+                50,
+                None,
+                crate::retrieval::Scope::All,
+                None,
+                &crate::retrieval::TierWeights::FLAT,
+                Some(end),
+            )
+            .unwrap();
+            let expected: HashSet<(String, usize)> = case["expected"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|e| {
+                    (
+                        e["page"].as_str().unwrap().to_string(),
+                        e["section"].as_u64().unwrap() as usize,
+                    )
+                })
+                .collect();
+            let in_pool: HashSet<(String, usize)> =
+                hits.iter().map(|h| (h.page.clone(), h.section)).collect();
             let mut extra = Vec::new();
-            for page in expected.iter().map(|(p, _)| p.clone()).collect::<BTreeSet<_>>() {
+            for page in expected
+                .iter()
+                .map(|(p, _)| p.clone())
+                .collect::<BTreeSet<_>>()
+            {
                 let content = std::fs::read_to_string(root.join(&page)).unwrap();
                 let chunks = crate::embeddings::chunk_page(&content);
-                let original = crate::retrieval_dates::historical_originals(&page, &content, &chunks, bm25.page_hashes(&page).as_deref(), end);
+                let original = crate::retrieval_dates::historical_originals(
+                    &page,
+                    &content,
+                    &chunks,
+                    bm25.page_hashes(&page).as_deref(),
+                    end,
+                );
                 for (section, text) in chunks.iter().enumerate() {
-                    if original.eligible.get(section).copied().unwrap_or(false) && !in_pool.contains(&(page.clone(), section)) {
+                    if original.eligible.get(section).copied().unwrap_or(false)
+                        && !in_pool.contains(&(page.clone(), section))
+                    {
                         extra.push((page.clone(), section, text.clone()));
                     }
                 }
             }
-            pools.push(Pool { id: case["id"].as_str().unwrap().into(), intent, query, hits, expected, extra });
+            pools.push(Pool {
+                id: case["id"].as_str().unwrap().into(),
+                intent,
+                query,
+                hits,
+                expected,
+                extra,
+            });
         }
         // Rank of the best expected chunk after a per-page cap of 2 (the app's PAGE_CAP), 1-based.
-        fn capped_best(order: &[(String, usize)], expected: &HashSet<(String, usize)>) -> Option<usize> {
+        fn capped_best(
+            order: &[(String, usize)],
+            expected: &HashSet<(String, usize)>,
+        ) -> Option<usize> {
             let mut per_page = HashMap::<&str, usize>::new();
             let mut rank = 0;
             for (page, section) in order {
                 let n = per_page.entry(page.as_str()).or_default();
-                if *n >= 2 { continue; }
-                *n += 1; rank += 1;
-                if expected.contains(&(page.clone(), *section)) { return Some(rank); }
+                if *n >= 2 {
+                    continue;
+                }
+                *n += 1;
+                rank += 1;
+                if expected.contains(&(page.clone(), *section)) {
+                    return Some(rank);
+                }
             }
             None
         }
-        let rrf = |a: Option<usize>, b: Option<usize>| a.map_or(0.0, |r| 1.0 / (60.0 + r as f64)) + b.map_or(0.0, |r| 1.0 / (60.0 + r as f64));
+        let rrf = |a: Option<usize>, b: Option<usize>| {
+            a.map_or(0.0, |r| 1.0 / (60.0 + r as f64)) + b.map_or(0.0, |r| 1.0 / (60.0 + r as f64))
+        };
         let mut report = serde_json::json!({"cases": {}, "models": []});
         for pool in &pools {
-            let order: Vec<(String, usize)> = pool.hits.iter().map(|h| (h.page.clone(), h.section)).collect();
+            let order: Vec<(String, usize)> = pool
+                .hits
+                .iter()
+                .map(|h| (h.page.clone(), h.section))
+                .collect();
             report["cases"][&pool.id] = serde_json::json!({"intent": pool.intent, "query": pool.query, "pool": pool.hits.len(),
                 "expected": pool.expected.len(), "expected_in_pool": order.iter().filter(|k| pool.expected.contains(*k)).count(),
                 "extra_chunks": pool.extra.len(), "bm25_best_capped_rank": capped_best(&order, &pool.expected)});
@@ -10976,31 +11528,70 @@ mod tests {
             let espec = embed_spec_by_id(id).unwrap();
             let mut llm = LocalLlm::load_embed_host().unwrap();
             let started = std::time::Instant::now();
-            llm.load_embed_model(std::path::Path::new(model["path"].as_str().unwrap())).unwrap();
+            llm.load_embed_model(std::path::Path::new(model["path"].as_str().unwrap()))
+                .unwrap();
             let mut rows = Vec::new();
             let mut embedded = 0usize;
             for pool in &pools {
                 let (_, clean) = crate::retrieval::parse_phrases(&pool.query);
-                let q = llm.embed_spec(espec, EmbedRole::Query, &[clean]).unwrap().remove(0);
-                let mut docs: Vec<(String, usize, String, Option<usize>)> = pool.hits.iter().enumerate()
-                    .map(|(i, h)| (h.page.clone(), h.section, h.text.clone(), Some(i + 1))).collect();
+                let q = llm
+                    .embed_spec(espec, EmbedRole::Query, &[clean])
+                    .unwrap()
+                    .remove(0);
+                let mut docs: Vec<(String, usize, String, Option<usize>)> = pool
+                    .hits
+                    .iter()
+                    .enumerate()
+                    .map(|(i, h)| (h.page.clone(), h.section, h.text.clone(), Some(i + 1)))
+                    .collect();
                 let pool_len = docs.len();
-                docs.extend(pool.extra.iter().map(|(p, s, t)| (p.clone(), *s, t.clone(), None)));
+                docs.extend(
+                    pool.extra
+                        .iter()
+                        .map(|(p, s, t)| (p.clone(), *s, t.clone(), None)),
+                );
                 let mut cos = Vec::with_capacity(docs.len());
                 for batch in docs.chunks(16) {
                     let texts: Vec<String> = batch.iter().map(|d| d.2.clone()).collect();
-                    for v in llm.embed_spec(espec, EmbedRole::Document, &texts).unwrap() { cos.push(crate::embeddings::checked_cosine(&q, &v).unwrap()); }
+                    for v in llm.embed_spec(espec, EmbedRole::Document, &texts).unwrap() {
+                        cos.push(crate::embeddings::checked_cosine(&q, &v).unwrap());
+                    }
                 }
                 embedded += docs.len() + 1;
-                let ranked = |idx: &[usize]| { let mut v = idx.to_vec(); v.sort_by(|a, b| cos[*b].total_cmp(&cos[*a])); v };
+                let ranked = |idx: &[usize]| {
+                    let mut v = idx.to_vec();
+                    v.sort_by(|a, b| cos[*b].total_cmp(&cos[*a]));
+                    v
+                };
                 let dense_pool = ranked(&(0..pool_len).collect::<Vec<_>>());
                 let dense_ext = ranked(&(0..docs.len()).collect::<Vec<_>>());
-                let dense_rank = |order: &[usize]| { let mut r = vec![None; docs.len()]; for (i, d) in order.iter().enumerate() { r[*d] = Some(i + 1); } r };
+                let dense_rank = |order: &[usize]| {
+                    let mut r = vec![None; docs.len()];
+                    for (i, d) in order.iter().enumerate() {
+                        r[*d] = Some(i + 1);
+                    }
+                    r
+                };
                 let (rank_pool, rank_ext) = (dense_rank(&dense_pool), dense_rank(&dense_ext));
-                let fuse = |n: usize, dense: &[Option<usize>]| { let mut v: Vec<usize> = (0..n).collect();
-                    v.sort_by(|a, b| rrf(docs[*b].3, dense[*b]).total_cmp(&rrf(docs[*a].3, dense[*a]))); v };
-                let keys = |order: &[usize]| order.iter().map(|i| (docs[*i].0.clone(), docs[*i].1)).collect::<Vec<_>>();
-                let best_expected_cos = docs.iter().enumerate().filter(|(_, d)| pool.expected.contains(&(d.0.clone(), d.1))).map(|(i, _)| cos[i]).fold(f32::MIN, f32::max);
+                let fuse = |n: usize, dense: &[Option<usize>]| {
+                    let mut v: Vec<usize> = (0..n).collect();
+                    v.sort_by(|a, b| {
+                        rrf(docs[*b].3, dense[*b]).total_cmp(&rrf(docs[*a].3, dense[*a]))
+                    });
+                    v
+                };
+                let keys = |order: &[usize]| {
+                    order
+                        .iter()
+                        .map(|i| (docs[*i].0.clone(), docs[*i].1))
+                        .collect::<Vec<_>>()
+                };
+                let best_expected_cos = docs
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, d)| pool.expected.contains(&(d.0.clone(), d.1)))
+                    .map(|(i, _)| cos[i])
+                    .fold(f32::MIN, f32::max);
                 rows.push(serde_json::json!({"case": pool.id, "intent": pool.intent,
                     "dense_pool_best_capped_rank": capped_best(&keys(&dense_pool), &pool.expected),
                     "rrf_pool_best_capped_rank": capped_best(&keys(&fuse(pool_len, &rank_pool)), &pool.expected),
@@ -11009,11 +11600,20 @@ mod tests {
                     "best_expected_cosine": if best_expected_cos == f32::MIN { None } else { Some(best_expected_cos) },
                     "top_pool_cosine": dense_pool.first().map(|i| cos[*i])}));
             }
-            report["models"].as_array_mut().unwrap().push(serde_json::json!({"id": id, "path": model["path"], "chunks_embedded": embedded,
-                "seconds": started.elapsed().as_secs_f64(), "rows": rows}));
-            println!("POOL_PROBE model {id} done in {:.1}s ({embedded} texts)", started.elapsed().as_secs_f64());
+            report["models"].as_array_mut().unwrap().push(
+                serde_json::json!({"id": id, "path": model["path"], "chunks_embedded": embedded,
+                "seconds": started.elapsed().as_secs_f64(), "rows": rows}),
+            );
+            println!(
+                "POOL_PROBE model {id} done in {:.1}s ({embedded} texts)",
+                started.elapsed().as_secs_f64()
+            );
         }
-        std::fs::write(spec["out"].as_str().unwrap(), serde_json::to_string_pretty(&report).unwrap()).unwrap();
+        std::fs::write(
+            spec["out"].as_str().unwrap(),
+            serde_json::to_string_pretty(&report).unwrap(),
+        )
+        .unwrap();
         println!("POOL_PROBE wrote {}", spec["out"].as_str().unwrap());
     }
 }
@@ -11483,24 +12083,37 @@ pub fn record_noop(
 
 // Explicit isolated diagnostic index preparation; normal application flows cannot call this.
 #[tauri::command]
-pub async fn diagnostic_reindex_lexical(vault: tauri::State<'_, VaultRoot>) -> Result<serde_json::Value, String> {
+pub async fn diagnostic_reindex_lexical(
+    vault: tauri::State<'_, VaultRoot>,
+) -> Result<serde_json::Value, String> {
     // The isolated vault and app-data folders come from the environment of the
     // diagnostic run, never from the source: both must be named, and the app
     // must already run on that app-data folder.
     let env = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
-    let (Some(root), Some(data)) = (env("MYCO_REAL_DIAGNOSTIC_VAULT"), env("MYCO_REAL_DIAGNOSTIC_DATA")) else {
+    let (Some(root), Some(data)) = (
+        env("MYCO_REAL_DIAGNOSTIC_VAULT"),
+        env("MYCO_REAL_DIAGNOSTIC_DATA"),
+    ) else {
         return Err("isolated diagnostic environment required".into());
     };
-    if std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1") || std::env::var("MYCO_DATA_DIR").as_deref() != Ok(data.as_str()) {
+    if std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1")
+        || std::env::var("MYCO_DATA_DIR").as_deref() != Ok(data.as_str())
+    {
         return Err("isolated diagnostic environment required".into());
     }
     let origin = vault.snapshot()?;
-    if origin.vault_path != root { return Err("isolated diagnostic vault required".into()); }
+    if origin.vault_path != root {
+        return Err("isolated diagnostic vault required".into());
+    }
     let root = root.as_str();
     let _publisher = crate::index_publication::PUBLISHER.lock().await;
-    if crate::index_publication::path_for(root)?.exists() { return Err("published index already exists; refusing replacement".into()); }
+    if crate::index_publication::path_for(root)?.exists() {
+        return Err("published index already exists; refusing replacement".into());
+    }
     let target = crate::index_publication::legacy_path_for(root, "mxb")?;
-    if target.exists() { return Err("lexical index already exists; refusing overwrite".into()); }
+    if target.exists() {
+        return Err("lexical index already exists; refusing overwrite".into());
+    }
     let pages = collect_wiki_pages_checked(std::path::Path::new(root))?;
     let mut index = crate::retrieval::Bm25Index::new();
     let mut chunks_count = 0;
@@ -11510,5 +12123,7 @@ pub async fn diagnostic_reindex_lexical(vault: tauri::State<'_, VaultRoot>) -> R
         index.upsert_page(rel, stem, &chunks);
     }
     vault.with_origin(&origin, |_| index.save(&target))?;
-    Ok(serde_json::json!({"pages": pages.len(), "chunks": chunks_count, "index": target, "dense_index_prepared": false, "selection": "all native indexable pages; no gold filtering"}))
+    Ok(
+        serde_json::json!({"pages": pages.len(), "chunks": chunks_count, "index": target, "dense_index_prepared": false, "selection": "all native indexable pages; no gold filtering"}),
+    )
 }

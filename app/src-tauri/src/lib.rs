@@ -41,8 +41,8 @@ pub mod local_synthesis;
 pub mod local_transform;
 pub mod machine_session;
 pub mod mcp_native;
-pub mod myco_pro;
 mod model_context;
+pub mod myco_pro;
 #[cfg(feature = "native-index-probe")]
 pub mod native_ask_probe;
 #[cfg(feature = "native-index-probe")]
@@ -71,6 +71,9 @@ pub mod registry;
 #[cfg(feature = "rerank")]
 pub mod rerank;
 pub mod retrieval;
+mod retrieval_context;
+mod retrieval_dates;
+mod retrieval_revisions;
 pub mod roam;
 pub mod role_authorization;
 pub mod sample_vault;
@@ -83,9 +86,6 @@ mod study_deck_commands;
 pub(crate) mod study_deck_io;
 pub mod tasks;
 pub(crate) mod temporal_recall;
-mod retrieval_revisions;
-mod retrieval_context;
-mod retrieval_dates;
 pub mod tray;
 pub mod validator;
 pub mod vault;

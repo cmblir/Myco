@@ -25,7 +25,9 @@ pub struct OllamaStatus {
 }
 
 fn endpoint() -> Result<String, String> {
-    Ok(crate::providers::ollama_endpoint(&crate::settings::read_checked()?))
+    Ok(crate::providers::ollama_endpoint(
+        &crate::settings::read_checked()?,
+    ))
 }
 
 /// Parse the body of a `GET /api/tags` 200 into the model list.
@@ -89,11 +91,17 @@ pub async fn check() -> OllamaStatus {
     let version = path.as_deref().and_then(get_version);
     let url = match endpoint() {
         Ok(url) => url,
-        Err(error) => return OllamaStatus {
-            binary_installed: installed, binary_path: path, version,
-            daemon_running: false, endpoint: String::new(), models: Vec::new(),
-            error: Some(format!("model server settings unavailable: {error}")),
-        },
+        Err(error) => {
+            return OllamaStatus {
+                binary_installed: installed,
+                binary_path: path,
+                version,
+                daemon_running: false,
+                endpoint: String::new(),
+                models: Vec::new(),
+                error: Some(format!("model server settings unavailable: {error}")),
+            }
+        }
     };
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_millis(900))
@@ -166,13 +174,18 @@ mod tests {
     impl Drop for EndpointEnvironment {
         fn drop(&mut self) {
             for (key, value) in &self.0 {
-                match value { Some(value) => std::env::set_var(key, value), None => std::env::remove_var(key) }
+                match value {
+                    Some(value) => std::env::set_var(key, value),
+                    None => std::env::remove_var(key),
+                }
             }
         }
     }
     fn clean_endpoint_environment() -> EndpointEnvironment {
-        let values = ["MYCO_OLLAMA_URL", "MEMEX_OLLAMA_URL"].into_iter()
-            .map(|key| (key, std::env::var_os(key))).collect();
+        let values = ["MYCO_OLLAMA_URL", "MEMEX_OLLAMA_URL"]
+            .into_iter()
+            .map(|key| (key, std::env::var_os(key)))
+            .collect();
         let guard = EndpointEnvironment(values);
         std::env::remove_var("MYCO_OLLAMA_URL");
         std::env::remove_var("MEMEX_OLLAMA_URL");
@@ -238,5 +251,4 @@ mod tests {
             assert!(endpoint().is_err());
         });
     }
-
 }

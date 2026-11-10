@@ -5,9 +5,9 @@ pub(crate) mod answer_correction;
 pub(crate) mod answer_draft;
 pub(crate) mod answer_review;
 pub(crate) mod claim_prompt;
-pub(crate) mod guided_question;
 #[cfg(feature = "native-index-probe")]
 pub(crate) mod focus_answer_qa;
+pub(crate) mod guided_question;
 #[cfg(feature = "native-index-probe")]
 pub mod original_groups_qa;
 pub use crate::commands::DateRange;
