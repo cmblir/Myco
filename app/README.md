@@ -250,8 +250,11 @@ writing retains the output for manual recovery without publication/undo authorit
 Existing maps without native custody remain pending for manual recovery. Automatic
 organization can refresh existing maps only from already-approved proposals,
 within its shared model budget and original organization-role authorization.
-It rechecks the approved proposal before generation and publication; changed or
-withdrawn approval stays pending. Manual map work remains pending during review,
+It rechecks the approved proposal before generation and publication; existing-map
+refreshes check again after asynchronous source validation and preview hashing,
+immediately before native apply. A changed or withdrawn approval observed by that
+check stays pending. This does not atomically lock external edits to the proposal.
+Manual map work remains pending during review,
 so cancellation cannot leave an automatic approval behind. Proposal completion
 uses a revision-checked write. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.

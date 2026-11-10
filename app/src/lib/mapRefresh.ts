@@ -45,6 +45,9 @@ export async function refreshExistingMap(
   assertCurrent();
   const expectedResult = await sha256(preview.content);
   assertCurrent();
+  // Source checks and hashing can yield while the proposal approval changes.
+  if (typeof review !== "function") await review.recheck();
+  assertCurrent();
   const result = await ipc.applyMapRefresh(origin, role, key, candidate, snapshotId, preview.currentRevision).catch(error => {
     const detail = error instanceof Error ? error.message : String(error);
     if (detail.startsWith("map refresh bytes persisted but") || detail.startsWith("compiler canonical persisted but admission incomplete")) {

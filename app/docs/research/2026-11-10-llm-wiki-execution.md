@@ -18,6 +18,30 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: recheck automatic map approval after source validation
+
+Existing-map refresh checked an approved proposal before awaiting source
+validation and preview hashing. A proposal withdrawn during that wait could
+still reach `apply_map_refresh`. The new asynchronous regression failed on the
+unchanged implementation: `promise resolved "'wiki/maps/synthetic.md'" instead
+of rejecting` at `mapRefresh.test.ts:97`; eight existing tests passed.
+
+Keep the early approval check and repeat it after source validation and hashing,
+immediately before native apply. Reassert the originating vault after that
+asynchronous approval check. The withdrawal regression now passes, and a second
+case verifies a vault change during the final approval check also prevents the
+native apply call. Native custody, source checks, target CAS and manual review
+remain unchanged. README describes the final check and explicitly notes that it
+does not atomically lock external proposal edits after the check.
+
+Verification: 131 focused map/refresh/evidence/distill tests passed, followed by
+all 6,500 frontend tests in 405 files. Typecheck/build passed; lint has zero
+errors and the same two existing notchDriver dependency warnings. These tests
+use synthetic IPC to prove frontend dispatch ordering, not actual-model meaning
+or installed native approval/revocation acceptance. No native or model test was
+claimed for this slice. Logs: `/tmp/myco-map-approval-{before,focused,lint,build,tests}.log`.
+G5 and the overall goal remain incomplete.
+
 ## November 11: native narrow Graph now precedes its supporting panels
 
 The [native layout receipt](2026-11-11-native-graph-narrow-layout.json) records

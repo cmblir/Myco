@@ -84,3 +84,33 @@ it("rejects a withdrawn automatic approval before native apply", async () => {
   }, () => undefined, async () => undefined)).rejects.toThrow("Approval withdrawn");
   expect(invoke.mock.calls.some(([command]) => command === "apply_map_refresh")).toBe(false);
 });
+
+it("does not apply when approval is withdrawn during the asynchronous source recheck", async () => {
+  let isApproved = true;
+  await expect(refreshExistingMap(origin, role, path, "Synthetic candidate", "c".repeat(64), {
+    kind: "approved-proposal", recheck: async () => {
+      if (!isApproved) throw new Error("Approval withdrawn during source recheck");
+    },
+  }, () => undefined, async () => {
+    await Promise.resolve();
+    isApproved = false;
+  })).rejects.toThrow("Approval withdrawn during source recheck");
+  expect(invoke.mock.calls.some(([command]) => command === "apply_map_refresh")).toBe(false);
+});
+
+it("checks the vault opening again after the final asynchronous approval check", async () => {
+  let isCurrent = true;
+  let approvalChecks = 0;
+  await expect(refreshExistingMap(origin, role, path, "Synthetic candidate", "c".repeat(64), {
+    kind: "approved-proposal", recheck: async () => {
+      approvalChecks += 1;
+      if (approvalChecks === 2) {
+        await Promise.resolve();
+        isCurrent = false;
+      }
+    },
+  }, () => { if (!isCurrent) throw new Error("Vault opening changed"); }, async () => undefined))
+    .rejects.toThrow("Vault opening changed");
+  expect(approvalChecks).toBe(2);
+  expect(invoke.mock.calls.some(([command]) => command === "apply_map_refresh")).toBe(false);
+});
