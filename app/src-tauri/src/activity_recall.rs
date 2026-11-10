@@ -2667,7 +2667,8 @@ mod tests {
                 root.path(),
                 &mut index,
                 page,
-                "# Synthetic report\n\nImplemented a synthetic queue.\n",
+                // A rollup counts for one day only when it names that day.
+                "# Synthetic report\n\nImplemented a synthetic queue.\nSource: [[daily/2026-10-03]]\n",
             );
         }
         for page in [

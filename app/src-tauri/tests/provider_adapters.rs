@@ -300,6 +300,9 @@ async fn google_chat_uses_system_instruction_and_concatenates_parts() {
 async fn ollama_chat_returns_content_and_token_counts() {
     let server = MockServer::start().await;
     std::env::set_var("MYCO_OLLAMA_URL", server.uri());
+    // The Ollama path reads the saved endpoint; keep that read off real app data.
+    let data_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("MYCO_DATA_DIR", data_dir.path());
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -332,6 +335,9 @@ async fn ollama_chat_returns_content_and_token_counts() {
 async fn ollama_list_models_parses_tags() {
     let server = MockServer::start().await;
     std::env::set_var("MYCO_OLLAMA_URL", server.uri());
+    // The Ollama path reads the saved endpoint; keep that read off real app data.
+    let data_dir = tempfile::tempdir().unwrap();
+    std::env::set_var("MYCO_DATA_DIR", data_dir.path());
     Mock::given(method("GET"))
         .and(path("/api/tags"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({

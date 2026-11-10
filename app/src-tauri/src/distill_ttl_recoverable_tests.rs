@@ -110,9 +110,10 @@ fn native_save_after_preparation_keeps_the_newer_source_in_place() {
         let fixture = Fixture::new(Some(&revision), "_inbox/note.md");
         let content = fixture.content.clone();
         prepared(move || {
-            let guard =
-                crate::vault::try_lock_file_mutation()?.expect("preparation released writer");
-            drop(guard);
+            assert!(
+                crate::vault::file_mutation_lock_frees()?,
+                "preparation released writer"
+            );
             crate::vault::write_file_if_unchanged(
                 &content.to_string_lossy(),
                 NEWER,
@@ -433,9 +434,10 @@ fn manifest_failure_reports_actual_moves_and_does_not_complete_the_run() {
         );
         commit(|phase, manifest| {
             if phase == CommitCheckpoint::BeforeTrashManifest {
-                let writer = crate::vault::try_lock_file_mutation()?
-                    .expect("manifest save is outside writer");
-                drop(writer);
+                assert!(
+                    crate::vault::file_mutation_lock_frees()?,
+                    "manifest save is outside writer"
+                );
                 std::fs::rename(manifest, manifest.with_extension("retained"))
                     .map_err(|error| error.to_string())?;
                 std::fs::create_dir(manifest).map_err(|error| error.to_string())?;

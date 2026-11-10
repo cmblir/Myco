@@ -124,7 +124,7 @@ fn pack_rechecks_source_after_preparation_instead_of_deleting_a_newer_write() {
     let _hook = install(move |phase| {
         if phase == MutationCheckpoint::PackPrepared {
             // Preparation must be outside the writer: use its actual API.
-            assert!(crate::vault::try_lock_file_mutation()?.is_some());
+            assert!(crate::vault::file_mutation_lock_frees()?);
             crate::vault::write_file(&edit.to_string_lossy(), NEWER)?;
         }
         Ok(())

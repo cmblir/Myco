@@ -164,9 +164,10 @@ fn cooperating_save_after_expiry_preparation_keeps_newer_revision() {
         let fixture = Fixture::new(Some(&admission::sha256(ORIGINAL.as_bytes())));
         let content = fixture.content.clone();
         prepared(move || {
-            let guard =
-                crate::vault::try_lock_file_mutation()?.expect("preparation must release writer");
-            drop(guard);
+            assert!(
+                crate::vault::file_mutation_lock_frees()?,
+                "preparation must release writer"
+            );
             crate::vault::write_file_if_unchanged(
                 &content.to_string_lossy(),
                 NEWER,

@@ -119,6 +119,24 @@ pub(crate) fn try_lock_file_mutation() -> Result<Option<std::sync::MutexGuard<'s
     }
 }
 
+/// Whether the writer lock becomes free within a short wait. Tests share this
+/// process-global lock, so one `try_lock` can find it held by a neighbouring
+/// test rather than by the code under test; a caller that really holds it
+/// keeps it for the whole wait, so a real defect still fails.
+#[cfg(test)]
+pub(crate) fn file_mutation_lock_frees() -> Result<bool, String> {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        if try_lock_file_mutation()?.is_some() {
+            return Ok(true);
+        }
+        if std::time::Instant::now() >= deadline {
+            return Ok(false);
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
 // --- Vault-root confinement -------------------------------------------------
 // The frontend can ask to read/write/delete/rename arbitrary paths over IPC.
 // Without a check, `delete_path("~/.ssh/id_rsa")` or `write_file("/etc/...")`

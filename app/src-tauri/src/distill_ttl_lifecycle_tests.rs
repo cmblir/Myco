@@ -143,9 +143,10 @@ fn manifest_save_failure_reports_irreversible_paths_and_does_not_complete() {
         COMMIT_HOOK.with(|hook| {
             *hook.borrow_mut() = Some(Box::new(|phase, manifest| {
                 if phase == CommitCheckpoint::BeforeManifest {
-                    let writer = crate::vault::try_lock_file_mutation()?
-                        .expect("manifest save is outside writer");
-                    drop(writer);
+                    assert!(
+                        crate::vault::file_mutation_lock_frees()?,
+                        "manifest save is outside writer"
+                    );
                     std::fs::rename(manifest, manifest.with_extension("retained"))
                         .map_err(|error| error.to_string())?;
                     std::fs::create_dir(manifest).map_err(|error| error.to_string())?;

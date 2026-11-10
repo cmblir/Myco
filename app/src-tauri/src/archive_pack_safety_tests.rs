@@ -203,7 +203,7 @@ fn restore_rechecks_an_earlier_destination_before_removing_zip() {
     let edit = root.join(BUCKET).join("a.md");
     let _hook = install(move |phase| {
         if phase == MutationCheckpoint::RestoreFinalize {
-            assert!(crate::vault::try_lock_file_mutation()?.is_some());
+            assert!(crate::vault::file_mutation_lock_frees()?);
             crate::vault::write_file(&edit.to_string_lossy(), NEWER)?;
         }
         Ok(())
@@ -632,7 +632,7 @@ fn pack_preseal_source_change_cleans_unchanged_owned_stage() {
         if phase == MutationCheckpoint::PackStageCreated {
             // The stage exists, but the writer and source-read phase have not
             // begun. Use the real cooperating API rather than an injected Err.
-            assert!(crate::vault::try_lock_file_mutation()?.is_some());
+            assert!(crate::vault::file_mutation_lock_frees()?);
             crate::vault::write_file(&edit.to_string_lossy(), NEWER)?;
         }
         Ok(())
