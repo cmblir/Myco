@@ -91,7 +91,16 @@ jobs:
         # overflow crashes only that child and returns a clean error — it cannot
         # take down the app. pdf-extract 0.10.0 pins lopdf ^0.38, so the crate
         # can't be bumped until a newer pdf-extract ships; remove this ignore then.
-        run: cargo audit --ignore RUSTSEC-2026-0187
+        #
+        # RUSTSEC-2026-0457 (OAuth client SSRF filter) and RUSTSEC-2026-0462
+        # (Streamable HTTP client body buffering) are in rmcp's client side,
+        # behind its `auth` and `transport-streamable-http-client` features.
+        # myco builds rmcp as a server only (server, macros, schemars,
+        # transport-streamable-http-server[-session]), so neither is compiled.
+        # Both are fixed in rmcp >= 3.9; remove these ignores with that upgrade.
+        run: >-
+          cargo audit --ignore RUSTSEC-2026-0187
+          --ignore RUSTSEC-2026-0457 --ignore RUSTSEC-2026-0462
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
