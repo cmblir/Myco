@@ -536,9 +536,10 @@ creation after undo gets a separate anchor/record. The focused native test passe
 with four retained private files after recreation and rejects the old consumed
 undo against the successor. Red/green logs are
 `/tmp/myco-map-custody-redraft-{red,green}.log`. This is native dispatch evidence,
-not UI acceptance: the frontend's session-local pending-publication cache still
-needs reconciliation with undo before claiming the full user flow. Restart record
-readback, source-bound refresh, and private-history cleanup remain incomplete.
+not UI acceptance: at that checkpoint the frontend's session-local publication
+cache still needed reconciliation with undo. The follow-up below addresses that
+adapter path. Restart record readback, source-bound refresh, and private-history
+cleanup remain incomplete.
 
 Final validation for the creation/undo/generation slice: default `cargo test`
 passed 2,658 library tests (34 ignored) and 28 integration tests (4 ignored),
@@ -549,6 +550,39 @@ and the focused failure/recovery logs are retained rather than replaced. No
 frontend runtime code changed, so frontend gates were not rerun for this native
 slice. README was updated. Windows, installed UI, actual map restart recovery,
 and full end-to-end undo/redraft remain unverified; no new model run occurred.
+
+The frontend follow-up reproduces undo/redraft failing with `publication already
+consumed`: `draftMap` retained the old manifest and receipt after successful undo.
+The process-local recovery cache now lives in a small dependency-free runtime
+module (IPC types are type-only). Both History and Settings use the shared IPC
+undo adapter, which invalidates only a positively confirmed run in its captured
+vault/opening. Failed or uncertain undo keeps recovery. A late reply cannot clear
+a reopened vault, another vault or another run; all maps in the confirmed shared
+run are invalidated together. This does not restore or invent native authority.
+
+A second reproduction found default second-only run IDs colliding with a consumed
+operation during immediate undo/redraft. Manual and automatic map runs now use
+native-compatible `llm-<seconds>-<20 decimal digits>` IDs with 64 random bits.
+Each automatic batch still explicitly shares one ID. Native manifest validation
+already accepts this two-numeric-segment shape; no native validator was relaxed.
+The regression suite uses the real map implementation and IPC adapter over
+synthetic native responses, alongside scope/late-response adapter tests. Its
+focused six suites pass 115 tests. Red logs are
+`/tmp/myco-map-undo-cache-red.log` and `/tmp/myco-map-undo-id-red.log`; focused
+success is `/tmp/myco-map-undo-cache-focused-final.log`. This is frontend behavior
+plus the separately recorded native evidence, not an installed UI acceptance run.
+
+Full frontend validation passed 398 files / 6,432 tests (70.02s), and lint passed
+with the two existing `notchDriver` hook warnings. The initial build caught
+TS2540 in the new fixture because `AgentVaultSession.openingToken` is read-only;
+the fixture now creates a fresh origin object instead of mutating it. Its three
+regressions passed again, followed by TypeScript and production build (Vite
+11.24s; existing import warning). The failed build is retained in
+`/tmp/myco-map-undo-cache-build.log`; final build and test logs use
+`/tmp/myco-map-undo-cache-build-green.log`, `-full.log` and `-typefix-tests.log`.
+The app README describes confirmed undo and fresh map run identities. Rust was
+unchanged and not rerun for this frontend slice. No restart-derived native update
+permission, map refresh, Windows or installed acceptance is claimed.
 
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks

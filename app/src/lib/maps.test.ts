@@ -230,7 +230,7 @@ describe("draftMap", () => {
     expect(content).toContain("map_evidence:");
   });
 
-  it("records the drafted file in an llm-<ts> undo-manifest", async () => {
+  it("records the drafted file in an llm-<ts>-<nonce> undo-manifest", async () => {
     complete.mockResolvedValue("body");
     createFolder.mockResolvedValue("maps");
     writeFile.mockResolvedValue(null);
@@ -239,7 +239,7 @@ describe("draftMap", () => {
 
     expect(appendDistillManifest).toHaveBeenCalledWith(
       "/v",
-      expect.stringMatching(/^llm-\d+$/),
+      expect.stringMatching(/^llm-\d+-\d{20}$/),
       [],
       ["wiki/maps/topic.md"],
       ORIGIN,

@@ -598,7 +598,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
       "/vmap",
       "attention",
       ["wiki/a.md", "wiki/b.md"],
-      expect.stringMatching(/^llm-\d+$/),
+      expect.stringMatching(/^llm-\d+-\d{20}$/),
       undefined, "foreground", roleFixture("organization", "anthropic-api", "synthetic-writer",
         { vaultPath: "/vmap", openingToken: "synthetic-organization-opening" }),
     );
@@ -680,7 +680,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     await runDistillGuarded("/vmap");
     const grant = roleFixture("organization", "builtin-local", BUILTIN_CHAT_MODEL,
       { vaultPath: "/vmap", openingToken: "synthetic-organization-opening" });
-    expect(draftMap).toHaveBeenCalledWith("/vmap", "attention", ["wiki/a.md", "wiki/b.md"], expect.stringMatching(/^llm-\d+$/), undefined, "foreground", grant);
+    expect(draftMap).toHaveBeenCalledWith("/vmap", "attention", ["wiki/a.md", "wiki/b.md"], expect.stringMatching(/^llm-\d+-\d{20}$/), undefined, "foreground", grant);
     expect(settingsRead).not.toHaveBeenCalled();
   });
 
@@ -842,7 +842,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
     const ids = draftMap.mock.calls.map((c) => c[3]);
     expect(ids).toHaveLength(3);
-    expect(ids[0]).toMatch(/^llm-\d+$/);
+    expect(ids[0]).toMatch(/^llm-\d+-\d{20}$/);
     expect(new Set(ids).size).toBe(1);
   });
 

@@ -20,6 +20,7 @@ import type { RollupOutcome } from "./rollup";
 import { runFullTierIngest } from "./fullTierIngest";
 import type { FullTierOutcome } from "./fullTierIngest";
 import { draftMap } from "./maps";
+import { newMapRunId } from "./mapRunId";
 import {
   feedbackFileNodes,
   parseProposal,
@@ -421,7 +422,7 @@ async function applyApprovedDraftMaps(
   const issues = [];
   // One undo-manifest for ALL maps this run drafts — per-call ids fragmented
   // a multi-map run so "undo this run" only reached the last map drafted.
-  const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
+  const manifestId = newMapRunId();
   for (const p of approved.slice(0, budget)) {
     try {
       await draftMap(vaultPath, p.cluster, p.members, manifestId, undefined, usage, roleSnapshot);

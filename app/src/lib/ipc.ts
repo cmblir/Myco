@@ -9,6 +9,7 @@ import type { ContextPackingRecord } from "./modelContextBudget";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { IMAGE_EXTS } from "./assets";
+import { forgetUndoneMapPublications } from "./mapPublicationRecovery";
 import { queryDateRange } from "./timeQuery";
 import type { RoleSnapshot, RoleId, RoleUsage, RoleSelectionRequest, ModelRoleSettings } from "./modelRoles";
 import type {
@@ -1843,7 +1844,9 @@ export const ipc = {
   undoDistillRun: async (vault: string, id: string) => {
     const origin = await invoke<AgentVaultSession>("agent_vault_session", {});
     if (origin?.vaultPath !== vault || !origin.openingToken) throw new Error("Undo requires the current vault opening; preserve artifacts for manual recovery");
-    return invoke<number>("undo_distill_run", { vault, id, origin });
+    const removed = await invoke<number>("undo_distill_run", { vault, id, origin });
+    if (Number.isSafeInteger(removed) && removed > 0) forgetUndoneMapPublications(origin, id);
+    return removed;
   },
   // Run list with per-row undo (Q4 item 3).
   listDistillRuns: (vault: string, limit?: number) =>

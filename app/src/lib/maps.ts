@@ -6,7 +6,7 @@
 // content-writing distill step already has (sessionDigest.ts, digests.ts).
 
 import { ipc } from "./ipc";
-import type { AgentVaultSession, DistillPublicationReceipt, FileNode } from "./ipc";
+import type { AgentVaultSession, FileNode } from "./ipc";
 import type { RoleSnapshot, RoleUsage } from "./modelRoles";
 import { complete } from "./chat";
 import HEADS from "./mycoPromptHeads.json";
@@ -17,10 +17,8 @@ import { publicationClaim, publishManagedNote, requireNativeCreation, requirePub
 import { isMissingFile } from "./sessionEvidence";
 import { mapEvidencePrompt, mapMemberStem, withMapEvidence } from "./mapEvidence";
 import { renderMapDraft } from "./mapContent";
-
-interface PendingMapPublication { manifestId: string; publication: DistillPublicationReceipt }
-// Session-local recovery only; restart discovery requires the native journal.
-const pendingPublications = new Map<string, PendingMapPublication>();
+import { newMapRunId } from "./mapRunId";
+import { pendingMapPublication, rememberMapPublication, type PendingMapPublication } from "./mapPublicationRecovery";
 
 export class MapPublicationError extends WorkflowOperationError {
   constructor(readonly writtenPath: string, error: unknown) {
@@ -170,14 +168,14 @@ async function freeMapPath(vaultPath: string, slug: string, assertCurrent: () =>
  *  from a single "undo this run" — minting a fresh id per call fragmented a
  *  multi-map run into manifests only undoable one id at a time, and the
  *  Settings undo button only ever reaches the newest. The default (a fresh
- *  `llm-<now>` id) fits the other caller, distillStore's manual per-click
+ *  `llm-<seconds>-<nonce>` id) fits the other caller, distillStore's manual per-click
  *  approve, where one click IS the whole run. `isCurrent` optionally guards
  *  that originating session; already-dispatched IO and model work cannot be undone. */
 export async function draftMap(
   vaultPath: string,
   cluster: string,
   members: string[],
-  manifestId = `llm-${Math.floor(Date.now() / 1000)}`,
+  manifestId = newMapRunId(),
   isCurrent: () => boolean = () => true,
   usage: RoleUsage = "foreground",
   capturedRole?: RoleSnapshot,
@@ -190,8 +188,7 @@ export async function draftMap(
   assertCurrent();
   requirePublicationOrigin(origin, vaultPath);
   const roleSnapshot = capturedRole ?? await ipc.captureModelRole(origin, "organization", usage);
-  const publicationKey = JSON.stringify([vaultPath, origin.openingToken, cluster]);
-  const pending = pendingPublications.get(publicationKey);
+  const pending = pendingMapPublication(origin, cluster);
   if (pending) {
     await recordPublication(vaultPath, origin, pending);
     assertCurrent();
@@ -238,7 +235,7 @@ export async function draftMap(
     await recheck();
     assertCurrent();
     const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot, snapshotId);
-    pendingPublications.set(publicationKey, { manifestId, publication });
+    rememberMapPublication(origin, cluster, { manifestId, publication });
     assertCurrent();
     await recordPublication(vaultPath, origin, { manifestId, publication });
     assertCurrent();

@@ -56,3 +56,42 @@ it("does not dispatch undo after an opening mismatch", async () => {
   await expect(ipc.undoDistillRun(origin.vaultPath, "llm-123")).rejects.toThrow("manual recovery");
   expect(invoke.mock.calls).toEqual([["agent_vault_session", {}]]);
 });
+
+it("invalidates only the confirmed run in its captured opening after a late undo reply", async () => {
+  const { rememberMapPublication, pendingMapPublication } = await import("./mapPublicationRecovery");
+  const receipt = { publicationId: "d".repeat(64), operationId: "llm-cache", path: "wiki/maps/synthetic.md",
+    revision: "e".repeat(64), nativeCreated: true, state: "published" as const,
+    fileIdentity: { device: 1, inode: 2, changedSeconds: 3, changedNanoseconds: 4 } };
+  const reopened = { ...origin, openingToken: "synthetic-reopened" };
+  const otherVault = { vaultPath: "/synthetic-other", openingToken: origin.openingToken };
+  const cached = { manifestId: "llm-cache", publication: receipt };
+  rememberMapPublication(origin, "first", cached);
+  rememberMapPublication(origin, "second", cached);
+  rememberMapPublication(origin, "other-run", { ...cached, manifestId: "llm-other" });
+  rememberMapPublication(otherVault, "first", cached);
+  let finish!: (removed: number) => void;
+  invoke.mockResolvedValueOnce(origin).mockImplementationOnce(() => new Promise<number>(resolve => { finish = resolve; }));
+  const undo = ipc.undoDistillRun(origin.vaultPath, "llm-cache");
+  await vi.waitFor(() => expect(invoke).toHaveBeenCalledTimes(2));
+  rememberMapPublication(reopened, "first", cached);
+  expect(pendingMapPublication(origin, "first")).toBeDefined();
+  finish(2);
+  await expect(undo).resolves.toBe(2);
+  expect(pendingMapPublication(origin, "first")).toBeUndefined();
+  expect(pendingMapPublication(origin, "second")).toBeUndefined();
+  expect(pendingMapPublication(origin, "other-run")).toBeDefined();
+  expect(pendingMapPublication(otherVault, "first")).toBeDefined();
+  expect(pendingMapPublication(reopened, "first")).toBeDefined();
+});
+
+it.each([0, null, 1.5, -1])("keeps recovery when undo does not confirm a positive removal count: %j", async removed => {
+  const { rememberMapPublication, pendingMapPublication } = await import("./mapPublicationRecovery");
+  rememberMapPublication(origin, "uncertain", { manifestId: "llm-uncertain", publication: {
+    publicationId: "d".repeat(64), operationId: "llm-uncertain", path: "wiki/maps/synthetic.md",
+    revision: "e".repeat(64), nativeCreated: true, state: "published",
+    fileIdentity: { device: 1, inode: 2, changedSeconds: 3, changedNanoseconds: 4 },
+  } });
+  invoke.mockResolvedValueOnce(origin).mockResolvedValueOnce(removed);
+  await ipc.undoDistillRun(origin.vaultPath, "llm-uncertain");
+  expect(pendingMapPublication(origin, "uncertain")).toBeDefined();
+});

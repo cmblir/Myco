@@ -154,6 +154,9 @@ records are not yet reopened into update authority; automatic refresh and custod
 cleanup remain incomplete.
 Live undo can remove an unchanged map created in that opening; human edits block
 removal. The private baseline and file anchor remain retained after undo.
+After confirmed undo through History or Settings, drafting the topic again starts
+a fresh run. Failed undo retains publication recovery. Map run IDs stay distinct
+even within the same second; maps in one automatic batch still share one undo run.
 
 New topic-map drafts use at most twelve selected member pages, bounded body
 excerpts, full relative-path citations and source revisions. Maps do not add
