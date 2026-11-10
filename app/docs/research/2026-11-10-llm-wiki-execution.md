@@ -18,6 +18,42 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: actual-model replay isolates a false-negative answer review
+
+The [selected-note controls](2026-11-11-selected-note-controls.json) freeze the
+same question and all three allowed synthetic notes from the preceding native
+probe. A new ignored test runs the production ordinary draft/review algorithm
+with the pinned cached 4B model, retaining both full prompts, raw responses and
+decoder telemetry. It uses a synthetic helper role/context, not an authenticated
+Wry command. Fixed all-note ordering and complete Markdown are explicit replay
+choices: the earlier app's exact selected-hit packet was not captured.
+
+The draft correctly said that Synthetic Graph Center links to Synthetic Graph
+East and Synthetic Graph West, citing S1 (the center note). The separate reviewer
+returned `answerDisposition=unsupported`, `taskResponse=adequate`,
+`sourceCoverage=uncertain`, no missing span IDs, and a reason ending “The source
+S1”. This is a false-negative review for the supplied originals. The shared flow
+retained `review_rejected`; no production prompt, verdict gate or model changed.
+Both calls ended at EOG, not their 768-token output limits. This explains a
+failure in the controlled replay, not conclusively the earlier hidden app output.
+
+[Full replay receipt](2026-11-11-selected-note-model-replay.json) retains both
+calls. Draft/review measured generation times were 14.886/17.622 seconds. Total
+runtime was 215.156 seconds, including artifact SHA-256 verification/loading;
+a startup process sample confirmed hashing. `/usr/bin/time -l` reported maximum
+RSS 3,166,568,448 bytes. Network denial was verified by a blocked socket attempt.
+Only the new temporary runtime was writable; production app data and vendor
+stores were denied. The owned model host and process stopped normally.
+
+The model-free original/path test passed, and the ordinary-flow group passed
+15 tests with this opt-in model test ignored; its separate actual invocation ran
+two calls and exited zero. That exit proves observation transport, not semantic
+acceptance. Rust fmt and strict all-target Clippy passed. No frontend, README or
+production behavior changed. Next compare
+reviewer representation/guidance against the frozen positive and unsupported
+answer controls, retaining both false positives and false negatives before any
+promotion. G2/G7 remain incomplete.
+
 ## November 11: native selected-note Ask reaches inference but fails review
 
 Rebuilt the isolated macOS acceptance app from `54d60c5e` with
