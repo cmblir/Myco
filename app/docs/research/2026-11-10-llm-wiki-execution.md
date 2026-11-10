@@ -18,6 +18,25 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: Windows port prerequisites revalidated
+
+Current local tooling still has only the macOS Rust target and no discovered
+Wine, Parallels CLI or QEMU executable. The repository's self-hosted runner API
+returned zero runners; GitHub-hosted availability was not tested or triggered.
+The owner was asked for a Windows PC/VM connection. This blocks Windows runtime
+acceptance, not independent work on other goal packages.
+
+Code inspection confirmed that receipt handles, private directory pins,
+restart custody, publication and source grants still contain explicit non-Unix
+rejection paths. The new [Windows port contract](2026-11-11-windows-native-port-contract.md)
+maps these dependencies and the required replacement/interruption tests.
+Microsoft's 128-bit file identity documentation also rules out simply filling
+the existing Unix `u64` inode field with a truncated Windows ID. Identity format,
+sharing behavior and ancestor confinement need a tested Windows implementation.
+No guard was removed, no workflow was dispatched and no Windows pass is claimed.
+This documentation-only audit does not require a new build; README was unchanged
+because no product behavior or supported-platform claim changed.
+
 ## November 11: unrelated-action examples improve some controls, still rejected
 
 Added an opt-in, QA-only comparison that appends six photograph-archiving and
