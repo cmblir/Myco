@@ -6,6 +6,8 @@ pub(crate) mod execution;
 pub(crate) mod failure;
 pub(crate) mod materializer;
 mod publication;
+#[cfg(all(test, feature = "native-index-probe"))]
+mod request_prompt_qa;
 pub(crate) mod review;
 pub(crate) mod review_decode;
 #[cfg(feature = "native-index-probe")]
