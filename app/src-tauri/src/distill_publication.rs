@@ -22,7 +22,7 @@ pub(crate) enum ManagedArtifact {
 }
 
 impl ManagedArtifact {
-    fn path(&self) -> Result<String, String> {
+    pub(crate) fn path(&self) -> Result<String, String> {
         let (folder, key, valid) = match self {
             Self::Daily { key } => ("daily", key, valid_date(key)),
             Self::Weekly { key } => ("weekly", key, valid_week(key)),
@@ -113,6 +113,7 @@ struct Entry {
     source_snapshot_id: Option<String>,
     phase: PublicationPhase,
     written: Option<RecordedWriteReceipt>,
+    map_creation_undo: Option<crate::map_custody::MapCreationUndo>,
 }
 
 /// A native source-registry caller supplies this after checking its private grant.
@@ -122,6 +123,7 @@ pub(crate) struct MapPublication<'a> {
     pub key: &'a str,
     pub content: &'a str,
     pub source_snapshot_id: &'a str,
+    pub creation_store: Option<&'a crate::map_custody::MapCreationStore>,
 }
 
 struct WriteInput<'a> {
@@ -130,6 +132,7 @@ struct WriteInput<'a> {
     content: &'a str,
     expected_revision: Option<&'a str>,
     source_snapshot_id: Option<&'a str>,
+    creation_store: Option<&'a crate::map_custody::MapCreationStore>,
 }
 
 #[derive(Default)]
@@ -219,6 +222,7 @@ pub(crate) fn publish_at(
                 content,
                 expected_revision,
                 source_snapshot_id: None,
+                creation_store: None,
             },
             &|| Ok(()),
         )
@@ -252,6 +256,7 @@ pub(crate) fn publish_map_locked(
             // Existing maps have no restart-durable native update custody yet.
             expected_revision: None,
             source_snapshot_id: Some(input.source_snapshot_id),
+            creation_store: input.creation_store,
         },
         verify_sources,
     )
@@ -271,6 +276,7 @@ fn publish_locked(
         content,
         expected_revision,
         source_snapshot_id,
+        creation_store,
     } = input;
     validate_operation(operation)?;
     let rel = artifact.path()?;
@@ -284,6 +290,7 @@ fn publish_locked(
             content,
             expected_revision,
             source_snapshot_id,
+            creation_store,
             verify_sources,
             rel,
         );
@@ -372,6 +379,7 @@ fn publish_locked(
                     source_snapshot_id: source_snapshot_id.map(str::to_owned),
                     phase: PublicationPhase::Prepared,
                     written: None,
+                    map_creation_undo: None,
                 },
             );
             id
@@ -389,12 +397,16 @@ fn publish_locked(
             .map_err(|e| format!("create managed publication directory: {e}"))?;
         let path = target(root, &rel)?;
         verify_sources()?;
-        let written = crate::vault::write_file_if_unchanged_recorded_locked(
-            guard,
-            &path.to_string_lossy(),
-            content,
-            expected_revision,
-        )?;
+        let written = if let Some(store) = creation_store {
+            store.write(guard, &path.to_string_lossy(), content)?
+        } else {
+            crate::vault::write_file_if_unchanged_recorded_locked(
+                guard,
+                &path.to_string_lossy(),
+                content,
+                expected_revision,
+            )?
+        };
         {
             let mut entries = registry.entries.lock().map_err(|_| "publication bytes persisted but registry lock poisoned; output retained for manual recovery")?;
             let entry = entries.get_mut(&id).ok_or("publication bytes persisted but prepared identity disappeared; output retained for manual recovery")?;
@@ -411,11 +423,19 @@ fn publish_locked(
         {
             return Err("publication bytes persisted but capability registration failed; output preserved for manual recovery".into());
         }
+        let map_creation_undo = if let Some(store) = creation_store {
+            let permit = store.record(&written, content).map_err(|error| format!("publication bytes persisted but map custody record failed: {error}; output retained for manual recovery"))?;
+            verify_sources().map_err(|error| format!("publication bytes persisted but final map source verification failed: {error}; output retained for manual recovery"))?;
+            Some(permit)
+        } else {
+            None
+        };
         let mut entries = registry.entries.lock().map_err(|_| "publication bytes persisted but registry lock poisoned; output preserved for manual recovery")?;
         let entry = entries
             .get_mut(&id)
             .ok_or("publication bytes persisted but prepared identity disappeared")?;
         entry.written = Some(written);
+        entry.map_creation_undo = map_creation_undo;
         entry.phase = PublicationPhase::Published;
         receipt(&id, entry)
     }
@@ -501,11 +521,11 @@ pub(crate) fn undo_created(
                 if entry.phase != PublicationPhase::Published || !written.native_created {
                     return Err("undo has no unconsumed native creation authority".into());
                 }
-                Ok((id.clone(), written))
+                Ok((id.clone(), written, entry.map_creation_undo.clone()))
             })
             .collect::<Result<Vec<_>, String>>()?
     };
-    for (_, written) in &owned {
+    for (_, written, _) in &owned {
         if !written.path.starts_with(root) {
             return Err("undo publication escaped its vault".into());
         }
@@ -513,8 +533,16 @@ pub(crate) fn undo_created(
         crate::vault::verify_recorded_file(written)?;
     }
     let mut removed = 0;
-    for (id, written) in owned {
-        crate::vault::remove_recorded_file(&written).map_err(|e| {
+    for (id, written, map_permit) in owned {
+        let removal = if let Some(permit) = map_permit {
+            if !permit.receipt().same_native_issuance(&written) {
+                return Err("map undo permit differs from publication receipt".into());
+            }
+            crate::vault::remove_native_map_creation(&permit)
+        } else {
+            crate::vault::remove_recorded_file(&written)
+        };
+        removal.map_err(|e| {
             format!("publication undo stopped after {removed} completed removals: {e}")
         })?;
         removed += 1;

@@ -26,6 +26,7 @@ impl Fixture {
                         key: MAP_KEY,
                         content: MAP_CONTENT,
                         source_snapshot_id: snapshot,
+                        creation_store: None,
                     },
                     verify_sources,
                 )
@@ -208,6 +209,7 @@ fn operation_keeps_each_target_grant_bound_and_allows_a_shared_multimap_manifest
                 key: "different-topic",
                 content: MAP_CONTENT,
                 source_snapshot_id: "private-grant-b",
+                creation_store: None,
             },
             &|| Ok(()),
         )
@@ -335,4 +337,79 @@ fn cooperating_writer_cannot_run_between_map_source_checks_and_publication() {
         std::fs::read_to_string(fixture.root.join(MAP_PATH)).unwrap(),
         MAP_CONTENT
     );
+}
+
+#[cfg(unix)]
+#[test]
+fn map_custody_record_conflict_preserves_output_without_publication_authority() {
+    crate::settings::test_support::with_isolated_data("map-custody-conflict", |data| {
+        let fixture = Fixture::new();
+        let store = crate::map_custody::MapCreationStore::open(&fixture.root, MAP_PATH).unwrap();
+        let record_path = RefCell::new(None);
+        let result = crate::vault::with_root_mutation(&fixture.root, |root, guard| {
+            publish_map_locked(
+                root,
+                guard,
+                &fixture.registry,
+                &fixture.origin,
+                MapPublication {
+                    operation: "map-custody-conflict",
+                    key: MAP_KEY,
+                    content: MAP_CONTENT,
+                    source_snapshot_id: "private-grant",
+                    creation_store: Some(&store),
+                },
+                &|| {
+                    if root.join(MAP_PATH).exists() && record_path.borrow().is_none() {
+                        let anchor = std::fs::read_dir(data.join("map-creation-custody"))
+                            .unwrap()
+                            .map(|entry| entry.unwrap().path())
+                            .find(|path| path.extension().is_some_and(|ext| ext == "anchor"))
+                            .unwrap();
+                        let record = anchor.with_extension("json");
+                        std::fs::write(&record, "Synthetic pre-existing custody record.").unwrap();
+                        *record_path.borrow_mut() = Some(record);
+                    }
+                    Ok(())
+                },
+            )
+        });
+        assert!(result
+            .unwrap_err()
+            .contains("output retained for manual recovery"));
+        assert_eq!(
+            std::fs::read_to_string(fixture.root.join(MAP_PATH)).unwrap(),
+            MAP_CONTENT
+        );
+        assert_eq!(
+            std::fs::read_to_string(record_path.borrow().as_ref().unwrap()).unwrap(),
+            "Synthetic pre-existing custody record."
+        );
+        let entries = fixture.registry.entries.lock().unwrap();
+        assert_eq!(entries.len(), 1);
+        let entry = entries.values().next().unwrap();
+        assert_eq!(entry.phase, PublicationPhase::Prepared);
+        assert!(entry.written.is_some());
+        drop(entries);
+        assert!(fixture
+            .publish_map("map-custody-conflict", "private-grant", &|| Ok(()))
+            .is_err());
+    });
+}
+
+#[cfg(unix)]
+#[test]
+fn map_custody_rejects_unsafe_store_and_non_map_targets() {
+    crate::settings::test_support::with_isolated_data("map-custody-unsafe", |data| {
+        let fixture = Fixture::new();
+        for invalid in ["raw/source.md", "wiki/maps/../raw.md", "wiki/maps/Upper.md"] {
+            assert!(crate::map_custody::MapCreationStore::open(&fixture.root, invalid).is_err());
+        }
+        let redirect = data.join("synthetic-redirect");
+        std::fs::create_dir(&redirect).unwrap();
+        std::os::unix::fs::symlink(&redirect, data.join("map-creation-custody")).unwrap();
+        assert!(crate::map_custody::MapCreationStore::open(&fixture.root, MAP_PATH).is_err());
+        assert_eq!(std::fs::read_dir(&redirect).unwrap().count(), 0);
+        assert!(!fixture.root.join(MAP_PATH).exists());
+    });
 }

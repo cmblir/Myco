@@ -2084,6 +2084,23 @@ pub(crate) fn read_same_native_file(
     }
 }
 
+/// Remove only a live map creation with its separately issued native permit.
+/// Generic compiler anchors and reopened custody never acquire this permission.
+pub(crate) fn remove_native_map_creation(
+    permit: &crate::map_custody::MapCreationUndo,
+) -> Result<(), String> {
+    let receipt = permit.receipt();
+    if !receipt.native_created {
+        return Err("map undo permit lacks native creation".into());
+    }
+    let _guard = FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned")?;
+    verify_recorded_file_unlocked(receipt)?;
+    std::fs::remove_file(&receipt.path)
+        .map_err(|error| format!("remove native map creation: {error}"))
+}
+
 /// Delete only an unchanged file created by the recorded absence-CAS operation.
 /// This lock covers cooperating writers, not arbitrary external filesystem races.
 pub(crate) fn remove_recorded_file(receipt: &RecordedWriteReceipt) -> Result<(), String> {

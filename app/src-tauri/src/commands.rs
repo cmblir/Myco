@@ -5108,6 +5108,10 @@ pub(crate) fn publish_distill_note_dispatch(
                     snapshot,
                     source_id,
                     |canonical, guard, verify| {
+                        let creation_store = crate::map_custody::MapCreationStore::open(
+                            canonical,
+                            &artifact.path()?,
+                        )?;
                         crate::distill_publication::publish_map_locked(
                             canonical,
                             guard,
@@ -5118,6 +5122,7 @@ pub(crate) fn publish_distill_note_dispatch(
                                 key,
                                 content,
                                 source_snapshot_id: source_id,
+                                creation_store: Some(&creation_store),
                             },
                             verify,
                         )

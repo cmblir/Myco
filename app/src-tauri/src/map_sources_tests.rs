@@ -163,86 +163,204 @@ fn map_sources_registry_is_bounded_prunes_old_openings_and_never_issues_failed_c
 fn map_sources_publication_command_requires_exact_grant_and_preserves_update_boundary() {
     use crate::commands::publish_distill_note_dispatch;
     use crate::distill_publication::{DistillPublicationRegistry, ManagedArtifact};
-    with_isolated_data("map-source-publication", |data| {
-        let root = data.join("vault");
-        std::fs::create_dir_all(root.join("wiki")).unwrap();
-        std::fs::write(root.join("wiki/a.md"), "Synthetic source.").unwrap();
-        let vault = VaultRoot::default();
-        let origin = open(&vault, &root);
-        let role = capture_role_at(&origin, RoleId::Organization, RoleUsage::Foreground).unwrap();
-        let sources = MapSourceRegistry::default();
-        let publications = DistillPublicationRegistry::default();
-        let captured = capture(&vault, &sources, &origin, &role, &paths()).unwrap();
-        let map = ManagedArtifact::Map {
-            key: "synthetic".into(),
-        };
-        let map_body = "Synthetic map.\n";
-        let content = format!(
+    for human_edit in [false, true] {
+        with_isolated_data("map-source-publication", |data| {
+            let root = data.join("vault");
+            std::fs::create_dir_all(root.join("wiki")).unwrap();
+            let root = root.canonicalize().unwrap();
+            std::fs::write(root.join("wiki/a.md"), "Synthetic source.").unwrap();
+            let vault = VaultRoot::default();
+            let origin = open(&vault, &root);
+            let role =
+                capture_role_at(&origin, RoleId::Organization, RoleUsage::Foreground).unwrap();
+            let sources = MapSourceRegistry::default();
+            let publications = DistillPublicationRegistry::default();
+            let captured = capture(&vault, &sources, &origin, &role, &paths()).unwrap();
+            let map = ManagedArtifact::Map {
+                key: "synthetic".into(),
+            };
+            let map_body = "Synthetic map.\n";
+            let content = format!(
             "---\nmap_generated: {{\"version\":1,\"bodyRevision\":\"{}\"}}\n---\n\n<!-- myco:map-generated:v1 -->\n{map_body}<!-- /myco:map-generated -->\n",
             crate::importers::wikify::source_revision(map_body)
         );
-        for invalid in [
-            "Synthetic map without generated boundaries.".to_string(),
-            content.replace("Synthetic map.", "Edited without updating the hash."),
-            format!("{content}Unmarked prose."),
-        ] {
-            let malformed = publish_distill_note_dispatch(
-                &vault,
-                &publications,
-                &sources,
-                &origin,
-                "llm-invalid-map-section",
-                &map,
-                &invalid,
+            for invalid in [
+                "Synthetic map without generated boundaries.".to_string(),
+                content.replace("Synthetic map.", "Edited without updating the hash."),
+                format!("{content}Unmarked prose."),
+            ] {
+                let malformed = publish_distill_note_dispatch(
+                    &vault,
+                    &publications,
+                    &sources,
+                    &origin,
+                    "llm-invalid-map-section",
+                    &map,
+                    &invalid,
+                    None,
+                    Some(&role),
+                    Some(&captured.snapshot_id),
+                );
+                assert!(malformed
+                    .unwrap_err()
+                    .contains("map generated section is invalid"));
+                assert!(!root.join("wiki/maps/synthetic.md").exists());
+            }
+            let publish = |artifact: &ManagedArtifact, expected: Option<&str>, id: Option<&str>| {
+                publish_distill_note_dispatch(
+                    &vault,
+                    &publications,
+                    &sources,
+                    &origin,
+                    "llm-map-source",
+                    artifact,
+                    &content,
+                    expected,
+                    Some(&role),
+                    id,
+                )
+            };
+            assert!(publish(&map, None, None).is_err());
+            assert!(publish(&map, None, Some("forged-source-id")).is_err());
+            assert!(publish(&map, Some(&"a".repeat(64)), Some(&captured.snapshot_id)).is_err());
+            assert!(publish(
+                &ManagedArtifact::Daily {
+                    key: "2026-11-10".into()
+                },
                 None,
-                Some(&role),
-                Some(&captured.snapshot_id),
-            );
-            assert!(malformed
-                .unwrap_err()
-                .contains("map generated section is invalid"));
+                Some(&captured.snapshot_id)
+            )
+            .is_err());
             assert!(!root.join("wiki/maps/synthetic.md").exists());
-        }
-        let publish = |artifact: &ManagedArtifact, expected: Option<&str>, id: Option<&str>| {
-            publish_distill_note_dispatch(
-                &vault,
+            let receipt = publish(&map, None, Some(&captured.snapshot_id)).unwrap();
+            assert!(receipt.native_created);
+            assert_eq!(receipt.path, "wiki/maps/synthetic.md");
+            assert_eq!(
+                std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
+                content
+            );
+            let custody_dir = data.join("map-creation-custody");
+            let record_path = std::fs::read_dir(&custody_dir)
+                .unwrap()
+                .map(|entry| entry.unwrap().path())
+                .find(|path| path.extension().is_some_and(|ext| ext == "json"))
+                .unwrap();
+            let record: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(&record_path).unwrap()).unwrap();
+            assert_eq!(record["state"], "creationObserved");
+            assert_eq!(record["baseline"], content);
+            assert_eq!(record["revision"], receipt.revision);
+            assert_eq!(record["scope"]["path"], receipt.path);
+            let anchor = custody_dir.join(record["anchor"].as_str().unwrap());
+            use std::os::unix::fs::MetadataExt;
+            let anchor_metadata = std::fs::metadata(&anchor).unwrap();
+            let target_metadata = std::fs::metadata(root.join(&receipt.path)).unwrap();
+            assert_eq!(
+                (anchor_metadata.dev(), anchor_metadata.ino()),
+                (target_metadata.dev(), target_metadata.ino())
+            );
+            assert_eq!(
+                std::fs::metadata(&record_path).unwrap().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                publish(&map, None, Some(&captured.snapshot_id))
+                    .unwrap()
+                    .publication_id,
+                receipt.publication_id
+            );
+            assert_eq!(std::fs::read_dir(&custody_dir).unwrap().count(), 2);
+            let proven = crate::distill_publication::validate(
                 &publications,
-                &sources,
+                &root,
                 &origin,
                 "llm-map-source",
-                artifact,
-                &content,
-                expected,
-                Some(&role),
-                id,
+                std::slice::from_ref(&receipt.publication_id),
+                &[crate::distill::ArchivePublication {
+                    path: receipt.path.clone(),
+                    revision: receipt.revision.clone(),
+                    created: false,
+                }],
             )
-        };
-        assert!(publish(&map, None, None).is_err());
-        assert!(publish(&map, None, Some("forged-source-id")).is_err());
-        assert!(publish(&map, Some(&"a".repeat(64)), Some(&captured.snapshot_id)).is_err());
-        assert!(publish(
-            &ManagedArtifact::Daily {
-                key: "2026-11-10".into()
-            },
-            None,
-            Some(&captured.snapshot_id)
-        )
-        .is_err());
-        assert!(!root.join("wiki/maps/synthetic.md").exists());
-        let receipt = publish(&map, None, Some(&captured.snapshot_id)).unwrap();
-        assert!(receipt.native_created);
-        assert_eq!(receipt.path, "wiki/maps/synthetic.md");
-        assert_eq!(
-            std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
-            content
-        );
-        release(&sources, &origin, &captured.snapshot_id).unwrap();
-        assert!(publish(&map, None, Some(&captured.snapshot_id)).is_err());
-        assert_eq!(
-            std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
-            content
-        );
-    });
+            .unwrap();
+            assert!(
+                proven[0].created,
+                "anchored native creation remains valid for manifest recording"
+            );
+            release(&sources, &origin, &captured.snapshot_id).unwrap();
+            assert!(publish(&map, None, Some(&captured.snapshot_id)).is_err());
+            assert_eq!(
+                std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
+                content
+            );
+            if human_edit {
+                std::fs::write(root.join(&receipt.path), "Synthetic human annotation.").unwrap();
+                assert!(crate::distill_publication::undo_created(
+                    &publications,
+                    &root,
+                    &origin,
+                    "llm-map-source",
+                    std::slice::from_ref(&receipt.path)
+                )
+                .is_err());
+                assert_eq!(
+                    std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
+                    "Synthetic human annotation."
+                );
+                return;
+            }
+            assert_eq!(
+                crate::distill_publication::undo_created(
+                    &publications,
+                    &root,
+                    &origin,
+                    "llm-map-source",
+                    std::slice::from_ref(&receipt.path)
+                )
+                .unwrap(),
+                1
+            );
+            assert!(!root.join(&receipt.path).exists());
+            assert!(
+                anchor.exists() && record_path.exists(),
+                "private history is retained without granting restart deletion"
+            );
+            assert!(crate::distill_publication::undo_created(
+                &publications,
+                &root,
+                &origin,
+                "llm-map-source",
+                std::slice::from_ref(&receipt.path)
+            )
+            .is_err());
+            let fresh = capture(&vault, &sources, &origin, &role, &paths()).unwrap();
+            let recreated = publish_distill_note_dispatch(
+                &vault,
+                &publications,
+                &sources,
+                &origin,
+                "llm-map-source-second",
+                &map,
+                &content,
+                None,
+                Some(&role),
+                Some(&fresh.snapshot_id),
+            )
+            .unwrap();
+            assert_ne!(recreated.publication_id, receipt.publication_id);
+            assert_eq!(std::fs::read_dir(&custody_dir).unwrap().count(), 4);
+            assert!(crate::distill_publication::undo_created(
+                &publications,
+                &root,
+                &origin,
+                "llm-map-source",
+                std::slice::from_ref(&receipt.path)
+            )
+            .is_err());
+            assert!(root.join(&recreated.path).exists());
+            release(&sources, &origin, &fresh.snapshot_id).unwrap();
+        });
+    }
 }
 
 #[cfg(unix)]

@@ -146,6 +146,14 @@ without publishing a map. Durable native refresh authority is still required.
 The native publication command independently checks the versioned boundary and
 exact generated-body hash before writing. A matching descriptor proves content
 consistency only, not source entailment or ownership of an existing map.
+On supported Unix filesystems, new maps also retain their native file object and
+creation baseline under `<app-data>/map-creation-custody`. This requires vault and
+app data to support hard links on the same filesystem. Conflicting or failed
+records preserve output for recovery instead of confirming publication. These
+records are not yet reopened into update authority; automatic refresh and custody
+cleanup remain incomplete.
+Live undo can remove an unchanged map created in that opening; human edits block
+removal. The private baseline and file anchor remain retained after undo.
 
 New topic-map drafts use at most twelve selected member pages, bounded body
 excerpts, full relative-path citations and source revisions. Maps do not add
