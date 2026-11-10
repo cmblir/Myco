@@ -18,6 +18,31 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: native Ingest failure retains the current draft
+
+Using the same checksum-verified sandbox launcher and synthetic Alpha vault,
+CUA submitted three synthetic inputs. The 186-byte input was excluded by the
+junk floor; the 323-byte input was archived as raw-only. Neither was a model
+failure, and both retained their drafts. A 10,654-byte input crossed the harvest
+floor and reached a real native failure:
+`WorkflowOperationError: WorkflowOperationError: Local preview rejected: generation_unavailable_or_rejected`.
+The UI showed incomplete processing and a retry action. Title `Synthetic source`
+and all 45 input sections remained. After visiting Ask and returning to Ingest,
+comparison of the accessibility text with the submitted body was exactly equal.
+
+Alpha now contains two new synthetic raw Markdown files and its original single
+wiki file; Beta retains zero raw files and one wiki file. Both original synthetic
+Reader files are unchanged. The owned app was quit and its native process absence
+verified. Production marker metadata is unchanged relative to the already
+recorded incident baseline; the earlier marker incident is not repaired by this.
+See [the native failure receipt](2026-11-11-native-draft-failure.json).
+
+This advances the failure-retention part of D3 only. Native successful completion
+versus a newer draft, cancellation, other partial outcomes and D4 storage recovery
+remain open. No inference quality or successful wiki publication is claimed.
+Repository application code and README were unchanged; no code test suite was
+rerun for this validation-only documentation update.
+
 ## November 11: isolated bundled draft navigation, restart and vault separation
 
 The fresh bundle's unchanged native executable became reachable by CUA after
