@@ -15,8 +15,39 @@ requirements and must not be mistaken for passing results.
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
-| G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
+| G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: native narrow Graph now precedes its supporting panels
+
+The [native layout receipt](2026-11-11-native-graph-narrow-layout.json) records
+light-theme inspection at 1280, 1024 and 800px. At 800px the expanded gaps rail
+occupied the first screen before the graph: its desktop `order: -1` persisted
+after columns stacked. Folding it exposed the graph and Reader remained usable,
+but the primary content required an unnecessary panel action or scroll.
+
+Reset only the Graph left rail's order in the existing 769–820px band. The stage
+already precedes the rails in DOM/keyboard order, so visual and source order now
+agree. Saved folds, panel heights and scroll behavior are retained. README now
+describes the graph-first narrow layout.
+
+Rebuilt the isolated macOS app, restored and checksum-verified its mandatory
+sandbox wrapper, and confirmed bare startup still refuses missing isolation.
+Native replay confirmed the 800px graph-first layout in light and dark themes,
+scroll access to both rails, gap fold/restore, selected neighbors and Reader
+navigation. Existing 1280px light and 1024px dark arrangements remain visible.
+The original dark theme and 1280px window were restored before normal quit.
+All 16 synthetic Markdown hashes and production-marker metadata are unchanged;
+this does not repair or clear the earlier unresolved marker incident.
+
+Frontend lint passed with the two existing notchDriver dependency warnings;
+typecheck and all 6,498 tests in 405 files passed. Frontend and unsigned native
+builds passed, retaining existing Vite chunk warnings. No Rust behavior changed.
+Screenshots were inspected through CUA, not saved as committed image files.
+The computer-use skill's Orca entry failed with `command not found: orca`; no
+alternate Orca executable was used, and the provided native CUA tool performed
+the inspection. Full contrast, VoiceOver, phone and translation/state matrices
+remain open; this slice does not complete G6/G7.
 
 ## November 11: grouped draft originals retain targets but still fail acceptance
 

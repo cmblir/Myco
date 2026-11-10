@@ -1,0 +1,83 @@
+{
+  "schemaVersion": 1,
+  "status": "narrow-layout-fix-verified-native",
+  "baselineNativeSha256": "1d23a221384bb3ae00de4dc3f15f5e29ab964fb429d230b0975770fddba1f8c4",
+  "candidateNativeSha256": "5dfb1d3fc42870fbab7fe37eb06f45b8aa36d07201a18aaaeda5b2951add3cf9",
+  "sourceCommitBeforeChange": "cf02dd9577819b74c105e5a78f74d2a654f076f6",
+  "stylesSha256": "8eb5a4591b7c03ede0be349ff63a8d5e144e0458ee5fed336ba1a686585d7c4a",
+  "runtime": {
+    "platform": "Darwin arm64",
+    "app": "/Users/o/prj/karpathy/app/src-tauri/target/debug/bundle/macos/Myco Isolated Acceptance.app",
+    "profileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+    "launcherSha256": "622f762cc376a28f8d115ef1023723520e1193837726bebf7eea7ad110ef636c",
+    "signedRelease": false,
+    "network": "unchanged deny-network native sandbox",
+    "originalMarkdownCount": 16,
+    "originalMarkdownHashesUnchanged": true,
+    "productionMarkerMetadataUnchanged": true,
+    "productionMarkerRestored": false,
+    "ownedProcessStopped": true,
+    "bareStartupRefused": true
+  },
+  "observations": [
+    {
+      "build": "baseline",
+      "theme": "light",
+      "width": 1280,
+      "result": "Graph and both rails visible; selected note shows East/West link targets."
+    },
+    {
+      "build": "baseline",
+      "theme": "light",
+      "width": 1024,
+      "result": "Rails share left column; selected inspector remains reachable."
+    },
+    {
+      "build": "baseline",
+      "theme": "light",
+      "width": 800,
+      "result": "Expanded gaps rail precedes graph and pushes the main canvas almost entirely below the first screen. Collapse restores access; Reader opens the selected Center original."
+    },
+    {
+      "build": "candidate",
+      "theme": "light",
+      "width": 1280,
+      "result": "Existing three-column layout remains."
+    },
+    {
+      "build": "candidate",
+      "theme": "light",
+      "width": 800,
+      "result": "Graph appears first with both saved rails expanded below it. Page-gutter scroll reaches both rails; gaps collapse and expand work."
+    },
+    {
+      "build": "candidate",
+      "theme": "dark",
+      "width": 800,
+      "result": "Graph first; search plus Return selects Center and exposes East/West neighbors and inspector."
+    },
+    {
+      "build": "candidate",
+      "theme": "dark",
+      "width": 1024,
+      "result": "Existing left stacked rails plus graph layout remains; Reader opens the selected Center original."
+    }
+  ],
+  "limits": [
+    "Widths inferred from native configured 1280 width and 2x screenshot dimensions 2560/2048/1600; screenshots observed in CUA session, not committed as image files.",
+    "This verifies the narrow Graph layout slice, not all themes/skins, contrast ratios, VoiceOver, keyboard-only access, responsive phone layouts or full G6 acceptance.",
+    "Production marker metadata unchanged relative to the previously recorded unresolved marker incident; no restoration claim."
+  ],
+  "checks": {
+    "frontendFilesPassed": 405,
+    "frontendTestsPassed": 6498,
+    "typecheck": "passed",
+    "lint": "zero errors; two existing notchDriver hook warnings",
+    "build": "frontend and isolated native app passed; unsigned; existing Vite chunk warnings"
+  },
+  "logs": [
+    "/tmp/myco-graph-first-lint.log",
+    "/tmp/myco-graph-first-tests.log",
+    "/tmp/myco-graph-first-build.log"
+  ]
+}

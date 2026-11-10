@@ -5334,6 +5334,10 @@ body:has(.editor-toolbar) .help-widget__fab {
   .u-page.graph-page .u-page__main {
     height: 62vh;
   }
+  /* Once columns stack, keep the graph first as it is in keyboard order. */
+  .u-page.graph-page .u-page__rail:not(.u-page__rail--right) {
+    order: 0;
+  }
   .u-page.graph-page .u-page__rail > .u-rail {
     min-height: 160px;
   }
