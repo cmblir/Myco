@@ -91,6 +91,7 @@ pub mod validator;
 pub mod vault;
 pub mod vault_dir;
 pub mod vault_history;
+mod vault_path;
 
 pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {
     #[cfg(feature = "native-index-probe")]

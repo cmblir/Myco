@@ -180,13 +180,13 @@ fn recall_with_limits(
             result.incomplete = true;
             continue;
         };
-        let Some(resolved) = path.strip_prefix(&root).ok().and_then(Path::to_str) else {
+        let Some(resolved) = crate::vault_path::relative_key(&root, &path) else {
             result.incomplete = true;
             continue;
         };
-        if !is_original(resolved)
-            || !scope.keeps(resolved)
-            || crate::vector_index::is_cold_for(resolved, include_archived)
+        if !is_original(&resolved)
+            || !scope.keeps(&resolved)
+            || crate::vector_index::is_cold_for(&resolved, include_archived)
         {
             result.incomplete = true;
             continue;

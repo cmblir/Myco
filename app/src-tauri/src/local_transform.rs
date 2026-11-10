@@ -150,10 +150,9 @@ pub fn checked_sources(root: &Path, sources: &[Source]) -> Result<Checked, Strin
         if !contents.contains_key(&source.page) {
             let path =
                 crate::vault::confine_path(&root, &root.join(&source.page).to_string_lossy())?;
-            let relative = path
-                .strip_prefix(&root)
-                .map_err(|_| "preview source escaped vault")?;
-            if !allowed_path(&relative.to_string_lossy()) {
+            let relative = crate::vault_path::relative_key(&root, &path)
+                .ok_or("preview source escaped vault or has no portable identity")?;
+            if !allowed_path(&relative) {
                 return Err("resolved preview source is outside scope".into());
             }
             let metadata = std::fs::metadata(&path).map_err(|_| "preview source unavailable")?;

@@ -601,9 +601,9 @@ fn curated_sections(
                 let path =
                     crate::vault::confine_path(root, &root.join(&quote.source).to_string_lossy())
                         .ok()?;
-                let resolved = path.strip_prefix(root).ok()?.to_str()?;
+                let resolved = crate::vault_path::relative_key(root, &path)?;
                 if !(resolved.starts_with("raw/") || resolved.starts_with("sessions/"))
-                    || crate::vector_index::is_cold_for(resolved, include_archived)
+                    || crate::vector_index::is_cold_for(&resolved, include_archived)
                 {
                     return None;
                 }

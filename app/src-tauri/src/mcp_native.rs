@@ -557,7 +557,9 @@ pub(crate) fn rel_to(base: &Path, abs: &Path) -> String {
         })
         .unwrap_or(abs)
         .to_string_lossy()
-        .to_string()
+        // Native Windows paths use backslashes, while every persisted page ID
+        // and source-prefix check uses '/'. Do not rewrite Unix filename bytes.
+        .replace(std::path::MAIN_SEPARATOR, "/")
 }
 
 fn fm_str(fm: &Value, key: &str) -> String {
@@ -5145,6 +5147,41 @@ mod tests {
     use super::record_tool_call_at;
     use super::suspect_scan;
     use super::text_sha256;
+
+    #[test]
+    fn relative_page_ids_use_portable_separators() {
+        let vault = tempfile::tempdir().unwrap();
+        let path = vault
+            .path()
+            .join("wiki")
+            .join("sessions")
+            .join("한글 note.md");
+        assert_eq!(
+            super::rel_to(vault.path(), &path),
+            "wiki/sessions/한글 note.md"
+        );
+        let canonical = vault.path().canonicalize().unwrap();
+        assert_eq!(
+            super::rel_to(
+                vault.path(),
+                &canonical
+                    .join("raw")
+                    .join("conversations")
+                    .join("source.md")
+            ),
+            "raw/conversations/source.md"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn relative_page_ids_do_not_reinterpret_unix_backslash_filenames() {
+        let vault = tempfile::tempdir().unwrap();
+        assert_eq!(
+            super::rel_to(vault.path(), &vault.path().join("wiki").join("a\\b.md")),
+            "wiki/a\\b.md"
+        );
+    }
 
     #[test]
     fn implicit_ledger_and_queue_updates_take_the_guarded_mutation_route() {

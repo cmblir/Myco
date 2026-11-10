@@ -546,18 +546,15 @@ fn checked_evidence_selection(
         }
         if !pages.contains_key(&hit.page) {
             let path = crate::vault::confine_path(root, &root.join(&hit.page).to_string_lossy())?;
-            let resolved = path
-                .strip_prefix(root)
-                .ok()
-                .and_then(Path::to_str)
-                .ok_or("invalid source path")?;
-            if !request.scope.keeps(resolved)
+            let resolved =
+                crate::vault_path::relative_key(root, &path).ok_or("invalid source path")?;
+            if !request.scope.keeps(&resolved)
                 || request
                     .paths
                     .as_ref()
-                    .is_some_and(|paths| !paths.iter().any(|path| path == resolved))
+                    .is_some_and(|paths| !paths.iter().any(|path| path == &resolved))
                 || crate::vector_index::is_cold_for(
-                    resolved,
+                    &resolved,
                     crate::settings::search_archived_sessions(),
                 )
             {
