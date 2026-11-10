@@ -190,6 +190,16 @@ success. Post-write source checks still must pass before refresh succeeds.
 History describes recorded writes, including interrupted updates, and does not
 certify completed source validation. Power-loss recovery, partial/corrupt private
 record repair and browsing unpublished attempts remain incomplete.
+The opening-bound, read-only `retained_map_snapshots` native command exposes
+stored before/after text for recovery inspection. `currentObject` means the
+record's retained inode matches the current file, not that its contents or sources
+are approved. Other validated records are `publicationUnknown`, including both
+interrupted attempts and superseded updates. Stable malformed records appear as
+`invalidRecord` without snapshot text; privacy, I/O and concurrent replacement
+failures abort the query. Results are ordered by opaque record ID, not time, and
+bounded to 256 snapshots, 32 MiB of records and 4,096 directory entries. This API
+does not retry, delete, restore or grant undo authority. Its recovery UI remains
+pending; the existing History screen still shows only the latest refresh.
 Refresh issues no creation/undo receipt. Manual map proposals show the native
 merged diff before applying an existing-map update. Cancelling or switching vaults
 stops the update; sources and the target revision are rechecked after approval.

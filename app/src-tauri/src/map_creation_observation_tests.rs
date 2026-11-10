@@ -49,6 +49,113 @@ fn discover(root: &Path, directory: &CompilerPinDirectory) -> Result<CreationCon
 }
 
 #[test]
+fn recovery_displays_stable_snapshots_without_granting_publication_status() {
+    with_isolated_data("map-recovery-snapshots", |data| {
+        let (root, directory, leaf, baseline) = create(data);
+        let rows = recovery::inspect(&directory, &root, RELATIVE).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].evidence,
+            crate::map_recovery::Evidence::CurrentObject
+        );
+        assert_eq!(rows[0].after.as_deref(), Some(baseline.as_str()));
+        assert!(rows[0].before.is_none());
+        // Removing only the synthetic canonical link does not delete custody.
+        std::fs::remove_file(root.join(RELATIVE)).unwrap();
+        let rows = recovery::inspect(&directory, &root, RELATIVE).unwrap();
+        assert_eq!(
+            rows[0].evidence,
+            crate::map_recovery::Evidence::PublicationUnknown
+        );
+        assert_eq!(rows[0].after.as_deref(), Some(baseline.as_str()));
+        std::fs::write(directory.path().join(leaf), "{truncated").unwrap();
+        let rows = recovery::inspect(&directory, &root, RELATIVE).unwrap();
+        assert_eq!(
+            rows[0].evidence,
+            crate::map_recovery::Evidence::InvalidRecord
+        );
+        assert!(rows[0].before.is_none() && rows[0].after.is_none());
+    });
+}
+
+#[test]
+fn recovery_rejects_changes_after_scan_and_stale_vault_openings() {
+    with_isolated_data("map-recovery-races", |data| {
+        let (root, directory, leaf, _) = create(data);
+        let error = recovery::inspect_at(&directory, &root, RELATIVE, || {
+            std::fs::write(directory.path().join(&leaf), "{}").map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(error.contains("readback differs"));
+        let state = crate::vault_session::VaultRoot::default();
+        let generation = state.begin_open().unwrap();
+        state.finish_open(generation, root.clone(), || ()).unwrap();
+        let origin = state.snapshot().unwrap();
+        let generation = state.begin_open().unwrap();
+        state.finish_open(generation, root, || ()).unwrap();
+        assert!(crate::map_recovery::inspect(&state, &origin, "synthetic").is_err());
+    });
+}
+
+#[test]
+fn recovery_rejects_target_replacement_and_symlink_parents() {
+    with_isolated_data("map-recovery-target-race", |data| {
+        let (root, directory, _, baseline) = create(data);
+        let error = recovery::inspect_at(&directory, &root, RELATIVE, || {
+            let replacement = root.join("replacement.md");
+            std::fs::write(&replacement, &baseline).map_err(|e| e.to_string())?;
+            std::fs::rename(replacement, root.join(RELATIVE)).map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(error.contains("changed during inspection"));
+        std::fs::rename(root.join("wiki/maps"), root.join("retained-maps")).unwrap();
+        std::os::unix::fs::symlink(root.join("retained-maps"), root.join("wiki/maps")).unwrap();
+        assert!(recovery::inspect(&directory, &root, RELATIVE)
+            .unwrap_err()
+            .contains("parent is not a directory"));
+    });
+}
+
+#[test]
+fn recovery_isolates_vault_scope_and_hides_invalid_scope_snapshots() {
+    with_isolated_data("map-recovery-scope", |data| {
+        let (root, directory, leaf, _) = create(data);
+        let other = data.join("other-vault");
+        std::fs::create_dir_all(other.join("wiki/maps")).unwrap();
+        assert!(recovery::inspect(&directory, &other, RELATIVE)
+            .unwrap()
+            .is_empty());
+        assert!(recovery::inspect(&directory, &root, "wiki/maps/../synthetic.md").is_err());
+        let path = directory.path().join(leaf);
+        let mut record: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        record["scope"]["vault"] = serde_json::json!(other.to_str().unwrap());
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        let rows = recovery::inspect(&directory, &root, RELATIVE).unwrap();
+        assert_eq!(
+            rows[0].evidence,
+            crate::map_recovery::Evidence::InvalidRecord
+        );
+        assert!(rows[0].before.is_none() && rows[0].after.is_none());
+    });
+}
+
+#[test]
+fn recovery_snapshot_budget_fails_without_a_partial_result() {
+    with_isolated_data("map-recovery-budget", |data| {
+        let (root, directory, leaf, _) = create(data);
+        let prefix = leaf.split_once('.').unwrap().0;
+        for generation in 0..256 {
+            let name = format!("{prefix}.{generation:032x}.json");
+            crate::map_custody_record::write_record(&directory, &name, b"{}").unwrap();
+        }
+        assert!(recovery::inspect(&directory, &root, RELATIVE)
+            .unwrap_err()
+            .contains("snapshot budget exceeded"));
+    });
+}
+
+#[test]
 #[ignore = "invoked only by the isolated two-process discovery test"]
 fn synthetic_discovery_child() {
     let data = PathBuf::from(std::env::var_os("MYCO_DATA_DIR").unwrap());

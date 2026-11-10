@@ -18,6 +18,45 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: opening-bound retained map snapshot API
+
+`retained_map_snapshots` now exposes a bounded read-only inspection path for the
+selected map's private observations. It holds the current vault opening through
+dispatch and returns stored before/after snapshots with `currentObject` or
+`publicationUnknown` evidence. A current-object identity match does not approve
+the snapshot's meaning, current text or source validation. Stable invalid schema,
+scope or baseline records return `invalidRecord` without their text. File I/O,
+privacy, anchor and concurrent replacement failures abort the entire query.
+
+The reader reuses the existing observation schema/scope/hash validator. Existing
+refresh authority still requires its retained record, native pin and unchanged
+owned sections; the display API returns none of those capabilities. It checks
+private store placement, canonical map paths, non-symlink parents and native
+anchor identities, retains opened record handles, then rechecks all records,
+anchors, parents, target and directory before returning. It reads at most 4,096
+entries, 256 matching snapshots and 32 MiB of matching record bytes. Results sort
+by opaque ID and make no chronological claim. Missing custody stores return an
+empty list; supported native custody remains Unix-only.
+
+Tests cover creation/current evidence, absent current-file uncertainty, corrupt
+record text suppression, cross-vault scope isolation, path traversal rejection,
+stale same-path openings, record and target replacement races, symlink parents and
+the 256-record limit. The interrupted-then-two-successful-updates process test now
+starts a sixth process using the new API: both the never-published attempt and
+superseded successful update remain `publicationUnknown`, with before-images and
+human annotations intact. The current record alone matches the current object.
+
+Full Rust validation passed 2,696 library and 28 integration tests, with 42 ignored
+overall; the library suite took 63.33s. The initial targeted run passed 81 tests
+before the final two regression additions, which then passed in the full suite.
+Final formatting, diff checks and strict all-target Clippy also passed; the final
+Clippy log is `/tmp/myco-map-recovery-final-clippy.log`.
+Logs: `/tmp/myco-map-recovery-{target,full,clippy}.log`. README documents the new
+native command and status semantics. No frontend behavior changed; recovery UI,
+safe retry/undo, corrupt-record repair, full chronology and model/Windows/installed
+acceptance remain open. Next connect this API to the existing opening-bound map
+History UI with explicit uncertainty labels and escaped snapshot text.
+
 ## November 11: recovery classification cannot infer unpublished state
 
 A new native five-process regression runs creation, exit immediately before

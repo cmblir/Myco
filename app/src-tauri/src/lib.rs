@@ -46,6 +46,7 @@ mod map_creation_observation;
 mod map_custody;
 #[cfg(unix)]
 mod map_custody_record;
+mod map_recovery;
 mod map_refresh;
 mod map_source_io;
 pub(crate) mod map_sources;
@@ -401,6 +402,7 @@ pub fn run() {
             map_refresh::preview_map_refresh,
             map_refresh::apply_map_refresh,
             map_refresh::latest_map_refresh_history,
+            map_recovery::retained_map_snapshots,
             commands::capture_map_sources,
             commands::check_map_sources,
             commands::release_map_sources,

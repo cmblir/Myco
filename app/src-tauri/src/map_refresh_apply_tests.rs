@@ -61,12 +61,60 @@ fn synthetic_refresh_child() {
             | "inspect-native-interrupted"
             | "native-before"
             | "inspect-native-before"
+            | "inspect-recovery"
     ));
     let root = root.canonicalize().unwrap();
     let state = VaultRoot::default();
     let generation = state.begin_open().unwrap();
     state.finish_open(generation, root.clone(), || ()).unwrap();
     let origin = state.snapshot().unwrap();
+    if phase == "inspect-recovery" {
+        let retained = crate::map_recovery::inspect(&state, &origin, "synthetic").unwrap();
+        assert_eq!(retained.records.len(), 4);
+        assert_eq!(
+            retained
+                .records
+                .iter()
+                .filter(|record| record.evidence == crate::map_recovery::Evidence::CurrentObject)
+                .count(),
+            1
+        );
+        assert_eq!(
+            retained
+                .records
+                .iter()
+                .filter(
+                    |record| record.evidence == crate::map_recovery::Evidence::PublicationUnknown
+                )
+                .count(),
+            3
+        );
+        for phrase in [
+            "Synthetic native-before restart refresh",
+            "Synthetic first restart refresh",
+        ] {
+            let record = retained
+                .records
+                .iter()
+                .find(|record| {
+                    record
+                        .after
+                        .as_ref()
+                        .is_some_and(|after| after.contains(phrase))
+                })
+                .unwrap();
+            assert_eq!(
+                record.evidence,
+                crate::map_recovery::Evidence::PublicationUnknown
+            );
+            assert!(record
+                .before
+                .as_ref()
+                .unwrap()
+                .ends_with("Human restart annotation.\n"));
+        }
+        return;
+    }
     if phase == "inspect-native-before" {
         assert!(history(&state, &origin, "synthetic").unwrap().is_none());
         let current = std::fs::read_to_string(root.join("wiki/maps/synthetic.md")).unwrap();
@@ -611,6 +659,7 @@ fn noncurrent_prepared_records_do_not_distinguish_unpublished_from_past_updates(
         ("inspect-native-before", 0),
         ("first", 0),
         ("second", 0),
+        ("inspect-recovery", 0),
     ] {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([

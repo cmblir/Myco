@@ -214,49 +214,7 @@ fn read_at(
         path: relative.into(),
     };
     let (held_record, bytes) = crate::map_custody_record::read_record(directory, leaf)?;
-    let observation: Observation =
-        serde_json::from_slice(&bytes).map_err(|_| "invalid map creation observation schema")?;
-    let scope_hash = format!(
-        "{:x}",
-        Sha256::digest(serde_json::to_vec(&expected).map_err(|error| error.to_string())?)
-    );
-    let expected_anchor = format!(
-        "{}.anchor",
-        leaf.strip_suffix(".json")
-            .ok_or("invalid map observation leaf")?
-    );
-    let is_creation = observation.version == 1
-        && observation.state == "creationObserved"
-        && observation.previous.is_none();
-    let is_refresh = observation.state == "refreshObserved"
-        && ((observation.version == 2 && observation.previous.is_none())
-            || (observation.version == 3 && observation.previous.is_some()));
-    let is_prepared = observation.version == 4
-        && observation.state == "refreshPrepared"
-        && observation.previous.is_some();
-    if (!is_creation && !is_refresh && !is_prepared)
-        || observation.scope != expected
-        || !leaf.starts_with(&format!("{scope_hash}."))
-        || observation.anchor != expected_anchor
-        || observation.revision != format!("{:x}", Sha256::digest(observation.baseline.as_bytes()))
-    {
-        return Err("map creation observation scope, generation or baseline differs".into());
-    }
-    if is_creation {
-        crate::map_content::validate_new_draft(&observation.baseline)?;
-    } else if !crate::map_content::owned_sections_unchanged(
-        &observation.baseline,
-        &observation.baseline,
-    ) {
-        return Err("map refresh baseline has invalid generated sections".into());
-    }
-    if let Some(previous) = &observation.previous {
-        if previous.revision != format!("{:x}", Sha256::digest(previous.content.as_bytes()))
-            || !crate::map_content::owned_sections_unchanged(&previous.content, &previous.content)
-        {
-            return Err("map refresh previous snapshot is invalid".into());
-        }
-    }
+    let observation = validate_observation(&bytes, &expected, leaf)?;
     let anchor = std::fs::symlink_metadata(directory.path().join(&observation.anchor))
         .map_err(|error| format!("inspect map creation anchor: {error}"))?;
     if !anchor.is_file()
@@ -296,6 +254,56 @@ fn read_at(
         directory: directory.clone(),
     })
 }
+
+fn validate_observation(bytes: &[u8], expected: &Scope, leaf: &str) -> Result<Observation, String> {
+    let observation: Observation =
+        serde_json::from_slice(bytes).map_err(|_| "invalid map creation observation schema")?;
+    let scope_hash = format!(
+        "{:x}",
+        Sha256::digest(serde_json::to_vec(expected).map_err(|error| error.to_string())?)
+    );
+    let expected_anchor = format!(
+        "{}.anchor",
+        leaf.strip_suffix(".json")
+            .ok_or("invalid map observation leaf")?
+    );
+    let is_creation = observation.version == 1
+        && observation.state == "creationObserved"
+        && observation.previous.is_none();
+    let is_refresh = observation.state == "refreshObserved"
+        && ((observation.version == 2 && observation.previous.is_none())
+            || (observation.version == 3 && observation.previous.is_some()));
+    let is_prepared = observation.version == 4
+        && observation.state == "refreshPrepared"
+        && observation.previous.is_some();
+    if (!is_creation && !is_refresh && !is_prepared)
+        || &observation.scope != expected
+        || !leaf.starts_with(&format!("{scope_hash}."))
+        || observation.anchor != expected_anchor
+        || observation.revision != format!("{:x}", Sha256::digest(observation.baseline.as_bytes()))
+    {
+        return Err("map creation observation scope, generation or baseline differs".into());
+    }
+    if is_creation {
+        crate::map_content::validate_new_draft(&observation.baseline)?;
+    } else if !crate::map_content::owned_sections_unchanged(
+        &observation.baseline,
+        &observation.baseline,
+    ) {
+        return Err("map refresh baseline has invalid generated sections".into());
+    }
+    if let Some(previous) = &observation.previous {
+        if previous.revision != format!("{:x}", Sha256::digest(previous.content.as_bytes()))
+            || !crate::map_content::owned_sections_unchanged(&previous.content, &previous.content)
+        {
+            return Err("map refresh previous snapshot is invalid".into());
+        }
+    }
+    Ok(observation)
+}
+
+#[path = "map_recovery_observation.rs"]
+pub(crate) mod recovery;
 
 #[cfg(test)]
 #[path = "map_creation_observation_tests.rs"]
