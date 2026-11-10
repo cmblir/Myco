@@ -18,6 +18,26 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: repeated storage failure recovery across vaults
+
+Added a regression in `src/stores/ingestDraftStore.test.ts` for the D4 storage
+contract: persist original A/B drafts, reject writes in both vaults, edit A more
+than once, retry while failure persists, restore writes and retry A only. A fresh
+store must recover A's latest title/body while B retains its previous persisted
+version and its current in-memory draft still reports a save failure. Retrying B
+then persists B without changing A. This checks stale-input and cross-vault
+recovery behavior, rather than just a single successful retry.
+
+The existing test setup uses `MemoryStorage`; quota exceptions are injected.
+This is automated store-level evidence, not a real WebKit quota or installed UI
+failure/recovery receipt. D4 remains open for native UI acceptance. No production
+code changed and no newly reproduced implementation failure is claimed.
+
+Validation: the three Ingest suites passed 54 tests; the full frontend suite
+passed 6,486 tests in 404 files. `tsc -b` passed. ESLint reported zero errors and
+the same two existing `notchDriver.ts` hook-dependency warnings. README was not
+changed because this adds test coverage only. No Rust or release build was run.
+
 ## November 11: native Ingest failure retains the current draft
 
 Using the same checksum-verified sandbox launcher and synthetic Alpha vault,

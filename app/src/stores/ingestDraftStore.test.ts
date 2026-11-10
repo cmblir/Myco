@@ -92,6 +92,50 @@ describe("durable Ingest drafts", () => {
     expect(reopened.getState().drafts[ROOT_A]?.body).toBe("Unsaved source");
   });
 
+  it("recovers only the originating vault's latest input after repeated write failures", () => {
+    const failedKeys = new Set<string>();
+    const storage = {
+      getItem: (key: string) => localStorage.getItem(key),
+      setItem: (key: string, value: string) => {
+        if (failedKeys.has(key)) throw new DOMException("Storage quota exhausted", "QuotaExceededError");
+        localStorage.setItem(key, value);
+      },
+      removeItem: (key: string) => localStorage.removeItem(key),
+    };
+    const store = createIngestDraftStore(() => storage);
+    store.getState().edit(ROOT_A, { title: "Saved A", body: "Original A" });
+    store.getState().edit(ROOT_B, { title: "Saved B", body: "Original B" });
+    for (let index = 0; index < localStorage.length; index++) {
+      failedKeys.add(localStorage.key(index)!);
+    }
+
+    store.getState().edit(ROOT_A, { body: "First unsaved A" });
+    store.getState().edit(ROOT_B, { body: "Unsaved B" });
+    store.getState().edit(ROOT_A, { title: "Latest A", body: "Latest unsaved A" });
+    store.getState().retry(ROOT_A);
+    expect(store.getState().drafts[ROOT_A]).toMatchObject({
+      title: "Latest A", body: "Latest unsaved A", storageError: "save",
+    });
+    expect(store.getState().drafts[ROOT_B]).toMatchObject({ body: "Unsaved B", storageError: "save" });
+
+    failedKeys.clear();
+    store.getState().retry(ROOT_A);
+    expect(store.getState().drafts[ROOT_A]?.storageError).toBeNull();
+    expect(store.getState().drafts[ROOT_B]?.storageError).toBe("save");
+    const reopened = createIngestDraftStore();
+    reopened.getState().load(ROOT_A);
+    reopened.getState().load(ROOT_B);
+    expect(reopened.getState().drafts[ROOT_A]).toMatchObject({ title: "Latest A", body: "Latest unsaved A" });
+    expect(reopened.getState().drafts[ROOT_B]).toMatchObject({ title: "Saved B", body: "Original B" });
+
+    store.getState().retry(ROOT_B);
+    const afterBothRetries = createIngestDraftStore();
+    afterBothRetries.getState().load(ROOT_A);
+    afterBothRetries.getState().load(ROOT_B);
+    expect(afterBothRetries.getState().drafts[ROOT_A]?.body).toBe("Latest unsaved A");
+    expect(afterBothRetries.getState().drafts[ROOT_B]?.body).toBe("Unsaved B");
+  });
+
   it("retries a failed read without overwriting the previously saved draft", () => {
     const first = createIngestDraftStore();
     first.getState().edit(ROOT_A, { body: "Saved before restart" });
