@@ -129,9 +129,11 @@ scope or note does not carry the previous answer's topic or evidence into the ne
 question. The current document-specific control is the selected-note scope; a
 general checked-document selector is not available in this build.
 
-Workstream facts v5 group source-recorded absolute working folders with opaque
+Workstream facts v6 group source-recorded absolute working folders with opaque
 keys, rather than merging matching folder names. Ambiguous folders stay
-unassigned. Reconciliation rereads tracked immutable originals for the migration;
+unassigned, including records with non-string working-folder declarations.
+The existing opaque project keys remain unchanged. Reconciliation rereads tracked
+immutable originals for the migration;
 it preserves existing project pages and name overrides. Differing retained pages
 show a refresh-pending notice. Different machines using the same path are not
 distinguished yet; verified equivalence between a repository's subdirectories or

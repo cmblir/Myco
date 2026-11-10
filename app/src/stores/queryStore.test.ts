@@ -2529,7 +2529,7 @@ describe("queryStore.ask workstream facts", () => {
   const at = (iso: string): number => Date.parse(iso) / 1000;
   const ledger = "codex:c0ffee01-0000-7000-8000-000000000001";
   const facts = {
-    version: 5, last_record_epoch: at("2026-11-07T12:00:00Z"), unassigned: 0,
+    version: 6, last_record_epoch: at("2026-11-07T12:00:00Z"), unassigned: 0,
     workstreams: { prj_lumen: { title: "Lumen", title_source: "readme", page: "wiki/workstreams/prj_lumen.md",
       first_epoch: at("2026-11-07T10:00:00Z"), last_epoch: at("2026-11-07T12:00:00Z"), conversations: 1, roots: 1,
       summary: "A synthetic reminder app.",

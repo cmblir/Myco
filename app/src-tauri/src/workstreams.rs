@@ -43,7 +43,7 @@ const NAMES_FILE: &str = "workstream-names.json";
 /// The longest name that file may give.
 const MAX_NAME_CHARS: usize = 80;
 /// Facts of another version are treated as absent: everything is read again.
-const VERSION: u32 = 5;
+const VERSION: u32 = 6;
 /// Open items a workstream keeps, from the reports of this many of its latest
 /// sessions (the sessions a progress answer lists).
 const OPEN_ITEMS: usize = 10;
@@ -515,7 +515,7 @@ pub(crate) fn plan(root: &Path, codex_homes: &[PathBuf]) -> Result<Plan, String>
     };
 
     // Public markers and editable prior facts are not private ownership proof.
-    // Create missing v5 pages only; retain every existing differing byte.
+    // Create missing pages only; retain every existing differing byte.
     for (key, workstream) in &mut plan.facts.workstreams {
         let page = render_page(key, workstream, &plan.facts.conversations);
         match read_existing(&root.join(&workstream.page)) {
@@ -1225,7 +1225,7 @@ fn cut(text: String, max: usize) -> String {
 struct Record {
     #[serde(rename = "type")]
     kind: Option<String>,
-    cwd: Option<String>,
+    cwd: Option<serde_json::Value>,
     message: Option<RecordMessage>,
     payload: Option<RecordPayload>,
     metadata: Option<RecordMetadata>,
@@ -1242,7 +1242,7 @@ struct RecordPayload {
     kind: Option<String>,
     role: Option<String>,
     phase: Option<String>,
-    cwd: Option<String>,
+    cwd: Option<serde_json::Value>,
 }
 
 #[derive(Deserialize)]
@@ -1314,13 +1314,13 @@ fn scan_sidecar(text: &str, codex: bool) -> SidecarScan<'_> {
         };
         let cwd = if codex {
             (record.kind.as_deref() == Some("session_meta"))
-                .then(|| record.payload.as_ref()?.cwd.as_deref())
+                .then(|| record.payload.as_ref()?.cwd.as_ref())
                 .flatten()
         } else {
-            record.cwd.as_deref()
+            record.cwd.as_ref()
         };
         if let Some(cwd) = cwd {
-            scan.record_cwd(Some(cwd));
+            scan.record_cwd(cwd.as_str());
         }
         if is_report(&record, codex) {
             scan.report = Some(line);
@@ -3657,7 +3657,7 @@ mod tests {
         let (vault, _home) = vault_with_sessions();
         let root = vault.path().canonicalize().unwrap();
         let facts = facts(&root);
-        assert_eq!(facts["version"], 5);
+        assert_eq!(facts["version"], VERSION);
         assert_eq!(facts["unassigned"], 0);
         let claude = &facts["conversations"]["claude-code:cc-1"];
         assert_eq!(

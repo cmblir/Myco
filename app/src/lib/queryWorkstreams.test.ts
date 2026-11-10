@@ -61,7 +61,7 @@ function facts(): WorkstreamFacts {
     request: `Older synthetic step ${i}`, report: { epoch: at(`2026-10-0${i + 1}T10:00:00Z`), text: `Finished older step ${i}.` },
   }));
   return {
-    version: 5,
+    version: 6,
     last_record_epoch: at("2026-11-07T12:30:00Z"),
     unassigned: 3,
     workstreams: {
@@ -210,7 +210,7 @@ describe("parseWorkstreamFacts", () => {
   };
   type Loose = Record<string, unknown>;
 
-  it("accepts the version 5 contract, user and derived titles, a copied report and a program's session included", () => {
+  it("accepts the version 6 contract, user and derived titles, a copied report and a program's session included", () => {
     expect(parseWorkstreamFacts(JSON.stringify(facts()))).toEqual(facts());
     const titled = facts();
     titled.workstreams.prj_lumen.title_source = "user";
@@ -230,7 +230,8 @@ describe("parseWorkstreamFacts", () => {
     // Version 3 facts had no README summary or open items; they are not read.
     ["version 3 facts", broken((value) => { (value as unknown as Loose).version = 3; })],
     ["version 4 basename identities", broken((value) => { (value as unknown as Loose).version = 4; })],
-    ["a later version", broken((value) => { (value as unknown as Loose).version = 6; })],
+    ["version 5 malformed cwd assignments", broken((value) => { (value as unknown as Loose).version = 5; })],
+    ["a later version", broken((value) => { (value as unknown as Loose).version = 7; })],
     ["no summary field", broken((value) => { delete (value.workstreams.chart as unknown as Loose).summary; })],
     ["a non-text summary", broken((value) => { (value.workstreams.chart as unknown as Loose).summary = 7; })],
     ["a summary past 1024 characters", broken((value) => { value.workstreams.chart.summary = "x".repeat(1025); })],
@@ -832,7 +833,7 @@ describe("workstreamAnswer layout details", () => {
     const long = conversation("codex:c0ffee52-0000-7000-8000-000000000052", { key: "solo",
       first_epoch: at("2026-11-06T09:00:00Z"), last_epoch: at("2026-11-06T10:00:00Z"),
       request: "가".repeat(120), report: { epoch: at("2026-11-06T10:00:00Z"), text: "Done with the long one." } });
-    const data: WorkstreamFacts = { version: 5, last_record_epoch: at("2026-11-06T10:00:00Z"), unassigned: 0,
+    const data: WorkstreamFacts = { version: 6, last_record_epoch: at("2026-11-06T10:00:00Z"), unassigned: 0,
       workstreams: { solo: { title: "Solo", title_source: "readme", page: "wiki/workstreams/solo.md",
         first_epoch: at("2025-12-30T09:00:00Z"), last_epoch: at("2026-11-06T10:00:00Z"), conversations: 2, roots: 2,
         summary: null, open_items: [] } },

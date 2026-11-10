@@ -72,7 +72,7 @@ fn native_and_mcp_imports_publish_workstream_facts_and_pages() {
             &std::fs::read_to_string(vault.path().join(".myco/workstreams.json")).unwrap(),
         )
         .unwrap();
-        assert_eq!(facts["version"], 5);
+        assert_eq!(facts["version"], 6);
         let conversations = &facts["conversations"];
         assert_eq!(conversations["claude-code:ws-claude"]["key"], alpha);
         assert_eq!(conversations[format!("codex:{codex_id}")]["key"], beta);

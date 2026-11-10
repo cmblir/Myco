@@ -13,10 +13,43 @@ requirements and must not be mistaken for passing results.
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
-| G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
+| G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: preserve malformed working-folder evidence during grouping
+
+At `532301d1`, a non-string `cwd` made typed sidecar decoding drop the entire
+record. A valid absolute folder elsewhere in the same transcript could then
+assign that conversation to a project despite the malformed declaration. The
+new regression failed on the original parser with a numeric Claude Code cwd.
+It covers numeric, array and object declarations in both input orders for
+Claude Code and Codex. Missing/null fields keep their existing meaning.
+
+The parser now retains cwd JSON values and feeds non-string declarations into
+the existing invalid-evidence rule. Such a conversation remains unassigned;
+its own invalid evidence cannot be replaced by a parent or vendor-store lookup.
+Facts version 6 forces rereading cached version 5 assignments. Opaque `p5-`
+project keys are unchanged. A migration regression verifies that the invalid
+assignment is removed while the original sidecar and human-annotated project
+page retain their bytes. The frontend reader, shared writer/reader fixture and
+import contract expect version 6; a frontend regression rejects version 5.
+
+Initial verification exposed two stale version expectations: the shared fixture
+in the focused native suite, then the import admission assertion in the full
+suite (2,706 passed, 1 failed, 38 ignored). Both expectations were updated to the
+new contract without removing assertions. Frontend validation passed 6,498 tests
+in 405 files, TypeScript/Vite build and ESLint (two existing notch hook warnings).
+Rust formatting and strict all-target Clippy passed. The final default-feature
+native library suite passed 2,707 tests with 38 opt-in tests ignored (57.86s).
+No additional inference or feature-native acceptance run is claimed.
+
+Logs: `/tmp/myco-project-cwd-{baseline,focused,full,full-final,frontend,build,lint,clippy,fmt}.log`.
+The app README and current goal status were updated. No real vault, vendor store,
+raw source, model or installed app was used in this slice. This does not resolve
+repository equivalence across historical subdirectories/worktrees or prove
+actual-model task-state meaning; those gates remain incomplete.
 
 ## November 11: stop an in-flight orbit retarget on reduced motion
 

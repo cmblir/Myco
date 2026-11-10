@@ -69,10 +69,10 @@ interface Workstream {
   open_items: OpenItem[];
 }
 
-/** `.myco/workstreams.json` version 5, written by the native reconcile. Any
+/** `.myco/workstreams.json` version 6, written by the native reconcile. Any
  * other version is not read; the next reconcile rewrites it. */
 export interface WorkstreamFacts {
-  version: 5;
+  version: 6;
   last_record_epoch: number;
   unassigned: number;
   workstreams: Record<string, Workstream>;
@@ -129,7 +129,7 @@ function isConversation(value: unknown, workstreams: Record<string, unknown>): b
 
 /** Hand-written contract check; the file sits in the vault and may be edited. */
 function isWorkstreamFacts(value: unknown): value is WorkstreamFacts {
-  if (!isObject(value) || value.version !== 5 || !isEpoch(value.last_record_epoch) || !isEpoch(value.unassigned))
+  if (!isObject(value) || value.version !== 6 || !isEpoch(value.last_record_epoch) || !isEpoch(value.unassigned))
     return false;
   const { workstreams, conversations } = value;
   return isObject(workstreams) && isObject(conversations) &&

@@ -1,5 +1,71 @@
 use super::*;
 
+#[test]
+fn malformed_recorded_cwd_cannot_disappear_from_project_evidence() {
+    for codex in [false, true] {
+        for invalid in [
+            serde_json::json!(42),
+            serde_json::json!([]),
+            serde_json::json!({}),
+        ] {
+            let record = |cwd: serde_json::Value| {
+                if codex {
+                    serde_json::json!({"type":"session_meta", "payload":{"cwd":cwd}})
+                } else {
+                    serde_json::json!({"type":"user", "cwd":cwd})
+                }
+            };
+            let valid = record(serde_json::json!("/synthetic/Atlas"));
+            let malformed = record(invalid);
+            for text in [
+                format!("{valid}\n{malformed}"),
+                format!("{malformed}\n{valid}"),
+            ] {
+                let scan = scan_sidecar(&text, codex);
+                assert!(scan.saw_cwd);
+                assert!(
+                    scan.invalid_cwd,
+                    "malformed declarations must not vanish: {text}"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn version_five_rebuild_drops_malformed_project_assignment_without_editing_pages() {
+    let vault = tempfile::tempdir().unwrap();
+    let root = vault.path();
+    seed_cwd(root, "malformed", Some("/synthetic/Atlas"), None);
+    let first = plan(root, &[]).unwrap();
+    apply(root, &first).unwrap();
+    let page = root.join(&first.facts.workstreams.values().next().unwrap().page);
+    let human = format!(
+        "{}\nHuman annotation.\n",
+        std::fs::read_to_string(&page).unwrap()
+    );
+    std::fs::write(&page, &human).unwrap();
+    let mut cached = first.facts;
+    cached.version = 5;
+    std::fs::write(facts_path(root), serde_json::to_string(&cached).unwrap()).unwrap();
+    let sidecar = root
+        .join(raw_path("claude-code:malformed", "0123456789abcdef").unwrap())
+        .with_extension("jsonl");
+    let original = format!(
+        "{}\n{{\"type\":\"user\",\"cwd\":42}}",
+        std::fs::read_to_string(&sidecar).unwrap()
+    );
+    std::fs::write(&sidecar, &original).unwrap();
+    let next = plan(root, &[]).unwrap();
+    assert_eq!(next.recomputed, 1);
+    let conversation = &next.facts.conversations["claude-code:malformed"];
+    assert_eq!(conversation.key, None);
+    assert_eq!(conversation.cwd_source, CwdSource::Sidecar);
+    apply(root, &next).unwrap();
+    assert_eq!(std::fs::read_to_string(&page).unwrap(), human);
+    assert_eq!(std::fs::read_to_string(sidecar).unwrap(), original);
+}
+
 fn seed_cwd(root: &Path, id: &str, cwd: Option<&str>, parent: Option<&str>) {
     let key = format!("claude-code:{id}");
     let fp = "0123456789abcdef";
@@ -120,7 +186,7 @@ fn migration_rereads_same_revision_and_preserves_legacy_pages_and_ambiguous_name
         next.recomputed, 2,
         "version migration must bypass unchanged fingerprints"
     );
-    assert_eq!(next.facts.version, 5);
+    assert_eq!(next.facts.version, VERSION);
     assert_eq!(next.facts.workstreams.len(), 2);
     assert!(next
         .facts
