@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { MAP_EXCERPT_CHARS, MAP_MEMBER_LIMIT, MAP_SOURCE_BYTES, mapEvidencePrompt, withMapEvidence } from "./mapEvidence";
 import { roleFixture } from "./modelRoles.testSupport";
 import { sha256 } from "./tidyRun";
+import { MapRefreshRetainedError } from "./mapRefresh";
+import { WorkflowOperationError, workflowIssue } from "./workflowOutcome";
 
 const { source, capture, check, release } = vi.hoisted(() => ({ source: vi.fn(), capture: vi.fn(), check: vi.fn(), release: vi.fn() }));
 vi.mock("./ipc", () => ({ ipc: { captureMapSources: capture, checkMapSources: check, releaseMapSources: release } }));
@@ -114,5 +116,34 @@ describe("map evidence boundaries", () => {
   it("checks session currency before dispatching a source read", async () => {
     await expect(readMapEvidence("/v", ["wiki/a.md"], () => { throw new Error("stale"); })).rejects.toThrow("stale");
     expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("keeps retained-output recovery details when source cleanup also fails", async () => {
+    source.mockResolvedValue({ raw: "Synthetic source." });
+    const publication = new MapRefreshRetainedError("wiki/maps/synthetic.md", "map refresh bytes persisted but verification failed");
+    const cleanup = new Error("Synthetic source release failure");
+    release.mockRejectedValue(cleanup);
+    const result = withMapEvidence(origin, role, ["wiki/a.md"], current, async () => { throw publication; });
+    await expect(result).rejects.toMatchObject({
+      status: "pending", code: "unavailable", writtenPath: "wiki/maps/synthetic.md",
+      cause: { errors: [publication, cleanup] },
+    });
+    await result.catch(error => {
+      expect(workflowIssue("maps", error)).toMatchObject({ status: "pending", code: "unavailable", retryable: true });
+      expect(String(error)).toContain("Synthetic source release failure");
+    });
+  });
+
+  it("keeps a cancelled review stopped without claiming that output was written", async () => {
+    source.mockResolvedValue({ raw: "Synthetic source." });
+    release.mockRejectedValue(new Error("Synthetic source release failure"));
+    const result = withMapEvidence(origin, role, ["wiki/a.md"], current, async () => {
+      throw new WorkflowOperationError("stopped", "cancelled", "Map refresh review cancelled");
+    });
+    await expect(result).rejects.toMatchObject({ status: "stopped", code: "cancelled" });
+    await result.catch(error => {
+      expect(error).not.toHaveProperty("writtenPath");
+      expect(workflowIssue("maps", error).status).toBe("stopped");
+    });
   });
 });

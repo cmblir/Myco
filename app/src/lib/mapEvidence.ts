@@ -92,7 +92,18 @@ export async function withMapEvidence<T>(
   // Release uses the original origin even after switching vaults or revoking a role.
   try { await ipc.releaseMapSources(origin, snapshot?.snapshotId); }
   catch (error) {
-    throw new AggregateError(failed ? [failure, error] : [error], "Topic map source cleanup failed");
+    const cause = new AggregateError(failed ? [failure, error] : [error], "Topic map source cleanup failed");
+    if (failed && failure instanceof WorkflowOperationError) {
+      // Cleanup must not hide retained output or turn a recoverable publication
+      // into an undifferentiated failure for the proposal runner.
+      throw Object.assign(new WorkflowOperationError(failure.status, failure.code,
+        `${failure.message}; Topic map source cleanup failed: ${String(error)}`), {
+        cause,
+        ...("writtenPath" in failure && typeof failure.writtenPath === "string"
+          ? { writtenPath: failure.writtenPath } : {}),
+      });
+    }
+    throw cause;
   }
   if (failed) throw failure;
   return result;

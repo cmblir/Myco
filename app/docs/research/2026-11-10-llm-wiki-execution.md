@@ -18,6 +18,32 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: map cleanup errors preserve publication recovery state
+
+A new regression reproduced a frontend error-classification bug in
+`withMapEvidence`: a retained native refresh error followed by source-release
+failure became a plain `AggregateError`. The proposal runner consequently lost
+the `pending` classification and `writtenPath`, hiding the retained map from its
+published-but-incomplete results. The baseline failed one test with 31 passing;
+see `/tmp/myco-map-cleanup-baseline.log`.
+
+Cleanup now preserves an existing workflow error's status, code and retained path,
+while retaining both original errors in an aggregate cause and exposing the
+cleanup failure in the message. A cancelled review remains stopped and does not
+acquire a written-path claim. Unclassified generation errors retain the previous
+aggregate behavior. No native write, custody, source validation or undo authority
+was changed. These injected IPC/error tests are not installed-app interruption
+or successful recovery acceptance; G5 remains incomplete.
+
+Validation: the initial four focused suites passed 126 tests. After adding the
+cancellation case, the full frontend suite passed 6,488 tests in 404 files,
+including all 33 map-evidence cases. Lint passed with the two existing
+`notchDriver.ts` warnings; the type-check/production build passed. Logs and exit
+codes are `/tmp/myco-map-cleanup-{lint,build,full}.log` and
+`/tmp/myco-map-cleanup-status.json`. No Rust suite was rerun because native code
+was unchanged. README was unchanged: this repairs existing failure reporting
+without adding a feature, API or configuration option.
+
 ## November 11: repeated storage failure recovery across vaults
 
 Added a regression in `src/stores/ingestDraftStore.test.ts` for the D4 storage
