@@ -442,6 +442,17 @@ successful check was inferred from that rejected invocation. Logs are under
 
 ## Next executable slices
 
+The [decoder/input audit](2026-11-10-request-decoder-audit.json) then verified
+all fourteen recorded input texts, speakers and payload hashes against the
+frozen controls. The existing opt-in vocabulary-masking matrix ran offline with
+the hash-verified 4B artifact and passed in 1.23s (1.27s process wall time).
+It exercised actual llama.cpp token masking and EOG admission for actor, time,
+speech-act/status and outcome coupling, without generation. In particular,
+plan/planned and report/reported_completed remain permitted. Blanket grammar
+exclusion and changed input text do not explain the observed errors. Probability
+distortion, field-order effects and model interpretation remain unproven causes;
+this result does not establish semantic quality or authorize prompt promotion.
+
 The subsequent [action/speech-act comparison](2026-11-10-request-speech-act-comparison.json)
 also failed semantic acceptance. Runner `be1a2218` preserves the previous candidate
 and adds a separately named experimental arm. Build, seven model-free tests,

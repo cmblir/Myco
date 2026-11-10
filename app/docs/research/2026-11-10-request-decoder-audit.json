@@ -1,0 +1,115 @@
+{
+  "version": 1,
+  "date": "2026-11-10",
+  "sourceCommit": "be1a2218",
+  "binarySha256": "038cfb80ba78525229fb78193531f8249b3107d0672a35de55a04eb2ce48f4d8",
+  "modelSha256": "25082a7dd3776cc3c741c6347d3bd04523f05796607b3fbc32fa3a25dfa1418c",
+  "command": "sandbox-exec -p '(version 1) (allow default) (deny network*)' env RUST_BACKTRACE=1 MYCO_CHAT_MODEL_PATH='<verified cached 4B GGUF>' /tmp/myco-request-speech-act-binary local_llm::wiki_claims_grammar_tests::wiki_claims_sampler_matches_native_field_coupling_without_claiming_entailment --exact --ignored --nocapture --test-threads=1",
+  "result": {
+    "exitCode": 0,
+    "testsPassed": 1,
+    "testSeconds": 1.23,
+    "wallSeconds": 1.27,
+    "maximumResidentSetBytes": 2843754496,
+    "vocabularyMaskingExecuted": true,
+    "inferenceExecuted": false,
+    "semanticAccepted": false
+  },
+  "coverage": [
+    "outcome/count matrix",
+    "actor/basis/subject coupling",
+    "time/value/precision/uncertainty/support coupling",
+    "speech-act/status/verification coupling",
+    "native source boundaries",
+    "incomplete JSON and EOG rejection"
+  ],
+  "inputChecks": [
+    {
+      "call": 1,
+      "case": "R1",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 2,
+      "case": "R1",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 3,
+      "case": "R2",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 4,
+      "case": "R2",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 5,
+      "case": "R3",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 6,
+      "case": "R3",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 7,
+      "case": "R4",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 8,
+      "case": "R4",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 9,
+      "case": "R5",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 10,
+      "case": "R5",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 11,
+      "case": "R6",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 12,
+      "case": "R6",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 13,
+      "case": "R7",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    },
+    {
+      "call": 14,
+      "case": "R7",
+      "speakerPreserved": true,
+      "originalPreserved": true
+    }
+  ],
+  "conclusion": "Original text and speakers are preserved. The actual vocabulary grammar admits plan/planned and report/reported_completed. This rules out blanket grammatical exclusion, not probability distortion, field-order effects or model interpretation errors. No product changes or prompt promotion.",
+  "rawLogSha256": "05a69cf5f9fb9f81b822e16b76cde0328485c1d8032586f3220bac4f5b059a30",
+  "terminalOutput": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 3157 filtered out; finished in 1.23s\n\n        1.27 real         0.96 user         0.25 sys\n          2843754496  maximum resident set size\n                   0  average shared memory size\n                   0  average unshared data size\n                   0  average unshared stack size\n              175626  page reclaims\n                   3  page faults\n                   0  swaps\n                   0  block input operations\n                   0  block output operations\n                   0  messages sent\n                   0  messages received\n                   0  signals received\n                   4  voluntary context switches\n                 288  involuntary context switches\n         10849564302  instructions retired\n          2641052530  cycles elapsed\n           110840424  peak memory footprint"
+}
