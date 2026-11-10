@@ -678,8 +678,9 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     }
 
     // The unrestricted recent git log cannot answer a date-restricted request,
-    // a transcript-only scope, or a question over one note.
-    if (!paths && !tp.range && scope !== "sessions" && !isMemoryQuestion(question) && isActivityQuery(question)) {
+    // an explicit wiki/transcript scope, or a question over one note.
+    if (!paths && !tp.range && scope !== "sessions" && (explicitScope ?? inheritedScope) !== "wiki" &&
+        !isMemoryQuestion(question) && isActivityQuery(question)) {
       try {
         const commits = await Promise.race([stopped(ctrl.signal), ipc.gitLog(vault.path, 20)]);
         finishTurn({ a: formatActivityAnswer(commits, lang) });

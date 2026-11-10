@@ -606,6 +606,8 @@ completion report does not independently verify a completed task. Topic-specific
 questions keep ordinary hybrid retrieval. Personal recall never falls back to
 a list of recently modified files. Explicit file-activity questions use their
 requested local-day window and scope, with unambiguous relative-path citations.
+An explicit or inherited wiki-only scope never uses the unrestricted Git log;
+the question keeps the normal scope-bound retrieval path instead.
 
 Generic **connected ideas** questions can show existing wiki links and shared
 tags from the readable graph snapshot, without another model or an all-pairs

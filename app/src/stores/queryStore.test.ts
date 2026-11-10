@@ -150,6 +150,7 @@ describe("queryStore.ask scope", () => {
 
   it.each([
     ["git commit history yesterday", "wiki"],
+    ["git commit history", "wiki"],
     ["git commit history", "sessions"],
   ] as const)("does not answer %s in %s from an unrestricted git log or file mtimes", async (question, scope) => {
     const search = stubExtractive();
@@ -161,6 +162,32 @@ describe("queryStore.ask scope", () => {
     expect(mtimes).not.toHaveBeenCalled();
     expect(search.mock.calls[0][5]).toBe(scope);
     if (question.includes("yesterday")) expect(last().range).toBeDefined();
+  });
+
+  it.each(["saved", "inherited"])("keeps %s wiki scope out of unrestricted Git history", async (mode) => {
+    const search = stubExtractive();
+    const git = vi.spyOn(ipc, "gitLog").mockResolvedValue([]);
+    if (mode === "saved") {
+      useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+    } else {
+      await ask("synthetic page topic", { scope: "wiki" });
+      search.mockClear();
+    }
+    await ask("And git commit history?");
+    expect(git).not.toHaveBeenCalled();
+    expect(search.mock.calls[0][5]).toBe("wiki");
+    expect(last().scope).toBe("wiki");
+  });
+
+  it("allows an explicit all-scope history request to override an inherited wiki scope", async () => {
+    const search = stubExtractive();
+    const git = vi.spyOn(ipc, "gitLog").mockResolvedValue([]);
+    await ask("synthetic page topic", { scope: "wiki" });
+    search.mockClear();
+    await ask("And git commit history?", { scope: "all" });
+    expect(git).toHaveBeenCalledWith("/v", 20);
+    expect(search).not.toHaveBeenCalled();
+    expect(last().scope).toBe("all");
   });
 
   it("filters explicit file activity by the requested day and scope with exact citations", async () => {

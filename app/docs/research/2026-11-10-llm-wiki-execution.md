@@ -18,6 +18,34 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: keep explicit wiki scope out of unrestricted Git history
+
+G2 inspection found a remaining scope bypass in the frontend's repository-history
+shortcut. `git commit history` with explicit `scope: wiki` and no dates/paths
+called `ipc.gitLog(vault, 20)`, whose result is not filtered to wiki files. The
+new baseline test failed because that unrestricted read was called once. Log:
+`/tmp/myco-wiki-git-scope-baseline.log`. Existing tests only covered dated wiki
+history and session-only history, leaving this undated wiki case uncovered.
+
+The shortcut now refuses an effective explicit/inherited wiki scope. The request
+continues through normal scope-bound retrieval. Precedence remains explicit
+scope over inherited scope: a new `all` choice can still request repository
+history. Existing date/path and session exclusions remain intact; implicit
+unrestricted history behavior is unchanged. No native filtering guarantee was
+invented for the Git command.
+
+Four regressions cover direct wiki scope, persisted explicit wiki selection,
+inherited wiki follow-up and an explicit `all` override of inherited wiki. All
+233 query-store tests passed. The cases use synthetic IPC stubs and establish
+frontend dispatch, not native retrieval or model-answer quality. README now
+states that wiki-only requests do not use unrestricted Git history.
+The full frontend suite passed 6,482 tests in 404 files. Lint passed with the two
+existing `notchDriver.ts` hook-dependency warnings; the TypeScript/production
+build passed (Vite 11.30 seconds). Logs:
+`/tmp/myco-wiki-git-scope-{tests,full,lint,build}.log`. Diff whitespace checks
+passed. Native code was unchanged, so Rust and installed-app/model checks were
+not rerun. The goal's G2 native and semantic acceptance gates remain open.
+
 ## November 11: readable empty Reader prompts
 
 The live Reader's `.live-empty::after` used decorative `--ink-5` for actual
