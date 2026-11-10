@@ -18,6 +18,42 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: grouped originals repair positive disposition, not coverage
+
+Reused the existing lossless `SourceDocumentGroupsQaV1` diagnostic presentation
+for the same four frozen reviewer controls. The comparison harness now accepts
+an explicit QA projection and counts the actual projected input before serving;
+the prior citation-guidance experiment remains separately selectable. No
+production representation, prompt, grammar or acceptance gate changed.
+
+A new regression applies the grouping to the preceding actual reviewer input
+and reverses it, proving exact equality of every original and non-original
+field, with all three documents retained. Existing codec tests also passed.
+The [actual comparison](2026-11-11-selected-note-grouped-review.json) recorded
+eight reviewer calls with fixed constructed drafts. Baseline still rejects the
+positive as unsupported. Grouped input changes its verdict to supported and
+adequate, but leaves source coverage uncertain, so native processing correctly
+returns `review_uncertain` rather than an accepted answer. This is narrower
+diagnostic progress, not positive-case acceptance.
+
+All three negative controls remain rejected. However, grouped North/partial
+answers emit `S-selected-2` in `missingSpanIds`, which requires a `Q-selected-*`
+span ID. They fail `review_invalid`, not an accepted semantic review. The
+cross-link case returns unsupported and is rejected normally. Candidate
+promotion remains disallowed. Next isolate coverage interpretation and ID
+selection using full-packet and omitted-contrary-source controls; do not assume
+covered merely because the input codec is lossless or missingSpanIds is empty.
+
+Validation: 22 ordinary-flow tests passed, three model tests ignored in that
+model-free invocation; eight codec tests, Rust fmt and strict feature-enabled
+all-target Clippy passed. The separate model test ran eight actual calls and
+exited zero. Runtime including preparation was 329.553 seconds, maximum RSS
+3,178,053,632 bytes; Clippy overlapped startup, so this is not a clean benchmark.
+Socket denial was verified in the isolated sandbox, and the exact owned model
+process is absent after normal completion. README was unchanged; no new native
+app, frontend or release acceptance is claimed. Logs use the
+`/tmp/myco-review-grouped-*` prefix. G2/G7 remain incomplete.
+
 ## November 11: citation-mapping guidance does not repair answer review
 
 Added an opt-in paired reviewer experiment with one supported answer and three
