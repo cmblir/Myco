@@ -450,8 +450,26 @@ travel remains covered. Five related Graph files passed 31 tests; the complete
 frontend suite passed 396 files / 6,409 tests in 63.76s. Full lint, TypeScript and
 production build passed (Vite 11.28s; existing hook/import warnings remain).
 README descriptions were updated. This is code/render-math evidence, not visual
-or installed accessibility acceptance. Live OS preference changes still need
-Graph reopening, and other motion/state/screen-reader gates remain incomplete.
+or installed accessibility acceptance. At that checkpoint live OS preference
+changes required Graph reopening; the follow-up below removes that limitation.
+Other motion/state/screen-reader gates remain incomplete.
+
+The G6 follow-up observes live `prefers-reduced-motion` changes and removes the
+observer during scene disposal. Enabling it freezes arrow travel, stops idle
+rotation/pulses, cancels a pending rotation-resume timer, and completes an active
+camera flight at its destination with one completion callback. Disabling it
+respects ambient-motion settings, flat layouts and active interaction. The
+regression first failed because the observer method was absent after correcting
+a fixture that attempted to assign the read-only `flatLayout` getter. Seven
+focused motion tests now pass, including camera completion and three existing
+rotation policies. Full frontend validation passed 396 files / 6,414 tests
+(73.38s), lint (two existing `notchDriver` hook warnings), and TypeScript plus
+production build (Vite 15.17s; existing static/dynamic import warning). Logs:
+`/tmp/myco-graph-live-motion-{red,green,tests,lint,build}.log`. README descriptions
+now cover live changes. These are code-level tests with synthetic scene objects,
+not installed WebGL/OS interaction acceptance; already-running transient visual
+effects and the broader accessibility gate are not claimed verified. No Rust
+code changed, so the prior Rust evidence was not rerun for this frontend slice.
 
 The [decoder/input audit](2026-11-10-request-decoder-audit.json) then verified
 all fourteen recorded input texts, speakers and payload hashes against the

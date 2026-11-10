@@ -1317,6 +1317,7 @@ export class GraphScene {
   private raf: number | null = null;
   private resizeObs: ResizeObserver;
   private reducedMotion: boolean;
+  private stopMotionObserver: (() => void) | null = null;
   // Auto-rotate yields to the user (spec A7): any orbit/zoom pauses it, and it
   // resumes only after ROTATE_IDLE_MS without interaction.
   private rotateResumeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1869,6 +1870,33 @@ export class GraphScene {
 
     this.resizeObs = new ResizeObserver(() => this.onResize());
     this.resizeObs.observe(container);
+    this.watchMotionPreference();
+  }
+
+  private watchMotionPreference(): void {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (event: MediaQueryListEvent) =>
+      this.applyMotionPreference(event.matches);
+    query.addEventListener("change", onChange);
+    this.stopMotionObserver = () => query.removeEventListener("change", onChange);
+    if (query.matches !== this.reducedMotion) this.applyMotionPreference(query.matches);
+  }
+
+  private applyMotionPreference(reducedMotion: boolean): void {
+    this.reducedMotion = reducedMotion;
+    if (reducedMotion && this.rotateResumeTimer != null) {
+      clearTimeout(this.rotateResumeTimer);
+      this.rotateResumeTimer = null;
+    }
+    this.controls.autoRotate =
+      this.autoRotateWanted() && !this.interacting && this.rotateResumeTimer == null;
+    this.pulse.points.visible =
+      this.ambientOn() && !this.perfLod && !this.settings.arrows && !this.interacting;
+    if (reducedMotion && this.camTween) {
+      const tween = this.camTween;
+      this.camTween = null;
+      this.startCamTween(tween.p1, tween.a1, 0, tween.onDone);
+    }
   }
 
   private sizeScale(height: number): number {
@@ -5311,6 +5339,8 @@ export class GraphScene {
   }
 
   dispose(): void {
+    this.stopMotionObserver?.();
+    this.stopMotionObserver = null;
     if (this.raf != null) cancelAnimationFrame(this.raf);
     this.raf = null;
     this.sculpted?.dispose();

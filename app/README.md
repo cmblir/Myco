@@ -149,7 +149,7 @@ Existing maps are preserved: durable ownership and automatic refresh of app-owne
 sections are still incomplete. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
-When Graph opens with system reduced motion enabled, direction arrows retain their visible geometry without advancing along links. Live changes to the system preference still require reopening Graph.
+Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight completes at its destination once. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.
 
 ### Writing
 

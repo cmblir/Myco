@@ -210,7 +210,7 @@ reads pages, traverses links, and answers with citations; optional write tools
 are confirmed per call and never touch `raw/`. Audio overview renders an
 answer's cited pages as a two-host spoken deep-dive, offline.
 
-When Graph opens with the system’s reduced-motion setting enabled, direction arrows remain visible without travelling along links.
+Graph follows live changes to the system’s reduced-motion setting: direction arrows remain visible without travelling, idle rotation stops, and active camera flights finish immediately.
 
 **Graph** — the whole vault as a 3D cosmic web (three.js + d3-force-3d).
 Louvain communities get hues and auto-named cluster labels, hubs bloom, orphans
