@@ -18,6 +18,41 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: native startup refusal and OS canary evidence
+
+On clean `ee06a75c`, `cargo build --features native-app-acceptance --bin myco`
+passed on macOS 26.5.1 arm64. The actual executable was started three times:
+neither diagnostic flag, only `MYCO_REAL_DIAGNOSTIC=1`, and only
+`MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER=1`. Each process returned exit 0 with the
+exact refusal `refusing diagnostic startup: acceptance binary requires diagnostic
+isolation`, no stdout and no new state files. Exit 0 is the existing `run()` early
+return contract, so the refusal text and absence of startup effects were checked
+as well. Production active-vault inode, size, mtime and ctime were unchanged.
+Its incorrect temporary Alpha value was not repaired or overwritten.
+
+The subprocesses also ran under an OS profile denying network access, all writes
+outside a new scratch directory, and reads of production/legacy app data,
+Documents and the Claude/Codex directories. No existing personal file contents
+were read to validate the profile. A separate entirely synthetic canary first
+proved allowed scratch read/write, denied protected read/write, denied reads and
+writes through a symlink, inherited child-process read denial and denied local
+network binding. Protected synthetic bytes remained unchanged.
+
+The local manual explicitly marks `sandbox-exec` deprecated. It was used only
+for these one-off diagnostics, not added as a product dependency or new repository
+launcher. These tests establish the observed process/file boundaries, not full
+GUI/WebKit helper containment or a signed App Sandbox deployment. D1/D2 remain
+unaccepted. The contaminated prior fixture and disabled bundle were not reused.
+
+The [machine-readable receipt](2026-11-11-native-startup-isolation.json) retains
+the binary checksum and outcomes. Build log:
+`/tmp/myco-acceptance-binary-build.log`; raw receipts:
+`/tmp/myco-sandbox-canary-result.json` and
+`/tmp/myco-acceptance-refused-launch.json`. No product behavior changed in this
+slice, so README was not updated again. Next native acceptance requires a fresh
+bundle whose every launch is guarded and an app-level containment check before
+repeating draft/scope scenarios.
+
 ## November 11: refuse unisolated acceptance-binary startup
 
 Added the opt-in `native-app-acceptance` Cargo feature for full-app validation.
