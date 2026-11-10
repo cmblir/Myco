@@ -248,3 +248,74 @@ fn native_rejection_and_narrow_semantic_mismatches_remain_separate() {
         false
     );
 }
+
+#[test]
+fn frozen_control_labels_bind_to_fresh_originals_without_semantic_approval() {
+    let bytes = include_str!("../../../docs/research/2026-11-10-request-extraction-controls.json");
+    assert_eq!(
+        source_revision(bytes),
+        "44d8142b0f6f0abe2019be95dc1cbfac20cccb830c8d242504b1c01defdc8269"
+    );
+    let controls: Value = serde_json::from_str(bytes).unwrap();
+    assert_eq!(controls["inferenceExecuted"], false);
+    let cases = controls["cases"].as_array().unwrap();
+    assert_eq!(cases.len(), 7);
+    for case in cases {
+        let id = case["id"].as_str().unwrap();
+        let text = case["original"].as_str().unwrap();
+        assert_eq!(source_revision(text), case["originalSha256"]);
+        let speaker = match case["speaker"].as_str().unwrap() {
+            "user" => "User",
+            "assistant" => "Assistant",
+            _ => panic!("unsupported control speaker"),
+        };
+        let original = format!("---\nsource: codex\nconversation_id: synthetic-{id}\ncreated: 2026-10-01\n---\n**{speaker}:**\n{text}\n");
+        let source = SourceBinding {
+            key: format!("codex:synthetic-{id}"),
+            raw_path: format!("raw/conversations/codex/synthetic-{id}.md"),
+            source_revision: source_revision(&original),
+        };
+        let origin = AgentVaultSession {
+            vault_path: format!("/synthetic/request-controls/{id}"),
+            opening_token: format!("synthetic-opening-{id}"),
+        };
+        let plan = sources::prepare(&source, &original, &origin, "en", fake_tokens).unwrap();
+        assert_eq!(plan.windows.len(), 1, "{id}");
+        let verified = CompilationOriginal::verify(&original, &source.source_revision).unwrap();
+        let packet = plan.packet(0, &verified, &origin).unwrap();
+        let span = packet
+            .spans()
+            .find(|span| span.text().contains(text))
+            .unwrap();
+        let span_id = span.id();
+        let proposals: Vec<Value> = case["expected"]["claims"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|label| {
+                let mut proposal = expected_proposal();
+                for field in ["action", "speechAct", "status", "actor"] {
+                    proposal[field] = label[field].clone();
+                }
+                proposal["anchorSpanId"] = json!(span_id);
+                proposal["supportSpanIds"] = json!([span_id]);
+                proposal["actor"]["subjectSpanId"] =
+                    if label["actor"]["basis"] == "explicit_subject" {
+                        json!(span_id)
+                    } else {
+                        Value::Null
+                    };
+                proposal
+            })
+            .collect();
+        // These are constructed gold proposals, never generated model results.
+        let output = json!({"outcome":case["expected"]["outcome"],"claims":proposals});
+        let bound = compiler::bind_claims(&packet, &output.to_string(), &origin, 0).unwrap();
+        assert_eq!(bound.len(), proposals.len(), "{id}");
+        for claim in bound {
+            assert!(claim.claim.semantic_review_required, "{id}");
+            assert_eq!(claim.claim.provenance.len(), 1);
+            assert!(claim.claim.provenance[0].text().contains(text));
+        }
+    }
+}

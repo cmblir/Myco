@@ -452,6 +452,15 @@ new product prompt or model acceptance is claimed. The next comparison must
 consume these controls through fresh native SourceSets, including the negative
 cases, before any candidate promotion.
 
+The control labels now also pass through the real native preparation and claim
+binding functions in a model-free regression. Each of the seven originals gets
+its own synthetic source revision, opening, packet and derived span IDs. Explicit
+subjects reference that original; bound claims retain mandatory semantic review.
+The request QA group passed seven tests in 0.04s. An earlier invocation used an
+incomplete `--exact` filter and ran zero tests; it is not counted as validation.
+This still uses constructed gold proposals, not actual generated outputs, and
+does not satisfy the model comparison or semantic acceptance gate.
+
 1. Complete G4 repository equivalence without reinstating basename/worktree-name
    guesses. The v5 repair preserves complete recorded cwd identity, including
    different home/drive roots and case, but exact cwd alone cannot prove that
