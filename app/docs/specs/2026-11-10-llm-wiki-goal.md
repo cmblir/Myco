@@ -77,7 +77,7 @@ after G1. Run actual-model/native scenarios throughout, not only in G7.
 | ID | Package | Depends on | Current state |
 | --- | --- | --- | --- |
 | G0 | Freeze acceptance cases and establish runtime evidence | None | Baseline recorded; actual model quality failed |
-| G1 | Preserve Ingest drafts | G0 cases | Implemented; bundled macOS D1/D2 passed; native failure cases and other platforms remain unverified |
+| G1 | Preserve Ingest drafts | G0 cases | Implemented; bundled D1/D2 acceptance withdrawn after launch isolation failure; clean native rerun and other platforms remain unverified |
 | G2 | Make Ask scope and period consistent | G0 cases | Implemented; native acceptance pending |
 | G3 | Restore Windows native safety and functionality | G0 inventory | Portable paths improved; Windows unverified |
 | G4 | Resolve current project work state | G2 contract | Source-bound route and v5 folder identities implemented; repository equivalence and actual meaning gates remain |

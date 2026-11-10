@@ -10,7 +10,7 @@ requirements and must not be mistaken for passing results.
 | Package | State | Evidence and remaining work |
 | --- | --- | --- |
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
-| G1 Ingest drafts | Implemented; bundled macOS D1/D2 passed | Vault-scoped durable title/body, revision-aware completion and storage recovery. Unit and synthetic browser regressions passed. Native debug app navigation, restart and two-vault isolation passed; installed D3/D4 and other platforms remain unverified. |
+| G1 Ingest drafts | Implemented; bundled D1/D2 acceptance withdrawn | Unit and synthetic browser regressions passed. Native UI showed preserved drafts, but the bundle was also launched outside the intended isolated state; clean installed acceptance must be repeated. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
@@ -18,12 +18,50 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
-## November 11: bundled macOS draft navigation and restart
+## November 11: withdraw bundled acceptance after isolation failure
 
-D1 and the restart variant of D2 passed using the full production frontend and
+The next native run found additional files in the temporary Alpha vault before
+submitting any draft. Only file counts and metadata were inspected: five wiki
+files, 46 raw files and 22 session files. Their bodies were not read, exported or
+committed. Existing raw files were not removed or modified. The temporary fixture
+is no longer safe to treat as exclusively synthetic and must not be reused for
+testing or model input.
+
+The isolated settings file still had automatic import/ingest and notch disabled.
+However, the production app-data `active-vault` marker had been modified at
+`2026-11-10T18:10:25.975211Z`, during the preceding UI run. New raw/session file
+modification times spanned `18:10:37Z` through `18:12:05Z`. Production settings
+file metadata remained dated October 17. No original active-vault marker snapshot
+was retained, so its original value cannot safely be guessed. The owner was asked
+for the original vault path before restoring that marker.
+
+The working hypothesis is that CUA app binding/observation relaunched the bundle
+without the shell's environment, alongside or after the explicitly isolated
+process. That mechanism has not yet been reproduced in a clean sandbox. A bundle
+identifier and shell environment alone did not ensure every launch was isolated.
+All matching app processes were stopped; the explicitly launched process returned
+143 after targeted SIGTERM. No D3 submission was attempted.
+The temporary debug bundle executable had its execute bits removed (0755 to
+0644) to prevent another accidental CUA/Launch Services start. This changes only
+the generated diagnostic bundle, not the installed production app or repository
+source. A boolean-only check confirmed the production marker points to the
+temporary Alpha path; no original production vault path was printed.
+
+The prior D1/D2 visible strings remain observations, but their acceptance claim
+is withdrawn because the required isolation boundary was not maintained. Before
+repeating native acceptance, every launch path must enforce separate state and
+prevent access to production transcripts/state even when no environment is
+inherited. Do not use `getApp` or a post-quit observation that can auto-launch an
+unprotected bundle. This incident does not establish that the source vault was
+modified, nor does it prove there were no other production-side effects.
+
+## November 11: bundled macOS draft navigation and restart (superseded)
+
+D1 and the restart variant of D2 were initially reported as passed using the full production frontend and
 native IPC in an unsigned debug `.app`, built from clean commit `9095ba8e` on
 macOS 26.5.1 arm64. This is bundled-app evidence, not a signed release installer,
 Windows result, model-quality result, or acceptance of every G1 failure path.
+The later isolation incident above withdraws the acceptance claim.
 
 The temporary fixture root is recorded in `/tmp/myco-installed-drafts-path.txt`.
 It contains separate Alpha/Beta folders, each with one synthetic Markdown reader
@@ -31,7 +69,9 @@ note, plus a separate `state/settings.json`. Automatic import, ingest, reflect,
 reindex, notch and global shortcut were disabled. The build override selected
 `dev.cmblir.myco.draft-acceptance-20261111`, a separate deep-link scheme and an
 explicit `index.html?vault=<synthetic Alpha path>` startup URL. The original
-production app was not opened. No source was submitted and no model ran.
+production app was not deliberately opened. No source was deliberately submitted
+and no model was deliberately invoked; later metadata disproved the assumption
+that every running instance used the isolated settings.
 
 Build command, run from `app/`:
 
