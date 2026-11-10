@@ -215,6 +215,8 @@ fn judge(output: &str, prepared: &PreparedRequest) -> Value {
     }
 }
 
+#[path = "request_controls_model_tests.rs"]
+mod controls_model_tests;
 #[path = "request_prompt_qa_model_tests.rs"]
 mod model_tests;
 #[path = "request_prompt_qa_tests.rs"]
