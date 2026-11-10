@@ -18,6 +18,45 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: complete portable path checks in activity recall
+
+G3 baseline review found that `activity_recall::tests::resumed_old_session_uses_turn_dates_instead_of_its_folder`
+and `scope_paths_archive_and_resolved_scope_are_enforced` returned zero hits on
+Windows where one was required. The earlier portable-path slice fixed original
+proof reads but missed both `recall_with_limits` scope checks: header catalog
+admission and full-page revalidation still converted the native relative path
+directly to a string. Windows separators therefore did not match slash-delimited
+scope/path keys. Both checks now reuse the existing confined `relative_key` helper.
+Confinement, scope/archive restrictions and the repeated pre-read check remain.
+
+A Unix regression first failed because a literal-backslash filename was admitted
+as an activity page. After conversion, such a nonportable identity is excluded
+with incomplete coverage instead of being rewritten into another file identity.
+A separate portable test exercises nested Unicode/space names with an explicit
+selected-page filter. Its initial use of the shared mixed-date transcript correctly
+produced incomplete coverage; the fixture was corrected to one fully dated turn
+without removing the complete-coverage assertion. README describes the incomplete
+coverage behavior for nonportable filenames.
+
+This is a code-level Windows cause plus local regression evidence, not a Windows
+runtime pass. Windows native identity, publication and full-suite acceptance remain
+open; no Windows runner or CI job was started for this slice.
+
+The first full-library and Clippy attempts exited 101 while disk free space fell
+to about 145 MiB. The test log ended during file-creating tests without a complete
+failure summary, and the Clippy log was empty; those runs are not passing evidence
+or a proven code regression. After confirming both compiler processes had stopped,
+removed only the regenerated static archive and five compiler query caches
+(2,145,331,490 bytes). Source, vault and dependency files were untouched. Retained
+logs: `/tmp/myco-activity-portable-{baseline,tests,full,clippy}.log`.
+
+The unchanged-code retry passed all 2,705 library tests (38 ignored), including
+both new regressions. Strict feature-enabled all-target Clippy and formatting
+passed. Retry logs: `/tmp/myco-activity-portable-{full,clippy}-retry.log`.
+The failure inventory reclassifies only the two named activity assertions from
+unresolved to path/scope, retaining the code-inspection limit and all 340 baseline
+entries. No claim is made that the Windows failure count has decreased yet.
+
 ## November 11: presence-penalty removal did not improve request meaning
 
 The [frozen presence comparison](2026-11-11-request-presence-comparison.json)

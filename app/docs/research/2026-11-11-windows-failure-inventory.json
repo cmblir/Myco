@@ -9,12 +9,12 @@
     "failed": 340,
     "ignored": 29
   },
-  "classification": "Diagnostic grouping, not proof that every assertion has an identified root cause. The first matching group wins; child-process diagnostics remain attached to their parent test.",
+  "classification": "Diagnostic grouping, not proof that every assertion has an identified root cause. The first matching group wins; child-process diagnostics remain attached to their parent test. Two activity recall assertions were subsequently reclassified through code inspection; causeEvidence records that limit.",
   "counts": {
     "access_denied": 27,
-    "assertion_or_other_unresolved": 103,
+    "assertion_or_other_unresolved": 101,
     "missing_path_or_file": 6,
-    "path_or_scope": 82,
+    "path_or_scope": 84,
     "pinned_template_checkout": 5,
     "poisoned_lock": 42,
     "unsupported_identity_or_custody": 71,
@@ -133,13 +133,15 @@
     },
     {
       "test": "activity_recall::tests::resumed_old_session_uses_turn_dates_instead_of_its_folder",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/activity_recall.rs:2849:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/activity_recall.rs:2849:9",
+      "causeEvidence": "Code inspection: activity recall header admission and page revalidation compared native relative path strings against slash-delimited scope keys. Both now use vault_path::relative_key; Windows rerun remains unverified."
     },
     {
       "test": "activity_recall::tests::scope_paths_archive_and_resolved_scope_are_enforced",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/activity_recall.rs:2888:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/activity_recall.rs:2888:9",
+      "causeEvidence": "Code inspection: activity recall header admission and page revalidation compared native relative path strings against slash-delimited scope keys. Both now use vault_path::relative_key; Windows rerun remains unverified."
     },
     {
       "test": "activity_recall::resolution::tests::oversized_candidate_is_explicit_partial_without_reading_or_admitting_it",

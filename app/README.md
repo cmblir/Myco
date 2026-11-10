@@ -610,6 +610,8 @@ An explicit or inherited wiki-only scope never uses the unrestricted Git log;
 the question keeps the normal scope-bound retrieval path instead.
 Wiki-only follow-ups also stay out of session-derived project discovery, unless
 the user explicitly changes the scope.
+Activity searches mark coverage as incomplete when a file name cannot be safely
+represented across platforms, such as a literal backslash in a Unix file name.
 
 Generic **connected ideas** questions can show existing wiki links and shared
 tags from the readable graph snapshot, without another model or an all-pairs
