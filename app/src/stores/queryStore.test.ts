@@ -496,18 +496,45 @@ describe("queryStore local synthesis", () => {
 
   it("preserves a follow-up's original question while supplying its cleaned question-only topic to synthesis", async () => {
     await ask("Explain attention yesterday");
+    const period = last().range;
     await ask("그건 왜?");
     const request = vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0];
     expect(request).toMatchObject({ question: "그건 왜?", previousQuestion: "Explain attention", scope: "wiki" });
-    expect(request.range).toBeUndefined();
+    expect(request.range).toEqual(period);
     expect(JSON.stringify(request)).not.toContain("Synthetic synthesis.");
     expect(vi.mocked(ipc.semanticSearch).mock.calls.at(-1)![0]).toBe("Explain attention 그건 왜?");
-    expect(last()).toMatchObject({ q: "그건 왜?", followUp: true, localModel: model });
+    expect(last()).toMatchObject({ q: "그건 왜?", followUp: true, localModel: model, range: period });
     expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)![1].q).toBe("그건 왜?");
     await ask("그래서?");
     expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0]).toMatchObject({ question: "그래서?", previousQuestion: "Explain attention" });
     await ask("Explain a different synthetic topic");
     expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0].previousQuestion).toBeUndefined();
+  });
+
+  it("uses a new explicit period on a follow-up without reusing the old one", async () => {
+    await ask("Explain attention yesterday");
+    await useQueryStore.getState().ask("그건 오늘은 어때?", "ko", askCopy(STRINGS.ko));
+    expect(last().range).not.toEqual(useQueryStore.getState().turns[0].range);
+    expect(last().range?.end).toBe(last().range?.start);
+    expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0].range).toEqual(last().range);
+  });
+
+  it("does not carry the old question or period after an explicit scope change", async () => {
+    await ask("Explain attention yesterday");
+    useUIStore.setState({ askScope: "sessions", isAskScopeExplicit: true });
+    await ask("그건 왜?");
+    expect(last().scope).toBe("sessions");
+    expect(last().range).toBeUndefined();
+    expect(last().followUp).toBeUndefined();
+    expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0].previousQuestion).toBeUndefined();
+  });
+
+  it("does not carry question context or dates between different selected notes", async () => {
+    await ask("Explain attention yesterday", { note: { path: "/v/wiki/attention-mechanism.md", title: "First" } });
+    await ask("그건 왜?", { note: { path: "/v/wiki/other.md", title: "Other" } });
+    expect(last().followUp).toBeUndefined();
+    expect(last().range).toBeUndefined();
+    expect(vi.mocked(ipc.semanticSearch).mock.calls.at(-1)![7]).toEqual(["wiki/other.md"]);
   });
 
   it("routes dated original conversations through activity claims with the selected generator", async () => {
@@ -2193,6 +2220,30 @@ describe("HTTP Ask evidence boundary", () => {
     useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
     useQueryStore.getState().clear();
   });
+  it("does not replay another scope's answer into a constrained provider request", async () => {
+    const chat = stubProvider().mockImplementation(() => reply("Grounded response"));
+    useUIStore.setState({ askScope: "sessions", isAskScopeExplicit: true });
+    useQueryStore.setState({ turns: [
+      { q: "Prior wiki question", a: "OUTSIDE_SCOPE_PRIOR_ANSWER", scope: "wiki" },
+      { q: "Legacy unknown scope", a: "UNKNOWN_SCOPE_PRIOR_ANSWER" },
+    ] });
+    await ask("Explain the synthetic session");
+    const prompt = JSON.stringify(chat.mock.calls[0][0].messages);
+    expect(prompt).not.toContain("OUTSIDE_SCOPE_PRIOR_ANSWER");
+    expect(prompt).not.toContain("UNKNOWN_SCOPE_PRIOR_ANSWER");
+    expect(prompt).not.toContain("Prior wiki question");
+    expect(last().scope).toBe("sessions");
+  });
+
+  it("does not replay an outside-period answer into an explicitly dated request", async () => {
+    const chat = stubProvider().mockImplementation(() => reply("Grounded response"));
+    useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+    useQueryStore.setState({ turns: [{ q: "Old topic", a: "OUTSIDE_PERIOD_PRIOR_ANSWER", scope: "wiki",
+      range: { start: "2026-09-01", end: "2026-09-01" } }] });
+    await ask("Explain the synthetic session on 2026-10-01");
+    expect(JSON.stringify(chat.mock.calls[0][0].messages)).not.toContain("OUTSIDE_PERIOD_PRIOR_ANSWER");
+    expect(last().range).toEqual({ start: "2026-10-01", end: "2026-10-01" });
+  });
   it("shows and persists model abstention without claiming search failure or a useful answer", async () => {
     stubProvider().mockRejectedValueOnce(new ModelEvidenceAbstention());
     const saved: AskRecord[] = [];
@@ -2498,6 +2549,48 @@ describe("queryStore.ask workstream facts", () => {
     expect(ipc.semanticSearch).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
     expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1]).toMatchObject({ q: question, a: turn!.a });
+  });
+
+  it.each(["Lumen 지금 어디까지 했어?", "내가 최근에 한 일이 뭐야?"])(
+    "keeps an explicitly selected wiki scope for %s", async (question) => {
+      const read = factsFile(JSON.stringify(facts));
+      useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+      const turn = await koAsk(question);
+      expect(read).not.toHaveBeenCalled();
+      expect(turn?.scope).toBe("wiki");
+      expect(turn?.a).not.toContain("Implemented the synthetic scheduler");
+    },
+  );
+
+  it("keeps the explicitly selected all scope in the answer and saved history", async () => {
+    factsFile(JSON.stringify(facts));
+    useUIStore.setState({ askScope: "all", isAskScopeExplicit: true });
+    const turn = await koAsk("Lumen 지금 어디까지 했어?");
+    expect(turn?.scope).toBe("all");
+    await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
+    expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1].scope).toBe("all");
+  });
+
+  it("does not replace an empty recent period with older project reports", async () => {
+    factsFile(JSON.stringify(facts));
+    vi.setSystemTime(new Date("2026-12-08T12:00:00Z"));
+    const turn = await koAsk("내가 최근에 한 일이 뭐야?");
+    expect(turn?.a).toContain("프로젝트로 묶인 대화가 없습니다");
+    expect(turn?.a).not.toContain("Implemented the synthetic scheduler");
+    expect(turn?.a).not.toContain("wiki/workstreams/prj_lumen");
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+  });
+
+  it("drops a workstream answer when its vault changes during the read", async () => {
+    let release!: (file: Awaited<ReturnType<typeof ipc.readFile>>) => void;
+    vi.spyOn(ipc, "readFile").mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const pending = koAsk("Lumen 지금 어디까지 했어?");
+    await vi.waitFor(() => expect(ipc.readFile).toHaveBeenCalledOnce());
+    useVaultStore.setState({ currentVault: { path: "/other", name: "other" } });
+    release({ path: "/v/.myco/workstreams.json", raw: JSON.stringify(facts), content: "", frontmatter: null });
+    await pending;
+    expect(useQueryStore.getState().turns.every(turn => !turn.a.includes("Implemented the synthetic scheduler"))).toBe(true);
+    expect(ipc.askHistoryAppend).not.toHaveBeenCalled();
   });
 
   it.each([

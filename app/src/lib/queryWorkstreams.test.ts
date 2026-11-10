@@ -6,6 +6,7 @@ import {
   resolveWorkstream,
   workstreamAnswer,
   workstreamChoices,
+  workstreamRecentRange,
   type WorkstreamFacts,
 } from "./queryWorkstreams";
 import { buildExplainQuestion } from "./guidedQuestion";
@@ -429,7 +430,7 @@ describe("workstreamAnswer progress", () => {
   it("assumes the project with the most conversations in the window and says so", () => {
     const answer = workstreamAnswer({ kind: "progress", name: null }, facts(), "ko", NOW)!;
     const [assumption, summary] = answer.split("\n\n");
-    expect(assumption).toBe(`프로젝트 이름이 없어, 최근 7일(${day("2026-11-01T12:00:00Z")} – ${day("2026-11-08T12:00:00Z")}) ` +
+    expect(assumption).toBe(`프로젝트 이름이 없어, 최근 7일(${day("2026-11-02T00:00:00")} – ${day("2026-11-08T12:00:00Z")}) ` +
       "동안 대화가 가장 많은 🌙 Lumen 프로젝트로 가정했습니다. 다른 프로젝트라면 이름을 넣어 다시 물어보세요.");
     expect(summary).toMatch(/^\[\[wiki\/workstreams\/prj_lumen\|🌙 Lumen\]\] 프로젝트는 /);
   });
@@ -443,15 +444,15 @@ describe("workstreamAnswer progress", () => {
     expect(workstreamAnswer({ kind: "progress", name: null }, value, "en", NOW)).toContain("assumes Chart Lab,");
   });
 
-  it("states both ranges when the unnamed default comes from the fallback window", () => {
+  it("requires a named project or explicit period instead of assuming an older project", () => {
     const asked = new Date("2026-11-20T12:00:00Z");
     const answer = workstreamAnswer({ kind: "progress", name: null }, facts(), "en", asked)!;
     expect(answer.split("\n\n").slice(0, 2)).toEqual([
-      `No conversation from the last 7 days (${day("2026-11-13T12:00:00Z", "en", asked)} – ${day("2026-11-20T12:00:00Z", "en", asked)}) ` +
+      `No conversation from the last 7 days (${day("2026-11-14T00:00:00", "en", asked)} – ${day("2026-11-20T12:00:00Z", "en", asked)}) ` +
         "belongs to a project.",
-      "No project was named, so this assumes 🌙 Lumen, the project with the most conversations in the 7 days up to the last record " +
-        `(${day("2026-10-31T12:30:00Z", "en", asked)} – ${day("2026-11-07T12:30:00Z", "en", asked)}). Name a project to ask about another one.`,
+      "Name a project or ask with explicit dates to search older records.",
     ]);
+    expect(answer).not.toContain("Lumen");
   });
 });
 
@@ -488,7 +489,7 @@ describe("a program's sessions (automated)", () => {
 describe("workstreamAnswer recent", () => {
   it("groups the last 7 days by project with counts, the latest session and the unassigned count", () => {
     expect(workstreamAnswer({ kind: "recent" }, facts(), "ko", NOW)!.split("\n\n")).toEqual([
-      `최근 7일(${day("2026-11-01T12:00:00Z")} – ${day("2026-11-08T12:00:00Z")}) 동안 프로젝트 2개에서 대화 4건이 있었습니다.`,
+      `최근 7일(${day("2026-11-02T00:00:00")} – ${day("2026-11-08T12:00:00Z")}) 동안 프로젝트 2개에서 대화 4건이 있었습니다.`,
       `- **[[wiki/workstreams/prj_lumen|🌙 Lumen]]** 대화 3건, 세션 2개, 마지막 활동 ${day("2026-11-07T12:30:00Z")}${BR}` +
         `Implemented the reminder scheduler.${BR}요청: Add prayer reminders to the synthetic app (하위 작업 1개) ${cite(ROOT_RAW)}\n` +
         `- **[[wiki/workstreams/chart-lab|Chart Lab]]** 대화 1건, 세션 1개, 마지막 활동 ${day("2026-11-04T10:00:00Z")}${BR}` +
@@ -498,35 +499,50 @@ describe("workstreamAnswer recent", () => {
     ]);
   });
 
-  it("uses the 7 days ending at the newest record when the asked window is empty, stating both ranges", () => {
+  it("keeps an empty recent window empty and offers an explicit older-record search", () => {
     const asked = new Date("2026-11-20T12:00:00Z");
     const paragraphs = workstreamAnswer({ kind: "recent" }, facts(), "ko", asked)!.split("\n\n");
-    const [empty, summary] = paragraphs;
-    expect(empty).toBe(`최근 7일(${day("2026-11-13T12:00:00Z", "ko", asked)} – ${day("2026-11-20T12:00:00Z", "ko", asked)})` +
+    const [empty, suggestion] = paragraphs;
+    expect(empty).toBe(`최근 7일(${day("2026-11-14T00:00:00", "ko", asked)} – ${day("2026-11-20T12:00:00Z", "ko", asked)})` +
       "에는 프로젝트로 묶인 대화가 없습니다.");
-    expect(summary).toBe(`마지막 기록까지의 7일(${day("2026-10-31T12:30:00Z", "ko", asked)} – ${day("2026-11-07T12:30:00Z", "ko", asked)}) 동안 ` +
-      "프로젝트 2개에서 대화 4건이 있었습니다.");
-    expect(paragraphs.at(-1)).toBe(REPORTED_ONLY.ko);
+    expect(suggestion).toBe("이전 기록을 보려면 프로젝트 이름이나 원하는 날짜를 넣어 다시 물어보세요.");
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs.join("\n")).not.toContain("Implemented the reminder scheduler");
   });
 
-  it("falls back the same way when the asked window holds only unassigned conversations", () => {
+  it("does not widen a period containing only unassigned conversations", () => {
     const value = facts();
     const loose = value.conversations["claude-code:bbbb2222-0000-4000-8000-000000000005"];
     [loose.first_epoch, loose.last_epoch] = [at("2026-11-14T09:00:00Z"), at("2026-11-14T10:00:00Z")];
     value.last_record_epoch = loose.last_epoch;
     const asked = new Date("2026-11-15T12:00:00Z");
-    const [empty, summary, , unassigned] = workstreamAnswer({ kind: "recent" }, value, "ko", asked)!.split("\n\n");
-    expect(empty).toBe(`최근 7일(${day("2026-11-08T12:00:00Z", "ko", asked)} – ${day("2026-11-15T12:00:00Z", "ko", asked)})` +
+    const [empty, suggestion, ...other] = workstreamAnswer({ kind: "recent" }, value, "ko", asked)!.split("\n\n");
+    expect(empty).toBe(`최근 7일(${day("2026-11-09T00:00:00", "ko", asked)} – ${day("2026-11-15T12:00:00Z", "ko", asked)})` +
       "에는 프로젝트로 묶인 대화가 없습니다.");
-    expect(summary).toMatch(/^마지막 기록까지의 7일\(.+\) 동안 프로젝트 1개에서 대화 2건이 있었습니다\./);
-    expect(unassigned).toBe("이 기간 대화 중 1건은 프로젝트를 정하지 못해 목록에서 뺐습니다(전체 미분류 3건).");
+    expect(suggestion).toContain("날짜를 넣어 다시 물어보세요");
+    expect(other).toEqual([]);
   });
 
-  it("gives null when no project was active in either window", () => {
-    expect(workstreamAnswer({ kind: "recent" }, { ...facts(), conversations: {} }, "ko", NOW)).toBeNull();
+  it("explains an empty or entirely unassigned period without falling into model generation", () => {
+    expect(workstreamAnswer({ kind: "recent" }, { ...facts(), conversations: {} }, "ko", NOW)).toContain("프로젝트로 묶인 대화가 없습니다");
     const unassigned = facts();
     for (const conversation of Object.values(unassigned.conversations)) conversation.key = null;
-    expect(workstreamAnswer({ kind: "recent" }, unassigned, "ko", NOW)).toBeNull();
+    expect(workstreamAnswer({ kind: "recent" }, unassigned, "ko", NOW)).toContain("프로젝트로 묶인 대화가 없습니다");
+  });
+
+  it("excludes outside-period words from a long conversation that overlaps the period", () => {
+    const value = facts();
+    value.conversations[ROOT].first_epoch = at("2026-10-01T00:00:00Z");
+    value.conversations[ROOT].request = "OLD_REQUEST_MUST_NOT_APPEAR";
+    value.conversations[ROOT].report = { epoch: at("2026-11-09T00:00:00Z"), text: "FUTURE_REPORT_MUST_NOT_APPEAR" };
+    const answer = workstreamAnswer({ kind: "recent" }, value, "en", NOW)!;
+    expect(answer).not.toContain("OLD_REQUEST_MUST_NOT_APPEAR");
+    expect(answer).not.toContain("FUTURE_REPORT_MUST_NOT_APPEAR");
+    expect(answer).toContain("Review found");
+  });
+
+  it("uses seven local calendar dates even across a month boundary", () => {
+    expect(workstreamRecentRange(new Date(2026, 10, 2, 0, 5))).toEqual({ start: "2026-10-27", end: "2026-11-02" });
   });
 });
 

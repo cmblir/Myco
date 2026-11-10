@@ -90,6 +90,17 @@ describe("guided project picker", () => {
       onIntent: () => undefined, onSubject: () => undefined, onAsOf: () => undefined, onSubmit: () => undefined,
     }));
 
+  it.each(["wiki", "sessions", "all"] as const)("discloses the project evidence scope before submission: %s", (projectScope) => {
+    const html = renderToStaticMarkup(h(GuidedQuestionPicker, {
+      lang: "en", intent: "progress", subject: "", asOf: "", disabled: false,
+      projects: PROJECTS, projectScope, onProject: () => undefined,
+      onIntent: () => undefined, onSubject: () => undefined, onAsOf: () => undefined, onSubmit: () => undefined,
+    }));
+    expect(html).toContain('id="ask-project-scope"');
+    expect(html).toContain(projectScope === "wiki" ? "current scope is your notes" : "imported conversations");
+    expect(html.indexOf('id="ask-project-scope"')).toBeLessThan(html.indexOf('class="ask-guided__projects"'));
+  });
+
   it("shows the projects as buttons with their last activity and conversation count, the suggested one marked", () => {
     const html = picked("progress", PROJECTS);
     expect(html).toContain('role="group" aria-labelledby="ask-guided-projects"');

@@ -42,7 +42,7 @@ import { formatTemporalRecall } from "../lib/queryTemporal";
 import { connectionOverview, connectionScopeNotice, isConnectionOverviewQuery } from "../lib/queryConnections";
 import { ActivitySynthesisError, LocalSynthesisError, LocalSynthesisSourceError, isSynthesisReviewFailure, tryLocalSynthesis, type ActivitySynthesisFailure, type LocalSynthesisFallbackReason } from "../lib/querySynthesis";
 import { ActivityPeriodRequired, activityPeriodClarification, isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "../lib/queryActivity";
-import { classifyWorkstreamQuestion, parseWorkstreamFacts, workstreamAnswer, type WorkstreamQuestion } from "../lib/queryWorkstreams";
+import { classifyWorkstreamQuestion, parseWorkstreamFacts, workstreamAnswer, workstreamRecentRange, type WorkstreamQuestion } from "../lib/queryWorkstreams";
 import { isMissingFile } from "../lib/sessionEvidence";
 import { activityResolution } from "../lib/queryResolution";
 import { checkedAskRole, isQueryAuthorizationError, QueryAuthorizationError } from "../lib/queryRole";
@@ -510,15 +510,25 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const note = opts?.note;
     // Over one note the path set decides, so no tier is cut out of it.
     const explicitScope = opts?.scope ?? (isAskScopeExplicit ? askScope : undefined);
-    const { scope, tierWeights } = recallPolicy(activityQuestion, askScope, askTierWeights, note ? "all" : explicitScope, isDatedActivityOverview);
     const paths = note ? noteScopePaths(note.path, vault.path, useVaultStore.getState().adjacency) : undefined;
+    const samePaths = (turn: ChatTurn): boolean => turn.note?.path === note?.path &&
+      JSON.stringify([...(turn.searchContext?.paths ?? [])].sort()) === JSON.stringify([...(paths ?? [])].sort());
     // The question this one may lean on (UX audit A2): "그건 왜 중요해?"
     // alone retrieves nothing its pronoun points at.
-    const context = guidedQuestion ? null : activityQuestion !== question ? activityQuestion : followUpContext(
+    const candidateContext = guidedQuestion ? null : activityQuestion !== question ? activityQuestion : followUpContext(
       get().turns,
       question,
       (q) => parseTimeQuery(q, queryTime, lang).cleaned,
     );
+    const inheritedScope = candidateContext && previous && samePaths(previous) ? previous.scope : undefined;
+    const { scope, tierWeights } = recallPolicy(activityQuestion, askScope, askTierWeights,
+      note ? "all" : explicitScope ?? inheritedScope, isDatedActivityOverview);
+    const sameSources = (turn: ChatTurn): boolean =>
+      (turn.scope ? turn.scope === scope : !explicitScope && !paths) && samePaths(turn);
+    const context = candidateContext && (!previous || sameSources(previous)) ? candidateContext : null;
+    // Follow-ups retain verified dates only inside the same source context.
+    // An explicit new period or a request to remove it always takes priority.
+    if (context && !tp.range && !opts?.ignoreRange && previous?.range) tp.range = { ...previous.range };
     const followUp = context !== null;
     set((s) => ({
       turns: [
@@ -558,7 +568,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const guidedProject = guidedQuestion && !guidedQuestion.asOf &&
       (guidedQuestion.intent === "progress" || guidedQuestion.intent === "remaining") ?
       { kind: guidedQuestion.intent, name: guidedQuestion.subject.trim() } : null;
-    const workstreamQuestion: WorkstreamQuestion | null = paths || tp.range ? null :
+    const workstreamQuestion: WorkstreamQuestion | null = paths || tp.range || explicitScope === "wiki" ? null :
       guidedQuestion ? guidedProject : classifyWorkstreamQuestion(question, lang, queryTime);
     if (workstreamQuestion) {
       let answer: string | null = null;
@@ -573,8 +583,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       }
       if (!live()) { settle(); return outcome; }
       if (answer) {
-        // Read from the imported sessions whatever scope was chosen.
-        finishTurn({ a: answer, scope: "sessions" });
+        // A workstream is a session-derived view. An explicit broader scope
+        // stays authoritative; no wiki-only request reaches this branch.
+        finishTurn({ a: answer, scope: explicitScope ?? "sessions",
+          ...(workstreamQuestion.kind === "recent" ? { range: workstreamRecentRange(queryTime) } : {}) });
         settle();
         return outcome;
       }
@@ -906,7 +918,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             // request with a 400 on the next question.
             ...get()
               .turns.slice(0, guidedQuestion ? 0 : -1)
-              .filter((p) => p.a && !p.error && !p.abstained && !p.needsClarification)
+              .filter((p) => p.a && !p.error && !p.abstained && !p.needsClarification && sameSources(p) &&
+                p.range?.start === tp.range?.start && p.range?.end === tp.range?.end)
               .flatMap((p) => [
                 { role: "user" as const, content: p.q },
                 { role: "assistant" as const, content: p.a },

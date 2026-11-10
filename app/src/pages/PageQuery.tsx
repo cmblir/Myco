@@ -19,7 +19,7 @@ import {
   type AskOpts,
   type ChatTurn,
 } from "../stores/queryStore";
-import { ipc, type ScoredChunk, type TierWeights } from "../lib/ipc";
+import { ipc, type AskScope, type ScoredChunk, type TierWeights } from "../lib/ipc";
 import { log } from "../lib/log";
 import { isMissingFile } from "../lib/sessionEvidence";
 import { filterChoices, parseWorkstreamFacts, workstreamChoices, type WorkstreamChoice } from "../lib/queryWorkstreams";
@@ -139,6 +139,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const questionRef = useRef<HTMLInputElement>(null);
   const guidedSubjectRef = useRef<HTMLInputElement>(null);
   const askScope = useUIStore((s) => s.askScope);
+  const isAskScopeExplicit = useUIStore((s) => s.isAskScopeExplicit);
   const setAskScope = useUIStore((s) => s.setAskScope);
   const weights = useUIStore((s) => s.askTierWeights);
   const setAskTierWeights = useUIStore((s) => s.setAskTierWeights);
@@ -221,6 +222,10 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     currentVault && s.noteScope?.path.startsWith(`${currentVault.path}/`) ? s.noteScope : null,
   );
   const setNoteScope = useQueryStore((s) => s.setNoteScope);
+  // Project shortcuts use imported conversations by default, shown before a
+  // project button submits. An explicit scope or selected note takes priority.
+  const projectScope = picksProject && !noteScope ?
+    (isAskScopeExplicit ? askScope : "sessions") : undefined;
   const lastTurnRef = useRef<HTMLDivElement | null>(null);
   const composerRef = useRef<HTMLDivElement | null>(null);
   // The composer is under the answers (UX S32): below the screen, a ↓ button
@@ -436,6 +441,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     if (!guidedIntent) setQ("");
     const opts: AskOpts = {
       ...(noteScope ? { note: noteScope } : {}),
+      ...(projectScope ? { scope: projectScope } : {}),
       ...(guided?.guidedQuestion ? { guidedQuestion: guided.guidedQuestion } : {}),
     };
     await askStore(question, lang, askCopy(t), Object.keys(opts).length ? opts : undefined);
@@ -743,6 +749,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
             disabled={busy || !currentVault || isOpeningVault}
             subjectRef={guidedSubjectRef}
             projects={picksProject ? projectChoices : null}
+            projectScope={projectScope}
             projectFilter={projectFilter}
             onProjectFilter={setProjectFilter}
             onProject={(choice) => {
@@ -829,7 +836,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 <span className="ask-scope__hint">{t.q_note_scope_hint}</span>
               </div>
             ) : (
-              <AskScopePicker t={t} scope={askScope} disabled={busy || isOpeningVault} onChange={setAskScope} />
+              <AskScopePicker t={t} scope={projectScope ?? askScope} disabled={busy || isOpeningVault} onChange={setAskScope} />
             )}
           </div>
         </div>
@@ -980,7 +987,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
  * null without a valid facts file) above the subject field, which stays for
  * a topic that is no project. */
 export function GuidedQuestionPicker({ lang, intent, subject, asOf, disabled,
-  subjectRef, projects, projectFilter = "", onProjectFilter, onProject, onIntent, onSubject, onAsOf, onSubmit,
+  subjectRef, projects, projectScope, projectFilter = "", onProjectFilter, onProject, onIntent, onSubject, onAsOf, onSubmit,
 }: {
   lang: "en" | "ko" | "ja";
   intent: GuidedChoice | null;
@@ -989,6 +996,7 @@ export function GuidedQuestionPicker({ lang, intent, subject, asOf, disabled,
   disabled: boolean;
   subjectRef?: { current: HTMLInputElement | null };
   projects?: WorkstreamChoice[] | null;
+  projectScope?: AskScope;
   projectFilter?: string;
   onProjectFilter?: (value: string) => void;
   onProject?: (choice: WorkstreamChoice) => void;
@@ -1021,6 +1029,9 @@ export function GuidedQuestionPicker({ lang, intent, subject, asOf, disabled,
           {copy.free}
         </button>
       </div>
+      {intent && PROJECT_CHOICES.has(intent) && projectScope ? (
+        <p className="muted" id="ask-project-scope">{copy.projectScope[projectScope]}</p>
+      ) : null}
       {intent && projects && projects.length > 0 && onProject ? (
         <ProjectPicker lang={lang} choices={projects} filter={projectFilter}
           onFilter={onProjectFilter ?? (() => undefined)} onPick={onProject} />

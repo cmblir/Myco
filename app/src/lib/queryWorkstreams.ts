@@ -7,6 +7,7 @@
 import type { Lang } from "./i18n";
 import { isUndatedActivityOverview } from "./queryActivity";
 import { chunkCitation } from "./retrievalContext";
+import { queryDateRange, type DateRange } from "./timeQuery";
 
 interface Report {
   epoch: number;
@@ -276,8 +277,8 @@ const EN = {
   more: "{count} older sessions are on the {page}.",
   pageLink: "project page",
   window: "the last 7 days ({start} – {end})",
-  lastWindow: "the 7 days up to the last record ({start} – {end})",
   emptyWindow: "No conversation from the last 7 days ({start} – {end}) belongs to a project.",
+  choosePeriod: "Name a project or ask with explicit dates to search older records.",
   recent: "In {window}, there were {conversations} conversations across {projects} projects:",
   recentLine: "{conversations} conversations in {roots} sessions, last active {date}",
   assumed: "No project was named, so this assumes {title}, the project with the most conversations in {window}. Name a project to ask about another one.",
@@ -309,8 +310,8 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     more: "이전 세션 {count}개는 {page}에서 볼 수 있습니다.",
     pageLink: "프로젝트 페이지",
     window: "최근 7일({start} – {end})",
-    lastWindow: "마지막 기록까지의 7일({start} – {end})",
     emptyWindow: "최근 7일({start} – {end})에는 프로젝트로 묶인 대화가 없습니다.",
+    choosePeriod: "이전 기록을 보려면 프로젝트 이름이나 원하는 날짜를 넣어 다시 물어보세요.",
     recent: "{window} 동안 프로젝트 {projects}개에서 대화 {conversations}건이 있었습니다.",
     recentLine: "대화 {conversations}건, 세션 {roots}개, 마지막 활동 {date}",
     assumed: "프로젝트 이름이 없어, {window} 동안 대화가 가장 많은 {title} 프로젝트로 가정했습니다. 다른 프로젝트라면 이름을 넣어 다시 물어보세요.",
@@ -339,8 +340,8 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     more: "以前のセッション{count}件は{page}で確認できます。",
     pageLink: "プロジェクトページ",
     window: "直近7日間（{start}〜{end}）",
-    lastWindow: "最後の記録までの7日間（{start}〜{end}）",
     emptyWindow: "直近7日間（{start}〜{end}）には、プロジェクトにまとめられた会話がありません。",
+    choosePeriod: "以前の記録を探すには、プロジェクト名か具体的な日付を指定して質問してください。",
     recent: "{window}に、{projects}件のプロジェクトで会話が{conversations}件ありました。",
     recentLine: "会話{conversations}件、セッション{roots}件、最終活動 {date}",
     assumed: "プロジェクト名がないため、{window}に会話が最も多い{title}と仮定しました。別のプロジェクトについては、名前を入れて質問してください。",
@@ -359,8 +360,6 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
   },
 };
 
-const DAY = 86_400;
-const WINDOW = 7 * DAY;
 /** Root sessions a progress answer lists; the project page keeps the rest. */
 const PROGRESS_ROOTS = 5;
 
@@ -436,21 +435,15 @@ const byLatest = (groups: [string, Entry[]][]) => groups
   .map(([key, members]) => ({ key, members, last: Math.max(...members.map(([, c]) => c.last_epoch)) }))
   .sort((a, b) => b.last - a.last || byText(a.key, b.key));
 
-/** [query time - 7 days, query time]; when no conversation of a project was
- * active then, the 7 days ending at the newest record. Null when neither
- * holds one. Unassigned conversations list nothing, so they choose nothing. */
-function recentSpan(entries: Entry[], lastRecord: number, queryTime: Date): { span: Span; asked: Span } | null {
-  const now = Math.floor(queryTime.getTime() / 1000);
-  const asked = { start: now - WINDOW, end: now };
-  const listed = entries.filter(([, c]) => c.key !== null);
-  if (listed.some(([, c]) => overlaps(c, asked))) return { span: asked, asked };
-  const last = { start: lastRecord - WINDOW, end: lastRecord };
-  return listed.some(([, c]) => overlaps(c, last)) ? { span: last, asked } : null;
+/** Seven local calendar days, including today; shared with saved Ask metadata. */
+export function workstreamRecentRange(queryTime: Date): DateRange {
+  const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return { start: day(new Date(queryTime.getFullYear(), queryTime.getMonth(), queryTime.getDate() - 6)), end: day(queryTime) };
 }
 
 /** The deterministic answer, or null when the named project is unknown or
- * ambiguous, or no project was active in the recent window. Remaining work
- * and explain always name a project. */
+ * ambiguous. An empty recent period stays empty and offers an explicit
+ * older-record search. Remaining work and explain always name a project. */
 export function workstreamAnswer(question: WorkstreamQuestion, facts: WorkstreamFacts, lang: Lang, queryTime: Date): string | null {
   const copy = WORKSTREAM_COPY[lang];
   // Month and day, with the year only when it is not the year asked in. A
@@ -578,20 +571,25 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
     return question.kind === "remaining" ? remaining(key, question.name) :
       question.kind === "explain" ? explain(key, question.name) : progress(key, question.name);
   }
-  const window = recentSpan(entries, facts.last_record_epoch, queryTime);
-  if (!window) return null;
-  const inWindow = entries.filter(([, c]) => overlaps(c, window.span));
+  const period = queryDateRange(workstreamRecentRange(queryTime));
+  const window = { start: period.startEpoch, end: Math.floor(queryTime.getTime() / 1000) };
+  const inWindow = entries.filter(([, c]) => overlaps(c, window)).map(([key, c]): Entry => [key, {
+    ...c,
+    // A long conversation can overlap the period while its quoted request or
+    // latest report does not. Never carry those outside-period words into it.
+    request: c.first_epoch >= window.start && c.first_epoch <= window.end ? c.request : null,
+    report: c.report && c.report.epoch >= window.start && c.report.epoch <= window.end ? c.report : null,
+    parent_report: c.parent_report && c.parent_report.epoch >= window.start && c.parent_report.epoch <= window.end ? c.parent_report : null,
+  }]);
   // Most conversations first, then latest activity: the unnamed default.
   const active = byLatest(groupBy(inWindow, (c) => c.key))
     .sort((a, b) => b.members.length - a.members.length || b.last - a.last || byText(a.key, b.key));
-  if (!active.length) return null;
-  const fallback = window.span !== window.asked;
   const range = (span: Span) => ({ start: day(span.start), end: day(span.end) });
-  const label = fill(fallback ? copy.lastWindow : copy.window, range(window.span));
-  const intro = fallback ? fill(copy.emptyWindow, range(window.asked)) : "";
+  if (!active.length) return [fill(copy.emptyWindow, range(window)), copy.choosePeriod].join("\n\n");
+  const label = fill(copy.window, range(window));
 
   if (question.kind === "progress")
-    return [intro, fill(copy.assumed, { window: label, title: inline(title(active[0].key)) }), progress(active[0].key, null)]
+    return [fill(copy.assumed, { window: label, title: inline(title(active[0].key)) }), progress(active[0].key, null)]
       .filter(Boolean).join("\n\n");
 
   // Each project with its counts, then its latest session in the window with
@@ -605,7 +603,6 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
   });
   const unassigned = inWindow.filter(([, c]) => c.key === null).length;
   return [
-    intro,
     fill(copy.recent, { window: label, projects: count(active.length),
       conversations: count(active.reduce((sum, group) => sum + group.members.length, 0)) }),
     lines.join("\n"),
@@ -633,7 +630,7 @@ export interface WorkstreamChoice {
  * person's conversations is left out. */
 export function workstreamChoices(facts: WorkstreamFacts, queryTime: Date): WorkstreamChoice[] {
   const now = Math.floor(queryTime.getTime() / 1000);
-  const week = { start: now - WINDOW, end: now };
+  const week = { start: queryDateRange(workstreamRecentRange(queryTime)).startEpoch, end: now };
   const active = new Map<string, number>();
   for (const c of Object.values(facts.conversations))
     if (!c.automated && c.key !== null && overlaps(c, week)) active.set(c.key, (active.get(c.key) ?? 0) + 1);
