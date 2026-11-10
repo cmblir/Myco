@@ -18,6 +18,42 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: withdrawal contrasts reject extra reviewer guidance
+
+The [six frozen contrasts](2026-11-11-selected-note-withdrawal-controls.json)
+separate factual support from the existing requirement to explain withdrawal.
+They include current negation with original and translated names, an explicit
+withdrawal explanation, an obsolete positive claim, the unchanged positive,
+and a withdrawal claim against the unchanged source. Both arms retain grouped
+originals and coverage guidance; the candidate adds dimension-separation and
+correction instructions. Production behavior is unchanged.
+
+The [twelve actual reviewer calls](2026-11-11-selected-note-withdrawal-review.json)
+give the baseline 6/6 binary matches but only 4/6 factual-disposition matches.
+Both brief negations remain falsely unsupported. The complete withdrawal
+explanation is accepted, while the same explanation without a source correction
+is rejected. Original-name negation also fails, so translated names alone do not
+explain the earlier fresh-output failure. This does not establish general review
+quality: constructed controls and binary labels hide the incorrect dispositions.
+
+The extra-guidance candidate regresses to 4/6 binary and 2/6 disposition matches.
+It rejects both complete positive controls. In several outputs its reason
+acknowledges the claim is correct while its disposition remains unsupported.
+It also incorrectly treats the brief original-name negation as covered. Do not
+promote this candidate or reinterpret a positive-sounding reason as approval.
+Next evaluate a generator change that preserves explicit corrections and their
+effect on the earlier description, using the unchanged coverage reviewer and
+fresh answers. Keep ordinary/no-correction controls to detect invented history;
+the separate reviewer disposition defect remains unresolved.
+
+Verification: 25 ordinary-flow tests passed, six actual-model tests ignored in
+that invocation. The explicit model run completed all 12 calls and exited zero;
+this is execution success, not semantic acceptance. Rust fmt and feature-enabled
+strict all-target Clippy passed. The receipt preserves prompts, outputs, frozen
+control checksum, model/binary identity and settings. Runtime was 409.764 seconds
+and maximum RSS 3,185,377,280 bytes; startup overlapped Clippy. Network denial was
+verified and the owned process stopped. README and production code are unchanged.
+
 ## November 11: repeated candidate still fails fresh withdrawal answers
 
 The [27-call stability receipt](2026-11-11-selected-note-stability-review.json)

@@ -3,6 +3,10 @@
 #[path = "ordinary_selected_note_stability_tests.rs"]
 mod stability;
 
+#[cfg(feature = "native-index-probe")]
+#[path = "ordinary_selected_note_withdrawal_tests.rs"]
+mod withdrawal;
+
 use super::*;
 
 const REVIEW_CONTROLS: &str =

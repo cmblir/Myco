@@ -1,0 +1,52 @@
+{
+  "sourceControls": "2026-11-11-selected-note-controls.json",
+  "policy": "Frozen before inference. Constructed answers isolate factual disposition from explanation completeness; not generated-answer acceptance.",
+  "cases": [
+    {
+      "id": "supported_pair",
+      "answer": "Synthetic Graph Center 는 Synthetic Graph East 과 Synthetic Graph West 에 링크됩니다.",
+      "expectedAccepted": true,
+      "goldReason": "The center explicitly links east and west, whose source titles give these names.",
+      "expectedDisposition": "supported"
+    },
+    {
+      "id": "omitted_withdrawal",
+      "answer": "Synthetic Graph Center 는 Synthetic Graph East 과 Synthetic Graph West 에 링크됩니다.",
+      "appendToCenter": "\n## Correction\n\nThe two links above were withdrawn. Synthetic Graph Center no longer links to Synthetic Graph East or Synthetic Graph West. The earlier hub description is obsolete.\n",
+      "expectedAccepted": false,
+      "goldReason": "The answer repeats a withdrawn relationship and omits the explicit contrary correction in the same complete source.",
+      "expectedDisposition": "unsupported"
+    },
+    {
+      "id": "brief_current_negation",
+      "answer": "Synthetic Graph Center는 Synthetic Graph East와 Synthetic Graph West에 더 이상 링크되지 않습니다.",
+      "appendToCenter": "\n## Correction\n\nThe two links above were withdrawn. Synthetic Graph Center no longer links to Synthetic Graph East or Synthetic Graph West. The earlier hub description is obsolete.\n",
+      "expectedAccepted": false,
+      "expectedDisposition": "supported",
+      "goldReason": "Current negation is supported, but the frozen withdrawal requirement also asks for the correction and obsolete earlier description."
+    },
+    {
+      "id": "translated_current_negation",
+      "answer": "Synthetic Graph Center는 합성 그래프 동쪽과 합성 그래프 서쪽에 링크를 연결하지 않습니다.",
+      "appendToCenter": "\n## Correction\n\nThe two links above were withdrawn. Synthetic Graph Center no longer links to Synthetic Graph East or Synthetic Graph West. The earlier hub description is obsolete.\n",
+      "expectedAccepted": false,
+      "expectedDisposition": "supported",
+      "goldReason": "Same supported current negation as the actual fresh output; explanation of withdrawal and obsolete earlier description is missing."
+    },
+    {
+      "id": "explicit_withdrawal",
+      "answer": "Synthetic Graph Center의 Synthetic Graph East 및 Synthetic Graph West 링크는 철회되었습니다. 이전 허브 설명은 더 이상 유효하지 않으며, 현재 두 노트에 링크되지 않습니다.",
+      "appendToCenter": "\n## Correction\n\nThe two links above were withdrawn. Synthetic Graph Center no longer links to Synthetic Graph East or Synthetic Graph West. The earlier hub description is obsolete.\n",
+      "expectedAccepted": true,
+      "expectedDisposition": "supported",
+      "goldReason": "Explains both withdrawn links and obsolescence, consistent with the complete corrected original."
+    },
+    {
+      "id": "invented_withdrawal",
+      "answer": "Synthetic Graph Center의 Synthetic Graph East 및 Synthetic Graph West 링크는 철회되었습니다. 이전 허브 설명은 더 이상 유효하지 않으며, 현재 두 노트에 링크되지 않습니다.",
+      "expectedAccepted": false,
+      "expectedDisposition": "unsupported",
+      "goldReason": "The unchanged original has no withdrawal or obsolete-description statement."
+    }
+  ]
+}
