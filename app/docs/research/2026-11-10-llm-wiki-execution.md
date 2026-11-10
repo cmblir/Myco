@@ -18,6 +18,22 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: frozen minimal prose-reading diagnostic
+
+The [prose-reading contract](2026-11-11-request-prose-reading.json) keeps all
+seven original strings, speakers and semantic labels. It asks the cached model
+to describe activity type and performer in short prose, using the existing
+grammar-free QA entry point and grounded numeric sampler. This reuses the
+registered fixed 768/4096 generation limits; it adds no production decoder or
+model selection path. A regression checks that the input contains only the exact
+original and speaker, with no expected labels.
+
+This deliberately changes the system prompt, payload and grammar together to
+test whether basic interpretation is available in a smaller task. It cannot
+attribute a difference to any one component. Prose carries no native claim
+binding, review approval or publication authority. The whole compiler and all
+original extraction controls remain required even if these judgments succeed.
+
 ## November 11: actual vocabulary diagnostic failed meaning gates
 
 The [paired vocabulary controls](2026-11-11-request-vocabulary-controls.json)

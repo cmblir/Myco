@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "parentCommit": "3868391397548ffaa1ebfc95e55f7e776a9850d4",
+  "status": "planned",
+  "purpose": "Distinguish whether the pinned model can describe the frozen request/plan/report meanings in a small prose task. This is not an alternative extraction contract.",
+  "intervention": [
+    "short task-specific prose system prompt",
+    "speaker and exact original text only; no provenance packet",
+    "existing grounded numeric sampler with grammar removed",
+    "no native claim binding or publication authority"
+  ],
+  "fixed": [
+    "cached pinned qwen3.5-4b-q4_k_m artifact",
+    "all seven original strings, speakers and original semantic labels",
+    "seed 42 and existing grounded numeric parameters",
+    "768 output / 4096 context limits"
+  ],
+  "plannedCalls": 7,
+  "repeatsPerCase": 1,
+  "semanticAccepted": false,
+  "productionAccepted": false,
+  "evaluation": "Review every output for activity type, performer, action meaning, lack of invented time/outcome and policy/question rejection. Retain every failed/missing/ambiguous response. Positive prose alone does not satisfy source binding or full compiler acceptance.",
+  "causalLimit": "Prompt, payload and grammar differ together. This diagnostic cannot attribute a difference to one component or claim reproducibility from one call.",
+  "networkPolicy": "sandbox-exec (version 1) (allow default) (deny network*)",
+  "controlsSha256": "44d8142b0f6f0abe2019be95dc1cbfac20cccb830c8d242504b1c01defdc8269",
+  "runnerSourceSha256": "7ed789cacbf2a97c7a9c14cd8ef76498863ed87ca239bd6368c39d86ef52af89"
+}

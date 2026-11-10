@@ -219,5 +219,7 @@ fn judge(output: &str, prepared: &PreparedRequest) -> Value {
 mod controls_model_tests;
 #[path = "request_prompt_qa_model_tests.rs"]
 mod model_tests;
+#[path = "request_reading_model_tests.rs"]
+mod reading_model_tests;
 #[path = "request_prompt_qa_tests.rs"]
 mod tests;
