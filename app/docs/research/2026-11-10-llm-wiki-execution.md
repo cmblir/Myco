@@ -18,7 +18,7 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
-## November 11: frozen vocabulary diagnostic
+## November 11: actual vocabulary diagnostic failed meaning gates
 
 The [paired vocabulary controls](2026-11-11-request-vocabulary-controls.json)
 replace only "synthetic report" with "inventory report" in five originals and
@@ -35,6 +35,35 @@ before generation. Source-derived span IDs and byte coordinates necessarily
 change with the source text. Capture paths still contain synthetic labels, so
 this experiment tests phrase sensitivity, not all possible harness effects.
 Neither these controls nor model-free tests establish actual model quality.
+
+Runner `11510ee6` subsequently completed all 14 actual offline calls using the
+pinned cached model, network denial and isolated synthetic state. All 44 records
+are retained in the comparison receipt, with source-based review of every output.
+Native transport/binding passed. Baseline matched only R5/R7; vocabulary candidate
+matched R5/R6/R7. No candidate or production source rewrite is accepted.
+
+The inventory wording caused R1-R3 to produce claims where the baseline abstained,
+but R1/R2 assigned the requesting user as performer. R1 requires unknown actor;
+R2 explicitly names the assistant and requires its supporting subject span.
+R3/R4 retained assistant attribution but classified the past report and future
+plan as request/requested. Their action paraphrases were acceptable; their meaning
+labels were not. Thus all four positive controls failed in both arms. This single
+run observes phrase-sensitive outputs, not a proven cause or repeatable improvement.
+Changing test nouns cannot stand in for supporting the original task semantics.
+
+Validation: nine model-free QA tests passed (five opt-in tests ignored), strict
+feature all-target Clippy and format checks passed. The actual native test passed
+its transport-only assertion in 472.35s; wrapper wall time was 475.56s and maximum
+resident set size 3,222,011,904 bytes. Every output has real prefill/sampling
+telemetry. The first formatter invocation used the repository root and reported
+`could not find Cargo.toml`; rerunning in `app/src-tauri` passed. README remains
+unchanged because this diagnostic changes no product behavior.
+
+The next useful model diagnostic should isolate a minimal source-grounded semantic
+judgment from the full extraction payload, to distinguish basic interpretation
+from schema/prompt interaction. Keep all original controls and labels. A simplified
+diagnostic cannot authorize publication or replace full extraction, three repeated
+critical cases, full-compiler, Windows or installed acceptance.
 
 ## November 11: actual source-first input comparison rejected
 
