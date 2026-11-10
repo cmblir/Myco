@@ -15,8 +15,45 @@ requirements and must not be mistaken for passing results.
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
-| G6 UI | Browser changes and native Graph navigation checked | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; focus repair awaits rebuilt visual replay. Full accessibility/state/translation review remains. |
+| G6 UI | Native Graph focus improved; visual gate incomplete | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; rebuilt focus replay reduced magnification but exposed remaining label clipping and bright-background interference. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: native replay exposes remaining narrow-canvas focus error
+
+Rebuilt the isolated native bundle from `8a550479` (binary SHA-256
+`71a7a34c3bd7a9f1da738ce475508a66d48f224daacfd5fc1bf4edeca66cd292`).
+The fixed launch wrapper and unchanged sandbox profile were restored before
+launch; running the acceptance binary without diagnostic environment still
+refused startup. Native search again selected the correct synthetic center.
+The neighborhood action visibly moved the camera back, but ordinary search
+still produced an oversized node and clipped labels. This replay failed visual
+acceptance despite the preceding green tests.
+
+Read-only inspection through the native Web Inspector found a selected-camera
+distance of about 202 world units and an actual maximum of 30,000. Thus the
+tiny-maximum regression covered a possible code path, not this replay's root
+cause. Ordinary focus accounted for panel coverage in its lateral offset but
+still calculated distance from vertical FOV alone. A new regression projected
+the 60-unit focus radius into the 200px uncovered strip: it occupied 331px and
+failed. The repair uses the narrower uncovered horizontal/vertical FOV for
+ordinary focus as well as solid bounds. All nine focused tests then passed.
+
+A second rebuilt native replay verified reduced search magnification and the
+selected title outside the inspector. Neighborhood framing still clips the
+beginning of a long neighbor label at the left canvas edge, and the bright node
+background interferes with label readability. G6 remains incomplete: geometric
+point/radius fitting is not sufficient evidence for label bounds or composited
+contrast. Preserve this failed visual gate in the
+[native Graph receipt](2026-11-11-native-graph-focus.json).
+
+The full frontend suite passed 6,491 tests in 405 files. Lint had zero errors and
+two existing hook warnings. Type checking, production frontend and the isolated
+native bundle build passed. Logs: `/tmp/myco-graph-width-{full,lint,build}.log`.
+README remains unchanged for this existing-behavior camera repair.
+
+The diagnostic app was quit. All eleven existing synthetic Markdown files
+remained unchanged; production marker metadata was unchanged relative to the
+previous unresolved incident baseline. No live-vault content was read.
 
 ## November 11: native Graph navigation and focus regression
 

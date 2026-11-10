@@ -5012,11 +5012,12 @@ export class GraphScene {
     const toTarget = new THREE.Vector3(a.x, a.y, a.z);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const r = Math.max(a.size * NODE_RADIUS * 4, 60);
-    let dist = (r * 1.5) / Math.tan(fovRad / 2) + 40;
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     // Never more than 60 %: past that the open strip is too thin to aim at.
     const cover = Math.min(opts.coverRightPx ?? 0, w * 0.6);
+    const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, (w - cover) / h));
+    let dist = (r * 1.5) / Math.tan(halfFov) + 40;
     if (opts.neighbours) {
       const around = this.graph
         .neighbors(id)
@@ -5028,7 +5029,6 @@ export class GraphScene {
     if (solidBounds) {
       solidBounds.getCenter(toTarget);
       const radius = solidBounds.getSize(new THREE.Vector3()).length() / 2;
-      const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, (w - cover) / h));
       dist = Math.max(dist, 40, radius * 1.15 / Math.sin(halfFov));
     }
     this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);

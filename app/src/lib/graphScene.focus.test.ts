@@ -63,3 +63,15 @@ it("retains the neighborhood fit when a sculpted node also supplies solid bounds
   );
   expect(position.distanceTo(target)).toBeGreaterThanOrEqual(required);
 });
+
+it("fits the selected focus radius inside the width left by the inspector", () => {
+  const { scene, startCamTween } = focusScene();
+  scene.focusNode("selected", { coverRightPx: 280 });
+  const [position, target] = startCamTween.mock.calls[0] as [
+    THREE.Vector3,
+    THREE.Vector3,
+  ];
+  const pixelsPerUnit =
+    600 / (2 * position.distanceTo(target) * Math.tan((50 * Math.PI) / 360));
+  expect(2 * 60 * pixelsPerUnit).toBeLessThanOrEqual(200);
+});
