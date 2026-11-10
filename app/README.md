@@ -576,7 +576,7 @@ into the desktop Graph page; its separate HTML entry is not part of release buil
 Run `npx vitest run src/graph-preview/model.test.ts` for graph identity and layout
 boundary checks.
 
-Prerequisites: Node 20+, Rust 1.77+, plus platform-specific Tauri
+Prerequisites: Node 20+, Rust 1.89+, plus platform-specific Tauri
 prerequisites (<https://tauri.app/start/prerequisites/>).
 
 ```bash

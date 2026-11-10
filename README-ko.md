@@ -378,7 +378,7 @@ Claude Desktop은 `claude_desktop_config.json`에 추가:
 
 ## 소스에서 빌드
 
-사전 준비: Node 20+, Rust 1.77+, OS별
+사전 준비: Node 20+, Rust 1.89+, OS별
 [Tauri prerequisites](https://tauri.app/start/prerequisites/).
 Git LFS로 클론하세요 (내장 임베딩 모델이 LFS에 저장됩니다).
 

@@ -393,7 +393,7 @@ The name is `myco` and the URL ends in `/mcp` — `/sse` is gone.
 
 ## Build from source
 
-Prerequisites: Node 20+, Rust 1.77+, and the
+Prerequisites: Node 20+, Rust 1.89+, and the
 [Tauri prerequisites](https://tauri.app/start/prerequisites/) for your OS.
 Clone with Git LFS (the bundled embedding model is stored in LFS).
 
