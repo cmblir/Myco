@@ -724,6 +724,22 @@ bounded to avoid overlap. See the [research and tradeoffs](docs/graph-readabilit
 
 ## Dev
 
+### Native acceptance startup guard
+
+Build full-app validation binaries with `--features native-app-acceptance`.
+These binaries refuse startup unless they are debug builds with both
+`MYCO_REAL_DIAGNOSTIC=1` and `MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER=1`.
+The existing startup validation also requires an explicit, canonical, existing
+`MYCO_DATA_DIR` separate from production application data. Missing environment
+variables must never fall back to a normal production launch, including launches
+initiated by desktop automation or Launch Services.
+
+This guard is necessary but is not a complete filesystem sandbox. Before native
+acceptance, use a separate bundle/WebView identifier, explicit synthetic startup
+vault, disabled automatic imports and OS-level access restrictions. Do not reuse
+a fixture containing automatically imported personal sessions. Normal builds
+without this feature retain their existing startup behavior.
+
 ### Interactive graph design preview
 
 Run `npm run dev`, then open `http://localhost:5173/graph-preview.html`.

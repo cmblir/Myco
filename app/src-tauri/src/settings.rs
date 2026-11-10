@@ -357,7 +357,7 @@ fn resolve_env_data_dir(
 
 /// An explicitly isolated debug replay must not migrate the user's global
 /// state or compete for their MCP port/global shortcuts. Normal launches,
-/// including every release build, retain the existing startup behavior.
+/// without the acceptance feature retain the existing startup behavior.
 /// Validate without creating or migrating any directory; a requested but
 /// invalid isolation fails startup instead of falling back to global effects.
 pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
@@ -365,6 +365,9 @@ pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
         || std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1")
         || std::env::var("MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER").as_deref() != Ok("1")
     {
+        if cfg!(feature = "native-app-acceptance") {
+            return Err("acceptance binary requires diagnostic isolation".into());
+        }
         return Ok(false);
     }
     let data = std::env::var_os("MYCO_DATA_DIR")
@@ -1165,6 +1168,34 @@ mod tests {
     }
 
     // ---- C1: no test may ever reach the developer's real app-data dir ------
+
+    #[cfg(feature = "native-app-acceptance")]
+    #[test]
+    fn acceptance_binary_refuses_launch_without_diagnostic_environment() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let names = [
+            "MYCO_REAL_DIAGNOSTIC",
+            "MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER",
+        ];
+        let previous = names.map(|name| std::env::var(name).ok());
+        let mut results = Vec::new();
+        for flags in [(None, None), (Some("1"), None), (None, Some("1"))] {
+            unsafe {
+                restore_var(names[0], flags.0.map(str::to_owned));
+                restore_var(names[1], flags.1.map(str::to_owned));
+            }
+            results.push(isolated_diagnostic_startup());
+        }
+        for (name, value) in names.into_iter().zip(previous) {
+            unsafe { restore_var(name, value) };
+        }
+        for result in results {
+            assert_eq!(
+                result.unwrap_err(),
+                "acceptance binary requires diagnostic isolation"
+            );
+        }
+    }
 
     #[test]
     fn settings_dir_refuses_the_real_data_dir_when_no_override_is_set() {

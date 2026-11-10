@@ -18,6 +18,33 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: refuse unisolated acceptance-binary startup
+
+Added the opt-in `native-app-acceptance` Cargo feature for full-app validation.
+When compiled with it, `isolated_diagnostic_startup` returns an error instead of
+normal startup if debug assertions are absent or either diagnostic flag is
+missing. `run()` already checks this result before installing the panic hook,
+migrating WebView data, constructing the Tauri builder or running setup. Existing
+canonical/nonproduction `MYCO_DATA_DIR` checks remain unchanged. Ordinary builds
+without the feature retain their prior behavior.
+
+The regression ran before the implementation and failed with
+`called Result::unwrap_err() on an Ok value: false` at `settings.rs:1187`.
+It covers no flags and each partially supplied pair, restoring environment values
+before assertions. Log: `/tmp/myco-acceptance-startup-baseline.log`. After the fix,
+all 31 settings tests passed and feature-enabled all-target strict Clippy passed.
+Logs: `/tmp/myco-acceptance-startup-tests.log` and
+`/tmp/myco-acceptance-startup-clippy.log`.
+The complete feature-enabled library suite passed 2,702 tests with 38 ignored
+(`/tmp/myco-acceptance-startup-full.log`); formatting and diff whitespace checks
+passed. Default-feature integration and frontend suites were not rerun for this
+feature-gated startup change.
+
+README now describes the guard and its limits. This is not OS confinement,
+an installed-app acceptance rerun, or a correction of the production active-vault
+marker. That correction still awaits the original path. No GUI app was launched
+in this slice and the contaminated fixture was not reused.
+
 ## November 11: withdraw bundled acceptance after isolation failure
 
 The next native run found additional files in the temporary Alpha vault before

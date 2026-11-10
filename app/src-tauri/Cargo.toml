@@ -126,6 +126,8 @@ rerank = ["dep:llama-cpp-sys-2"]
 notch-probe = []
 # Isolated native/AppHandle index checks; absent from normal builds.
 native-index-probe = []
+# Full-app acceptance builds must refuse startup without diagnostic isolation.
+native-app-acceptance = []
 
 [[example]]
 name = "native_ask_probe"
