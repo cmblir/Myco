@@ -28,6 +28,20 @@
 .map-refresh-history button {
   min-height: 2.75rem;
 }
+.map-recovery summary {
+  min-height: 2.75rem;
+  padding-block: 0.75rem;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.map-recovery__records > details {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 0.5rem;
+}
+.map-recovery summary:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
 .map-refresh-history__snapshots {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

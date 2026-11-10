@@ -198,8 +198,13 @@ interrupted attempts and superseded updates. Stable malformed records appear as
 `invalidRecord` without snapshot text; privacy, I/O and concurrent replacement
 failures abort the query. Results are ordered by opaque record ID, not time, and
 bounded to 256 snapshots, 32 MiB of records and 4,096 directory entries. This API
-does not retry, delete, restore or grant undo authority. Its recovery UI remains
-pending; the existing History screen still shows only the latest refresh.
+does not retry, delete, restore or grant undo authority. In History, select an
+existing map and expand **Retained map records** to load these snapshots separately
+from its latest update. Each record discloses current-file association, unknown
+publication or invalid data; invalid text stays hidden. Records expand as escaped
+plain text, with reload, empty and error states. Switching or reopening the vault
+clears them. Records for maps absent from the file selector still require the
+native inspection API; deleted-map discovery and repair remain incomplete.
 Refresh issues no creation/undo receipt. Manual map proposals show the native
 merged diff before applying an existing-map update. Cancelling or switching vaults
 stops the update; sources and the target revision are rechecked after approval.

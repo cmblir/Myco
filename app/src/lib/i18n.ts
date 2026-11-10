@@ -1684,6 +1684,16 @@ export interface Strings extends EverydayStrings {
   pf_retired: string;
   pf_outcome_delete: string;
   pf_confirm_msg_draft_map: string;
+  map_recovery_title: string;
+  map_recovery_note: string;
+  map_recovery_empty: string;
+  map_recovery_error: string;
+  map_recovery_current: string;
+  map_recovery_unknown: string;
+  map_recovery_invalid: string;
+  map_recovery_invalid_note: string;
+  map_recovery_no_before: string;
+  map_recovery_saved: string;
   map_history_title: string;
   map_history_note: string;
   map_history_select: string;
@@ -4302,6 +4312,16 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "No longer needed — the originals stay as they are",
     pf_outcome_delete: "Moves {n} quarantined item(s) to the trash.",
     pf_confirm_msg_draft_map: "Drafts a topic map or prepares an existing map update for review (one model call).",
+    map_recovery_title: "Retained map records",
+    map_recovery_note: "These are saved snapshots, not a timeline or confirmation of a completed update. Records marked publication unknown may be past updates or interrupted attempts. Nothing can be restored or deleted here.",
+    map_recovery_empty: "No retained records for this map.",
+    map_recovery_error: "Could not read the retained records. Retry with Reload.",
+    map_recovery_current: "Linked to the current file",
+    map_recovery_unknown: "Publication unknown",
+    map_recovery_invalid: "Invalid record",
+    map_recovery_invalid_note: "This record could not be validated. Its text is hidden and the record is preserved.",
+    map_recovery_no_before: "No earlier snapshot was recorded.",
+    map_recovery_saved: "Saved snapshot",
     map_history_title: "Latest map update",
     map_history_note: "Shows the latest recorded write, including interrupted updates. This does not confirm that source checks completed. Full history and undo are not available.",
     map_history_select: "Select a map",
@@ -6904,6 +6924,16 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "더 이상 필요 없어요 — 원본은 그대로 둡니다",
     pf_outcome_delete: "격리된 자료 {n}개를 휴지통으로 옮깁니다.",
     pf_confirm_msg_draft_map: "주제 지도 초안을 쓰거나 기존 지도 갱신안을 검토할 수 있게 준비합니다 (모델을 한 번 씁니다).",
+    map_recovery_title: "보관된 지도 기록",
+    map_recovery_note: "저장된 스냅샷이며 시간순 이력이나 갱신 완료를 뜻하지 않습니다. 게시 여부 불명 기록은 과거 갱신 또는 중단된 시도일 수 있습니다. 여기서는 복원하거나 삭제할 수 없습니다.",
+    map_recovery_empty: "이 지도에 보관된 기록이 없습니다.",
+    map_recovery_error: "보관된 기록을 읽지 못했습니다. 다시 조회로 재시도하세요.",
+    map_recovery_current: "현재 파일과 연결된 기록",
+    map_recovery_unknown: "게시 여부 불명",
+    map_recovery_invalid: "검증할 수 없는 기록",
+    map_recovery_invalid_note: "이 기록을 검증하지 못해 본문을 숨겼습니다. 기록은 보존됩니다.",
+    map_recovery_no_before: "이전 스냅샷이 기록되지 않았습니다.",
+    map_recovery_saved: "저장된 스냅샷",
     map_history_title: "최근 지도 갱신",
     map_history_note: "중단된 갱신을 포함해 마지막으로 기록된 변경을 표시합니다. 출처 검증의 완료를 뜻하지는 않습니다. 전체 이력과 되돌리기는 아직 지원하지 않습니다.",
     map_history_select: "지도 선택",
@@ -9299,6 +9329,16 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "もう必要ありません — 元の資料はそのまま残します",
     pf_outcome_delete: "隔離された資料 {n} 件をゴミ箱へ移します。",
     pf_confirm_msg_draft_map: "トピックマップの下書き、または既存マップの更新案を作成して確認します（モデルを1回使います）。",
+    map_recovery_title: "保管されたマップ記録",
+    map_recovery_note: "保存されたスナップショットです。時系列の履歴や更新完了を示すものではありません。反映状況が不明な記録には、過去の更新と中断された試行が含まれます。ここでは復元や削除はできません。",
+    map_recovery_empty: "このマップに保管された記録はありません。",
+    map_recovery_error: "保管された記録を読み込めませんでした。再読み込みで再試行してください。",
+    map_recovery_current: "現在のファイルに対応する記録",
+    map_recovery_unknown: "反映状況は不明",
+    map_recovery_invalid: "検証できない記録",
+    map_recovery_invalid_note: "この記録を検証できなかったため、本文を非表示にしています。記録は保持されます。",
+    map_recovery_no_before: "以前のスナップショットは記録されていません。",
+    map_recovery_saved: "保存されたスナップショット",
     map_history_title: "最新のマップ更新",
     map_history_note: "中断された更新を含む、最後に記録された変更を表示します。出典の検証完了を示すものではありません。全履歴と元に戻す操作は利用できません。",
     map_history_select: "マップを選択",

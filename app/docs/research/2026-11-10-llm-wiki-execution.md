@@ -18,6 +18,49 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retained map records in History
+
+History now offers **Retained map records** for the selected existing map, separate
+from its latest update. The disclosure loads native snapshots only when opened.
+Each record states current-file association, unknown publication or invalid data;
+stored before/after text is escaped and never interpreted as HTML. Missing older
+snapshots and invalid records have explicit explanations. There is no restore,
+delete or undo control and no implied chronological ordering. English, Korean and
+Japanese strings use the existing theme and localization system.
+
+The loader validates the returned map path, bounded record count, unique record
+IDs, known evidence labels and nullable text contract. Cancellation, vault switches,
+same-path reopen and opening-in-progress suppress late success and error responses.
+Changing map/opening remounts the disclosure, dropping prior selection and content.
+The browser mock explicitly rejects this native command instead of inventing
+custody. README documents the user-facing entry point and limitations.
+
+The initial type check exposed an insufficiently discriminated idle/loading union
+(`TS2339: Property 'snapshots' does not exist`); splitting those variants fixed
+the narrowing. Targeted checks passed 20 tests. The first full suite failed the
+command parity check because `retained_map_snapshots` lacked a mock handler
+(`devMock.parity.test.ts:77`, one failed, 6,469 passed). Adding the explicit native
+capability rejection fixed it; final full frontend validation passed all 404 files
+and 6,470 tests in 60.91s. Final TypeScript/build passed; Vite took 11.32s
+(`/tmp/myco-recovery-ui-build-final.log`). Lint has no errors and the two existing notch hook
+dependency warnings. Logs: `/tmp/myco-recovery-ui-{target,full,full-final,lint-final}.log`.
+
+Ego-browser inspected the actual History page with isolated synthetic IPC responses,
+not a native application receipt. Keyboard Enter opened the disclosure and made
+its first read; empty/error/reload and same-path reopen reset were checked. Both
+themes at 320/375/768/1280px had no horizontal overflow; summaries were at least
+44px tall. Script-shaped text remained text with no script node. The first wait
+failed when background mock tree refresh removed the synthetic map; fixing the
+fixture's listFiles/refresh behavior allowed the keyboard check to complete.
+The narrow screenshot was inspected again after closing the sidebar drawer:
+`/tmp/myco-recovery-dark-320-confirmed.png`; desktop:
+`/tmp/myco-recovery-light-1280.png`. The task space was finished and Vite stopped.
+
+Deleted maps are absent from the file selector even though their records can be
+inspected by the native API. Deleted-map discovery, safe retry/undo, corrupt-record
+repair, full chronology, VoiceOver and installed/native combined acceptance remain
+open. This UI does not pass model meaning or Windows acceptance gates.
+
 ## November 11: opening-bound retained map snapshot API
 
 `retained_map_snapshots` now exposes a bounded read-only inspection path for the

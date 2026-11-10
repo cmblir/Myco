@@ -4,6 +4,7 @@ import { flattenMarkdown } from "../lib/graphData";
 import { readMapHistory, type MapHistoryRead } from "../lib/mapRefreshHistory";
 import { useVaultStore } from "../stores/vaultStore";
 import "../styles/mapRefreshHistory.css";
+import MapRecoverySnapshots from "./MapRecoverySnapshots";
 
 export function MapRefreshHistoryView({
   t,
@@ -114,19 +115,32 @@ function OpenMapHistory({
     ).cancel;
   }, [vaultPath, vaultToken, validKey, retry]);
   return (
-    <MapRefreshHistoryView
-      t={t}
-      keys={keys}
-      selected={validKey}
-      read={
-        validKey && result.key === validKey ? result.read : { phase: "idle" }
-      }
-      onSelect={(key) => {
-        setResult({ key: "", read: { phase: "idle" } });
-        setSelected(key);
-      }}
-      onReload={() => setRetry((value) => value + 1)}
-    />
+    <>
+      <MapRefreshHistoryView
+        t={t}
+        keys={keys}
+        selected={validKey}
+        read={
+          validKey && result.key === validKey ? result.read : { phase: "idle" }
+        }
+        onSelect={(key) => {
+          setResult({ key: "", read: { phase: "idle" } });
+          setSelected(key);
+        }}
+        onReload={() => setRetry((value) => value + 1)}
+      />
+      {validKey && (
+        <div className="map-refresh-history">
+          <MapRecoverySnapshots
+            key={validKey}
+            t={t}
+            vaultPath={vaultPath}
+            vaultToken={vaultToken}
+            mapKey={validKey}
+          />
+        </div>
+      )}
+    </>
   );
 }
 

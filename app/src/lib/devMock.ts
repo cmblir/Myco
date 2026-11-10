@@ -1867,6 +1867,7 @@ function mockInvoke(
     case "preview_map_refresh":
     case "apply_map_refresh":
     case "latest_map_refresh_history":
+    case "retained_map_snapshots":
     case "session_compile_begin":
     case "session_compile_read":
     case "session_compile_publish":
