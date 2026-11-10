@@ -200,6 +200,31 @@ pub(crate) fn write_compiler_file_anchored_locked(
     directory: &CompilerPinDirectory,
     anchor_leaf: &str,
 ) -> Result<RecordedWriteReceipt, String> {
+    write_compiler_file_anchored_observed_locked(
+        _guard,
+        path,
+        content,
+        prior,
+        expected_sha256,
+        directory,
+        anchor_leaf,
+        |_| Ok(()),
+    )
+}
+
+/// Persist caller-owned preparation evidence before canonical replacement.
+/// The observed identity is data only, not a write or deletion capability.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn write_compiler_file_anchored_observed_locked(
+    _guard: &MutexGuard<'_, ()>,
+    path: &str,
+    content: &str,
+    prior: Option<&CompilerPriorFilePin>,
+    expected_sha256: Option<&str>,
+    directory: &CompilerPinDirectory,
+    anchor_leaf: &str,
+    before_publish: impl FnOnce(&super::RecordedFileIdentity) -> Result<(), String>,
+) -> Result<RecordedWriteReceipt, String> {
     #[cfg(unix)]
     {
         write_anchored(
@@ -209,8 +234,16 @@ pub(crate) fn write_compiler_file_anchored_locked(
             expected_sha256,
             directory,
             anchor_leaf,
+            before_publish,
             #[cfg(test)]
-            |_| Ok(()),
+            |at| {
+                COMPILER_CHECKPOINT.with(|hook| {
+                    if let Some(callback) = hook.get() {
+                        callback(matches!(at, PinCheckpoint::Persisted));
+                    }
+                });
+                Ok(())
+            },
         )
     }
     #[cfg(not(unix))]
@@ -222,6 +255,7 @@ pub(crate) fn write_compiler_file_anchored_locked(
             expected_sha256,
             directory,
             anchor_leaf,
+            before_publish,
         );
         Err("compiler inode custody is unsupported on this platform".into())
     }
@@ -514,6 +548,17 @@ fn check_prior(
     }
 }
 
+#[cfg(all(test, unix))]
+thread_local! {
+    static COMPILER_CHECKPOINT: std::cell::Cell<Option<fn(bool)>> = const { std::cell::Cell::new(None) };
+}
+
+/// Test-only interruption hook, scoped to the calling test thread.
+#[cfg(all(test, unix))]
+pub(crate) fn set_compiler_checkpoint(hook: Option<fn(bool)>) {
+    COMPILER_CHECKPOINT.with(|current| current.set(hook));
+}
+
 #[cfg(unix)]
 #[cfg(test)]
 enum PinCheckpoint {
@@ -522,6 +567,7 @@ enum PinCheckpoint {
 }
 
 #[cfg(unix)]
+#[allow(clippy::too_many_arguments)]
 fn write_anchored(
     path: &Path,
     content: &str,
@@ -529,6 +575,7 @@ fn write_anchored(
     expected: Option<&str>,
     directory: &CompilerPinDirectory,
     leaf: &str,
+    before_publish: impl FnOnce(&super::RecordedFileIdentity) -> Result<(), String>,
     #[cfg(test)] mut checkpoint: impl FnMut(PinCheckpoint) -> Result<(), String>,
 ) -> Result<RecordedWriteReceipt, String> {
     use sha2::{Digest, Sha256};
@@ -580,6 +627,31 @@ fn write_anchored(
         2,
     ) {
         return Err(retained("staged compiler anchor identity changed".into()));
+    }
+    let staged_identity = super::recorded_identity(&staged_metadata)
+        .ok_or_else(|| retained("staged compiler identity is unavailable".into()))?;
+    before_publish(&staged_identity).map_err(retained)?;
+    // Caller persistence must not create a window for replacing the staged
+    // pathname or its anchor while retaining a receipt for the original inode.
+    let staged_now = staged
+        .as_file()
+        .metadata()
+        .map_err(|e| retained(e.to_string()))?;
+    if super::recorded_identity(&staged_now).as_ref() != Some(&staged_identity)
+        || !same_file(
+            &staged_now,
+            &std::fs::symlink_metadata(staged.path()).map_err(|e| retained(e.to_string()))?,
+            2,
+        )
+        || !same_file(
+            &staged_now,
+            &std::fs::symlink_metadata(&anchor_path).map_err(|e| retained(e.to_string()))?,
+            2,
+        )
+    {
+        return Err(retained(
+            "staged compiler object changed during preparation".into(),
+        ));
     }
     #[cfg(test)]
     checkpoint(PinCheckpoint::Pinned).map_err(retained)?;

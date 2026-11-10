@@ -168,28 +168,31 @@ evidence/descriptor values, preserving titles and outside annotations. It writes
 no map and grants no update or undo permission.
 The native `apply_map_refresh` command independently repeats authorization,
 source checks, private record checks and merge, and requires the preview's current
-revision. It retains a new file anchor and version-3 record with exact before/after
-snapshots after a successful update. Both snapshots must fit the private record
-budget before the canonical file is replaced. The read-only
-`latest_map_refresh_history` command returns the latest recorded snapshots and
-whether the current file differs from the saved result. Older version-1/2 records
-remain readable but have no before-image; the command returns no history for them.
-Identical content is a no-op; changed targets are rejected.
+revision. Before canonical replacement, it retains the staged file anchor and a
+synced version-4 preparation record with exact before/after snapshots and the
+staged native file identity. Both snapshots must fit the private record budget.
+Failure to save the record stops canonical replacement; the writer rechecks the
+staged object and target before replacing it. A prepared record does not certify
+publication completion or source validation.
+The read-only `latest_map_refresh_history` command requires the current map's
+physical identity to match its record and anchor. It can therefore read snapshots
+after a process exits immediately after replacement, before the writer returns.
+A staged candidate that never became the current file is not shown as a written
+update. Legacy version-1/2 records have no before-image; version-3 observations
+remain readable. Identical content remains a no-op; changed targets are rejected.
 Failures after persistence retain output for manual recovery instead of reporting
-success. The exact write observation is saved before post-write source checks,
-so a failed check or an exit at that check retains the before/after snapshots.
-History explicitly describes recorded writes, including interrupted updates,
-and does not certify completed source validation. Interruption during the native
-write or private-record persistence still requires additional recovery handling.
-Refresh issues no creation/undo receipt. Manual map proposals now show
-the native merged diff before applying an existing-map update. Cancelling or
-switching vaults stops the update; sources and the target revision are rechecked
-after approval. The review explains that History undo is not yet available.
-History now offers a map selector with the latest saved before/after snapshots,
+success. Post-write source checks still must pass before refresh succeeds.
+History describes recorded writes, including interrupted updates, and does not
+certify completed source validation. Power-loss recovery, partial/corrupt private
+record repair and browsing unpublished attempts remain incomplete.
+Refresh issues no creation/undo receipt. Manual map proposals show the native
+merged diff before applying an existing-map update. Cancelling or switching vaults
+stops the update; sources and the target revision are rechecked after approval.
+History offers a map selector with the latest saved before/after snapshots,
 a notice for edits since that update, and explicit empty/error/reload states.
 Snapshots stack on narrow screens and appear side by side on wide screens.
 Switching or reopening a vault clears the selection and old responses. This is
-not a full update timeline; refresh undo and interruption recovery remain incomplete.
+not a full update timeline; refresh undo remains incomplete.
 Native creation now also discovers its observation by vault/path and current file
 identity, without relying on a remembered generation key. Missing, corrupt or
 ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory

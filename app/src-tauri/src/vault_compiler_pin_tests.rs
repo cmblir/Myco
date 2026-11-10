@@ -353,6 +353,7 @@ fn same_bytes_aba_after_staging_is_caught_by_writer_held_identity_recheck() {
         Some(&old.revision),
         &directory,
         "staged-native.anchor",
+        |_| Ok(()),
         |phase| {
             if matches!(phase, PinCheckpoint::Pinned) {
                 let replacement = path.with_file_name("external-replacement.md");
@@ -388,6 +389,7 @@ fn failure_after_canonical_persist_keeps_old_and_new_inode_custody() {
         Some(&old.revision),
         &directory,
         "uncertain-native.anchor",
+        |_| Ok(()),
         |phase| {
             if matches!(phase, PinCheckpoint::Persisted) {
                 return Err("synthetic post-persist failure".into());
@@ -484,6 +486,7 @@ fn synthetic_kill_checkpoint_child() {
         Some(&hash(BEFORE)),
         &directory,
         "interrupted-native.anchor",
+        |_| Ok(()),
         |at| {
             if matches!(
                 (checkpoint.as_str(), at),
@@ -560,5 +563,50 @@ fn process_kill_preserves_both_versions_around_canonical_replacement() {
             String::from_utf8_lossy(&inspected.stderr)
         );
         assert!(String::from_utf8_lossy(&inspected.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn preparation_failure_and_staged_mutation_preserve_the_prior_canonical() {
+    for mutate in [false, true] {
+        let (_temporary, path, directory) = fixture();
+        let old = create(&path, &directory);
+        let prior = compiler_prior_from_receipt(&old).unwrap();
+        let guard = vault::lock_file_mutation().unwrap();
+        let error = write_compiler_file_anchored_observed_locked(
+            &guard,
+            path.to_str().unwrap(),
+            "Fresh section\n",
+            Some(&prior),
+            Some(&old.revision),
+            &directory,
+            "prepared-native.anchor",
+            |_identity| {
+                if mutate {
+                    fs::write(
+                        directory.path().join("prepared-native.anchor"),
+                        "Changed staging bytes\n",
+                    )
+                    .unwrap();
+                    Ok(())
+                } else {
+                    Err("synthetic preparation persistence failure".into())
+                }
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("before canonical persist"), "{error}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Native section\n");
+        assert_eq!(
+            fs::metadata(&path).unwrap().ino(),
+            fs::metadata(directory.path().join("first-native.anchor"))
+                .unwrap()
+                .ino()
+        );
+        if mutate {
+            assert!(error.contains("changed during preparation"));
+        } else {
+            assert!(error.contains("synthetic preparation persistence failure"));
+        }
     }
 }

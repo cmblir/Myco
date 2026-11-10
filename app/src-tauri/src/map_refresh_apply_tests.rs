@@ -53,19 +53,55 @@ fn synthetic_refresh_child() {
     }
     assert!(matches!(
         phase.as_str(),
-        "first" | "second" | "interrupt" | "inspect-interrupted"
+        "first"
+            | "second"
+            | "interrupt"
+            | "inspect-interrupted"
+            | "native-interrupt"
+            | "inspect-native-interrupted"
+            | "native-before"
+            | "inspect-native-before"
     ));
     let root = root.canonicalize().unwrap();
     let state = VaultRoot::default();
     let generation = state.begin_open().unwrap();
     state.finish_open(generation, root.clone(), || ()).unwrap();
     let origin = state.snapshot().unwrap();
-    if phase == "inspect-interrupted" {
+    if phase == "inspect-native-before" {
+        assert!(history(&state, &origin, "synthetic").unwrap().is_none());
+        let current = std::fs::read_to_string(root.join("wiki/maps/synthetic.md")).unwrap();
+        assert!(current.contains("Synthetic relationship"));
+        assert!(current.ends_with("Human restart annotation.\n"));
+        let prepared = std::fs::read_dir(data.join("map-creation-custody"))
+            .unwrap()
+            .filter_map(|entry| {
+                let path = entry.unwrap().path();
+                if path.extension().and_then(|ext| ext.to_str()) != Some("json") {
+                    return None;
+                }
+                let record: serde_json::Value =
+                    serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+                (record["version"] == 4).then_some(record)
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(prepared.len(), 1);
+        assert_eq!(prepared[0]["previous"]["content"], current);
+        assert!(prepared[0]["baseline"]
+            .as_str()
+            .unwrap()
+            .contains("Synthetic native-before restart refresh"));
+        return;
+    }
+    if phase == "inspect-interrupted" || phase == "inspect-native-interrupted" {
         let retained = history(&state, &origin, "synthetic").unwrap().unwrap();
         assert!(retained.before.contains("Synthetic relationship"));
         assert!(retained
             .after
-            .contains("Synthetic interrupt restart refresh"));
+            .contains(if phase == "inspect-native-interrupted" {
+                "Synthetic native-interrupt restart refresh"
+            } else {
+                "Synthetic interrupt restart refresh"
+            }));
         assert!(retained.before.ends_with("Human restart annotation.\n"));
         assert!(retained.after.ends_with("Human restart annotation.\n"));
         assert_eq!(
@@ -129,6 +165,20 @@ fn synthetic_refresh_child() {
             })
         });
         panic!("synthetic interrupt point was not reached");
+    }
+    if phase == "native-before" {
+        crate::vault::set_compiler_checkpoint(Some(|persisted| {
+            if !persisted {
+                std::process::exit(25);
+            }
+        }));
+    }
+    if phase == "native-interrupt" {
+        crate::vault::set_compiler_checkpoint(Some(|persisted| {
+            if persisted {
+                std::process::exit(24);
+            }
+        }));
     }
     let result = apply(
         &state,
@@ -476,6 +526,47 @@ fn retained_history_survives_exit_before_postwrite_source_validation() {
     )
     .unwrap();
     for (phase, expected_code) in [("create", 0), ("interrupt", 23), ("inspect-interrupted", 0)] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "map_refresh::apply_tests::synthetic_refresh_child",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("MYCO_DATA_DIR", data.path())
+            .env("MYCO_MAP_REFRESH_PHASE", phase)
+            .env_remove("MEMEX_DATA_DIR")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(expected_code),
+            "{phase}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+}
+
+#[test]
+fn prepared_map_history_reopens_after_exit_inside_native_persist() {
+    let data = tempfile::Builder::new()
+        .prefix("myco-synthetic-map-prepared-")
+        .tempdir()
+        .unwrap();
+    std::fs::write(
+        data.path().join("synthetic.marker"),
+        "Synthetic map refresh restart only",
+    )
+    .unwrap();
+    for (phase, expected_code) in [
+        ("create", 0),
+        ("native-before", 25),
+        ("inspect-native-before", 0),
+        ("native-interrupt", 24),
+        ("inspect-native-interrupted", 0),
+    ] {
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args([
                 "--exact",

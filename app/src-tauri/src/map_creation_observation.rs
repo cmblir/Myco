@@ -231,7 +231,10 @@ fn read_at(
     let is_refresh = observation.state == "refreshObserved"
         && ((observation.version == 2 && observation.previous.is_none())
             || (observation.version == 3 && observation.previous.is_some()));
-    if (!is_creation && !is_refresh)
+    let is_prepared = observation.version == 4
+        && observation.state == "refreshPrepared"
+        && observation.previous.is_some();
+    if (!is_creation && !is_refresh && !is_prepared)
         || observation.scope != expected
         || !leaf.starts_with(&format!("{scope_hash}."))
         || observation.anchor != expected_anchor

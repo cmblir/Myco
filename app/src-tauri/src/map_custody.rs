@@ -159,7 +159,8 @@ mod platform {
                     "changedSeconds": i64::MIN, "changedNanoseconds": i64::MIN,
                 }),
             )?;
-            let written = crate::vault::write_compiler_file_anchored_locked(
+            let mut prepared = None;
+            let written = crate::vault::write_compiler_file_anchored_observed_locked(
                 guard,
                 Path::new(&self.scope.vault)
                     .join(&self.scope.path)
@@ -170,13 +171,30 @@ mod platform {
                 Some(expected),
                 &self.directory,
                 &format!("{}.anchor", self.key),
+                |identity| {
+                    let bytes = self.observation_bytes(
+                        &merged,
+                        Some(&observation.current),
+                        serde_json::to_value(identity).map_err(|e| e.to_string())?,
+                    )?;
+                    let file = self.persist_observation(&bytes)?;
+                    prepared = Some((file, bytes));
+                    Ok(())
+                },
             )?;
             let retained = |error| {
                 format!("map refresh bytes persisted but verification failed: {error}; output retained for manual recovery")
             };
-            // Preserve the observed write before a fallible source recheck.
-            // Custody records describe bytes, not successful source validation.
-            self.record_observation(guard, &written, &merged, Some(&observation.current))
+            let (file, bytes) =
+                prepared.ok_or_else(|| retained("map preparation record is missing".into()))?;
+            crate::map_custody_record::verify_held_record(
+                &self.directory,
+                &format!("{}.json", self.key),
+                &file,
+                &bytes,
+            )
+            .map_err(retained)?;
+            self.verify_observation(guard, &written, &merged)
                 .map_err(retained)?;
             verify_sources().map_err(retained)?;
             crate::vault::verify_recorded_file_unlocked(&written).map_err(retained)?;
@@ -190,8 +208,8 @@ mod platform {
             identity: serde_json::Value,
         ) -> Result<Vec<u8>, String> {
             let record = serde_json::json!({
-                "version": if previous.is_some() { 3 } else { 1 },
-                "state": if previous.is_some() { "refreshObserved" } else { "creationObserved" },
+                "version": if previous.is_some() { 4 } else { 1 },
+                "state": if previous.is_some() { "refreshPrepared" } else { "creationObserved" },
                 "scope": self.scope, "anchor": format!("{}.anchor", self.key),
                 "revision": format!("{:x}", Sha256::digest(content.as_bytes())),
                 "fileIdentity": identity, "baseline": content,
@@ -229,6 +247,12 @@ mod platform {
                 previous,
                 serde_json::to_value(&written.file_identity).map_err(|e| e.to_string())?,
             )?;
+            self.persist_observation(&bytes)?;
+            self.verify_observation(guard, written, content)
+        }
+
+        fn persist_observation(&self, bytes: &[u8]) -> Result<File, String> {
+            self.directory.verify()?;
             // create_new preserves an existing or uncertain record. Interrupted
             // writes remain for explicit recovery; never replace or delete them.
             let mut file = OpenOptions::new()
@@ -238,7 +262,7 @@ mod platform {
                 .custom_flags(libc::O_NOFOLLOW)
                 .open(self.directory.path().join(format!("{}.json", self.key)))
                 .map_err(|e| format!("create map custody record: {e}"))?;
-            file.write_all(&bytes)
+            file.write_all(bytes)
                 .and_then(|()| file.sync_all())
                 .map_err(|e| format!("sync map custody record: {e}"))?;
             self.directory.sync()?;
@@ -246,8 +270,17 @@ mod platform {
                 &self.directory,
                 &format!("{}.json", self.key),
                 &file,
-                &bytes,
+                bytes,
             )?;
+            Ok(file)
+        }
+
+        fn verify_observation(
+            &self,
+            guard: &MutexGuard<'_, ()>,
+            written: &RecordedWriteReceipt,
+            content: &str,
+        ) -> Result<(), String> {
             let observation = crate::map_creation_observation::discover_creation(
                 &self.directory,
                 Path::new(&self.scope.vault),

@@ -23,6 +23,11 @@ pub(crate) use compiler_pin::{
     CompilerPriorFilePin,
 };
 
+#[cfg(all(test, unix))]
+pub(crate) use compiler_pin::set_compiler_checkpoint;
+#[cfg(unix)]
+pub(crate) use compiler_pin::write_compiler_file_anchored_observed_locked;
+
 #[path = "vault_compiler_retirement.rs"]
 mod compiler_retirement;
 pub(crate) use compiler_retirement::{

@@ -14,9 +14,50 @@ requirements and must not be mistaken for passing results.
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
-| G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Early-interruption association/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
+| G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: durable preparation before map replacement
+
+Map refresh now uses a native pre-publication observer after the staging file and
+its private hardlink have been synced and physically matched. The observer writes
+and syncs an immutable version-4 `refreshPrepared` record with the staged file's
+native identity and exact before/after snapshots. A record failure stops before
+canonical replacement. After the observer returns, the writer rechecks staged
+handle/path/anchor identity, the old target pin and revision, and parent identity.
+The default writer API retains a no-op observer for existing callers.
+
+Readback accepts version 4 only with a valid previous snapshot and all existing
+scope, revision, native object, anchor and private-record checks. It still selects
+records by the current canonical inode; an unpublished staged object is not a
+completed update. Existing version-1/2/3 records remain supported. After writing,
+the map flow rechecks the held preparation record and observed canonical bytes,
+then verifies sources and the native receipt before returning success. No undo
+or old write permission is restored from the preparation JSON.
+
+The fresh-process map test first exits after preparation but before replacement:
+a new reader sees the old map and no completed History entry for the candidate.
+It then retries from another process, exits inside the native writer immediately
+after canonical persist (before receipt return and later sync/check steps), and
+reads the exact before/after History snapshots including human text in a new
+process.
+A native fault test also checks preparation persistence failure and staged-byte
+mutation: both reject before replacing the old canonical file. The test-only
+checkpoint hook is thread-local and absent from production builds.
+
+This closes the observed post-replacement/pre-observation process-exit gap.
+It does not establish power-loss durability, repair partial/corrupt private
+records, expose unpublished attempts, provide undo, or pass Windows/actual-model
+acceptance. Existing SIGKILL tests still cover physical preservation separately.
+
+Validation: map refresh tests passed 8 cases, the preparation failure/mutation
+regression passed, and the five-process pre/post-replacement scenario passed in
+0.34 seconds. Final Rust formatting and strict all-target Clippy passed; full
+Rust passed 2,685 library and 28 integration tests (41 ignored overall) with the
+library suite completing in 57.20 seconds. Frontend source/IPC contracts did not
+change, so frontend tests were not rerun. Logs:
+`/tmp/myco-map-prepared-{restart,fault,both-boundaries,final-clippy,final-full}.log`.
 
 ## November 11: process-kill evidence at native replacement boundaries
 
@@ -1080,13 +1121,13 @@ does not satisfy the model comparison or semantic acceptance gate.
    compiler remains partial. W1–W4 still need real model meaning checks and
    three repeated critical cases; mocked resolution tests do not pass those gates.
 3. G5 now has durable app-owned custody, revision/source-checked refresh,
-   manual/approved automatic flows, and latest before/after History. Next retain
-   an unambiguous association between the old object, staged object and refresh
-   attempt before canonical replacement; provide read-only recovery without
-   treating unconfirmed staged bytes as a completed update or restoring write
-   authority from public markers. Preserve existing identity/race checks and
-   distinguish pre-persist from post-persist interruption. Then complete safe
-   undo/full history and actual M1/M2 meaning and human-edit acceptance.
+   manual/approved automatic flows, latest before/after History, and pre-persist
+   preparation binding staged native identity to both snapshots. Next handle
+   incomplete/corrupt preparation records and expose unpublished attempts
+   separately from current-object history. Preserve identity/race checks and
+   distinguish pre-persist from post-persist interruption without restoring write
+   authority from public markers. Complete safe undo/full history and actual
+   M1/M2 meaning and human-edit acceptance.
 4. Finish the remaining native/installed and UI acceptance matrix. Browser mocks
    cannot grant native publication authority. Synthetic success fixtures verify
    only presentation; they do not prove a completed import. VoiceOver, 3G,
