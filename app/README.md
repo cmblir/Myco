@@ -88,9 +88,9 @@ together yourself:
   Current Qwen 4B activity answers still fail semantic checks for unrecorded
   outcomes and missing citations; review them against their sources. See the
   [verification report](docs/research/2026-10-07-recent-activity-verification.md).
-  Project grouping also still uses legacy folder-name keys: distinct repositories
-  with the same name can be combined. Identity migration and actual-model project
-  state acceptance remain open in the [current goal](docs/specs/2026-11-10-llm-wiki-goal.md).
+  Project grouping now separates recorded absolute folders with opaque keys.
+  Verified repository equivalence across folders and actual-model project-state
+  acceptance remain open in the [current goal](docs/specs/2026-11-10-llm-wiki-goal.md).
 - **A vault you own** — everything is plain markdown on disk. Open the
   folder in Finder, in Obsidian, in Vim — myco never locks your data.
 
@@ -129,11 +129,24 @@ scope or note does not carry the previous answer's topic or evidence into the ne
 question. The current document-specific control is the selected-note scope; a
 general checked-document selector is not available in this build.
 
+Workstream facts v5 group source-recorded absolute working folders with opaque
+keys, rather than merging matching folder names. Ambiguous folders stay
+unassigned. Reconciliation rereads tracked immutable originals for the migration;
+it preserves existing project pages and name overrides. Differing retained pages
+show a refresh-pending notice. Different machines using the same path are not
+distinguished yet; verified equivalence between a repository's subdirectories or
+worktrees remains incomplete.
+
 New topic-map drafts use at most twelve selected member pages, bounded body
 excerpts, full relative-path citations and source revisions. Maps do not add
-unrelated retrieval context. Oversized, missing or changed sources leave the
-proposal pending for retry. Existing maps are preserved: native atomic source
-binding and automatic refresh of app-owned sections are still incomplete.
+unrelated retrieval context. Native reads accept at most 128KiB per member and
+retain file/directory identities under the original vault opening and organization
+role. Source checks and new-map publication share the cooperating-writer lock;
+external edits are checked before and after writing, not atomically excluded.
+Oversized, missing or changed sources leave the proposal pending. A failure after
+writing retains the output for manual recovery without publication/undo authority.
+Existing maps are preserved: durable ownership and automatic refresh of app-owned
+sections are still incomplete. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
 ### Writing

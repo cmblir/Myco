@@ -181,6 +181,11 @@ and guided remaining-work questions use the selected built-in local chat model t
 original evidence, including historical cutoffs and later task changes. Missing
 records remain visible as incomplete coverage. The model is never changed
 automatically; these answers still do not independently verify completion.
+Project grouping distinguishes recorded absolute working folders, including
+folders with the same name. Ambiguous folders remain unassigned. This does not
+yet identify different machines using the same path or unify verified subfolders
+or worktrees of one repository. Existing project
+page text is preserved, with a refresh-pending notice when newer facts differ.
 
 Returning-device Home keeps a compact introduction so recent notes are easier
 to reach. Ask examples sit beside the composer and fill the draft without sending it.
@@ -253,7 +258,9 @@ your stated role and interests.
 
 New topic-map drafts use bounded excerpts from the selected member pages with
 full-path citations and source revisions. They require review: citations do not
-verify every explanation. Existing maps are preserved pending a safe refresh;
+verify every explanation. Native source checks reject detected changes before
+publication; changes detected after writing retain the output for manual recovery
+without confirming publication. Existing maps are preserved pending a safe refresh;
 automatic updates that preserve human annotations are not yet available.
 
 **Run log & undo** — distill and ingest runs are listed newest-first with what

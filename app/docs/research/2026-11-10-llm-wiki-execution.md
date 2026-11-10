@@ -13,8 +13,8 @@ requirements and must not be mistaken for passing results.
 | G1 Ingest drafts | Implemented; installed restart pending | Vault-scoped durable title/body, revision-aware completion and storage recovery. Unit and synthetic browser regressions passed. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
-| G4 project state | Implemented route; acceptance incomplete | Project candidates now enter original-bound resolution with explicit paths, period and coverage. W1–W4 actual-model meaning remains unverified. A reproduced basename-key collision still merges distinct repositories and must be fixed. |
-| G5 maps | Partial; code checks passed | Bounded member excerpts/revisions, explicit supplied-only generation, isolated cluster data and full-path citations added. Native atomic source binding, semantic review and owned-section refresh remain. |
+| G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
+| G5 maps | Native new-map binding; refresh incomplete | Bounded native source handles and exact opening/role grants now accompany publication under the cooperating-writer lock. Semantic review, durable ownership and refresh remain; external editors are not atomically excluded. |
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
@@ -37,6 +37,16 @@ requirements and must not be mistaken for passing results.
   "If the selected executable cannot run, report its exact error and stop."
   Its no-fallback instruction was followed. Independent native model and browser
   mock checks continued; neither substitutes for installed UI acceptance.
+- During native test-binary discovery, a worker mistakenly ran
+  `target/debug/deps/myco-a039cf6e69b34e01 --list | rg 'map_sources|generic_map_publication'`
+  and the corresponding `myco-f8cdebeaf4f0db08` command. These were app entry points,
+  not library test runners. The session was stopped with Ctrl-C, exit 130.
+  Output twice reported `settings unavailable: refusing to resolve the real
+  app-data directory from a test binary: set MYCO_DATA_DIR; using unauthorised
+  local defaults for display only`. Source inspection confirms that the `deps/`
+  guard rejects platform data-directory resolution before creation/migration.
+  No live vault or app-data inspection was performed to claim a complete
+  before/after comparison. Subsequent commands use the exact `myco_lib` runner.
 
 ## Verification receipts
 
@@ -173,6 +183,48 @@ This is progress past the original structure error, not positive source
 compilation or semantic/production/installed acceptance. There was no favorable
 retry, changed fixture or relaxed validator.
 
+## Frozen request comparison: candidate rejected
+
+The [request-only A/B receipt](2026-11-10-request-prompt-comparison.json), SHA-256
+`511e729a7be6ac653cd35128cf9be0a214cecb8edd2347ce796d36ef52d36454`,
+retains all eight JSON records and the failure backtrace. The harness binds the
+unchanged v9 receipt, packet 1, model artifact, grammar, sampler and 768/4096
+output/context budgets. The copied test executable and three QA source hashes
+were captured before execution; concurrent workstream/map changes were present,
+and no complete prebuild tree hash was captured.
+
+Two actual offline extraction calls ran, once per arm. The original was
+`Please request the synthetic report.` The baseline again returned no claims.
+The candidate added concrete-request guidance and produced
+`Request a synthetic report`, request/requested, unknown time and no verification.
+It bound the original citation, but assigned the requested action to
+user/speaker. The frozen label requires an unknown performer: the original
+identifies the requester without naming who performs the requested action.
+The narrow action-text comparison also differs in its article; the actor error
+independently prevents acceptance. The coordinator and a separate worker reviewed both raw outputs
+against this original; no independent model review ran.
+
+The test **failed**, exit 101, at `request_prompt_qa_model_tests.rs:125`:
+
+```text
+retain both outputs: request candidate failed native binding or the narrow frozen expectation; inspect raw output for meaning
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: myco_lib::session_compile::request_prompt_qa::model_tests::cached_model_compares_frozen_request_prompts_once_per_arm
+             at ./src/session_compile/request_prompt_qa_model_tests.rs:125:5
+test result: FAILED. 0 passed; 1 failed
+```
+
+Both outputs passed structural source binding; that did not establish correct
+meaning. Test time was 310.03s, process wall time 313.30s and maximum resident
+set size 3,069,313,024 bytes, including debug hashing and model preparation.
+These are not release performance figures. The candidate was not promoted,
+the gold labels and validator were not relaxed, and no favorable retry was run.
+Standing-rule controls passed only model-free checks. Actual negative controls,
+full-source review, whole-compiler completion and repeated semantic acceptance
+remain required before a later extraction change can be accepted.
+
 ## Changes and remaining verification
 
 - G1 adds `ingestDraftStore` with per-vault durable records and a revision token.
@@ -196,7 +248,8 @@ retry, changed fixture or relaxed validator.
   Malformed/ambiguous discovery, missing projections and changed facts/ledger
   cannot silently become an unrestricted search. Incomplete candidates stay
   visible. These contracts passed synthetic-generation tests; actual W1–W4 meaning
-  and the confirmed repository-key collision remain incomplete. The route covers
+  remains incomplete. The v5 identity repair below addresses the reproduced
+  basename collisions, with repository equivalence still open. The route covers
   recognized progress and guided remaining-work questions; general free-text
   remaining-work intent recognition is not complete.
 - G5 supplies at most twelve member excerpts with full-file SHA-256 revisions,
@@ -204,11 +257,12 @@ retry, changed fixture or relaxed validator.
   path receives no unrelated retrieval context for maps; other organization
   calls retain their existing retrieval behavior. Full relative-path citations
   prevent same-stem pages from redirecting a selected source. The bounded cluster
-  label stays in the untrusted JSON packet, outside the static system prompt. A frontend reread
-  rejects detected source changes, but is not atomic with native publication.
+  label stays in the untrusted JSON packet, outside the static system prompt.
+  Native bounded capture and publication checks now replace the separate
+  frontend reread; their transaction and external-editor limits are described below.
   Existing maps remain pending rather than being overwritten. Unknown wikilinks
   are still stripped to plain text; factual assertions are not yet semantically
-  verified, and source reads are not natively bounded before IPC returns.
+  verified.
 - G6 raises `ink-3`/`ink-4` neutral-theme contrast and labels Reader/Settings loading
   by route. Returning-device Home is compact; Ask examples fill/focus the draft
   without submission. Successful imports prioritize actual changed-note review,
@@ -285,34 +339,128 @@ above remain the applicable checks. The full v9 model case still failed with a
 safe partial result; no unit result substitutes for that missing quality gate.
 Logs: `/tmp/myco-goal-boundary-final-*`.
 
+## Recorded project identities and native map publication
+
+Workstream facts advance to v5. The new opaque identity hashes the complete
+recorded absolute cwd and its path kind, preserving home/drive roots, case and
+Unicode. Different or invalid cwd declarations stay unassigned. Facts migration
+rereads tracked immutable originals even when their ledger fingerprints have not
+changed; it preserves parent/subagent lineage without overriding a child's own
+folder. A copied parent report remains stored as provenance but becomes a report
+candidate only when an imported root proves the same project identity. An absent
+or differently assigned parent cannot supply that project's reported outcome.
+
+The actual importer regression exposed a gap beyond the initial synthetic
+sidecar fixture: Codex `session_meta` was not retained by the admitted message
+sidecar. New Codex admissions now preserve every cwd declaration in existing
+session provenance, including conflicting declarations. Reimporting an older
+source can therefore create one new normalized immutable revision; existing raw
+bytes are preserved and subsequent identical imports use normal deduplication.
+Old originals without this metadata retain the existing vendor lookup/unknown
+fallback; no historical cwd is invented. Full cwd values are not copied into
+public workstream facts.
+
+Legacy name aliases are non-authoritative and adopted only when all recorded
+members resolve to one new identity. Missing/ambiguous legacy members continue
+to prevent adoption on later passes; the user's override file is never rewritten.
+Every existing project page is preserved. Only absent v5 pages are created;
+differing retained pages have a localized refresh-pending notice. Public markers
+or editable old facts do not grant overwrite authority. Exact cwd grouping is an
+intermediate repair, not proof of repository/device identity or equivalence across
+subdirectories or worktrees. Different imported machines using the same recorded
+path are not distinguished yet. Native workstream tests passed 43 cases with one live-vault dry-run
+test intentionally ignored; the scoped frontend group passed 366 tests.
+
+Maps now capture at most twelve 128KiB UTF-8 members through a native, exact
+opening/organization-role grant. Descriptor-relative no-follow reads retain root,
+parent and file identity; revision/hash and before/after read checks reject
+replacement, mutation and oversize sources before full content crosses IPC.
+Normal private compiler hardlinks remain readable; read custody never grants
+write or undo authority. The registry holds at most eight grants, with at most
+25 descriptors per grant. Normal completion, failure and late responses release
+the original grant. If an IPC response itself is lost, a bounded grant can remain
+until release, a new opening's capture or process exit; no expiry was added.
+
+New-map publication requires that native grant and shares the cooperating-writer
+lock with source checks. Generic Map publication and existing-map updates are
+rejected. Source checks run before preparation, immediately before writing and
+after persistence; the exact written output is checked too. Post-persist failure
+retains the output and private receipt in Prepared state, without ordinary retry,
+manifest or undo authority. A published retry rechecks sources and output identity.
+External editors are not atomically excluded by this application lock.
+
+Cross-review caught an overly broad initial binding: one distill run shares an
+operation ID across several maps, each with its own source grant. A regression
+failed before binding was narrowed to origin + operation + target. Different
+targets now retain independent grants while same-target grant replacement is
+rejected; both maps validate and undo under their shared manifest. The final
+publication/source/command groups passed 38 tests, and the scoped frontend group
+passed 221. These are native filesystem and synthetic generation contracts, not
+actual model map quality or installed acceptance. Windows remains fail-closed;
+durable ownership, restart recovery and existing-map refresh remain unfinished.
+
+## Integrated verification of the identity and map slices
+
+The final results below cover the source files committed as `a3ca4fb5`
+(including `d35e3a66` and `5a080748`). Only documentation changed afterward.
+
+| Gate | Result |
+| --- | --- |
+| `npx vitest run` | 395 files / 6,407 tests passed, 93.11s. |
+| Frontend lint / TypeScript / production build | Passed; the same two existing `notchDriver.ts` hook warnings and `uiStore` import warning remain. Vite took 23.26s. Final test-fixture-only changes also passed scoped ESLint and `tsc --noEmit`; production sources were unchanged. |
+| `cargo fmt --all --check` | Passed on the final native sources. |
+| `cargo clippy --locked --offline --all-targets -- -D warnings`, with and without `native-index-probe` | Both passed. |
+| `RUST_BACKTRACE=1 cargo test --locked --offline -- --test-threads=2` | 2,653 library + 28 integration tests passed; 38 ignored across targets. Library time 76.26s. |
+| `RUST_BACKTRACE=1 cargo test --locked --offline --features native-index-probe --lib -- --test-threads=2` | 3,099 passed, 56 ignored, 78.80s. This overlaps the default library suite. |
+| Request-only actual-model comparison | Failed, exit 101; both outputs and the backtrace are retained above. The opt-in failure is not counted as a passing model gate. |
+
+The first full frontend attempt failed three tests because existing native-boundary
+fixtures lacked the new source API. The prompt-head test dynamically calls the
+actual map sender; its assertion was retained and strengthened with explicit
+capture, send and release checks. The other two cases still check localized
+missing-model errors and a vault change during generation. No assertion was
+removed or skipped. A new Rust `filter_next` lint was corrected with equivalent
+`rfind` syntax. The first full native run then found one old integration fixture:
+
+```text
+commands::import_admission::tests::native_and_mcp_imports_publish_workstream_facts_and_pages
+panicked at src/commands_import_admission_tests.rs:73:9:
+assertion `left == right` failed
+  left: String("p5-20c92dae5359d8f20be4ace745aa296e1c525c1b278e0af0be303683977a45eb")
+ right: "alpha"
+test result: FAILED. 2652 passed; 1 failed; 34 ignored
+```
+
+That attempt did not enable a Rust backtrace. The fixture now checks the exact
+v5 keys, recorded-source metadata and page paths while retaining both native/MCP
+import, file-existence, marker and page-type assertions. Its 11-test group and
+the final full suites passed with `RUST_BACKTRACE=1`. Unix-only test helpers are
+conditionally compiled; this is not Windows execution evidence. A transient
+process-spawn resource rejection was retried after existing jobs finished; no
+successful check was inferred from that rejected invocation. Logs are under
+`/tmp/myco-goal-identity-map-final-*`; initial failures remain alongside reruns.
+
 ## Next executable slices
 
-1. Repair confirmed project identity collisions before accepting G4. The actual
-   `project_key`/`thread_key` functions, extracted with existing normalization and
-   run on synthetic paths, collapse `projects/Atlas` and `work/Atlas`, distinct
-   home/drive roots, case-sensitive `Atlas`/`atlas`, and independently named
-   `Atlas-worktree-*` directories to `atlas`. Facts retain no full cwd or opaque
-   repository identity, and unchanged fingerprints skip rereading. Separate
-   display names from opaque source-provenance identity, version/rebuild facts
-   from immutable originals, and preserve parent/subagent lineage. Do not infer
-   repository equivalence from a basename or worktree suffix. Preserve existing
-   project pages and name overrides; ambiguous old names require review. The
-   existing marker-only project-page writer is not sufficient authority to
-   overwrite a human annotation during migration.
-2. Diagnose the request extraction omission retained by the full v9 witness.
-   The structure correction passed its stage, but native finalization remained
-   partial. Freeze another input-bound comparison
-   before changing their prompts. W1–W4 still need real model meaning checks and
+1. Complete G4 repository equivalence without reinstating basename/worktree-name
+   guesses. The v5 repair preserves complete recorded cwd identity, including
+   different home/drive roots and case, but exact cwd alone cannot prove that
+   subdirectories or worktrees belong to one historical repository or distinguish
+   different machines using the same path. Missing
+   historical cwd cannot be invented from today's filesystem. Retain ambiguous
+   cases for confirmation and establish private page-refresh custody before
+   replacing existing project pages.
+2. Diagnose requester/performer conflation after the rejected request-only
+   comparison. Keep its frozen source and failed outputs; add actual standing-rule
+   and other-request controls before promoting a later candidate. The whole v9
+   compiler remains partial. W1–W4 still need real model meaning checks and
    three repeated critical cases; mocked resolution tests do not pass those gates.
-3. G5's next implementation slice is native bounded map-source capture/check/
-   release consumed by `draftMap`: at most twelve 128KiB sources, exact native
-   opening/organization role, retained file and directory identity, and bounded
-   UTF-8 reads. Keep its read-only evidence capability separate from write/undo
-   authority; normal compiler files can have private hardlink anchors. A separate
-   check followed by publish is still non-atomic. Follow with source revalidation
-   and target CAS in one writer operation, durable app-owned section custody,
-   and update prior images in manifest/recovery. Preserve human bytes and reject
-   ambiguous ownership; frontmatter hashes/markers are not native authority.
+3. G5 now has bounded native capture/check/release and source revalidation during
+   new-map publication. Next establish durable app-owned section custody and
+   update prior images in manifest/recovery, with source/target revalidation and
+   restart recovery. Preserve human bytes and reject ambiguous ownership;
+   frontmatter hashes/markers are not native authority. Complete actual M1/M2
+   meaning and human-edit acceptance; a new-map safety test does not pass refresh.
 4. Finish the remaining native/installed and UI acceptance matrix. Browser mocks
    cannot grant native publication authority. Synthetic success fixtures verify
    only presentation; they do not prove a completed import. VoiceOver, 3G,
@@ -340,3 +488,6 @@ independent slices continue. No commits have been pushed or merged to main.
 | `dd0f876a` | Refresh derived project candidates on retry/follow-up while retaining explicit restrictions |
 | `76b9d043` | Hide stale-opening import report links; real-page SSR regressions |
 | `419ff64a` | Attribute local import results to confirmed writes, excluding concurrent human edits |
+| `d35e3a66` | Frozen request-only actual-model comparison; rejected candidate and raw outputs retained |
+| `5a080748` | v5 recorded-folder identities, admitted Codex cwd provenance, copied-report project boundary and human-page preservation |
+| `a3ca4fb5` | Native bounded map-source grants and checked new-map publication, including shared-manifest and cleanup contracts |
