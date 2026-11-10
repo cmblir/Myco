@@ -424,7 +424,7 @@ fn publish_locked(
             return Err("publication bytes persisted but capability registration failed; output preserved for manual recovery".into());
         }
         let map_creation_undo = if let Some(store) = creation_store {
-            let permit = store.record(&written, content).map_err(|error| format!("publication bytes persisted but map custody record failed: {error}; output retained for manual recovery"))?;
+            let permit = store.record(guard, &written, content).map_err(|error| format!("publication bytes persisted but map custody record failed: {error}; output retained for manual recovery"))?;
             verify_sources().map_err(|error| format!("publication bytes persisted but final map source verification failed: {error}; output retained for manual recovery"))?;
             Some(permit)
         } else {

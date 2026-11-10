@@ -61,6 +61,19 @@ pub(crate) struct CompilerPriorFilePin {
 }
 
 #[cfg(unix)]
+impl CompilerPriorFilePin {
+    /// Bind the held object, not an earlier pathname observation, to issuance.
+    pub(crate) fn verify_issued_object(&self, device: u64, inode: u64) -> Result<(), String> {
+        use std::os::unix::fs::MetadataExt;
+        let held = verify_pin(self)?;
+        if (held.dev(), held.ino()) != (device, inode) {
+            return Err("held compiler object differs from recorded issuance".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
 #[derive(Debug)]
 pub(super) struct CompilerAnchorLease {
     directory: CompilerPinDirectory,

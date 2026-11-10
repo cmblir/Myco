@@ -154,6 +154,9 @@ records are not yet reopened into update authority; automatic refresh and custod
 cleanup remain incomplete.
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.
+Creation observations also validate their schema, vault/target scope, baseline
+revision and retained file object. Reading a baseline and current human-edited
+text does not restore an update or deletion permit.
 Live undo can remove an unchanged map created in that opening; human edits block
 removal. The private baseline and file anchor remain retained after undo.
 After confirmed undo through History or Settings, drafting the topic again starts

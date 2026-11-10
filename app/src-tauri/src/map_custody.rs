@@ -109,6 +109,7 @@ mod platform {
 
         pub(crate) fn record(
             &self,
+            guard: &MutexGuard<'_, ()>,
             written: &RecordedWriteReceipt,
             content: &str,
         ) -> Result<super::MapCreationUndo, String> {
@@ -144,12 +145,22 @@ mod platform {
                 .and_then(|()| file.sync_all())
                 .map_err(|e| format!("sync map custody record: {e}"))?;
             self.directory.sync()?;
-            crate::map_custody_record::verify_written_record(
+            crate::map_custody_record::verify_held_record(
                 &self.directory,
                 &format!("{}.json", self.key),
                 &file,
                 &bytes,
             )?;
+            let observation = crate::map_creation_observation::read_creation(
+                &self.directory,
+                &format!("{}.json", self.key),
+                Path::new(&self.scope.vault),
+                &self.scope.path,
+                guard,
+            )?;
+            if observation.baseline != content || observation.current != content {
+                return Err("map creation observation differs from native output".into());
+            }
             crate::vault::verify_recorded_file_unlocked(written)?;
             Ok(super::MapCreationUndo {
                 receipt: written.clone(),

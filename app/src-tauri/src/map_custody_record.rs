@@ -98,9 +98,9 @@ fn read_at(
     Ok((file, bytes))
 }
 
-/// Compare persisted bytes and object identity to this live writer, never a
-/// caller-supplied serialized file identity or a record from another generation.
-pub(crate) fn verify_written_record(
+/// Compare persisted bytes and object identity to a live held record (including
+/// its original writer), never a caller-supplied serialized file identity.
+pub(crate) fn verify_held_record(
     directory: &CompilerPinDirectory,
     leaf: &str,
     written: &File,

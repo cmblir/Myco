@@ -613,6 +613,40 @@ formatting/diff checks passed. Final logs are
 frontend runtime changed, so its previous gates were not rerun. No map-specific
 process-restart acceptance, model inference or Windows run was performed.
 
+The 2026-11-11 continuation adds `map_creation_observation.rs`, using the bounded
+reader to validate a known private creation record. It requires the configured
+app-data store outside the vault, a strict version/state/schema, matching native
+vault/target scope and generation filename, a baseline digest and generated-body
+format, and the recorded file object behind the retained anchor. It returns
+baseline/current text only, allowing in-place human annotations to be read without
+changing them. It never returns an old write receipt, an update permit or a
+creation-undo permit. Native creation now invokes the same reader before issuing
+its fresh live permit and additionally requires both texts to equal its new output.
+Schema errors do not echo private record values.
+
+A new adversarial test reproduced a named-anchor/open race: replacing both the
+canonical map and anchor with an identical new pair between the preliminary
+metadata check and reopen was accepted. `CompilerPriorFilePin::verify_issued_object`
+now compares the held object with the recorded device/inode after the bounded
+read, rather than trusting the earlier pathname observation. The red log is
+`/tmp/myco-map-observation-race-red.log`; four observation tests pass in
+`/tmp/myco-map-observation-race-green.log`. The tests also cover closed writer/store
+handles, preserved annotations, malformed/schema/version/state/scope/revision/
+anchor/issued-object metadata, another vault or app-data directory, and same-byte
+target replacement. No generic compiler or deletion safeguard was relaxed.
+
+Known-leaf readback is now validated, but automatic record discovery after restart,
+section-level edit conflict detection, source-bound merge/publication, and an
+update-only authority remain unfinished. Handle-close tests are not a separate
+process-restart or installed-app acceptance run; existing maps still remain pending.
+
+Final validation for this slice: `cargo fmt --all --check` and strict all-target
+Clippy passed (25.95s). The full Rust test log records 2,666 library and 28
+integration tests passed, with 38 ignored and no failures
+(`/tmp/myco-map-observation-final-full.log`). Frontend, actual-model, Windows and
+installed-app checks were not rerun for this native-only slice. The README now
+describes validated creation observations without claiming restored update rights.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

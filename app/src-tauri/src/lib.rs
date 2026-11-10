@@ -41,6 +41,8 @@ pub mod local_synthesis;
 pub mod local_transform;
 pub mod machine_session;
 mod map_content;
+#[cfg(unix)]
+mod map_creation_observation;
 mod map_custody;
 #[cfg(unix)]
 mod map_custody_record;

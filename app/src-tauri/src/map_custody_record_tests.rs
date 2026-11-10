@@ -40,7 +40,7 @@ impl Fixture {
 fn record_bytes_survive_writer_close_without_restoring_any_authority() {
     let fixture = Fixture::new();
     let written = fixture.write(b"synthetic baseline");
-    verify_written_record(
+    verify_held_record(
         &fixture.directory,
         &fixture.leaf,
         &written,
@@ -58,14 +58,14 @@ fn rejects_same_bytes_record_replacement_and_changed_readback() {
     let written = fixture.write(b"synthetic baseline");
     std::fs::rename(fixture.path(), fixture.path().with_extension("old")).unwrap();
     let replacement = fixture.write(b"synthetic baseline");
-    assert!(verify_written_record(
+    assert!(verify_held_record(
         &fixture.directory,
         &fixture.leaf,
         &written,
         b"synthetic baseline"
     )
     .is_err());
-    assert!(verify_written_record(
+    assert!(verify_held_record(
         &fixture.directory,
         &fixture.leaf,
         &replacement,
