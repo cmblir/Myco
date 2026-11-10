@@ -168,7 +168,7 @@ Re-runs are no-ops: check ledger → skip; this makes re-dropping an entire expo
 
 ### Claude Code — `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl`
 
-- Append-only, **one JSON object per line**. Encoded dir = absolute cwd with `/` and `.` → `-` (e.g. `-Users-yoo-project-myco`). Line `type` ∈ `{user, assistant, system, summary, file-history-snapshot, attachment, mode, last-prompt, ai-title, queue-operation}`.
+- Append-only, **one JSON object per line**. Encoded dir = absolute cwd with `/` and `.` → `-` (e.g. `-Users-you-project-myco`). Line `type` ∈ `{user, assistant, system, summary, file-history-snapshot, attachment, mode, last-prompt, ai-title, queue-operation}`.
 - **Envelope (user/assistant):** `{type, uuid, parentUuid, sessionId, cwd, gitBranch, version, timestamp (ISO-8601), userType, isSidechain, isMeta}`.
 - **user line:** `message.content` is a **string** (plain prompt) **or array** of blocks (`{type:"tool_result", tool_use_id, content}`). **assistant line:** `message:{id, role, model (e.g. "claude-opus-4-8"), content:[blocks], stop_reason, usage}`; blocks: `{type:"text", text}`, `{type:"thinking", thinking}`, `{type:"tool_use", id, name, input}`.
 - **Clean transcript:** keep `type ∈ {user, assistant}`; user → `content` if string else join `tool_result`/text; assistant → join `content[]` where `type == "text"` (drop `thinking`/`tool_use`). **Skip `isSidechain == true` and `isMeta == true`** (sub-agent/internal noise). Filter user strings wrapped in `<local-command-caveat>`/`<command-name>` (slash-command injections).

@@ -5,7 +5,7 @@ output of the task that gates the whole Phase A plan: it verifies the one
 invariant no file move may violate, and measures the vault data later tasks'
 thresholds are supposed to come from.
 
-Vault measured: **`/Users/o/Documents/Memex`** (the real, active vault —
+Vault measured: **`~/Documents/Memex`** (the real, active vault —
 `~/Library/Application Support/dev.cmblir.myco/active-vault`), via the on-disk
 index at `~/Library/Application Support/dev.cmblir.myco/embeddings/26c7c342288c265e.mxv`
 (confirmed to be this vault's index: `VectorStore::path_for(vault_root)` hashes

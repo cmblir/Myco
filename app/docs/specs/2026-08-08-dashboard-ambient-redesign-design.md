@@ -12,7 +12,7 @@ The Overview page is a landing page wearing a dashboard's name.
   myco. The first thing they see every day carries no information about their
   own vault.
 - The "recent" section reads git. The real vault
-  (`/Users/o/Documents/Memex`) is not a git repository — 0 commits — so that
+  (`~/Documents/Memex`) is not a git repository — 0 commits — so that
   section renders `No git history yet.` permanently. Its "more →" link routes
   to the History page, which reads `ingest-reports/`, not git: the link and
   the list it sits under show different data.
@@ -225,7 +225,7 @@ in the background; transitions earn theirs by getting out of the way.
 
 ### Measured
 
-**`fileMtimes` walk cost.** Real vault, `/Users/o/Documents/Memex`, via a
+**`fileMtimes` walk cost.** Real vault, `~/Documents/Memex`, via a
 throwaway `cargo run --release --example` calling `vault::file_mtimes`
 directly:
 

@@ -152,13 +152,13 @@ No export step — sessions are already on your disk as append-only JSONL:
 ```
 
 `<encoded-project>` is the project's absolute path with `/` and `.` replaced by
-`-`, so `/Users/yoo/project/myco` lives at
-`~/.claude/projects/-Users-yoo-project-myco/`. Each `<sessionId>.jsonl` (a
+`-`, so `/Users/you/project/myco` lives at
+`~/.claude/projects/-Users-you-project-myco/`. Each `<sessionId>.jsonl` (a
 UUID) is one session.
 
 ```bash
 ls -1 ~/.claude/projects/                                  # your projects
-ls -lt ~/.claude/projects/-Users-yoo-project-myco/        # sessions, newest first
+ls -lt ~/.claude/projects/-Users-you-project-myco/        # sessions, newest first
 ```
 
 ### Codex CLI sessions
