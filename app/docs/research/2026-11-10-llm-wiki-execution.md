@@ -442,6 +442,16 @@ successful check was inferred from that rejected invocation. Logs are under
 
 ## Next executable slices
 
+After `04fce3c6`, the worktree was rechecked clean and the previous turn classified
+as progress: it changed code and retained a failed actual-model observation.
+Seven supplemental request-extraction originals and gold labels are now frozen in
+[the control artifact](2026-11-10-request-extraction-controls.json). A local Python
+integrity check verified seven unique IDs, four positive/three negative cases and
+every original SHA-256. This is fixture integrity only: no additional inference,
+new product prompt or model acceptance is claimed. The next comparison must
+consume these controls through fresh native SourceSets, including the negative
+cases, before any candidate promotion.
+
 1. Complete G4 repository equivalence without reinstating basename/worktree-name
    guesses. The v5 repair preserves complete recorded cwd identity, including
    different home/drive roots and case, but exact cwd alone cannot prove that

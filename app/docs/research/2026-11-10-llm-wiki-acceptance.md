@@ -45,6 +45,17 @@ existing tests, and associate their command/results with these IDs in the record
 
 ## Evidence requirements
 
+The [request-extraction controls](2026-11-10-request-extraction-controls.json)
+freeze seven development originals before another prompt candidate: unspecified
+performer, explicitly named assistant, assistant report, assistant plan, standing
+rule, question and adversarial standing policy. Positive labels distinguish the
+requester from the requested performer and reported completion from verification.
+The three negatives contain no concrete task activity. These are gold labels,
+not generated results. Each future attempt must construct fresh native span
+bindings, retain every output, review meaning separately from exact wording,
+and meet the existing three-repeat and whole-compiler gates. The earlier failed
+comparison and its labels remain unchanged.
+
 Each result records case ID, code revision and dirty state, test or runner command,
 fixture version, OS/runtime, actual outcome, and evidence level: code, synthetic
 browser, native transport, actual model, or installed app. Missing levels remain
