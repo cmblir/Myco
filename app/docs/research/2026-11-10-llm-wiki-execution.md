@@ -14,9 +14,40 @@ requirements and must not be mistaken for passing results.
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
-| G5 maps | Native new-map binding; refresh incomplete | Bounded native source handles and exact opening/role grants now accompany publication under the cooperating-writer lock. Semantic review, durable ownership and refresh remain; external editors are not atomically excluded. |
+| G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Early-interruption association/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: process-kill evidence at native replacement boundaries
+
+The previous source-check interruption case ran after native writing returned.
+New controls now stop the writer process at its real `Pinned` and `Persisted`
+checkpoints, then the parent sends SIGKILL and verifies that signal status. No
+receipt or tempfile destructor runs. A different fresh process inspects bytes,
+inode identities and link counts afterward. All fixtures, including `raw/`, are
+synthetic and isolated; these tests do not touch an owner vault.
+
+Observed in both cases: immutable raw content and the human annotation survived,
+and distinct private anchors retained both old and new content. Before canonical
+replacement the old canonical object remained (two links); immediately after
+replacement the new object was canonical (two links) and the old anchor remained
+(one link). The staged candidate's anchor had two links at both checkpoints.
+The target regression passed both child-kill/inspection sequences in 0.24 seconds.
+
+This confirms process-crash byte preservation at two specific boundaries. It is
+not power-loss/fsync durability, Windows acceptance, a map manifest association,
+an issued recovery/undo permit or an app-level successful update. Current map
+observation discovery still requires a record matching the current file object,
+so an interrupted writer can preserve bytes without making History readable.
+The next recovery implementation must retain that association before publication
+and expose uncertain attempts separately, without accepting replaceable anchor
+names alone as ownership. Updated the stale G5 package/next-action descriptions
+below so already implemented custody and refresh are no longer listed as new work.
+Validation: Rust formatting and strict all-target Clippy passed; the full suite
+passed 2,683 library and 28 integration tests (41 ignored overall, including the
+new child-only entry point invoked by the parent regression). Logs:
+`/tmp/myco-pin-process-kill-{target,clippy,full}.log`. No production behavior or
+README usage changed in this test-only slice; frontend checks were not rerun.
 
 ## November 11: retain observations across post-write source failure
 
@@ -1048,12 +1079,14 @@ does not satisfy the model comparison or semantic acceptance gate.
    and other-request controls before promoting a later candidate. The whole v9
    compiler remains partial. W1–W4 still need real model meaning checks and
    three repeated critical cases; mocked resolution tests do not pass those gates.
-3. G5 now has bounded native capture/check/release and source revalidation during
-   new-map publication. Next establish durable app-owned section custody and
-   update prior images in manifest/recovery, with source/target revalidation and
-   restart recovery. Preserve human bytes and reject ambiguous ownership;
-   frontmatter hashes/markers are not native authority. Complete actual M1/M2
-   meaning and human-edit acceptance; a new-map safety test does not pass refresh.
+3. G5 now has durable app-owned custody, revision/source-checked refresh,
+   manual/approved automatic flows, and latest before/after History. Next retain
+   an unambiguous association between the old object, staged object and refresh
+   attempt before canonical replacement; provide read-only recovery without
+   treating unconfirmed staged bytes as a completed update or restoring write
+   authority from public markers. Preserve existing identity/race checks and
+   distinguish pre-persist from post-persist interruption. Then complete safe
+   undo/full history and actual M1/M2 meaning and human-edit acceptance.
 4. Finish the remaining native/installed and UI acceptance matrix. Browser mocks
    cannot grant native publication authority. Synthetic success fixtures verify
    only presentation; they do not prove a completed import. VoiceOver, 3G,
@@ -1084,3 +1117,9 @@ independent slices continue. No commits have been pushed or merged to main.
 | `d35e3a66` | Frozen request-only actual-model comparison; rejected candidate and raw outputs retained |
 | `5a080748` | v5 recorded-folder identities, admitted Codex cwd provenance, copied-report project boundary and human-page preservation |
 | `a3ca4fb5` | Native bounded map-source grants and checked new-map publication, including shared-manifest and cleanup contracts |
+| `732283a4` | Native source/revision-checked existing-map refresh |
+| `20b6632d` | Manual map-update diff review |
+| `68602d0e` | Approved automatic map refresh |
+| `802b79b2` | Version-3 before/after snapshots and read-only native history API |
+| `6ec17014` | Opening-bound latest map refresh History UI |
+| `6f28275b` | Preserve the observation before post-write source recheck |
