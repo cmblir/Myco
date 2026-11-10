@@ -8189,121 +8189,136 @@ mod tests {
 
     #[test]
     fn approved_admit_cluster_moves_files_back_to_inbox() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let quarantine = root.join("_inbox/quarantine");
-        std::fs::create_dir_all(&quarantine).unwrap();
-        write_quarantine_item(&quarantine, "a", vec![1.0, 0.0]);
-        write_quarantine_item(&quarantine, "b", vec![1.0, 0.0]);
+        crate::settings::test_support::with_isolated_data(
+            "approved_admit_cluster_moves_files_back_to_inbox",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                let quarantine = root.join("_inbox/quarantine");
+                std::fs::create_dir_all(&quarantine).unwrap();
+                write_quarantine_item(&quarantine, "a", vec![1.0, 0.0]);
+                write_quarantine_item(&quarantine, "b", vec![1.0, 0.0]);
 
-        let payload = serde_json::json!({
-            "files": ["_inbox/quarantine/a.md", "_inbox/quarantine/b.md"],
-        });
-        let rel = write_proposal(
-            root,
-            "admit-cluster",
-            "New topic forming: test",
-            "body",
-            &payload,
-        )
-        .unwrap();
+                let payload = serde_json::json!({
+                    "files": ["_inbox/quarantine/a.md", "_inbox/quarantine/b.md"],
+                });
+                let rel = write_proposal(
+                    root,
+                    "admit-cluster",
+                    "New topic forming: test",
+                    "body",
+                    &payload,
+                )
+                .unwrap();
 
-        // Simulate the frontend's pending -> approved flip (Task 9) before
-        // the apply command runs.
-        let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
-        std::fs::write(
-            root.join(&rel),
-            raw.replace("status: pending", "status: approved"),
-        )
-        .unwrap();
+                // Simulate the frontend's pending -> approved flip (Task 9) before
+                // the apply command runs.
+                let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
+                std::fs::write(
+                    root.join(&rel),
+                    raw.replace("status: pending", "status: approved"),
+                )
+                .unwrap();
 
-        let result = apply_proposal(root, &rel).unwrap();
-        assert_eq!(result, "moved 2, skipped 0 already-processed");
+                let result = apply_proposal(root, &rel).unwrap();
+                assert_eq!(result, "moved 2, skipped 0 already-processed");
 
-        assert!(root.join("_inbox/a.md").exists());
-        assert!(root.join("_inbox/b.md").exists());
-        assert!(!root.join("_inbox/quarantine/a.md").exists());
-        assert!(!root.join("_inbox/quarantine/a.verdict.json").exists());
-        assert!(!root.join("_inbox/quarantine/b.verdict.json").exists());
+                assert!(root.join("_inbox/a.md").exists());
+                assert!(root.join("_inbox/b.md").exists());
+                assert!(!root.join("_inbox/quarantine/a.md").exists());
+                assert!(!root.join("_inbox/quarantine/a.verdict.json").exists());
+                assert!(!root.join("_inbox/quarantine/b.verdict.json").exists());
 
-        let content = std::fs::read_to_string(root.join(&rel)).unwrap();
-        assert!(content.contains("status: done"));
-        assert!(
-            content.contains("action: admit-cluster"),
-            "rest of frontmatter is untouched"
+                let content = std::fs::read_to_string(root.join(&rel)).unwrap();
+                assert!(content.contains("status: done"));
+                assert!(
+                    content.contains("action: admit-cluster"),
+                    "rest of frontmatter is untouched"
+                );
+            },
         );
     }
 
     #[test]
     fn apply_proposal_resumes_after_a_half_applied_admit_cluster() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let quarantine = root.join("_inbox/quarantine");
-        std::fs::create_dir_all(&quarantine).unwrap();
-        write_quarantine_item(&quarantine, "a", vec![1.0, 0.0]);
-        write_quarantine_item(&quarantine, "b", vec![1.0, 0.0]);
+        crate::settings::test_support::with_isolated_data(
+            "apply_proposal_resumes_after_a_half_applied_admit_cluster",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                let quarantine = root.join("_inbox/quarantine");
+                std::fs::create_dir_all(&quarantine).unwrap();
+                write_quarantine_item(&quarantine, "a", vec![1.0, 0.0]);
+                write_quarantine_item(&quarantine, "b", vec![1.0, 0.0]);
 
-        let payload = serde_json::json!({
-            "files": ["_inbox/quarantine/a.md", "_inbox/quarantine/b.md"],
-        });
-        let rel = write_proposal(
-            root,
-            "admit-cluster",
-            "New topic forming: test",
-            "body",
-            &payload,
-        )
-        .unwrap();
+                let payload = serde_json::json!({
+                    "files": ["_inbox/quarantine/a.md", "_inbox/quarantine/b.md"],
+                });
+                let rel = write_proposal(
+                    root,
+                    "admit-cluster",
+                    "New topic forming: test",
+                    "body",
+                    &payload,
+                )
+                .unwrap();
 
-        // Simulate a prior `apply_proposal` call that finished `a` (moved +
-        // sidecar deleted, exactly what `apply_admit_cluster` itself does)
-        // but crashed before reaching `b` or the `status: done` flip.
-        std::fs::create_dir_all(root.join("_inbox")).unwrap();
-        std::fs::rename(quarantine.join("a.md"), root.join("_inbox/a.md")).unwrap();
-        std::fs::remove_file(quarantine.join("a.verdict.json")).unwrap();
+                // Simulate a prior `apply_proposal` call that finished `a` (moved +
+                // sidecar deleted, exactly what `apply_admit_cluster` itself does)
+                // but crashed before reaching `b` or the `status: done` flip.
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
+                std::fs::rename(quarantine.join("a.md"), root.join("_inbox/a.md")).unwrap();
+                std::fs::remove_file(quarantine.join("a.verdict.json")).unwrap();
 
-        let result = apply_proposal(root, &rel).unwrap();
-        assert_eq!(
-            result, "moved 1, skipped 1 already-processed",
-            "a.md is already gone from its payload path; only b.md is newly moved"
+                let result = apply_proposal(root, &rel).unwrap();
+                assert_eq!(
+                    result, "moved 1, skipped 1 already-processed",
+                    "a.md is already gone from its payload path; only b.md is newly moved"
+                );
+                assert!(root.join("_inbox/b.md").exists());
+                assert!(!quarantine.join("b.md").exists());
+                let content = std::fs::read_to_string(root.join(&rel)).unwrap();
+                assert!(content.contains("status: done"));
+
+                // Applying an already-fully-done proposal again must not error —
+                // every file is now "already processed".
+                let result2 = apply_proposal(root, &rel).unwrap();
+                assert_eq!(result2, "moved 0, skipped 2 already-processed");
+            },
         );
-        assert!(root.join("_inbox/b.md").exists());
-        assert!(!quarantine.join("b.md").exists());
-        let content = std::fs::read_to_string(root.join(&rel)).unwrap();
-        assert!(content.contains("status: done"));
-
-        // Applying an already-fully-done proposal again must not error —
-        // every file is now "already processed".
-        let result2 = apply_proposal(root, &rel).unwrap();
-        assert_eq!(result2, "moved 0, skipped 2 already-processed");
     }
 
     #[test]
     fn apply_proposal_rejects_payload_paths_outside_the_actions_own_directory() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        std::fs::create_dir_all(root.join("wiki")).unwrap();
-        std::fs::write(root.join("wiki/index.md"), "top page").unwrap();
+        crate::settings::test_support::with_isolated_data(
+            "apply_proposal_rejects_payload_paths_outside_the_actions_own_directory",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("wiki")).unwrap();
+                std::fs::write(root.join("wiki/index.md"), "top page").unwrap();
 
-        for kind in ["admit-cluster", "delete-batch"] {
-            let rel = write_proposal(
-                root,
-                kind,
-                &format!("{kind} escape attempt"),
-                "body",
-                &serde_json::json!({ "files": ["wiki/index.md"] }),
-            )
-            .unwrap();
-            let err = apply_proposal(root, &rel).unwrap_err();
-            assert!(
-                err.contains("wiki/index.md"),
-                "{kind}: unexpected error {err}"
-            );
-            assert!(
-                root.join("wiki/index.md").exists(),
-                "{kind} must not touch the file its payload was rejected on"
-            );
-        }
+                for kind in ["admit-cluster", "delete-batch"] {
+                    let rel = write_proposal(
+                        root,
+                        kind,
+                        &format!("{kind} escape attempt"),
+                        "body",
+                        &serde_json::json!({ "files": ["wiki/index.md"] }),
+                    )
+                    .unwrap();
+                    let err = apply_proposal(root, &rel).unwrap_err();
+                    assert!(
+                        err.contains("wiki/index.md"),
+                        "{kind}: unexpected error {err}"
+                    );
+                    assert!(
+                        root.join("wiki/index.md").exists(),
+                        "{kind} must not touch the file its payload was rejected on"
+                    );
+                }
+            },
+        );
     }
 
     /// Owner decision 2026-10-03 (B1): an `archive-batch` proposal an older
@@ -8311,27 +8326,32 @@ mod tests {
     /// raw/ stays put.
     #[test]
     fn an_old_archive_batch_proposal_is_retired_and_leaves_raw_alone() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        std::fs::create_dir_all(root.join("raw")).unwrap();
-        std::fs::write(root.join("raw/paper.md"), PROSE).unwrap();
-        let rel = write_proposal(
-            root,
-            "archive-batch",
-            "Archive raw/paper.md?",
-            "body",
-            &serde_json::json!({ "files": ["raw/paper.md"] }),
-        )
-        .unwrap();
-        assert!(apply_proposal(root, &rel).is_ok());
-        assert!(std::fs::read_to_string(root.join(&rel))
-            .unwrap()
-            .contains("status: done"));
-        assert_eq!(
-            std::fs::read_to_string(root.join("raw/paper.md")).unwrap(),
-            PROSE
+        crate::settings::test_support::with_isolated_data(
+            "an_old_archive_batch_proposal_is_retired_and_leaves_raw_alone",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("raw")).unwrap();
+                std::fs::write(root.join("raw/paper.md"), PROSE).unwrap();
+                let rel = write_proposal(
+                    root,
+                    "archive-batch",
+                    "Archive raw/paper.md?",
+                    "body",
+                    &serde_json::json!({ "files": ["raw/paper.md"] }),
+                )
+                .unwrap();
+                assert!(apply_proposal(root, &rel).is_ok());
+                assert!(std::fs::read_to_string(root.join(&rel))
+                    .unwrap()
+                    .contains("status: done"));
+                assert_eq!(
+                    std::fs::read_to_string(root.join("raw/paper.md")).unwrap(),
+                    PROSE
+                );
+                assert!(!root.join("raw/archive").exists());
+            },
         );
-        assert!(!root.join("raw/archive").exists());
     }
 
     /// Follow-up to B1: the next run marks every unresolved `archive-batch`
@@ -8421,30 +8441,35 @@ mod tests {
 
     #[test]
     fn delete_batch_applies_the_same_move_semantics_as_run() {
-        let dir = tempfile::tempdir().unwrap();
-        let root = dir.path();
-        let quarantine = root.join("_inbox/quarantine");
-        std::fs::create_dir_all(&quarantine).unwrap();
-        write_quarantine_item(&quarantine, "old", vec![1.0, 0.0]);
-        let delete_rel = write_proposal(
-            root,
-            "delete-batch",
-            "Delete expired quarantine item old.md?",
-            "body",
-            &serde_json::json!({ "files": ["_inbox/quarantine/old.md"] }),
-        )
-        .unwrap();
-        apply_proposal(root, &delete_rel).unwrap();
-        assert!(!quarantine.join("old.md").exists());
-        assert!(!quarantine.join("old.verdict.json").exists());
-        let slug = Path::new(&delete_rel)
-            .file_stem()
-            .unwrap()
-            .to_str()
-            .unwrap();
-        let trash_dir = root.join(".myco/trash").join(slug);
-        assert!(trash_dir.join("old.md").exists());
-        assert!(trash_dir.join("old.verdict.json").exists());
+        crate::settings::test_support::with_isolated_data(
+            "delete_batch_applies_the_same_move_semantics_as_run",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                let quarantine = root.join("_inbox/quarantine");
+                std::fs::create_dir_all(&quarantine).unwrap();
+                write_quarantine_item(&quarantine, "old", vec![1.0, 0.0]);
+                let delete_rel = write_proposal(
+                    root,
+                    "delete-batch",
+                    "Delete expired quarantine item old.md?",
+                    "body",
+                    &serde_json::json!({ "files": ["_inbox/quarantine/old.md"] }),
+                )
+                .unwrap();
+                apply_proposal(root, &delete_rel).unwrap();
+                assert!(!quarantine.join("old.md").exists());
+                assert!(!quarantine.join("old.verdict.json").exists());
+                let slug = Path::new(&delete_rel)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .unwrap();
+                let trash_dir = root.join(".myco/trash").join(slug);
+                assert!(trash_dir.join("old.md").exists());
+                assert!(trash_dir.join("old.verdict.json").exists());
+            },
+        );
     }
 
     #[test]
