@@ -174,7 +174,8 @@ mod platform {
             let retained = |error| {
                 format!("map refresh bytes persisted but verification failed: {error}; output retained for manual recovery")
             };
-            verify_sources().map_err(retained)?;
+            // Preserve the observed write before a fallible source recheck.
+            // Custody records describe bytes, not successful source validation.
             self.record_observation(guard, &written, &merged, Some(&observation.current))
                 .map_err(retained)?;
             verify_sources().map_err(retained)?;

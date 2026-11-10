@@ -18,6 +18,37 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retain observations across post-write source failure
+
+A regression against `6ec17014` demonstrated that a source check failing after
+canonical replacement returned before saving its private observation. History
+then failed at `map_refresh_apply_tests.rs:346` with
+`no creation observation matches the current map object` (test exit 101;
+`/tmp/myco-map-failed-refresh-baseline.log`). The map bytes were preserved but
+its exact before-image was unavailable to the current-object history reader.
+
+The refresh path now records the verified native-written bytes before the
+post-write source check. It still checks sources before writing and before
+returning success, checks the target revision/physical custody, and reports
+post-write failure as retained incomplete output. The record never certifies
+source validation or grants undo authority. History copy in all three languages
+now makes this distinction explicit.
+
+The regression checks history after the failed source check. A separate
+three-process test creates an annotated synthetic map, exits the refresh child
+with code 23 at the post-write source-check boundary (without a successful return
+or stack cleanup), and reads the exact snapshots in a new process. This tests one
+specific interruption boundary, not arbitrary crash recovery. Interruption inside
+the anchored native writer or private-record persistence remains unresolved;
+full history, safe undo, cleanup and actual-model acceptance remain open.
+
+Validation: targeted native refresh tests passed 7 cases (1 child-only ignored);
+full Rust passed 2,682 library and 28 integration tests (40 ignored overall).
+Formatting and strict all-target Clippy passed. Targeted frontend tests passed
+21 cases; production TypeScript/Vite build passed, lint had only the two existing
+notch dependency warnings. Full frontend passed 402 files / 6,457 tests in
+59.45 seconds. Logs: `/tmp/myco-map-failed-refresh-{baseline,target,clippy,full,front,front-full,build,lint}.log`.
+
 ## November 11: latest map refresh in History
 
 History now reads the retained native before/after API on map selection, rather

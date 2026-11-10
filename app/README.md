@@ -176,7 +176,12 @@ whether the current file differs from the saved result. Older version-1/2 record
 remain readable but have no before-image; the command returns no history for them.
 Identical content is a no-op; changed targets are rejected.
 Failures after persistence retain output for manual recovery instead of reporting
-success. Refresh issues no creation/undo receipt. Manual map proposals now show
+success. The exact write observation is saved before post-write source checks,
+so a failed check or an exit at that check retains the before/after snapshots.
+History explicitly describes recorded writes, including interrupted updates,
+and does not certify completed source validation. Interruption during the native
+write or private-record persistence still requires additional recovery handling.
+Refresh issues no creation/undo receipt. Manual map proposals now show
 the native merged diff before applying an existing-map update. Cancelling or
 switching vaults stops the update; sources and the target revision are rechecked
 after approval. The review explains that History undo is not yet available.

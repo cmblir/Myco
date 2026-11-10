@@ -51,12 +51,30 @@ fn synthetic_refresh_child() {
         .unwrap();
         return;
     }
-    assert!(phase == "first" || phase == "second");
+    assert!(matches!(
+        phase.as_str(),
+        "first" | "second" | "interrupt" | "inspect-interrupted"
+    ));
     let root = root.canonicalize().unwrap();
     let state = VaultRoot::default();
     let generation = state.begin_open().unwrap();
     state.finish_open(generation, root.clone(), || ()).unwrap();
     let origin = state.snapshot().unwrap();
+    if phase == "inspect-interrupted" {
+        let retained = history(&state, &origin, "synthetic").unwrap().unwrap();
+        assert!(retained.before.contains("Synthetic relationship"));
+        assert!(retained
+            .after
+            .contains("Synthetic interrupt restart refresh"));
+        assert!(retained.before.ends_with("Human restart annotation.\n"));
+        assert!(retained.after.ends_with("Human restart annotation.\n"));
+        assert_eq!(
+            retained.after,
+            std::fs::read_to_string(root.join("wiki/maps/synthetic.md")).unwrap()
+        );
+        assert!(!retained.has_changes_since_refresh);
+        return;
+    }
     let role = capture_role_at(&origin, RoleId::Organization, RoleUsage::Foreground).unwrap();
     let sources = crate::map_sources::MapSourceRegistry::default();
     let snapshot = crate::map_sources::capture(
@@ -96,6 +114,22 @@ fn synthetic_refresh_child() {
         &snapshot.snapshot_id,
     )
     .unwrap();
+    if phase == "interrupt" {
+        let store =
+            crate::map_custody::MapCreationStore::open(&root, "wiki/maps/synthetic.md").unwrap();
+        let calls = std::cell::Cell::new(0);
+        let _ = crate::vault::with_root_mutation(&root, |_, guard| {
+            store.refresh(guard, &proposed, &review.current_revision, &|| {
+                calls.set(calls.get() + 1);
+                if calls.get() == 2 {
+                    // Abrupt child exit: no successful refresh result or stack cleanup.
+                    std::process::exit(23);
+                }
+                Ok(())
+            })
+        });
+        panic!("synthetic interrupt point was not reached");
+    }
     let result = apply(
         &state,
         &sources,
@@ -339,6 +373,14 @@ fn refresh_detects_intervening_human_edits_and_preserves_postwrite_failure_outpu
             if postwrite {
                 assert!(error.contains("output retained for manual recovery"));
                 assert_eq!(std::fs::read_to_string(&target).unwrap(), proposed);
+                let state = VaultRoot::default();
+                let generation = state.begin_open().unwrap();
+                state.finish_open(generation, root.clone(), || ()).unwrap();
+                let origin = state.snapshot().unwrap();
+                let retained = history(&state, &origin, "synthetic").unwrap().unwrap();
+                assert_eq!(retained.before, baseline);
+                assert_eq!(retained.after, proposed);
+                assert!(!retained.has_changes_since_refresh);
             } else {
                 assert!(
                     error.contains("changed after refresh preparation")
@@ -420,4 +462,39 @@ fn oversized_before_and_after_record_rejects_before_canonical_write() {
             2
         );
     });
+}
+
+#[test]
+fn retained_history_survives_exit_before_postwrite_source_validation() {
+    let data = tempfile::Builder::new()
+        .prefix("myco-synthetic-map-interrupt-")
+        .tempdir()
+        .unwrap();
+    std::fs::write(
+        data.path().join("synthetic.marker"),
+        "Synthetic map refresh restart only",
+    )
+    .unwrap();
+    for (phase, expected_code) in [("create", 0), ("interrupt", 23), ("inspect-interrupted", 0)] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "map_refresh::apply_tests::synthetic_refresh_child",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("MYCO_DATA_DIR", data.path())
+            .env("MYCO_MAP_REFRESH_PHASE", phase)
+            .env_remove("MEMEX_DATA_DIR")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(expected_code),
+            "{phase}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }
