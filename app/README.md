@@ -254,6 +254,9 @@ Graph follows live changes to system reduced motion without reopening: direction
 
 ### Writing
 
+Empty heading and text-block prompts use the readable secondary text color in
+both light and dark themes.
+
 | | |
 | --- | --- |
 | `[[wikilink]]` autocomplete | Type `[[` in the editor, every file stem in the vault appears in a popup. In Source mode, frontmatter `tags:` values and body `#tag`s complete from the vault's tags. Tags are indexed from both frontmatter and inline body `#tags` (Obsidian's rule: not inside code, not `# Heading`, not URL fragments). `[[Note#Heading]]` opens the note and scrolls to that heading (`[[#Heading]]` scrolls within the current note) |

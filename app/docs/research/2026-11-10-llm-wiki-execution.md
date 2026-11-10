@@ -18,6 +18,39 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: readable empty Reader prompts
+
+The live Reader's `.live-empty::after` used decorative `--ink-5` for actual
+heading and text-block prompts. `editorLive.ts` supplies their localized
+`data-placeholder`; the same selector covers both kinds. Changed only that
+selector to existing readable metadata token `--ink-4`. Disabled controls and
+decorative separators keep their existing treatment.
+
+Static sRGB contrast calculations from the declared tokens:
+
+| Theme | Before on editor background | After on editor background | After on hover token | After on selected token |
+| --- | ---: | ---: | ---: | ---: |
+| Light | 1.59:1 | 5.59:1 | 4.82:1 | 4.56:1 |
+| Dark | 1.98:1 | 6.87:1 | 5.46:1 | 4.79:1 |
+
+These are token calculations, not measured composited-browser results or a claim
+about every editor background. The CSS declares `.cm-editor` background as `--bg`;
+the other two columns test palette combinations rather than observed interaction
+states. Theme transitions, screenshots and full G6 acceptance remain unverified.
+No new localized strings or product behavior were introduced. README describes
+the readable empty prompts. All 52 stylesheet tests and the production frontend
+build (including TypeScript) passed; log: `/tmp/myco-reader-placeholder-build.log`.
+Diff whitespace checks passed. Full frontend/Rust suites were not rerun for the
+single CSS declaration change.
+
+Browser inventory showed only user-owned TaskSpace 0; the earlier validation
+spaces were already finished. The loaded ego-browser guide requires explicit
+user direction for additional TaskSpaces, so a question was sent instead of
+claiming the user's space or silently opening another. No browser page, native
+app or vault was opened in this slice. Original-vault marker recovery still awaits
+the owner's path, and Windows runtime remains unavailable (only macOS ARM64 Rust
+target, no discovered Wine/Parallels/QEMU command, no repository self-hosted runner).
+
 ## November 11: distinguish Windows directory, replacement and expiry failures
 
 The 27 baseline access-denied failures comprise ten archive tests, three distill,

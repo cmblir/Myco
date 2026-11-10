@@ -4264,7 +4264,7 @@ hr {
    attribute + ::after, so no DOM lands next to an IME composition. */
 .myco-editor.live .live-empty::after {
   content: attr(data-placeholder);
-  color: var(--ink-5);
+  color: var(--ink-4);
   pointer-events: none;
 }
 /* The caret's empty line holds CM's <br>, under which an inline ::after
