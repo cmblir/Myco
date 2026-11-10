@@ -130,6 +130,9 @@ jobs:
         run: |
           touch "bin/whisper-cli-$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r').exe"
       - name: tests
+        env:
+          # build.rs: embed the app manifest into the test executables too.
+          MYCO_EMBED_TEST_MANIFEST: "1"
         run: cargo test
 
   # Compile and test the native paths on both supported Mac architectures.
