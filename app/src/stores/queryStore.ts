@@ -42,7 +42,7 @@ import { formatTemporalRecall } from "../lib/queryTemporal";
 import { connectionOverview, connectionScopeNotice, isConnectionOverviewQuery } from "../lib/queryConnections";
 import { ActivitySynthesisError, LocalSynthesisError, LocalSynthesisSourceError, isSynthesisReviewFailure, tryLocalSynthesis, type ActivitySynthesisFailure, type LocalSynthesisFallbackReason } from "../lib/querySynthesis";
 import { ActivityPeriodRequired, activityPeriodClarification, isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "../lib/queryActivity";
-import { classifyWorkstreamQuestion, parseWorkstreamFacts, resolveWorkstream, workstreamAnswer, workstreamRecentRange, workstreamSources, WORKSTREAM_COPY, type WorkstreamQuestion, type WorkstreamSources } from "../lib/queryWorkstreams";
+import { classifyWorkstreamQuestion, mentionsOtherWorkstream, parseWorkstreamFacts, resolveWorkstream, workstreamAnswer, workstreamRecentRange, workstreamSources, WORKSTREAM_COPY, type WorkstreamQuestion, type WorkstreamSources } from "../lib/queryWorkstreams";
 import { isMissingFile } from "../lib/sessionEvidence";
 import { activityResolution } from "../lib/queryResolution";
 import { checkedAskRole, isQueryAuthorizationError, QueryAuthorizationError } from "../lib/queryRole";
@@ -55,6 +55,13 @@ const RETRIEVE_K = 12;
 export const QUOTED_PAGES = 5;
 /** Turns the history keeps — `ask_history::CAP`. */
 const HISTORY_CAP = 500;
+
+interface ProjectSelection {
+  key: string;
+  /** Caller restrictions only; discovered candidate paths and dates are refreshed. */
+  explicitPaths?: string[];
+  explicitRange?: DateRange;
+}
 
 export interface ChatTurn {
   guidedQuestion?: GuidedQuestionSelection;
@@ -144,6 +151,7 @@ export interface ChatTurn {
   activityQuestion?: string;
   /** Retain the project question's cutoff semantics through follow-up and retry. */
   resolutionMode?: "current_state" | "historical_as_of";
+  projectSelection?: ProjectSelection;
 }
 
 /** Localized copy ask() bakes into turns. Passed per call from the page's `t`
@@ -204,6 +212,7 @@ export interface AskOpts {
   range?: DateRange;
   paths?: string[];
   resolutionMode?: "current_state" | "historical_as_of";
+  projectSelection?: ProjectSelection;
   /** "Search again without the period": retrieve with the question's words
    *  but no date window, though it still names one. */
   ignoreRange?: boolean;
@@ -512,6 +521,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       (activityQuestion !== question && (isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion)))));
     if (opts?.ignoreRange) tp.range = null;
     const hasRequestedRange = Boolean(tp.range);
+    const requestedRange = tp.range ? { ...tp.range } : undefined;
     const note = opts?.note;
     // Over one note the path set decides, so no tier is cut out of it.
     const explicitScope = opts?.scope ?? (isAskScopeExplicit ? askScope : undefined);
@@ -524,10 +534,15 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     );
     const projectContext = candidateContext && previous?.resolutionMode && !note &&
       (!explicitScope || explicitScope === previous.scope) ? previous.activityQuestion : undefined;
+    const projectSelection = note ? undefined : opts?.projectSelection ?? (projectContext ? previous?.projectSelection : undefined);
     let paths = note ? noteScopePaths(note.path, vault.path, useVaultStore.getState().adjacency) :
-      opts?.paths ?? (projectContext ? previous?.searchContext?.paths : undefined);
-    const samePaths = (turn: ChatTurn): boolean => turn.note?.path === note?.path &&
-      JSON.stringify([...(turn.searchContext?.paths ?? [])].sort()) === JSON.stringify([...(paths ?? [])].sort());
+      opts?.paths ?? projectSelection?.explicitPaths;
+    const projectRange = opts?.ignoreRange ? undefined : requestedRange ?? projectSelection?.explicitRange;
+    const samePaths = (turn: ChatTurn): boolean => {
+      const previousPaths = projectContext && turn.projectSelection ? turn.projectSelection.explicitPaths : turn.searchContext?.paths;
+      return turn.note?.path === note?.path &&
+        JSON.stringify([...(previousPaths ?? [])].sort()) === JSON.stringify([...(paths ?? [])].sort());
+    };
     const inheritedScope = candidateContext && previous && samePaths(previous) ? previous.scope : undefined;
     const { scope: selectedScope, tierWeights } = recallPolicy(activityQuestion, askScope, askTierWeights,
       note ? "all" : explicitScope ?? inheritedScope, isDatedActivityOverview);
@@ -549,6 +564,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           execution:readAskExecution(execution),
           scope,
           ...(paths ? {searchContext:{version:1 as const,paths:[...paths]}} : {}),
+          ...(projectSelection ? {projectSelection:{key:projectSelection.key,
+            ...(paths ? {explicitPaths:[...paths]} : {}),...(projectRange ? {explicitRange:{...projectRange}} : {})}} : {}),
           ...(note ? { note } : {}),
           ...(opts?.ignoreRange ? { ignoreRange: true } : {}),
           ...(activityQuestion !== question ? { activityQuestion } : {}),
@@ -593,19 +610,32 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             settle();
             return outcome;
           }
-          if (!workstreamQuestion.name) {
+          if (projectContext && projectSelection && mentionsOtherWorkstream(question,projectSelection.key,facts)) {
+            finishTurn({a:WORKSTREAM_COPY[lang].projectNotFound,needsClarification:true});
+            settle();
+            return outcome;
+          }
+          if (!workstreamQuestion.name && !projectSelection) {
             finishTurn({a:WORKSTREAM_COPY[lang].chooseProject,needsClarification:true});
             settle();
             return outcome;
           }
-          if (!resolveWorkstream(workstreamQuestion.name, facts)) {
+          const projectKey = projectSelection ?
+            (Object.hasOwn(facts.workstreams,projectSelection.key) ? projectSelection.key : null) :
+            resolveWorkstream(workstreamQuestion.name!, facts);
+          if (!projectKey) {
             finishTurn({a:WORKSTREAM_COPY[lang].projectNotFound,needsClarification:true});
             settle();
             return outcome;
           }
           const ledger = await Promise.race([stopped(ctrl.signal), ipc.readFile(`${vault.path}/.myco/ledger.json`)]);
-          projectSources = workstreamSources(workstreamQuestion.name, facts, ledger.raw, queryTime,
-            {paths,range:tp.range ?? undefined,asOf:projectGuidance?.asOf});
+          projectSources = workstreamSources(projectKey, facts, ledger.raw, queryTime,
+            {paths,range:projectRange,asOf:projectGuidance?.asOf});
+          if (!projectSources || projectSources.key !== projectKey) {
+            finishTurn({a:WORKSTREAM_COPY[lang].projectNotFound,needsClarification:true});
+            settle();
+            return outcome;
+          }
           projectSnapshots = {facts:file.raw,ledger:ledger.raw};
         } else if (!paths && !tp.range) {
           answer = facts && workstreamAnswer(workstreamQuestion, facts, lang, queryTime);
@@ -621,10 +651,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       if (!live()) { settle(); return outcome; }
       if (projectSources) {
         scope = explicitScope ?? inheritedScope ?? "sessions";
+        const selectedProject: ProjectSelection = {key:projectSources.key,
+          ...(paths ? {explicitPaths:[...paths]} : {}),...(projectRange ? {explicitRange:{...projectRange}} : {})};
         paths = projectSources.paths;
         tp.range = projectSources.range;
         set(s => ({turns:patchLast(s.turns,{scope,range:tp.range ?? undefined,
-          activityQuestion:projectQuestion,resolutionMode,
+          activityQuestion:projectQuestion,resolutionMode,projectSelection:selectedProject,
           ...(projectGuidance ? {guidedQuestion:projectGuidance} : {}),
           searchContext:{version:1,paths:[...paths!]}})}));
         if (!tp.range || !paths.length) {
@@ -1046,8 +1078,9 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       scope: turn.scope,
       ignoreRange: turn.ignoreRange,
       note: turn.note,
-      range: turn.range,
-      paths: turn.searchContext?.paths,
+      range: turn.projectSelection ? turn.projectSelection.explicitRange : turn.range,
+      paths: turn.projectSelection ? turn.projectSelection.explicitPaths : turn.searchContext?.paths,
+      projectSelection: turn.projectSelection,
       resolutionMode: turn.resolutionMode,
       activityQuestion: turn.activityQuestion,
       guidedQuestion: turn.guidedQuestion,

@@ -2529,6 +2529,135 @@ describe("queryStore.ask workstream facts", () => {
   });
   afterEach(() => { useQueryStore.getState().clear(); vi.useRealTimers(); });
 
+  it.each(["그럼 Beta 남은 작업은?", "What about the remaining work in Beta?"])(
+    "does not let a named different project inherit the previous selection: %s", async question => {
+      const model = "qwen3.5-4b-q4_k_m";
+      stubAskRole("builtin-local",model);
+      vi.spyOn(ipc,"localChatStatus").mockResolvedValue({model_id:model,state:"ready",bytes:100});
+      const source = structuredClone(facts);
+      Object.assign(source.workstreams,{beta:{...source.workstreams.prj_lumen,title:"Beta",page:"wiki/workstreams/beta.md",open_items:[]}});
+      Object.assign(source.conversations,{"codex:beta":{...source.conversations[ledger],id:"beta",key:"beta",root:"codex:beta",
+        raw:"raw/conversations/codex/beta.md"}});
+      vi.spyOn(ipc,"readFile").mockImplementation(async path => {
+        const raw = JSON.stringify(path.endsWith("ledger.json") ? {entries:{[ledger]:"0123456789abcdef","codex:beta":"0123456789abcdef"},
+          locations:{[`sessions:${ledger}`]:"sessions/alpha.md","sessions:codex:beta":"sessions/beta.md"}} : source);
+        return {path,raw,content:raw,frontmatter:null};
+      });
+      const recall = vi.spyOn(ipc,"activityRecall").mockImplementation(async request => ({
+        hits:request.paths!.map(page => ({page,stem:page,section:0,text:"A synthetic project request."})),
+        indexed_pages:2,scanned_pages:1,matched_chunks:1,incomplete:false,
+      }));
+      const synthesis = vi.spyOn(ipc,"localSynthesize").mockImplementation(async request => ({
+        answer:`A task was requested. [[${request.paths![0].replace(/\.md$/,"")}|source]]`,model_id:model,used_sources:request.paths!,
+        activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution),
+      }));
+      const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen",asOf:"2026-11-07"};
+      await ask(buildGuidedQuestion(choice,"en"),{guidedQuestion:choice});
+      expect(last().projectSelection?.key).toBe("prj_lumen");
+      await ask(question);
+      expect(last().needsClarification).toBe(true);
+      expect(recall).toHaveBeenCalledTimes(1);
+      expect(synthesis).toHaveBeenCalledTimes(1);
+      await ask("How far along is Beta now?");
+      expect(recall).toHaveBeenCalledTimes(2);
+      expect(recall.mock.calls[1][0]).toMatchObject({paths:["sessions/beta.md"],range:{start:"2026-11-07",end:"2026-11-08"}});
+      expect(last().projectSelection?.key).toBe("beta");
+      expect(synthesis.mock.calls[1][0].resolution?.mode).toBe("current_state");
+      expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    });
+
+  it.each([
+    ["retry", false, false], ["follow-up", false, false],
+    ["retry", true, false], ["follow-up", true, false],
+    ["retry", false, true], ["follow-up", false, true],
+    ["retry", true, true], ["follow-up", true, true],
+  ] as const)("refreshes derived project paths on %s while retaining explicit paths %s and historical cutoff %s", async (resume, restricted, historical) => {
+    const model = "qwen3.5-4b-q4_k_m";
+    stubAskRole("builtin-local", model);
+    vi.spyOn(ipc,"localChatStatus").mockResolvedValue({model_id:model,state:"ready",bytes:100});
+    const source = structuredClone(facts);
+    const projection = "sessions/alpha.md";
+    const reopened = "sessions/reopened.md";
+    const reopeningId = "codex:reopened";
+    const locations: Record<string,string> = {[`sessions:${ledger}`]:projection};
+    vi.spyOn(ipc,"readFile").mockImplementation(async path => {
+      const raw = JSON.stringify(path.endsWith("ledger.json") ? {
+        entries:Object.fromEntries(Object.entries(source.conversations).map(([id, conversation]) => [id,conversation.fp])), locations,
+      } : source);
+      return {path,raw,content:raw,frontmatter:null};
+    });
+    const recall = vi.spyOn(ipc,"activityRecall").mockResolvedValue({hits:[{page:projection,stem:"Alpha",section:0,
+      text:"The synthetic export work was requested."}],indexed_pages:2,scanned_pages:1,matched_chunks:1,incomplete:false});
+    let rejectFirst = resume === "retry";
+    const synthesis = vi.spyOn(ipc,"localSynthesize").mockImplementation(async request => {
+      if (rejectFirst) { rejectFirst = false; throw new Error("synthetic first-attempt failure"); }
+      return {answer:"The work was requested. [[sessions/alpha|source]]",model_id:model,used_sources:[projection],
+        activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution)};
+    });
+    const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen",
+      ...(historical ? {asOf:"2026-11-07"} : {})};
+    await ask(buildGuidedQuestion(choice,"en"),{guidedQuestion:choice,scope:"all",
+      ...(restricted ? {paths:[projection]} : {}),
+      ...(historical ? {range:{start:"2026-11-07",end:"2026-11-07"}} : {})});
+    const first = last();
+    expect(first.searchContext?.paths).toEqual([projection]);
+    expect(first.projectSelection).toEqual({key:"prj_lumen",
+      ...(restricted ? {explicitPaths:[projection]} : {}),
+      ...(historical ? {explicitRange:{start:"2026-11-07",end:"2026-11-07"}} : {})});
+    expect(Boolean(first.error)).toBe(resume === "retry");
+    const priorTurn = JSON.stringify(first);
+    const priorRecord = recordOf(first,1);
+    const priorRecordBytes = JSON.stringify(priorRecord);
+    const oldResolution = synthesis.mock.calls[0][0].resolution;
+    const recordedAt = historical ? "2026-11-07T11:00:00Z" : "2026-11-09T09:00:00Z";
+    Object.assign(source.conversations,{[reopeningId]:{...source.conversations[ledger],id:"reopened",root:reopeningId,
+      raw:"raw/conversations/codex/reopened.md",first_epoch:at(recordedAt),last_epoch:at(recordedAt),
+      request:"Reopen the synthetic export work; acceptance is failing."}});
+    locations[`sessions:${reopeningId}`] = reopened;
+    source.workstreams.prj_lumen.conversations = 2;
+    source.workstreams.prj_lumen.roots = 2;
+    source.workstreams.prj_lumen.last_epoch = at("2026-11-09T09:00:00Z");
+    source.last_record_epoch = at("2026-11-09T09:00:00Z");
+    // A reused display name must not move the question to a different project.
+    source.workstreams.prj_lumen.title = "Renamed original project";
+    Object.assign(source.workstreams,{other_lumen:{...source.workstreams.prj_lumen,title:"Lumen",
+      page:"wiki/workstreams/other_lumen.md",open_items:[]}});
+    Object.assign(source.conversations,{"codex:unrelated":{...source.conversations[ledger],id:"unrelated",
+      root:"codex:unrelated",key:"other_lumen",raw:"raw/conversations/codex/unrelated.md"}});
+    locations["sessions:codex:unrelated"] = "sessions/unrelated.md";
+    if (historical) {
+      Object.assign(source.conversations,{"codex:future":{...source.conversations[ledger],id:"future",root:"codex:future",
+        raw:"raw/conversations/codex/future.md",first_epoch:at("2026-11-09T09:00:00Z"),last_epoch:at("2026-11-09T09:00:00Z")}});
+      locations["sessions:codex:future"] = "sessions/future.md";
+    }
+    vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+    if (resume === "retry") await useQueryStore.getState().retry(0,"en",copy);
+    else await ask("why?");
+    const expectedPaths = restricted ? [projection] : [projection,reopened];
+    const expectedRange = {start:"2026-11-07",end:historical ? "2026-11-07" : "2026-11-09"};
+    expect(recall).toHaveBeenCalledTimes(2);
+    expect(recall.mock.calls[1][0]).toMatchObject({paths:expectedPaths,range:expectedRange,scope:"all"});
+    expect(synthesis.mock.calls[1][0]).toMatchObject({paths:expectedPaths,range:expectedRange,scope:"all",
+      resolution:{mode:historical ? "historical_as_of" : "current_state",
+        asOfEpoch:historical ? oldResolution!.asOfEpoch : at("2026-11-09T12:00:00Z")}});
+    expect(last()).toMatchObject({searchContext:{paths:expectedPaths},activityCoverage:{incomplete:false}});
+    expect(last().error).toBeUndefined();
+    expect(JSON.stringify(first)).toBe(priorTurn);
+    expect(JSON.stringify(priorRecord)).toBe(priorRecordBytes);
+    expect(priorRecord.searchContext?.paths).toEqual([projection]);
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    if (resume === "follow-up" && !restricted && !historical) {
+      Reflect.deleteProperty(source.workstreams,"prj_lumen");
+      Reflect.deleteProperty(source.conversations,ledger);
+      Reflect.deleteProperty(source.conversations,reopeningId);
+      await ask("why?");
+      expect(last().needsClarification).toBe(true);
+      expect(last().a).toContain("exact project name");
+      expect(recall).toHaveBeenCalledTimes(2);
+      expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    }
+  });
+
   it.each([[undefined,false,undefined], ["2026-11-01",false,undefined], [undefined,true,undefined], [undefined,false,"all"]] as const)(
     "resolves project state from original evidence with cutoff %s, incomplete candidates %s, scope %s", async (asOf,incomplete,selectedScope) => {
     const scope = selectedScope ?? "sessions";

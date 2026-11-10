@@ -273,6 +273,17 @@ export interface WorkstreamSources {
   incomplete: boolean;
 }
 
+/** A project follow-up cannot silently answer its old project when another
+ * current project key or title is explicitly named as whole words. */
+export function mentionsOtherWorkstream(question: string, selectedKey: string, facts: WorkstreamFacts): boolean {
+  const words = nameWords(question);
+  return Object.entries(facts.workstreams).some(([key, project]) => key !== selectedKey &&
+    [key, project.title].some(label => {
+      const named = nameWords(label);
+      return named.join("").length >= 2 && hasRun(words,named);
+    }));
+}
+
 /** Project facts select candidates, never establish a task's current state.
  * Only current native-ledger projections may enter the original-source flow. */
 export function workstreamSources(name: string, facts: WorkstreamFacts, ledgerRaw: string, queryTime: Date,
