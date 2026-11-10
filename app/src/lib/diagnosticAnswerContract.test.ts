@@ -13,7 +13,7 @@ it("keeps a native declared abstention distinct from malformed responses and sup
       return {answer: "", paths: [], abstained: true, semanticAccepted: false} as never;
     return {system: "policy", user: "original", revision: "fixed", evidence: [hit(1)]} as never;
   });
-  const capture = vi.fn(async () => {});
+  const capture = vi.fn(async () => undefined);
   const adapter: ModelContextBudget = {contextTokens: 4096, outputTokens: 768, countMessages: async () => 100};
   const prepared = await createDiagnosticAnswerContract(adapter, capture)(args, [hit(1)], "");
   await expect(prepared.renderAnswer('{"answer":"","sources":[]}')).rejects.toBeInstanceOf(ModelEvidenceAbstention);
@@ -27,7 +27,7 @@ it("counts the native whole-original packet and keeps omissions without truncati
     if (input.rawAnswer) return {answer: "Bound answer [[raw/synthetic.md]]", paths: ["raw/synthetic.md"]} as never;
     return {system: "native policy", user: input.request.hits.map(h => `whole turn ${h.section}`).join(" "), revision: "native-revision", evidence: input.request.hits} as never;
   });
-  const capture = vi.fn(async () => {});
+  const capture = vi.fn(async () => undefined);
   const countMessages = vi.fn(async messages => messages[1].content.includes("turn 2") ? 4000 : 2000);
   const adapter: ModelContextBudget = {contextTokens: 4096, outputTokens: 768, countMessages};
   const prepared = await createDiagnosticAnswerContract(adapter, capture)(args, [hit(1), hit(2)], "");
@@ -42,7 +42,7 @@ it("counts the native whole-original packet and keeps omissions without truncati
 it("cannot generate if every native source binding is rejected", async () => {
   vi.mocked(invoke).mockRejectedValue(new Error("changed after retrieval"));
   const countMessages = vi.fn();
-  const capture = vi.fn(async () => {});
+  const capture = vi.fn(async () => undefined);
   const adapter: ModelContextBudget = {contextTokens: 4096, outputTokens: 768, countMessages};
   await expect(createDiagnosticAnswerContract(adapter, capture)(args, [hit(1)], "")).rejects.toThrow("No verified original packet");
   expect(countMessages).not.toHaveBeenCalled();
@@ -55,6 +55,6 @@ it("rejects changed final source bindings before model input is returned", async
     return {system: "policy", user: "original", revision: fresh ? "changed" : "first", evidence: [hit(1)]} as never;
   });
   const adapter: ModelContextBudget = {contextTokens: 4096, outputTokens: 768, countMessages: async () => 100};
-  await expect(createDiagnosticAnswerContract(adapter, async () => {})(args, [hit(1)], ""))
+  await expect(createDiagnosticAnswerContract(adapter, async () => undefined)(args, [hit(1)], ""))
     .rejects.toThrow("changed before generation");
 });

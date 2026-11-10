@@ -1674,7 +1674,7 @@ describe("complete() app generation request provenance", () => {
       role:"user",timestamp:cutoff-60,message_id:"dated-user",relation:"accepted_original",anchor_page:page,anchor_section:0};
     const future={...original,section:2,timestamp:cutoff,message_id:"later",text:"FUTURE_REVERSAL after the cutoff"};
     const exclusions=vi.fn(),audit=vi.fn();
-    const dispose=exact?registerModelContextBudget("ollama",model,{contextTokens:4096,outputTokens:768,countMessages:async()=>100}):()=>{};
+    const dispose=exact?registerModelContextBudget("ollama",model,{contextTokens:4096,outputTokens:768,countMessages:async()=>100}):()=>undefined;
     const chat=vi.spyOn(ipc,"chatComplete").mockResolvedValue({provider_id:"ollama",model,content:`Original request [[${page.replace(/\.md$/,"")}|dated]]`,usage:null});
     const suppliedHistorical={...supplied,hits:[anchor,poison],relatedContext:{passages:[original,future],incomplete:false,scanned_pages:1}};
     try{

@@ -21,6 +21,7 @@ export interface CitationEvidence {
 const hash = (v: unknown): v is string => typeof v === "string" && /^[a-f0-9]{64}$/.test(v);
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const pathOK = (v: unknown): v is string => typeof v === "string" && v.endsWith(".md") &&
+  // eslint-disable-next-line no-control-regex -- a path with a control character is refused on purpose
   !/[\\\\\u0000-\u001f#|]/.test(v) && !v.startsWith("/") && !v.split("/").some(p => !p || p === "." || p === "..");
 
 /** History is untrusted and optional metadata must not erase a readable answer.

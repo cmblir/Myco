@@ -7,7 +7,7 @@ import { ModelEvidenceAbstention } from "./answerCitation";
 
 import { citationEvidenceFromPacket, type CitationEvidence } from "./citationEvidence";
 
-type Packet = { originalPacket?: string; system: string; user: string; revision: string; evidence: EvidencePassage[] };
+interface Packet { originalPacket?: string; system: string; user: string; revision: string; evidence: EvidencePassage[] }
 /** Debug diagnostic registers this explicitly. It does not change a provider's default contract. */
 export function createDiagnosticAnswerContract(
   adapter: ModelContextBudget, capture: (kind: string, data: unknown) => Promise<void>,

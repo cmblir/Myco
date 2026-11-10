@@ -1,5 +1,5 @@
 import type { AskSearchContext } from "./askSearchContext";
-import type { GuidedQuestionIntent } from "./guidedQuestion";
+import type { GuidedQuestionIntent, GuidedQuestionSelection } from "./guidedQuestion";
 import type { AskExecution } from "./askExecution";
 import type { CitationEvidence } from "./citationEvidence";
 import type { ContextPackingRecord } from "./modelContextBudget";
@@ -467,7 +467,7 @@ export interface LocalSynthesisRequest {
   requestId: string;
   expectedVault: string;
   question: string;
-  guidedQuestion?: import("./guidedQuestion").GuidedQuestionSelection;
+  guidedQuestion?: GuidedQuestionSelection;
   /** A follow-up's question-only topic; previous generated prose is excluded. */
   previousQuestion?: string;
   lang: "en" | "ko" | "ja";
