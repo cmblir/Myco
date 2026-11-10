@@ -10,7 +10,7 @@ requirements and must not be mistaken for passing results.
 | Package | State | Evidence and remaining work |
 | --- | --- | --- |
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
-| G1 Ingest drafts | Implemented; bundled D1/D2 acceptance withdrawn | Unit and synthetic browser regressions passed. Native UI showed preserved drafts, but the bundle was also launched outside the intended isolated state; clean installed acceptance must be repeated. |
+| G1 Ingest drafts | Implemented; fresh bundled macOS D1/D2 passed | Exact frozen navigation/restart and vault-isolation cases passed through the fixed sandbox launcher. Earlier contaminated results remain withdrawn; D3/D4, other platforms and signed-release acceptance remain open. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
@@ -18,7 +18,44 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
-## November 11: fresh guarded bundle starts, but UI attachment is unavailable
+## November 11: isolated bundled draft navigation, restart and vault separation
+
+The fresh bundle's unchanged native executable became reachable by CUA after
+adding a temporary Launch Services entry wrapper. The wrapper verifies native
+binary/profile checksums on each launch, sets the fixed diagnostic environment
+and synthetic app-data directory, and execs the same OS sandbox and native binary.
+This modifies only the temporary validation bundle, not repository application
+code. The previous direct-process attachment failure is superseded by this result;
+the earlier contaminated fixture and withdrawn acceptance are not reinstated.
+
+Using the full production frontend and native IPC, CUA observed the exact frozen
+D1 title `Synthetic source` and body `Synthetic report draft` after visiting Ask,
+Settings and the synthetic Reader, then returning to Ingest. For D2, a normal
+Cmd-Q ended the native PID; relaunch through the same wrapper restored both fields.
+Beta received body `Different synthetic draft` with an empty optional title.
+Returning to Alpha restored only D1, and returning to Beta restored only its own
+input. Earlier supplemental runs also preserved longer distinct titles/bodies
+through navigation and two restarts. These are not three repeated model trials.
+
+All four native process lifetimes used the same binary/profile hashes. Three
+normal quit/relaunch boundaries were observed; the final validation process was
+explicitly stopped after the final UI observation. Both synthetic reader files
+remained unchanged, each vault still held one wiki note and zero raw files, all
+automatic jobs remained disabled, and production active-vault marker metadata
+remained unchanged. Its original value is still unknown from the earlier incident.
+No source was submitted and no model was invoked.
+
+The [native draft receipt](2026-11-11-native-draft-navigation.json) retains the
+launcher, checksums, exact observations, process identities and limits. D1 and the
+restart variant of D2 pass for this unsigned debug macOS bundle. D3/D4, signed
+installer behavior, Windows, full helper containment and model acceptance remain
+open. The explicit startup URL selects Alpha, so this does not test restoration
+of the last-selected vault at boot. No fresh source-code tests were necessary:
+the binary is the previously built `8e705a28` artifact, whose type/build/native
+checks are recorded in the preceding slices. README is unchanged because product behavior did not
+change; the goal status table now reflects this bounded acceptance evidence.
+
+## November 11: fresh guarded bundle starts, but UI attachment is unavailable (superseded)
 
 Built an unsigned debug application from clean `8e705a28` with the acceptance
 feature, a fresh bundle/deep-link identifier and an explicit synthetic Alpha
