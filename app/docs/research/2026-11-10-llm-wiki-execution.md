@@ -18,6 +18,36 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: fresh writer guidance retains withdrawal but loses context
+
+The [frozen writer controls](2026-11-11-selected-note-writer-controls.json)
+require a supported ordinary answer without invented history and a corrected
+answer that names the withdrawn relationship and obsolete earlier description.
+Both arms use actual fresh drafts and the unchanged grouped coverage reviewer.
+Only the candidate writer receives additional correction-preservation guidance.
+A model-free test verifies identical original packets and reviewer projection.
+
+The [eight-call receipt](2026-11-11-selected-note-writer-review.json) shows both
+arms passing the ordinary control and failing the withdrawal control. The
+candidate changes the bare current negation to “Synthetic Graph Center links
+were withdrawn,” but omits the two targets and obsolete earlier description.
+The fixed gold is not met. Its reviewer also falsely complains that the relevant
+span was not cited, although S1 resolves to that complete corrected original.
+Do not confuse the writer's incomplete content with that unreliable rejection
+reason. No candidate is promoted; adding more prose alone has not repaired
+this case. Next test an explicit source-bound qualification representation or
+answer format, preserving originals, factual verification and negative controls.
+
+Verification: 26 ordinary-flow tests passed, seven model tests ignored in that
+invocation. The explicit eight-call actual run exited zero, without semantic
+acceptance. Rust fmt and feature-enabled strict all-target Clippy passed. Network
+denial and final process termination were verified. A sample during the initial
+wait showed the process had reached llama_decode / Metal synchronization; no
+restart or replacement run occurred. Runtime, peak RSS, sample hash, complete
+prompts, raw outputs and fixed sampling settings are retained in the receipt.
+Startup overlapped Clippy, so timing is not a clean benchmark. No production or
+README changes were made. The goal and its native/model gates remain incomplete.
+
 ## November 11: withdrawal contrasts reject extra reviewer guidance
 
 The [six frozen contrasts](2026-11-11-selected-note-withdrawal-controls.json)

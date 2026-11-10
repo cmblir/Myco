@@ -1,0 +1,17 @@
+{
+  "sourceControls": "2026-11-11-selected-note-controls.json",
+  "policy": "Frozen fresh-answer requirements before inference; baseline and candidate use the same grouped coverage reviewer.",
+  "cases": [
+    {
+      "id": "supported_pair",
+      "expectedAccepted": true,
+      "goldReason": "Names East and West as current linked notes, cites Center, and does not invent a correction or withdrawal."
+    },
+    {
+      "id": "omitted_withdrawal",
+      "expectedAccepted": true,
+      "goldReason": "Explains that both links were withdrawn and the earlier hub description is obsolete, cites Center, and does not assert those links are current.",
+      "appendToCenter": "\n## Correction\n\nThe two links above were withdrawn. Synthetic Graph Center no longer links to Synthetic Graph East or Synthetic Graph West. The earlier hub description is obsolete.\n"
+    }
+  ]
+}
