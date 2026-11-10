@@ -18,6 +18,46 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: fresh guarded bundle starts, but UI attachment is unavailable
+
+Built an unsigned debug application from clean `8e705a28` with the acceptance
+feature, a fresh bundle/deep-link identifier and an explicit synthetic Alpha
+startup URL. The frontend type/build and offline locked native bundle build
+passed. Both Alpha and Beta were created anew with one synthetic reader note;
+the old contaminated fixture was not reused. Settings disabled every automatic
+job, notch, resident tray and spotlight shortcut. The bundle refused a launch
+without diagnostic environment variables before any GUI work.
+
+The first sandboxed launch could not create its bundle-specific WebKit temporary
+directories. Stopped that owned process, retained its log and added only the
+observed new identifier's temporary directory to the write allowance. The second
+launch reached the synthetic Alpha vault with no stderr errors. Production/legacy
+app data, conversation directories and Documents stayed under read-data denial;
+network and writes outside the synthetic/new-identifier directories remained
+denied. Synthetic canaries checked protected read/write, symlink read, network
+bind denial and allowed scratch read/write. Metadata reads remained available for
+canonical path checks. This is not proof of every delegated WebKit helper's
+containment.
+
+CUA could not attach to the running owned process by bundle path, identifier or
+display name (`Running application not found`). No native draft interaction,
+navigation or restart was observed. The process was explicitly stopped, both
+fixtures still held exactly one unchanged synthetic note and zero raw files, all
+automatic-job flags remained false, and production active-vault marker metadata
+was unchanged. The marker's original value remains unknown from the earlier
+incident; this check does not restore or validate that value. D1/D2 remain
+unaccepted. See the [startup receipt](2026-11-11-isolated-native-draft-startup.json).
+
+Before rebuilding, `cargo clean --profile dev -p myco --dry-run` identified 87.8
+GiB of package build artifacts; the actual package-scoped clean removed 87.5 GiB
+logical size and left about 46 GiB physical free space. Source, vault and model
+originals were outside this cleanup. The previous disabled app bundle still
+exists without executable permissions. Logs are
+`/tmp/myco-native-replay-clean-preview.log`, `/tmp/myco-native-replay-clean.log`
+and `/tmp/myco-isolated-drafts-v2-build.log`;
+the fresh fixture locator is `/tmp/myco-isolated-drafts-v2-path.txt`.
+README is unchanged because product behavior did not change in this validation.
+
 ## November 11: complete portable path checks in activity recall
 
 G3 baseline review found that `activity_recall::tests::resumed_old_session_uses_turn_dates_instead_of_its_folder`
