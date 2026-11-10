@@ -39,7 +39,7 @@ let notes: Map<string, string>;
 beforeEach(() => {
   vi.resetModules();
   for (const mock of Object.values(mocks)) mock.mockReset();
-  notes = new Map([["/v/sessions/2026-08-10/a.md", RAW]]);
+  notes = new Map([["/v/sessions/2026-08-10/a.md", RAW], ["/v/wiki/a.md", RAW]]);
   mocks.origin.mockResolvedValue(ORIGIN);
   mocks.role.mockImplementation(async (origin: AgentVaultSession, role: RoleId, usage: RoleUsage) => {
     expect(role).toBe("organization");

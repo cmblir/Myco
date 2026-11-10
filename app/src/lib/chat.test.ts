@@ -137,7 +137,59 @@ describe("complete() selected-source generation", () => {
     },
   );
 
-  it.each(["reflect", "lint"] as const)(
+  it.each(["builtin-local", "anthropic-api"])(
+    "keeps a map's selected evidence through the real complete boundary on %s",
+    async provider => {
+      const { draftMap } = await import("./maps");
+      const { sha256 } = await import("./tidyRun");
+      const origin = { vaultPath: VAULT, openingToken: `synthetic-map-${provider}` };
+      const snapshot = roleFixture("organization", provider, BUILTIN_CHAT_MODEL, origin);
+      const raw = "Synthetic selected source: blue tiles only.";
+      vi.spyOn(ipc, "agentVaultSession").mockResolvedValue(origin);
+      const capture = vi.spyOn(ipc, "captureModelRole").mockResolvedValue(snapshot);
+      vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+      const read = vi.spyOn(ipc, "readFile").mockImplementation(async path => {
+        if (path === "/v/wiki/a.md") return { path, raw, content: raw, frontmatter: {} };
+        throw new Error("ENOENT: no such file or directory");
+      });
+      const status = vi.spyOn(ipc, "embeddingsStatus").mockRejectedValue(new Error("synthetic unavailable index"));
+      const search = vi.spyOn(ipc, "semanticSearch");
+      const context = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("UNSELECTED_SYNTHETIC_RED_TILES");
+      const answer = "Blue tiles. [[wiki/a.md|a]]";
+      const local = vi.spyOn(ipc, "localQuery").mockResolvedValue(answer);
+      const http = vi.spyOn(ipc, "chatComplete").mockResolvedValue({ content: answer, model: BUILTIN_CHAT_MODEL, provider_id: provider, usage: null });
+      const publish = vi.spyOn(ipc, "publishDistillNote").mockImplementation(async (_origin, operationId, artifact, content) => ({
+        publicationId: "b".repeat(64), operationId, path: `wiki/maps/${artifact.key}.md`, revision: await sha256(content),
+        nativeCreated: true, state: "published", fileIdentity: { device: 1, inode: 2, changedSeconds: 3, changedNanoseconds: 4 },
+      }));
+      vi.spyOn(ipc, "appendDistillManifest").mockResolvedValue(null);
+
+      await draftMap(VAULT, `source-${provider}`, ["wiki/a.md"], "llm-123");
+
+      expect(capture).toHaveBeenCalledWith(origin, "organization", "foreground");
+      expect(status).not.toHaveBeenCalled();
+      expect(search).not.toHaveBeenCalled();
+      expect(context).not.toHaveBeenCalled();
+      expect(read.mock.calls.filter(([path]) => path === "/v/wiki/a.md")).toHaveLength(2);
+      const prompt = provider === "builtin-local" ? local.mock.calls[0][0]
+        : http.mock.calls[0][0].messages.map(message => message.content).join("\n");
+      expect(prompt).toContain(raw);
+      expect(prompt).toContain(await sha256(raw));
+      expect(prompt).toContain("[[wiki/a.md|a]]");
+      expect(prompt).not.toContain("UNSELECTED_SYNTHETIC_RED_TILES");
+      if (provider === "builtin-local") {
+        expect(local.mock.calls[0].slice(2, 4)).toEqual([origin, snapshot]);
+        expect(http).not.toHaveBeenCalled();
+      } else {
+        expect(http.mock.calls[0].slice(1, 3)).toEqual([origin, snapshot]);
+        expect(local).not.toHaveBeenCalled();
+      }
+      expect(publish.mock.calls[0][3]).toContain("[[wiki/a.md|a]]");
+      expect(publish.mock.calls[0][5]).toEqual(snapshot);
+    },
+  );
+
+  it.each(["reflect", "lint", "organization"] as const)(
     "retrieves source passages for instruction-only %s generation",
     async (role) => {
       const origin = {

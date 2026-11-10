@@ -84,6 +84,9 @@ export interface CompleteArgs {
   /** Reuse one native grant for the whole job; never recapture after revocation. */
   roleSnapshot?: RoleSnapshot;
   messages: SimpleMessage[];
+  /** Generate callers with a complete source packet can prohibit extra retrieval.
+   * This controls prompt assembly only; native role and publication authority still apply. */
+  sourceContext?: "supplied";
   cwd: string;
   /** Preserve a caller's source opening when it already captured one. */
   origin?: AgentVaultSession;
@@ -352,11 +355,11 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // `thinking` stage so the failure is visible instead of looking identical
   // to "found nothing" — see semanticContext's doc comment.
   let retrievalFailed = false;
-  // Audio and Study supply their selected source text. Instruction-only
-  // generators such as Reflect and Lint still need retrieved vault evidence.
+  // Explicit source packets, Audio and Study supply their selected text.
+  // Instruction-only generators still need retrieved vault evidence.
   const hasSuppliedSources =
     args.task === "generate" &&
-    (featureRole === "audio" || featureRole === "study");
+    (args.sourceContext === "supplied" || featureRole === "audio" || featureRole === "study");
   if (!hasSuppliedSources) {
     try {
       const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
