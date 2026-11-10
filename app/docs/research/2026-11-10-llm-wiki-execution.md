@@ -18,6 +18,39 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: rebuilt native cold-process first submission succeeds
+
+Rebuilt the unsigned debug acceptance bundle at `c2e81df3`, then restored the
+fixed sandbox launcher with the new native checksum. Launch without diagnostic
+environment still refused. The model weights and synthetic vault were retained,
+but the new native process had no process-local verification or model-host cache.
+No provider setting changed and network denial remained in force.
+
+Submitted the 12,340-byte synthetic Willow inventory once, with no retry. The
+neutral preparation text was visible. A process sample after 45 seconds still
+showed native artifact SHA-256 verification, and the task did not expire while
+preparing. At 228 seconds the UI was still running; the next observation at about
+266 seconds showed successful completion. This interval includes debug artifact
+verification/loading and is not an inference-only latency or release benchmark.
+
+The title/body were empty and submit was disabled after success. Review listed a
+new source-summary note plus updated index/log. The generated 2B preview states
+that a request exists but completion is not recorded, with explicit 6-of-24-chunk
+coverage. Hashes of every preexisting synthetic Markdown file matched except the
+expected app-managed index/log updates; all preexisting raw files were unchanged.
+The native process and its RSS sampler were stopped. Two-second sampling observed
+1,626,688 KiB maximum native RSS; this is not an exact peak or WebKit/process-tree
+memory total. Production marker metadata was unchanged relative to the existing
+unresolved incident baseline.
+
+The [cold-process receipt](2026-11-11-native-ingest-cold-success.json) retains the
+full synthetic input/output, binary/profile hashes, observations and limitations.
+This verifies the previous timing fix on one actual first submission and the
+neutral UI copy in the rebuilt app. It does not complete the newer-draft race,
+native storage-failure recovery, Windows or three-repeat semantic gates. Build
+passed (`/tmp/myco-budget-native-build.log`); application code and README were
+unchanged in this validation turn, so code suites were not repeated.
+
 ## November 11: preview generation budget starts after model preparation
 
 The [native Ingest receipt](2026-11-11-native-ingest-success.json) retained cold
