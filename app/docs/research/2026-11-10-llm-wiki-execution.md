@@ -18,6 +18,34 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: actual-process acceptance settings refusal
+
+Rebuilt the standalone debug acceptance binary from clean `81df2562` and ran
+eight rejected-startup cases with both diagnostic flags present and a canonical
+synthetic data directory. Missing settings, empty defaults, malformed JSON, each
+enabled automatic job, and an invalid endpoint all exited promptly with the
+expected refusal message, no stdout and no change to synthetic state bytes.
+See the [process receipt](2026-11-11-native-settings-startup.json) for the binary
+checksum, exact revision and individual results. Exit code is currently zero;
+the assertions require the refusal message too, not merely process termination.
+
+The existing one-off OS sandbox denied network access, writes outside scratch,
+and data reads from production/legacy app state, session directories and Documents.
+Metadata reads remained available for canonical path checks. A synthetic protected
+file read was denied before the native process cases ran. Production active-vault
+marker inode/size/mtime/ctime were unchanged; its contents were not read or restored.
+No native `myco` process remained after the checks. This proves refused startup
+only: no accepted startup, WebKit helpers, GUI, model, Windows or D1/D2 scenario
+was exercised. The old disabled app bundle remains unused.
+
+The first build failed with `No space left on device (os error 28)` while creating
+`libmyco_lib.a`. Removed only three regenerable target artifacts (the old static
+archive and two compiler query caches, 1,547,158,295 bytes); the retry passed in
+25.58 seconds. No source, vault, raw data or dependency version changed. Logs:
+`/tmp/myco-acceptance-settings-binary-{build,rebuild}.log`; one-off harness:
+`/tmp/myco-acceptance-settings-process.py`. This evidence supersedes the preceding
+slice's outstanding standalone rebuild/refusal check, not installed acceptance.
+
 ## November 11: reject automatic-job defaults in acceptance startup
 
 The opt-in `native-app-acceptance` guard previously allowed missing or unsafe

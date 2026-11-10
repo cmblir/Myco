@@ -1,0 +1,88 @@
+{
+  "codeRevision": "81df2562cc123f873ea1d6bffe4c1482c634ab56",
+  "binarySha256": "ec940d891162bbccbefcf020f54071657957b14e17f97284fcb4d006a778a7d0",
+  "evidenceLevel": "native process startup refusal only",
+  "os": "26.5.1",
+  "architecture": "arm64",
+  "syntheticProtectedReadDenied": true,
+  "productionMarkerMetadataUnchanged": true,
+  "cases": [
+    {
+      "case": "missing",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance startup requires an existing settings file",
+      "stateUnchanged": true
+    },
+    {
+      "case": "empty_defaults",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance startup requires disabled automatic jobs",
+      "stateUnchanged": true
+    },
+    {
+      "case": "malformed",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance settings must be valid",
+      "stateUnchanged": true
+    },
+    {
+      "case": "auto_import_enabled",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance startup requires disabled automatic jobs",
+      "stateUnchanged": true
+    },
+    {
+      "case": "auto_ingest_enabled",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance startup requires disabled automatic jobs",
+      "stateUnchanged": true
+    },
+    {
+      "case": "auto_reflect_enabled",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance startup requires disabled automatic jobs",
+      "stateUnchanged": true
+    },
+    {
+      "case": "auto_reindex_enabled",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance startup requires disabled automatic jobs",
+      "stateUnchanged": true
+    },
+    {
+      "case": "invalid_endpoint",
+      "exitCode": 0,
+      "stderr": "refusing diagnostic startup: acceptance settings must be valid",
+      "stateUnchanged": true
+    }
+  ],
+  "limits": [
+    "No GUI or WebKit containment verification",
+    "No accepted-startup case or D1/D2 rerun",
+    "No Windows or actual-model acceptance",
+    "Guard does not prevent later settings changes or filesystem races",
+    "Existing deprecated sandbox-exec used only for this one-off diagnostic; not a product dependency"
+  ],
+  "buildCommand": "cargo build --features native-app-acceptance --bin myco",
+  "diagnosticEnvironment": {
+    "MYCO_REAL_DIAGNOSTIC": "1",
+    "MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER": "1",
+    "MYCO_DATA_DIR": "canonical isolated temporary state directory",
+    "MEMEX_DATA_DIR": "unset"
+  },
+  "processTimeoutSeconds": 15,
+  "harnessSha256": "08010fcdcd25875790f9377d740f9e5b77129c28b76eb0e2fe3cdad78ffb89b1",
+  "osRestrictions": {
+    "network": "denied",
+    "writes": "denied outside synthetic scratch and inside protected canary",
+    "dataReadsDenied": [
+      "production application data",
+      "legacy application data",
+      "Codex sessions",
+      "Claude sessions",
+      "Documents",
+      "synthetic protected canary"
+    ],
+    "metadataReads": "allowed for startup canonical path validation"
+  }
+}
