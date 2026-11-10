@@ -11,6 +11,10 @@ const CONTROLS: &str =
     include_str!("../../../docs/research/2026-11-11-selected-note-controls.json");
 
 fn selected_note_fixture() -> (Request, Vec<Evidence>, SourceSet) {
+    selected_note_fixture_with_tail(None)
+}
+
+fn selected_note_fixture_with_tail(tail: Option<&str>) -> (Request, Vec<Evidence>, SourceSet) {
     let controls: Value = serde_json::from_str(CONTROLS).unwrap();
     let (mut request, _, _) = fixture();
     request.question = controls["question"].as_str().unwrap().into();
@@ -21,13 +25,18 @@ fn selected_note_fixture() -> (Request, Vec<Evidence>, SourceSet) {
     for (index, document) in controls["documents"].as_array().unwrap().iter().enumerate() {
         let original = document["original"].as_str().unwrap();
         assert_eq!(source_revision(original), document["sha256"]);
+        let original = if index == 0 {
+            format!("{original}{}", tail.unwrap_or_default())
+        } else {
+            original.to_owned()
+        };
         let path = document["path"].as_str().unwrap();
         documents.push(
             SourceDocument::bind(
                 format!("S-selected-{index}"),
                 path.into(),
                 path.into(),
-                original,
+                &original,
                 None,
                 vec![SpanInput {
                     id: format!("Q-selected-{index}"),
@@ -45,7 +54,7 @@ fn selected_note_fixture() -> (Request, Vec<Evidence>, SourceSet) {
             stem: document["title"].as_str().unwrap().into(),
             title: None,
             section: 0,
-            text: original.into(),
+            text: original,
             compiled: None,
         });
     }

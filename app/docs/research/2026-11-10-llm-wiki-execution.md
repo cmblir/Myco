@@ -18,6 +18,44 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: explicit coverage guidance passes the first five binary controls
+
+Frozen [coverage controls](2026-11-11-selected-note-coverage-controls.json) retain
+the four prior cases unchanged and add an explicit withdrawal at the end of a
+separately revised synthetic center source. Its answer repeats the obsolete
+relationship and must be rejected. A regression proves the complete correction
+reaches review and that the existing cases/labels are unchanged. No fixture file
+or live raw source is modified by the experiment.
+
+Both comparison arms now use the same grouped-original representation. The
+candidate alone defines coverage as retaining important question-relevant facts
+and qualifications, requires inspecting uncited originals/corrections, and
+specifies original turn `id` rather than source/citation IDs for missing spans.
+It explicitly refuses to infer covered from packet completeness or an empty
+missing-ID list. Verdict validation and all production gates remain unchanged.
+
+The [actual ten-call receipt](2026-11-11-selected-note-coverage-review.json) shows
+the candidate accepting the supported answer and rejecting all four negatives,
+including the withdrawn relationship: 5/5 binary controls versus 4/5 for grouped
+baseline, which still rejects the positive. Candidate span IDs are valid; none
+of its rejections depend on malformed-ID refusal. This is initial diagnostic
+success only. The partial-answer case still mislabels its supported partial fact
+as unsupported, and each case ran only once. Constructed drafts do not prove
+fresh generation, native authority or installed-app acceptance. No production
+prompt, representation, grammar or model was promoted. Next repeat critical
+positive/withdrawal/unsupported cases and extend source-shape coverage before
+testing fresh generated answers with the candidate.
+
+Verification: 23 ordinary-flow tests passed, four model tests ignored in that
+invocation; explicit inference separately ran ten reviewer calls and exited
+zero. Rust fmt passed. Initial strict Clippy found a redundant String conversion
+in the new fixture helper; removing it restored a strict feature-enabled
+all-target pass. The running inference binary predates only that identity
+conversion cleanup; its hash is recorded. Startup overlapped Clippy, so receipt
+runtime/RSS are observations rather than clean performance benchmarks. Network
+denial was checked, the exact owned model process stopped, and README was
+unchanged. Logs use `/tmp/myco-review-coverage-*`. G2/G7 are still incomplete.
+
 ## November 11: grouped originals repair positive disposition, not coverage
 
 Reused the existing lossless `SourceDocumentGroupsQaV1` diagnostic presentation
