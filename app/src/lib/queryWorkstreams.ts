@@ -265,6 +265,56 @@ export function resolveWorkstream(name: string, facts: WorkstreamFacts): string 
   return top && top[1] >= MENTIONS && top[1] * 5 >= total * 4 ? top[0] : null;
 }
 
+export interface WorkstreamSources {
+  key: string;
+  title: string;
+  paths: string[];
+  range: DateRange | null;
+  incomplete: boolean;
+}
+
+/** Project facts select candidates, never establish a task's current state.
+ * Only current native-ledger projections may enter the original-source flow. */
+export function workstreamSources(name: string, facts: WorkstreamFacts, ledgerRaw: string, queryTime: Date,
+  limits: { paths?: readonly string[]; range?: DateRange; asOf?: string } = {}): WorkstreamSources | null {
+  const key = resolveWorkstream(name, facts);
+  if (!key) return null;
+  const members = Object.entries(facts.conversations).filter(([, c]) => c.key === key && !c.automated);
+  const day = (epoch: number) => workstreamRecentRange(new Date(epoch * 1000)).end;
+  const start = limits.range?.start ?? day(facts.workstreams[key].first_epoch);
+  const end = [limits.range?.end, limits.asOf, workstreamRecentRange(queryTime).end]
+    .filter((value): value is string => Boolean(value)).sort()[0];
+  const range = start <= end ? { start, end } : null;
+  const selected: WorkstreamSources = {key, title:facts.workstreams[key].title, paths:[], range, incomplete:false};
+  if (!range) return selected;
+  // This is a bounded candidate snapshot, not native custody or source proof.
+  if (ledgerRaw.length > 8 * 1024 * 1024) return {...selected,incomplete:true};
+  let ledger: unknown;
+  try { ledger = JSON.parse(ledgerRaw); }
+  catch { return {...selected,incomplete:true}; }
+  if (!isObject(ledger) || !isObject(ledger.entries) || !isObject(ledger.locations))
+    return {...selected,incomplete:true};
+  const { entries, locations } = ledger;
+  const bounds = queryDateRange(range);
+  const candidates = members.filter(([, c]) => c.first_epoch < bounds.endEpoch && c.last_epoch >= bounds.startEpoch);
+  const owners = new Map<string, number>();
+  for (const [location, path] of Object.entries(locations))
+    if (location.startsWith("sessions:") && typeof path === "string") owners.set(path,(owners.get(path) ?? 0) + 1);
+  for (const [id, c] of candidates) {
+    const path = locations[`sessions:${id}`];
+    if (id !== `${c.vendor}:${c.id}` || !/^[a-f0-9]{16}$/.test(c.fp) || entries[id] !== c.fp ||
+        !isLinkPath(path,"sessions/") || typeof path !== "string" ||
+        [...path].some(char => char === "\\" || char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) || owners.get(path) !== 1) {
+      selected.incomplete = true;
+      continue;
+    }
+    if (limits.paths && !limits.paths.includes(path)) continue;
+    selected.paths.push(path);
+  }
+  selected.paths.sort();
+  return selected;
+}
+
 const EN = {
   progress: "{page} has {roots} sessions ({conversations} conversations) from {first} to {last}. Newest first:",
   asked: "{page} (asked as “{name}”)",
@@ -279,6 +329,10 @@ const EN = {
   window: "the last 7 days ({start} – {end})",
   emptyWindow: "No conversation from the last 7 days ({start} – {end}) belongs to a project.",
   choosePeriod: "Name a project or ask with explicit dates to search older records.",
+  chooseProject: "Name the project whose current work state you want to review.",
+  projectNotFound: "I couldn't identify one project. Select it from the project list or enter its exact project name or key.",
+  stateModelRequired: "Project state requires a built-in local chat model that supports original-source review. Select one in Model settings, then retry.",
+  stateIncomplete: "Some project records could not be checked. The supported state below covers only the available sources; the full current state remains unconfirmed.",
   recent: "In {window}, there were {conversations} conversations across {projects} projects:",
   recentLine: "{conversations} conversations in {roots} sessions, last active {date}",
   assumed: "No project was named, so this assumes {title}, the project with the most conversations in {window}. Name a project to ask about another one.",
@@ -312,6 +366,10 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     window: "최근 7일({start} – {end})",
     emptyWindow: "최근 7일({start} – {end})에는 프로젝트로 묶인 대화가 없습니다.",
     choosePeriod: "이전 기록을 보려면 프로젝트 이름이나 원하는 날짜를 넣어 다시 물어보세요.",
+    chooseProject: "현재 작업 상태를 확인할 프로젝트 이름을 입력해 주세요.",
+    projectNotFound: "프로젝트를 하나로 특정하지 못했습니다. 프로젝트 목록에서 선택하거나 정확한 이름 또는 식별자를 입력해 주세요.",
+    stateModelRequired: "프로젝트 상태 확인에는 원문 검토를 지원하는 내장 로컬 대화 모델이 필요합니다. 모델 설정에서 선택한 뒤 다시 시도해 주세요.",
+    stateIncomplete: "일부 프로젝트 기록을 확인하지 못했습니다. 아래 상태는 확인 가능한 원문에 한정되며, 전체 현재 상태는 미확인입니다.",
     recent: "{window} 동안 프로젝트 {projects}개에서 대화 {conversations}건이 있었습니다.",
     recentLine: "대화 {conversations}건, 세션 {roots}개, 마지막 활동 {date}",
     assumed: "프로젝트 이름이 없어, {window} 동안 대화가 가장 많은 {title} 프로젝트로 가정했습니다. 다른 프로젝트라면 이름을 넣어 다시 물어보세요.",
@@ -342,6 +400,10 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     window: "直近7日間（{start}〜{end}）",
     emptyWindow: "直近7日間（{start}〜{end}）には、プロジェクトにまとめられた会話がありません。",
     choosePeriod: "以前の記録を探すには、プロジェクト名か具体的な日付を指定して質問してください。",
+    chooseProject: "現在の作業状態を確認するプロジェクト名を入力してください。",
+    projectNotFound: "プロジェクトを一つに特定できませんでした。一覧から選ぶか、正確なプロジェクト名または識別子を入力してください。",
+    stateModelRequired: "プロジェクトの状態確認には原文レビューに対応した内蔵ローカルチャットモデルが必要です。モデル設定で選択して再試行してください。",
+    stateIncomplete: "一部のプロジェクト記録を確認できませんでした。以下は確認可能な原文に限られ、全体の現在の状態は未確認です。",
     recent: "{window}に、{projects}件のプロジェクトで会話が{conversations}件ありました。",
     recentLine: "会話{conversations}件、セッション{roots}件、最終活動 {date}",
     assumed: "プロジェクト名がないため、{window}に会話が最も多い{title}と仮定しました。別のプロジェクトについては、名前を入れて質問してください。",

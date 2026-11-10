@@ -7,6 +7,7 @@ import {
   workstreamAnswer,
   workstreamChoices,
   workstreamRecentRange,
+  workstreamSources,
   type WorkstreamFacts,
 } from "./queryWorkstreams";
 import { buildExplainQuestion } from "./guidedQuestion";
@@ -42,7 +43,7 @@ type Conversation = WorkstreamFacts["conversations"][string];
 function conversation(ledger: string, fields: Partial<Conversation>): [string, Conversation] {
   const [vendor, id] = ledger.split(":") as [Conversation["vendor"], string];
   return [ledger, {
-    fp: `fp-${id}`, vendor, id, raw: `raw/conversations/${vendor}/${vendor}-${id}-0123456789abcdef.md`,
+    fp: "0123456789abcdef", vendor, id, raw: `raw/conversations/${vendor}/${vendor}-${id}-0123456789abcdef.md`,
     first_epoch: at("2026-11-05T09:00:00Z"), last_epoch: at("2026-11-05T10:00:00Z"), key: null,
     cwd_source: "sidecar", root: ledger, subagent: false, request: null, report: null, parent_report: null, automated: false, ...fields,
   }];
@@ -96,6 +97,54 @@ function facts(): WorkstreamFacts {
     ]),
   };
 }
+
+describe("workstream source selection", () => {
+  it("uses current project projections, never another project's same-named task", () => {
+    const source = facts();
+    const entries = Object.fromEntries(Object.entries(source.conversations).map(([key, value]) => [key, value.fp]));
+    const locations = Object.fromEntries(Object.keys(entries).map((key, index) => [`sessions:${key}`, `sessions/source-${index}.md`]));
+    const selected = workstreamSources("Lumen", source, JSON.stringify({entries, locations}), NOW);
+    expect(selected?.paths).toContain(locations[`sessions:${ROOT}`]);
+    expect(selected?.paths).not.toContain(locations["sessions:codex:c0ffee04-0000-7000-8000-000000000004"]);
+    expect(selected?.range).toEqual({start:"2026-10-01",end:"2026-11-08"});
+    expect(selected?.incomplete).toBe(false);
+  });
+
+  it("intersects explicit paths and dates, and exposes stale or missing project projections", () => {
+    const source = facts();
+    const selected = workstreamSources("Lumen", source, JSON.stringify({
+      entries:{[ROOT]:source.conversations[ROOT].fp,[SUBAGENT]:"changed-revision"},
+      locations:{[`sessions:${ROOT}`]:"sessions/allowed.md",[`sessions:${SUBAGENT}`]:"sessions/stale.md"},
+    }), NOW, {paths:["sessions/allowed.md","sessions/unrelated.md"],range:{start:"2026-11-06",end:"2026-11-07"}});
+    expect(selected).toMatchObject({paths:["sessions/allowed.md"],range:{start:"2026-11-06",end:"2026-11-07"},incomplete:true});
+    expect(workstreamSources("Lumen",source,"{}",NOW)?.paths).toEqual([]);
+    expect(workstreamSources("Lumen",source,"{}",NOW)?.incomplete).toBe(true);
+  });
+
+  it("does not invent a current interval when the cutoff predates the project", () => {
+    expect(workstreamSources("Lumen",facts(),"{}",NOW,{asOf:"2026-09-01"})?.range).toBeNull();
+  });
+
+  it.each(["sessions/../beta.md", "sessions/./beta.md", "sessions//beta.md", "sessions/beta.md\n", "sessions/beta\t.md", "sessions/beta\\x.md", "wiki/beta.md"])(
+    "rejects malformed or outside-session projection %s", path => {
+      const source = facts();
+      const selected = workstreamSources("Lumen",source,JSON.stringify({entries:{[ROOT]:source.conversations[ROOT].fp},
+        locations:{[`sessions:${ROOT}`]:path}}),NOW);
+      expect(selected).toMatchObject({paths:[],incomplete:true});
+    });
+
+  it("rejects a projection assigned to multiple conversation identities", () => {
+    const source = facts();
+    const selected = workstreamSources("Lumen",source,JSON.stringify({entries:{[ROOT]:source.conversations[ROOT].fp},
+      locations:{[`sessions:${ROOT}`]:"sessions/shared.md","sessions:codex:beta":"sessions/shared.md"}}),NOW);
+    expect(selected).toMatchObject({paths:[],incomplete:true});
+  });
+
+  it.each(["not-json", "null", "[]", '{"entries":[],"locations":{}}', " ".repeat(8 * 1024 * 1024 + 1)])(
+    "keeps malformed or oversized ledger snapshots incomplete", ledger => {
+      expect(workstreamSources("Lumen",facts(),ledger,NOW)).toMatchObject({paths:[],incomplete:true});
+    });
+});
 
 describe("classifyWorkstreamQuestion", () => {
   it.each([

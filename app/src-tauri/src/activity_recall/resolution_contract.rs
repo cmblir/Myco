@@ -86,6 +86,7 @@ pub struct ResolutionCoverage {
     pub processed_windows: usize,
     pub omitted_windows: usize,
     pub excluded_after_as_of_spans: usize,
+    /// Missing timestamps or date intervals that cannot be placed before cutoff.
     pub undated_spans: usize,
     pub read_bytes: usize,
     pub incomplete: bool,

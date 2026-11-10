@@ -1039,16 +1039,93 @@ fn explicit_resolution_requires_native_hooks_in_the_shared_helper() {
 }
 
 #[test]
+fn historical_project_closure_filters_future_turns_before_any_model_input() {
+    let (dir, mut request, checked, index) =
+        resolution_fixture(crate::activity_recall::ResolutionMode::HistoricalAsOf);
+    request.question = "What was the synthetic export project's state as of October 3?".into();
+    request.lang = "en".into();
+    request.range.as_mut().unwrap().end = "2026-10-03".into();
+    request.resolution.as_mut().unwrap().as_of_epoch =
+        crate::importers::parse_iso8601("2026-10-04T00:00:00Z").unwrap() - 1;
+    let observed = std::cell::Cell::new(false);
+    let reply = activity_synthesis_steps_with_resolution(
+        &request, &checked.evidence, checked.originals.as_ref().unwrap(), request.origin.as_ref().unwrap(),
+        |_, user| {
+            observed.set(true);
+            assert!(!user.contains("I prepared the synthetic export draft"));
+            assert!(!user.contains("retract that completion"));
+            assert!(!user.contains("Please resume work"));
+            Ok(1800)
+        },
+        |_, user, _, _, schema| {
+            if let Some(review) = review_stub(schema, user) { return Ok(review); }
+            if schema == GenerationSchema::WikiClaimsV1 { return Ok(claims_from_packet(user)); }
+            Ok(json!({"answer":"The user requested a synthetic export button. Its completion was not established at that cutoff.","sources":["S1"]}).to_string())
+        },
+        |initial, keys| native_resolution(&dir, &index, &request, initial, keys),
+        |sources| native_recheck(&request, sources),
+    ).unwrap();
+    assert!(observed.get());
+    assert_eq!(reply.receipt.eligible_original_spans, 1);
+    assert_eq!(reply.receipt.independent_verification_receipts, 0);
+    assert!(
+        reply
+            .receipt
+            .resolution_coverage
+            .unwrap()
+            .excluded_after_as_of_spans
+            >= 1
+    );
+}
+
+#[test]
+fn initial_period_start_excludes_prior_turns_from_model_input() {
+    let (dir, mut request, checked, index) =
+        resolution_fixture(crate::activity_recall::ResolutionMode::HistoricalAsOf);
+    request.range.as_mut().unwrap().start = "2026-10-04".into();
+    let observed = std::cell::Cell::new(false);
+    let result = activity_synthesis_steps_with_resolution(
+        &request,
+        &checked.evidence,
+        checked.originals.as_ref().unwrap(),
+        request.origin.as_ref().unwrap(),
+        |_, user| {
+            assert!(!user.contains("Please add a synthetic export button"));
+            if user.contains("I prepared the synthetic export draft") {
+                observed.set(true);
+                Err("synthetic start boundary observation".into())
+            } else {
+                Ok(1800)
+            }
+        },
+        |_, _, _, _, _| panic!("boundary observation must not generate"),
+        |initial, keys| native_resolution(&dir, &index, &request, initial, keys),
+        |sources| native_recheck(&request, sources),
+    );
+    assert!(observed.get());
+    assert_eq!(result.unwrap_err().code, "prompt_unavailable");
+}
+
+#[test]
 fn after_as_of_initial_original_fails_before_tokenization_or_generation() {
     let (_dir, mut request, checked, _index) =
         resolution_fixture(crate::activity_recall::ResolutionMode::HistoricalAsOf);
     request.range.as_mut().unwrap().end = "2026-10-03".into();
     request.resolution.as_mut().unwrap().as_of_epoch =
         crate::importers::parse_iso8601("2026-10-04T00:00:00Z").unwrap() - 1;
+    let future_only = checked
+        .originals
+        .as_ref()
+        .unwrap()
+        .retained(|span| {
+            period_context::record_interval(span)
+                .is_some_and(|(start, _)| start > request.resolution.as_ref().unwrap().as_of_epoch)
+        })
+        .unwrap();
     let result = activity_synthesis_steps_with_resolution(
         &request,
         &checked.evidence,
-        checked.originals.as_ref().unwrap(),
+        &future_only,
         request.origin.as_ref().unwrap(),
         |_, _| panic!("future original must not tokenize"),
         |_, _, _, _, _| panic!("future original must not generate"),
@@ -1107,7 +1184,7 @@ fn date_only_initial_original_crossing_as_of_fails_before_model_work() {
 }
 
 #[test]
-fn initial_as_of_allows_exact_instant_and_full_day_end_but_keeps_unknown_uncertain() {
+fn initial_as_of_allows_exact_instant_and_full_day_end_but_excludes_unknown_time() {
     for (cutoff, record, turn, allowed) in [
         (
             "2026-10-03T09:30:00Z",
@@ -1122,7 +1199,7 @@ fn initial_as_of_allows_exact_instant_and_full_day_end_but_keeps_unknown_uncerta
             false,
         ),
         ("2026-10-03T23:59:59Z", Some("2026-10-03"), None, true),
-        ("2026-10-03T09:30:00Z", None, None, true),
+        ("2026-10-03T09:30:00Z", None, None, false),
     ] {
         let (_dir, mut request, checked, _index) =
             resolution_fixture(crate::activity_recall::ResolutionMode::HistoricalAsOf);

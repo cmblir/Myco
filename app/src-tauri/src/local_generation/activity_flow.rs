@@ -329,16 +329,32 @@ fn activity_synthesis_steps_inner(
                 .map_err(|reason| failure("source_verification_failed", reason))
         })
         .transpose()?;
-    if let Some(window) = &resolution_window {
-        for span in source_set.spans() {
-            if period_context::record_interval(span).is_some_and(|(_, end)| end > window.end_epoch)
-            {
-                return Err(failure(
-                    "source_verification_failed",
-                    "initial original exceeds the declared as-of cutoff",
-                ));
-            }
-        }
+    // A resumed transcript can contain both the requested historical turn and
+    // later outcomes. Retain exact native spans before any model sees them;
+    // never let a prompt instruction stand in for the temporal boundary.
+    let mut initial_time_uncertain = false;
+    let bounded_sources = resolution_window
+        .as_ref()
+        .map(|window| {
+            source_set.retained(|span| match period_context::record_interval(span) {
+                Some((_, end)) if end <= window.start_epoch => false,
+                Some((_, end)) if end <= window.end_epoch => true,
+                Some((start, _)) if start >= window.end_epoch => false,
+                _ => {
+                    initial_time_uncertain = true;
+                    window.mode == activity_recall::ResolutionMode::CurrentState
+                        && period_context::record_interval(span).is_none()
+                }
+            })
+        })
+        .transpose()
+        .map_err(|reason| failure("source_verification_failed", reason))?;
+    let source_set = bounded_sources.as_ref().unwrap_or(source_set);
+    if resolution_window.is_some() && source_set.spans().next().is_none() {
+        return Err(failure(
+            "source_verification_failed",
+            "no initial original is within the declared as-of cutoff",
+        ));
     }
     let mut eligible_original_spans = source_set.spans().count();
     let mut original_period_counts = period_context::annotate(range, source_set.spans())
@@ -456,7 +472,9 @@ fn activity_synthesis_steps_inner(
         keys = bound_keys;
         let mut sources = resolve(&windows, &keys)
             .map_err(|reason| failure("source_verification_failed", reason))?;
-        sources.coverage.incomplete |= keys_omitted;
+        // The numeric counters describe the later scan only. Counting initial
+        // exclusions here would double-count turns encountered again there.
+        sources.coverage.incomplete |= keys_omitted || initial_time_uncertain;
         eligible_original_spans += sources.originals.spans().count();
         original_period_counts.add(
             &period_context::annotate(range, sources.originals.spans())
@@ -643,7 +661,7 @@ fn activity_synthesis_steps_inner(
                 answer_corrections: review_correction_qa
                     .then_some(usize::from(reviewed.correction_used)),
                 automated_answer_review_input_revision: answer_review_revision,
-                original_inputs_incomplete: false,
+                original_inputs_incomplete: initial_time_uncertain,
                 independent_verification_receipts: 0,
                 resolution_window: resolution_window.clone(),
                 resolution_coverage: resolution_sources

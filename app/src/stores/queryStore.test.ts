@@ -2507,7 +2507,7 @@ describe("queryStore.ask workstream facts", () => {
       first_epoch: at("2026-11-07T10:00:00Z"), last_epoch: at("2026-11-07T12:00:00Z"), conversations: 1, roots: 1,
       summary: "A synthetic reminder app.",
       open_items: [{ epoch: at("2026-11-07T12:00:00Z"), text: "Retry the synthetic sync", conversation: ledger }] } },
-    conversations: { [ledger]: { automated: false, fp: "synthetic", vendor: "codex", id: "c0ffee01-0000-7000-8000-000000000001",
+    conversations: { [ledger]: { automated: false, fp: "0123456789abcdef", vendor: "codex", id: "c0ffee01-0000-7000-8000-000000000001",
       raw: "raw/conversations/codex/codex-c0ffee01-synthetic.md", first_epoch: at("2026-11-07T10:00:00Z"),
       last_epoch: at("2026-11-07T12:00:00Z"), key: "prj_lumen", cwd_source: "state", root: ledger, subagent: false,
       request: "Add synthetic reminders", report: { epoch: at("2026-11-07T12:00:00Z"), text: "Implemented the synthetic scheduler." },
@@ -2529,9 +2529,71 @@ describe("queryStore.ask workstream facts", () => {
   });
   afterEach(() => { useQueryStore.getState().clear(); vi.useRealTimers(); });
 
+  it.each([[undefined,false,undefined], ["2026-11-01",false,undefined], [undefined,true,undefined], [undefined,false,"all"]] as const)(
+    "resolves project state from original evidence with cutoff %s, incomplete candidates %s, scope %s", async (asOf,incomplete,selectedScope) => {
+    const scope = selectedScope ?? "sessions";
+    const model = "qwen3.5-4b-q4_k_m";
+    stubAskRole("builtin-local", model);
+    vi.spyOn(ipc,"localChatStatus").mockResolvedValue({model_id:model,state:"ready",bytes:100});
+    const source = structuredClone(facts);
+    source.workstreams.prj_lumen.first_epoch = at("2026-11-01T09:00:00Z");
+    source.conversations[ledger].first_epoch = at("2026-11-01T09:00:00Z");
+    if (incomplete) Object.assign(source.conversations, {[`${ledger}-missing`]:{
+      ...source.conversations[ledger],id:`${source.conversations[ledger].id}-missing`,root:`${ledger}-missing`,
+      raw:"raw/conversations/codex/codex-missing-0123456789abcdef.md",
+    }});
+    const projection = "sessions/2026-11/alpha.md";
+    vi.spyOn(ipc,"readFile").mockImplementation(async path => {
+      const raw = JSON.stringify(path.endsWith("ledger.json") ? {
+        entries:{[ledger]:source.conversations[ledger].fp}, locations:{[`sessions:${ledger}`]:projection},
+      } : source);
+      return {path,raw,content:raw,frontmatter:null};
+    });
+    const recall = vi.spyOn(ipc,"activityRecall").mockResolvedValue({hits:[{page:projection,stem:"Alpha",section:0,
+      text:"Please implement the synthetic export test. I plan to write it; it has not run."}],
+      indexed_pages:2,scanned_pages:1,matched_chunks:1,incomplete:false});
+    const synthesis = vi.spyOn(ipc,"localSynthesize").mockImplementation(async request => ({
+      answer:`${asOf ? "The work was requested and planned." : "Completion was reported, then the user reopened the work."} [[sessions/2026-11/alpha|source]]`,
+      model_id:model,used_sources:[projection],activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution),
+    }));
+    const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen",...(asOf ? {asOf} : {})};
+    await useQueryStore.getState().ask(buildGuidedQuestion(choice,"en"),"en",copy,{guidedQuestion:choice,
+      ...(selectedScope ? {scope:selectedScope,paths:[projection,"sessions/unrelated.md"]} : {})});
+    expect(recall).toHaveBeenCalledWith(expect.objectContaining({scope,paths:[projection],
+      range:{start:"2026-11-01",end:asOf ?? "2026-11-08"}}));
+    expect(synthesis).toHaveBeenCalledWith(expect.objectContaining({activityOverview:true,scope,paths:[projection],
+      resolution:expect.objectContaining({mode:asOf ? "historical_as_of" : "current_state"})}));
+    expect(last().a).not.toContain("Retry the synthetic sync");
+    expect(last()).toMatchObject({scope,extractive:false,activityReceipt:expect.any(Object),
+      searchContext:{paths:[projection]},activityCoverage:{incomplete}});
+    if (incomplete) expect(last().a).toContain("the full current state remains unconfirmed");
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    await ask("why?");
+    expect(recall).toHaveBeenCalledTimes(2);
+    expect(synthesis.mock.calls[1][0]).toMatchObject({paths:[projection],scope,
+      range:{start:"2026-11-01",end:asOf ?? "2026-11-08"},
+      resolution:{mode:asOf ? "historical_as_of" : "current_state"}});
+    expect(synthesis.mock.calls[1][0].question).toContain("Lumen");
+    expect(last().error).toBeUndefined();
+    const reply = await synthesis.mock.results[1].value;
+    synthesis.mockImplementationOnce(async request => {
+      source.conversations[ledger].fp = "changed-during-generation";
+      return {...reply,activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution)};
+    });
+    await ask("why?");
+    expect(last()).toMatchObject({a:"",error:copy.sourceChanged});
+    expect(last().activityReceipt).toBeUndefined();
+    if (incomplete) {
+      source.conversations[ledger].fp = "0123456789abcdef";
+      recall.mockResolvedValueOnce({hits:[],indexed_pages:2,scanned_pages:1,matched_chunks:0,incomplete:false});
+      const calls = synthesis.mock.calls.length;
+      await ask("why?");
+      expect(last()).toMatchObject({a:"",error:copy.activityIncomplete,activityCoverage:{incomplete:true}});
+      expect(synthesis).toHaveBeenCalledTimes(calls);
+    }
+  });
+
   it.each([
-    ["Lumen 지금 어디까지 했어?", "[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트는 "],
-    ["지금 어디까지 했어?", "대화가 가장 많은 Lumen 프로젝트로 가정했습니다"],
     ["내가 최근에 한 일이 뭐야?", "**[[wiki/workstreams/prj_lumen|Lumen]]** 대화 1건, 세션 1개"],
   ])("answers %s from the facts file before any model or role check", async (question, expected) => {
     const read = factsFile(JSON.stringify(facts));
@@ -2629,26 +2691,27 @@ describe("queryStore.ask workstream facts", () => {
     expect(ipc.captureModelRole).not.toHaveBeenCalled();
   });
 
-  it("answers the guided progress question about a project from the facts file", async () => {
+  it("does not turn project hints without current source projections into a progress answer", async () => {
     const read = factsFile(JSON.stringify(facts));
     const choice: GuidedQuestionSelection = { version: 1, intent: "progress", subject: "Lumen" };
     const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
       { guidedQuestion: choice });
     expect(read).toHaveBeenCalledWith("/v/.myco/workstreams.json");
-    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트는 ");
-    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", execution: { answerKind: "application", calls: [] } });
+    expect(turn?.a).not.toContain("Implemented the synthetic scheduler");
+    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", abstained:true,
+      activityFailure:"activity_insufficient_evidence",activityCoverage:{incomplete:true} });
     expect(ipc.captureModelRole).not.toHaveBeenCalled();
     expect(ipc.chatComplete).not.toHaveBeenCalled();
   });
 
-  it("answers the guided remaining-work question about a picked project from the facts file", async () => {
+  it("does not present old open items as current remaining work without source projections", async () => {
     factsFile(JSON.stringify(facts));
     const choice: GuidedQuestionSelection = { version: 1, intent: "remaining", subject: "Lumen" };
     const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
       { guidedQuestion: choice });
-    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트의 최근 세션 보고에 남은 일로 적힌 항목이 1개 있습니다.");
-    expect(turn?.a).toContain("** Retry the synthetic sync [[raw/conversations/codex/codex-c0ffee01-synthetic|원문]]");
-    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", execution: { answerKind: "application", calls: [] } });
+    expect(turn?.a).not.toContain("Retry the synthetic sync");
+    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", abstained:true,
+      activityFailure:"activity_insufficient_evidence" });
     expect(ipc.captureModelRole).not.toHaveBeenCalled();
   });
 
@@ -2661,7 +2724,6 @@ describe("queryStore.ask workstream facts", () => {
   });
 
   it.each([
-    ["a cutoff date", { version: 1, intent: "progress", subject: "Lumen", asOf: "2026-11-01" }],
     ["another intent", { version: 1, intent: "decision", subject: "Lumen" }],
   ] as const)("keeps the guided route for %s", async (_, choice) => {
     const read = factsFile(JSON.stringify(facts));
@@ -2671,21 +2733,52 @@ describe("queryStore.ask workstream facts", () => {
     expect(ipc.captureModelRole).toHaveBeenCalledOnce();
   });
 
-  it("keeps the guided route for a long topic that only mentions a project", async () => {
+  it("requires a project selection for a long topic that only mentions a project", async () => {
     factsFile(JSON.stringify(facts));
     const choice: GuidedQuestionSelection = { version: 1, intent: "progress", subject: "Lumen reminder scheduler retry window" };
     const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
       { guidedQuestion: choice });
-    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
+    expect(turn).toMatchObject({needsClarification:true});
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
     expect(turn?.a).not.toContain("wiki/workstreams/");
   });
 
-  it("falls through when the named project is not in the facts file", async () => {
+  it("asks for an exact project when the name is unknown without searching unrelated records", async () => {
     factsFile(JSON.stringify(facts));
+    const recall = vi.spyOn(ipc,"activityRecall");
     const turn = await koAsk("Orbit 지금 어디까지 했어?");
-    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
-    expect(ipc.semanticSearch).toHaveBeenCalled();
+    expect(turn).toMatchObject({needsClarification:true});
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(recall).not.toHaveBeenCalled();
     expect(turn?.a).not.toContain("wiki/workstreams/");
+  });
+
+  it("does not turn an ambiguous project name into an unrestricted guided search", async () => {
+    factsFile(JSON.stringify({...facts,workstreams:{...facts.workstreams,
+      other_lumen:{...facts.workstreams.prj_lumen,page:"wiki/workstreams/other_lumen.md",open_items:[]}},
+      conversations:{...facts.conversations,"codex:other":{...facts.conversations[ledger],id:"other",key:"other_lumen",
+        root:"codex:other",raw:"raw/conversations/codex/codex-other-0123456789abcdef.md"}}}));
+    const recall = vi.spyOn(ipc,"activityRecall");
+    const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen"};
+    const turn = await ask(buildGuidedQuestion(choice,"en"),{guidedQuestion:choice});
+    expect(turn).toMatchObject({needsClarification:true});
+    expect(turn?.a).toContain("exact project name");
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(recall).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+  });
+
+  it("keeps invalid project facts an explicit incomplete error without broadening retrieval", async () => {
+    factsFile('{"version":3}');
+    const recall = vi.spyOn(ipc,"activityRecall");
+    const turn = await koAsk("Lumen 지금 어디까지 했어?");
+    expect(turn).toMatchObject({a:"",error:STRINGS.ko.q_activity_incomplete});
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(recall).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
   });
 
   it("does not read the facts file for other questions or over one note", async () => {

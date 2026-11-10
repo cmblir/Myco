@@ -210,6 +210,47 @@ fn scope_and_explicit_paths_apply_before_the_candidate_budget() {
 }
 
 #[test]
+fn project_paths_keep_cancellation_without_borrowing_another_projects_same_named_task() {
+    let mut f = fixture();
+    for (page, role, body) in [
+        (
+            "sessions/alpha-cancelled.md",
+            "User",
+            "Cancel synthetic_export_btn for Alpha. The work is no longer requested.",
+        ),
+        (
+            "sessions/beta-completed.md",
+            "Assistant",
+            "BETA_ONLY synthetic_export_btn passed locally.",
+        ),
+        (
+            "sessions/beta-reopened.md",
+            "User",
+            "BETA_ONLY synthetic_export_btn failed. Reopen it.",
+        ),
+    ] {
+        put(
+            f.dir.path(),
+            &mut f.index,
+            page,
+            &transcript(Some("2026-10-05T10:00:00Z"), role, body),
+        );
+    }
+    let paths = vec!["sessions/alpha-cancelled.md".into()];
+    let found = scan(&f, ResolutionMode::CurrentState, Some(&paths));
+    assert_eq!(found.coverage.candidate_chunks, 1);
+    assert_eq!(found.declarations.len(), 1);
+    assert_eq!(found.declarations[0].citation_page, paths[0]);
+    let spans: Vec<_> = found.originals.spans().collect();
+    assert_eq!(spans.len(), 1);
+    assert_eq!(spans[0].speaker(), ActorRole::User);
+    assert!(spans[0]
+        .text()
+        .contains("Cancel synthetic_export_btn for Alpha"));
+    assert!(!spans[0].text().contains("BETA_ONLY"));
+}
+
+#[test]
 fn unknown_time_or_missing_results_never_becomes_proof_of_noncompletion() {
     let mut f = fixture();
     let empty = scan(&f, ResolutionMode::CurrentState, None);
