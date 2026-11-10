@@ -18,6 +18,39 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: repeated candidate still fails fresh withdrawal answers
+
+The [27-call stability receipt](2026-11-11-selected-note-stability-review.json)
+repeats the unchanged coverage candidate three times. All 15 constructed binary
+controls match their frozen labels. Fresh supported answers pass in all three
+runs; fresh withdrawal answers fail in all three. Writer and reviewer outputs
+are identical across repetitions with seed 42. This establishes reproducibility
+for these inputs, not independent statistical evidence or broader quality.
+
+The fresh withdrawal answer correctly denies the current links but omits the
+frozen requirement to explain their withdrawal and the obsolete earlier
+description. Separately, the reviewer incorrectly labels this supported current
+negation unsupported. Missing explanatory coverage does not justify that factual
+verdict. Gold requirements remain unchanged. The reviewer reason is capped at
+128 characters by the grammar; its ending is not evidence of output-token
+exhaustion. No production candidate is promoted.
+
+The harness retains all prompts, raw outputs, telemetry, model/binary hashes and
+sampling settings. A model-free regression proves its positive review input is
+byte-identical to the prior candidate input. Source binding uses the shared native
+algorithm with synthetic helper authority, not installed-app authorization.
+Next freeze contrasts between brief current negation, explicit withdrawal
+explanation and obsolete positive claims before changing production behavior.
+
+Verification: 24 ordinary-flow tests passed, five model tests ignored in that
+invocation. The explicit actual-model run completed 27 calls and exited zero;
+this transport success is not semantic acceptance. Rust fmt and feature-enabled
+strict all-target Clippy passed. Runtime was 673.622 seconds with maximum RSS
+3,166,257,152 bytes; startup overlapped Clippy, so these are observations rather
+than a clean benchmark. Network denial was verified and the owned process
+stopped. No production code, frontend or README changes were needed. G2/G7 and
+the overall goal remain incomplete.
+
 ## November 11: explicit coverage guidance passes the first five binary controls
 
 Frozen [coverage controls](2026-11-11-selected-note-coverage-controls.json) retain

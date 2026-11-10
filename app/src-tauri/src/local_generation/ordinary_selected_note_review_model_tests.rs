@@ -1,4 +1,8 @@
 //! Constructed drafts isolate actual reviewer behavior; no production promotion.
+#[cfg(feature = "native-index-probe")]
+#[path = "ordinary_selected_note_stability_tests.rs"]
+mod stability;
+
 use super::*;
 
 const REVIEW_CONTROLS: &str =
@@ -57,17 +61,24 @@ fn cached_model_compares_grouped_coverage_guidance() {
     run_comparison(
         COVERAGE_CONTROLS,
         "grouped-coverage-guidance",
-        |candidate, system, user| {
-            let mut system = system.to_owned();
-            let mut user = user.to_owned();
-            crate::local_synthesis::original_groups_qa::QaWireFormat::SourceDocumentGroupsQaV1
-                .apply_review(&mut system, &mut user)?;
-            if candidate {
-                system.push_str(COVERAGE_GUIDANCE);
-            }
-            Ok((system, user))
-        },
+        grouped_coverage_input,
     );
+}
+
+#[cfg(feature = "native-index-probe")]
+fn grouped_coverage_input(
+    candidate: bool,
+    system: &str,
+    user: &str,
+) -> Result<(String, String), String> {
+    let mut system = system.to_owned();
+    let mut user = user.to_owned();
+    crate::local_synthesis::original_groups_qa::QaWireFormat::SourceDocumentGroupsQaV1
+        .apply_review(&mut system, &mut user)?;
+    if candidate {
+        system.push_str(COVERAGE_GUIDANCE);
+    }
+    Ok((system, user))
 }
 const GUIDANCE: &str = " Citation IDs, original source IDs and span IDs are different namespaces. Resolve each answer sourceIds entry through citations.id to citations.path, then read originals whose selectionPath equals that path. Do not require citations.id to equal an original sourceId or span id. Source Markdown may explicitly state relations using wikilinks; interpret a link target using the supplied original path and title, without inventing additional relations. Judge the factual prose against those original statements. Inspect all supplied originals for contradictions and judge whether the answer covers every part of the actual question. A partial answer can be factually supported yet inadequate. Empty missingSpanIds alone does not establish coverage or support. Return a complete short reason tied to the supplied evidence; never approve a claim merely because citation metadata matches.";
 
