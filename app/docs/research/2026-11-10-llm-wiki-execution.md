@@ -15,8 +15,47 @@ requirements and must not be mistaken for passing results.
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
-| G6 UI | Native Graph focus improved; visual gate incomplete | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; rebuilt focus replay reduced magnification but exposed remaining label clipping and bright-background interference. Full accessibility/state/translation review remains. |
+| G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: label bounds and opaque text backing
+
+The previous native replay showed long neighbor names clipped at the canvas
+edge and bright node artwork behind the text. Label decluttering previously
+checked overlap with other labels but neither viewport bounds nor the open
+inspector. Two regression cases failed before repair. Placement now clamps both
+rendered label offsets and collision boxes to the available canvas area, with
+eight-pixel margins and right/bottom inspector exclusion. A third case covers
+the full-width bottom inspector. Overlong titles use ellipsis within the
+available width; the full title remains on the label's title attribute.
+
+Labels retain the shared typography and theme ink, with an opaque theme
+background behind the text span. The transparent outer element retains the
+node-to-label gap, so the backing does not cover that gap. Theme changes update
+the backing as well as the ink. Graph visual rules were updated accordingly.
+
+The first full run had six failures: the new literal border radius violated the
+design token rule, and five Woven tests used a fake style object without the
+standard `setProperty` API. The radius now uses `--r-sm`; the test DOM stores
+custom property values rather than ignoring the call. All 104 targeted tests
+then passed. This is code/test evidence, not a native visual acceptance claim.
+
+The final full suite passed 6,494 tests in 405 files; lint had zero errors and two
+existing warnings. Type/frontend build and isolated native bundle build passed.
+Logs: `/tmp/myco-graph-labels-final-{full,lint,build}.log`. In the rebuilt native
+1280x800 dark window, the center and both neighbor titles were visible inside
+the uncovered canvas, including the formerly clipped east title. Opaque backing
+separated text from the bright planet; a longer unrelated title ellipsized within
+the strip. Read-only computed styles reported RGB(237,237,236) text on
+RGB(25,25,25), with ancestor opacity product 1 (about 15:1 luminance contrast).
+This proves only the observed node-label treatment, not all UI contrast or the
+full theme/viewport/state matrix. See the
+[native label receipt](2026-11-11-native-graph-labels.json).
+
+The app was quit, no native process remained, and all eleven preexisting
+synthetic Markdown hashes were unchanged. Production marker metadata remained
+unchanged relative to the unresolved incident baseline. README was unchanged:
+this repairs existing Graph rendering without a new command or workflow.
 
 ## November 11: native replay exposes remaining narrow-canvas focus error
 

@@ -2770,6 +2770,19 @@ export class GraphScene {
 
     this.placedBoxes.length = 0;
     const w = Math.max(1, this.container.clientWidth);
+    let labelRight = w - 8;
+    let labelBottom = h - 8;
+    const inspector = selected
+      ? this.container.parentElement?.querySelector(".graph-inspector") : null;
+    if (inspector) {
+      const canvas = this.container.getBoundingClientRect();
+      const panel = inspector.getBoundingClientRect();
+      if (panel.left < canvas.right && panel.right > canvas.left &&
+          panel.top < canvas.bottom && panel.bottom > canvas.top) {
+        if (panel.width >= w * 0.8) labelBottom = Math.min(labelBottom, panel.top - canvas.top - 8);
+        else labelRight = Math.min(labelRight, panel.left - canvas.left - 8);
+      }
+    }
     const maxClusterWidth = this.clusterLabels.setViewportWidth(w);
 
     // Community names claim their screen space FIRST — at the distance they
@@ -2817,7 +2830,7 @@ export class GraphScene {
       boxes.push({
         id,
         x: ((this.tmpVec.x + 1) / 2) * w,
-        y: ((1 - this.tmpVec.y) / 2) * h + gap,
+        y: ((1 - this.tmpVec.y) / 2) * h + gap + NODE_LABEL_LINE_PX / 2,
         w: labelWidthPx(this.graph.getNodeAttribute(id, "label"), NODE_LABEL_CHAR_PX),
         gap,
       });
@@ -2825,7 +2838,12 @@ export class GraphScene {
     // Pass 2: greedy screen-space declutter — a lower-ranked label that would
     // land on top of one already placed is simply dropped for this frame.
     for (const b of boxes) {
-      if (!this.claimLabelBox(b.x, b.y, b.w, NODE_LABEL_LINE_PX)) continue;
+      if (labelRight <= 8 || labelBottom < 8 + NODE_LABEL_LINE_PX) continue;
+      if (b.x < 0 || b.x > w || b.y - b.gap < 0 || b.y - b.gap > h) continue;
+      const width = Math.min(b.w, labelRight - 8);
+      const x = THREE.MathUtils.clamp(b.x, 8 + width / 2, labelRight - width / 2);
+      const y = THREE.MathUtils.clamp(b.y, 8 + NODE_LABEL_LINE_PX / 2, labelBottom - NODE_LABEL_LINE_PX / 2);
+      if (!this.claimLabelBox(x, y, width, NODE_LABEL_LINE_PX)) continue;
       const obj = this.ensureLabel(b.id);
       const a = this.graph.getNodeAttributes(b.id);
       obj.position.set(a.x, a.y, a.z);
@@ -2834,6 +2852,8 @@ export class GraphScene {
         obj.userData.pad = pad;
         (obj.element as HTMLElement).style.paddingTop = `${pad}px`;
       }
+      obj.element.style.width = `${width}px`;
+      obj.element.style.translate = `${x - b.x}px ${y - b.y}px`;
       obj.visible = true;
       this.shownLabels.add(b.id);
     }
@@ -2873,9 +2893,12 @@ export class GraphScene {
     if (found) return found;
     const el = document.createElement("div");
     el.className = "graph-label-3d";
-    el.textContent = this.graph.getNodeAttribute(id, "label");
+    const text = document.createElement("span");
+    text.textContent = this.graph.getNodeAttribute(id, "label");
+    el.title = text.textContent ?? "";
+    el.appendChild(text);
     el.style.color = this.theme.ink;
-    el.style.textShadow = this.darkTheme ? "" : "0 0 3px #fff, 0 0 6px #fff";
+    el.style.setProperty("--graph-label-bg", this.theme.bg);
     const obj = new CSS2DObject(el);
     obj.center.set(0.5, 0); // hang below the node, not over its body
     obj.visible = false;
@@ -4277,7 +4300,7 @@ export class GraphScene {
     this.arrowFallback = parseRGBA(theme.edgeHi).color;
     for (const obj of this.labels.values()) {
       (obj.element as HTMLElement).style.color = theme.ink;
-      (obj.element as HTMLElement).style.textShadow = this.darkTheme ? "" : "0 0 3px #fff, 0 0 6px #fff";
+      (obj.element as HTMLElement).style.setProperty("--graph-label-bg", theme.bg);
     }
     this.writeNodes();
     this.writeEdges();

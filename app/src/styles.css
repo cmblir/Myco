@@ -2482,7 +2482,7 @@ select {
    starfield: the stage gets .graph-canvas-wrap's vignette (measured: the
    starfield's light stage falls to 202-219 at the corners against 255 in the
    middle, while this canvas came back a uniform #0b0a08 corner to corner), the
-   hub labels get .graph-label-3d's type and halo, and the hover tooltip gets
+   hub labels share .graph-label-3d's type with a halo, and the hover tooltip gets
    the same glass tokens the app's other floating panels use.
 
    [data-ground] is set by MyceliumView from the SUBSTRATE, not the app theme:
@@ -2569,8 +2569,8 @@ select {
   z-index: 2;
   pointer-events: none;
 }
-/* .graph-label-3d's treatment, so a note is named the same way under either
-   skin: sans token, 11px / 500, line-height 1, and a double halo rather than
+/* Shared note typography: sans token, 11px / 500, line-height 1.
+   Mycelium keeps a double halo rather than
    a drop shadow — over a bright cream strand a 1px shadow is no separation. */
 .myc-hub-label {
   position: absolute;
@@ -6134,10 +6134,16 @@ body:has(.editor-toolbar) .help-widget__fab {
      element's `transform` every frame, so a translateY() rule silently did
      nothing. The label hangs below its star via the CSS2DObject's `center` plus
      a padding-top sized to the sprite — see ensureLabel()/updateLabels(). */
-  text-shadow:
-    0 0 3px rgba(0, 0, 0, 0.85),
-    0 0 6px rgba(0, 0, 0, 0.6);
   user-select: none;
+}
+.graph-label-3d > span {
+  display: block;
+  box-sizing: border-box;
+  padding: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--r-sm);
+  background: var(--graph-label-bg, var(--bg));
 }
 /* Chronicle (strata) time-axis date labels — world-space, sit under the axis
    gridlines. Monospace-tabular so dates line up; theme-following ink. */

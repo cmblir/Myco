@@ -33,6 +33,42 @@ function labelScene() {
 }
 
 describe("graph neighborhood labels", () => {
+  it("keeps edge labels and their collision boxes inside the canvas", () => {
+    const { scene, labels, update } = labelScene();
+    Reflect.get(scene, "graph").setNodeAttribute("selected", "x", -56);
+    update();
+    expect(labels.get("selected")?.visible).toBe(true);
+    const boxes = Reflect.get(scene, "placedBoxes") as { x0: number; x1: number }[];
+    expect(boxes.every((box) => box.x0 >= 8 && box.x1 <= 792)).toBe(true);
+    expect(parseFloat(labels.get("selected")!.element.style.translate)).toBeGreaterThan(0);
+  });
+
+  it("keeps labels outside a right-side inspector", () => {
+    const { scene, labels, update } = labelScene();
+    Object.assign(scene, { container: {
+      clientWidth: 800, clientHeight: 800,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 800 }),
+      parentElement: { querySelector: () => ({ getBoundingClientRect: () => ({ left: 400, top: 0, right: 800, bottom: 800, width: 400 }) }) },
+    } });
+    update();
+    expect(labels.get("selected")?.visible).toBe(true);
+    const boxes = Reflect.get(scene, "placedBoxes") as { x1: number }[];
+    expect(boxes.every((box) => box.x1 <= 392)).toBe(true);
+  });
+
+  it("keeps labels above a full-width bottom inspector", () => {
+    const { scene, labels, update } = labelScene();
+    Object.assign(scene, { container: {
+      clientWidth: 800, clientHeight: 800,
+      getBoundingClientRect: () => ({ left: 0, top: 0, right: 800, bottom: 800 }),
+      parentElement: { querySelector: () => ({ getBoundingClientRect: () => ({ left: 0, top: 300, right: 800, bottom: 800, width: 800 }) }) },
+    } });
+    update();
+    expect(labels.get("selected")?.visible).toBe(true);
+    const boxes = Reflect.get(scene, "placedBoxes") as { y1: number }[];
+    expect(boxes.every((box) => box.y1 <= 292)).toBe(true);
+  });
+
   it("names low-degree selected notes and visible neighbors even below the overview size threshold", () => {
     const { labels, update } = labelScene();
     update();
