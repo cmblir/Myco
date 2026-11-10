@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "parentCommit": "70b1b0956ba6cea108cca4dbb2d1f7d4c859ee43",
+  "status": "planned",
+  "hypothesis": "Putting exact original text and its speaker before packet metadata may improve request/plan/report interpretation without changing source facts. This tests input representation, not a production prompt change.",
+  "candidateArm": "source-first-input-order",
+  "changedVariable": "Input JSON field order only: originalSpans first and text before speaker/id; nested Value metadata is serialized in canonical key order. Parsed JSON equality is asserted for every candidate.",
+  "fixed": [
+    "cached qwen3.5-4b-q4_k_m artifact",
+    "frozen baseline system prompt",
+    "WikiClaimsV1 grammar",
+    "existingGroundedV1 sampler",
+    "seven frozen originals and expected labels",
+    "native source preparation and claim binding"
+  ],
+  "controlsSha256": "44d8142b0f6f0abe2019be95dc1cbfac20cccb830c8d242504b1c01defdc8269",
+  "runnerSourceSha256": "26a9a49fdcbfab4a963d880e3c3d6bad1b10d80ce2c29ab35d2b8c0daac7ef25",
+  "modelSha256": "25082a7dd3776cc3c741c6347d3bd04523f05796607b3fbc32fa3a25dfa1418c",
+  "plannedCalls": 14,
+  "repeatsPerArmPerCase": 1,
+  "networkPolicy": "sandbox-exec (version 1) (allow default) (deny network*)",
+  "evaluation": "Inspect all outputs against frozen controls; action meaning, actor, speech act, status, time and absent verification are required. Abstention fails positive cases. Retain all failures.",
+  "acceptanceLimit": "Diagnostic only. Promotion still requires all controls, three repeated critical cases, source-based meaning review and full compiler positive completion.",
+  "semanticAccepted": false,
+  "productionAccepted": false
+}
