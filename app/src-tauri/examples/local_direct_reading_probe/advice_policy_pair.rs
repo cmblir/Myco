@@ -38,7 +38,7 @@ fn arm(policy: KoAdvicePolicyQa) -> &'static str {
 }
 fn order(index: usize) -> [KoAdvicePolicyQa; 2] {
     use KoAdvicePolicyQa::{ExistingControl, IntentConditionalV1};
-    if index % 2 == 0 {
+    if index.is_multiple_of(2) {
         [ExistingControl, IntentConditionalV1]
     } else {
         [IntentConditionalV1, ExistingControl]

@@ -89,7 +89,7 @@ impl PreparedReviewCase {
             || self.request.max_tokens != Some(768)
             || self.request.scope != Scope::All
             || self.request.expected_vault != self.origin.vault_path
-            || self.request.origin.as_ref().map_or(true, |origin| {
+            || self.request.origin.as_ref().is_none_or(|origin| {
                 origin.vault_path != self.origin.vault_path
                     || origin.opening_token != self.origin.opening_token
             })

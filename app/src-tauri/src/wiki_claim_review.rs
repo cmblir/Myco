@@ -221,7 +221,7 @@ impl AskReviewContext {
             || declared["resolutionWindow"] != Value::Null
             || declared["scope"]
                 .as_str()
-                .map_or(true, |scope| scope.trim().is_empty() || scope.len() > 2000)
+                .is_none_or(|scope| scope.trim().is_empty() || scope.len() > 2000)
         {
             return Err(invalid());
         }

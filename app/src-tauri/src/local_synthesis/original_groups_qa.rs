@@ -256,7 +256,7 @@ pub fn decode(serialized: &str) -> Result<Value, String> {
         })
     };
     if !required(&raw, &["version", "documents"])
-        || raw["documents"].as_array().map_or(true, |documents| {
+        || raw["documents"].as_array().is_none_or(|documents| {
             documents.iter().any(|document| {
                 !required(
                     document,
@@ -268,7 +268,7 @@ pub fn decode(serialized: &str) -> Result<Value, String> {
                         "recordTime",
                         "originalSpans",
                     ],
-                ) || document["originalSpans"].as_array().map_or(true, |turns| {
+                ) || document["originalSpans"].as_array().is_none_or(|turns| {
                     turns.iter().any(|turn| {
                         !required(
                             turn,

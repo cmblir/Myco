@@ -118,7 +118,7 @@ fn preflight(original_prompt_tokens: usize, arm: &str, tokens: usize) -> Result<
         || tokens
             .checked_add(contract::OUTPUT_TOKENS as usize)
             .and_then(|n| n.checked_add(8))
-            .map_or(true, |n| n > contract::CONTEXT_TOKENS as usize)
+            .is_none_or(|n| n > contract::CONTEXT_TOKENS as usize)
     {
         return Err("complete quote input and output reserve do not fit".into());
     }

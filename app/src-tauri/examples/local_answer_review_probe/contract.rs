@@ -75,7 +75,7 @@ fn metadata(case: &qualification::PreparedReviewCase) -> Result<Value, String> {
         .ok_or("qualification originals absent")?;
     if spans.len() != case.original_count()
         || spans.iter().any(|span| {
-            span.as_object().map_or(true, |row| {
+            span.as_object().is_none_or(|row| {
                 row.len() != ORIGINAL_FIELDS.len()
                     || ORIGINAL_FIELDS.iter().any(|key| !row.contains_key(*key))
             })
