@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "parentCommit": "26c0e75073605ca17205ffe7a65c5f6f5022a214",
+  "status": "planned",
+  "purpose": "Test whether the existing presence penalty contributes to action/actor substitutions in frozen extraction controls. This is a causal diagnostic, not model promotion.",
+  "intervention": {
+    "parameter": "presencePenalty",
+    "baseline": 1.5,
+    "candidate": 0.0,
+    "candidateProfile": "existingGroundedNoPresenceQaV1"
+  },
+  "fixed": [
+    "pinned cached qwen3.5-4b-q4_k_m weights",
+    "all seven frozen originals, speaker labels and expected semantic judgments",
+    "identical original payload order and system prompt",
+    "WikiClaimsV1 grammar and native source binding",
+    "remaining numeric sampler parameters and seed 42",
+    "768 output tokens and 4096 context tokens"
+  ],
+  "controlsSha256": "44d8142b0f6f0abe2019be95dc1cbfac20cccb830c8d242504b1c01defdc8269",
+  "plannedCalls": 14,
+  "repeatsPerCasePerArm": 1,
+  "evaluation": "Review all generated claims and native bindings against unchanged source action, performer, speech act, status and absence of unsupported time/outcomes. Retain all failed, missing and ambiguous responses. Native binding and test exit status alone are not semantic acceptance.",
+  "hypothesis": "The presence penalty may discourage faithful action/actor reuse; neither this mechanism nor a quality improvement is established.",
+  "causalLimit": "One paired run per case cannot establish repeatability or whole-compiler success. The same frozen full-model gates remain required.",
+  "networkPolicy": "OS-level network denial; cached weights only; isolated synthetic app state",
+  "semanticAccepted": false,
+  "productionAccepted": false,
+  "inferenceExecuted": false
+}
