@@ -740,6 +740,10 @@ The existing startup validation also requires an explicit, canonical, existing
 `MYCO_DATA_DIR` separate from production application data. Missing environment
 variables must never fall back to a normal production launch, including launches
 initiated by desktop automation or Launch Services.
+The acceptance feature also requires a regular, valid `settings.json` with
+`auto_import_enabled`, `auto_ingest_enabled`, `auto_reflect_enabled`, and
+`auto_reindex_enabled` disabled. Missing or invalid settings cannot silently
+enable automatic imports through the application's normal defaults.
 
 This guard is necessary but is not a complete filesystem sandbox. Before native
 acceptance, use a separate bundle/WebView identifier, explicit synthetic startup

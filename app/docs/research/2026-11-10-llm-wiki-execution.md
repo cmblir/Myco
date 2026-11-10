@@ -18,6 +18,37 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: reject automatic-job defaults in acceptance startup
+
+The opt-in `native-app-acceptance` guard previously allowed missing or unsafe
+settings when both diagnostic environment flags and a separate data directory
+were present. Missing settings can enable automatic imports through ordinary
+application defaults. A synthetic startup regression reproduced `Ok(true)` for
+that unsafe setup (`/tmp/myco-acceptance-settings-baseline.log`). An initial test
+setup error (the scratch directory had not been created) was corrected before
+recording this behavioral baseline.
+
+Acceptance builds now require a regular settings file, apply the application's
+checked settings validation, and refuse startup if any automatic import, ingest,
+reflect or reindex job is enabled. This includes malformed endpoint/role settings
+that would otherwise cause default fallback. Production builds are unchanged.
+The synthetic test verifies missing/malformed settings, each enabled job, an
+invalid endpoint, a valid disabled configuration, and a symlink on Unix. The
+valid settings bytes remain unchanged. No installed app was launched and no
+personal source contents were read for this change.
+
+This is a startup precondition, not containment against later settings changes,
+manual commands or filesystem races. OS restrictions, a separate WebView identity
+and a clean synthetic-vault native rerun remain required. The previously
+withdrawn D1/D2 acceptance is not reinstated.
+
+Validation: 32 settings tests passed before adding the Unix symlink case; the
+final feature-enabled library suite passed 2,703 tests with 38 ignored, including
+that case. Feature-enabled all-target Clippy with `-D warnings` and Rust formatting
+passed. Logs: `/tmp/myco-acceptance-settings-{tests,full,clippy}.log`. The existing
+standalone acceptance binary and bundle have not been rebuilt with this change;
+process-level startup checks and installed acceptance remain outstanding.
+
 ## November 11: retain wiki scope before follow-up project discovery
 
 G2 regression tests reproduced a second scope bypass: after a wiki-only question,
