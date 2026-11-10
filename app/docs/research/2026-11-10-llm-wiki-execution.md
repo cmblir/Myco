@@ -18,6 +18,35 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: presence-penalty removal did not improve request meaning
+
+The [frozen presence comparison](2026-11-11-request-presence-comparison.json)
+changes only the existing QA sampler's presence penalty from 1.5 to 0.0. It reuses
+the seven unchanged request controls, pinned cached 4B model, original payload,
+system prompt, grammar, source binding, seed and 768/4096 budgets. The unit
+regression checks that all other numeric sampler parameters remain identical.
+No product decoding or model selection changed.
+
+Runner `be74642a` completed 14 actual offline generations with isolated synthetic
+state. The expected sampler profiles appeared in telemetry and all seven paired
+inputs/system hashes matched. All seven paired generated outputs were byte-identical.
+Both arms matched only R5/R7: R1/R2 requests and R3 past report were omitted;
+R4 future plan became request/requested; R6's question itself became task activity.
+Every full output and native binding is retained in the receipt. Native binding
+passed, but neither arm passed the semantic contract. Do not promote the candidate.
+
+This run provides no evidence that removing the presence penalty repairs these
+errors. It does not establish other seeds/inputs or prose behavior, and one pair
+per case does not satisfy repeated/full-compiler acceptance. The original quality
+gates remain open; repeating this identical comparison is not a useful next step.
+
+Validation: 11 request QA tests passed (7 explicit model tests ignored), strict
+`native-index-probe` all-target Clippy and formatting passed. Actual model transport
+passed in 441.92 seconds wrapper wall time with 3,185,573,888-byte maximum RSS.
+All outputs have real positive prefill/sampling telemetry. Logs and hashes are in
+the receipt. No inference process remains. README is unchanged because this adds
+only a QA comparison and records evidence, not user-facing behavior.
+
 ## November 11: actual-process acceptance settings refusal
 
 Rebuilt the standalone debug acceptance binary from clean `81df2562` and ran
