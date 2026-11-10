@@ -18,6 +18,24 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: frozen vocabulary diagnostic
+
+The [paired vocabulary controls](2026-11-11-request-vocabulary-controls.json)
+replace only "synthetic report" with "inventory report" in five originals and
+their expected action objects. R5/R7 remain unchanged negative controls. A
+model-free regression checks every candidate field against that substitution,
+including the original hash; actor, tense, speech-act/status and verification
+labels are unchanged. The existing seven-case fixture is untouched.
+
+The opt-in native runner now rebuilds source preparation, revision and packet
+bindings independently for each arm. The vocabulary arm retains the exact baseline
+system prompt, payload ordering, model, grammar and sampler. The
+[comparison contract](2026-11-11-request-vocabulary-comparison.json) is frozen
+before generation. Source-derived span IDs and byte coordinates necessarily
+change with the source text. Capture paths still contain synthetic labels, so
+this experiment tests phrase sensitivity, not all possible harness effects.
+Neither these controls nor model-free tests establish actual model quality.
+
 ## November 11: actual source-first input comparison rejected
 
 The [source-order receipt](2026-11-11-request-source-order-comparison.json)

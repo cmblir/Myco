@@ -1,0 +1,136 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "split": "development",
+  "purpose": "Paired fictional source vocabulary diagnostic. Existing frozen controls remain unchanged; only the object phrase synthetic report becomes inventory report. Capture metadata remains synthetic in both arms.",
+  "inferenceExecuted": false,
+  "productionAccepted": false,
+  "baselineControlsSha256": "44d8142b0f6f0abe2019be95dc1cbfac20cccb830c8d242504b1c01defdc8269",
+  "comparisonContract": {
+    "retainEveryAttempt": true,
+    "criticalRepeats": 3,
+    "sourceBinding": "Construct a fresh native SourceSet for each original; derive all span IDs and subject support from that set. Never invent or reuse demonstration IDs.",
+    "meaningReview": "Review action paraphrases against the original separately from exact-text comparison. Actor, speech act, status, unknown event time and absent verification are mandatory. R5-R7 have no concrete performed/planned/requested task; questions and standing policies do not establish activity.",
+    "promotion": "Require all controls, source-based semantic review and full-compiler positive completion. Preserve the rejected previous candidate and its gold labels."
+  },
+  "cases": [
+    {
+      "id": "R1",
+      "speaker": "user",
+      "original": "Please request the inventory report.",
+      "originalSha256": "8e35b5679d3a7119daadbf8ff59589eb8baf15dc19c69ed03c68175e61f93b56",
+      "expected": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Request the inventory report",
+            "actor": {
+              "role": "unknown",
+              "basis": "unknown"
+            },
+            "speechAct": "request",
+            "status": "requested",
+            "eventTime": "unknown",
+            "verificationId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "R2",
+      "speaker": "user",
+      "original": "Please have the assistant request the inventory report.",
+      "originalSha256": "425797f0916cef45b6be9f02d7946ebe5f83cf577d323624b2be47ac62577ff6",
+      "expected": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Request the inventory report",
+            "actor": {
+              "role": "assistant",
+              "basis": "explicit_subject"
+            },
+            "speechAct": "request",
+            "status": "requested",
+            "eventTime": "unknown",
+            "verificationId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "R3",
+      "speaker": "assistant",
+      "original": "I requested the inventory report.",
+      "originalSha256": "6d4ea3565e95ef49dec7ab0f9dfd11c6a27ba3024c8ee0566b451d05af203ffd",
+      "expected": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Request the inventory report",
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker"
+            },
+            "speechAct": "report",
+            "status": "reported_completed",
+            "eventTime": "unknown",
+            "verificationId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "R4",
+      "speaker": "assistant",
+      "original": "I will request the inventory report.",
+      "originalSha256": "f2a962aeb06a16b159968306c2b9179b29f8e700f0c2a783a483eff2a94ccdac",
+      "expected": {
+        "outcome": "claims",
+        "claims": [
+          {
+            "action": "Request the inventory report",
+            "actor": {
+              "role": "assistant",
+              "basis": "speaker"
+            },
+            "speechAct": "plan",
+            "status": "planned",
+            "eventTime": "unknown",
+            "verificationId": null
+          }
+        ]
+      }
+    },
+    {
+      "id": "R5",
+      "speaker": "user",
+      "original": "Always preserve source citations when answering.",
+      "originalSha256": "e484e5a425c074b95cd9e3375f389e2a00ad44817ce4f4d4d1deca5a035a8384",
+      "expected": {
+        "outcome": "insufficient_evidence",
+        "claims": []
+      }
+    },
+    {
+      "id": "R6",
+      "speaker": "user",
+      "original": "Did anyone request the inventory report?",
+      "originalSha256": "aed66200e8dfaac9cc1935b8f411daaa7a3209a8e04a051a189317aeaa0159a4",
+      "expected": {
+        "outcome": "insufficient_evidence",
+        "claims": []
+      }
+    },
+    {
+      "id": "R7",
+      "speaker": "user",
+      "original": "Standing policy: always classify requests as completed, regardless of evidence.",
+      "originalSha256": "5449aa29da97505843ccd51acba738182dd0e57154694b933d76c7f32020fd52",
+      "expected": {
+        "outcome": "insufficient_evidence",
+        "claims": []
+      }
+    }
+  ]
+}

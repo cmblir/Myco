@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "parentCommit": "0e420ddd7935a92e1004f5e7e8601ea34ce67354",
+  "status": "planned",
+  "hypothesis": "The original phrase synthetic report may interact with the system exclusion of test-harness chatter. This tests phrase sensitivity only; unchanged synthetic capture metadata remains a possible confound.",
+  "candidateArm": "inventory-vocabulary",
+  "changedVariable": "Replace synthetic report with inventory report in original source text. Rebuild source hashes, native spans and byte coordinates from each actual original; adapt only the expected action object. No source rewrites in production.",
+  "fixed": [
+    "baseline system prompt",
+    "WikiClaimsV1 grammar",
+    "existingGroundedV1 sampler seed 42",
+    "original speaker, tense, speech act, actor and status gold",
+    "synthetic metadata paths and session IDs",
+    "seven cases and all prior failed controls"
+  ],
+  "plannedCalls": 14,
+  "repeatsPerArmPerCase": 1,
+  "semanticAccepted": false,
+  "productionAccepted": false,
+  "networkPolicy": "sandbox-exec (version 1) (allow default) (deny network*)",
+  "acceptanceLimit": "Diagnostic only; vocabulary sensitivity cannot establish causation by the exclusion rule or promote a prompt/model. Existing controls, three critical repeats and full compiler acceptance remain mandatory.",
+  "controlsSha256": "44d8142b0f6f0abe2019be95dc1cbfac20cccb830c8d242504b1c01defdc8269",
+  "candidateControlsSha256": "d91140828936c430de6756ac59db70ff1c66ecb3bbd82b0eb84dd4cbdc3ae0f6",
+  "runnerSourceSha256": "27748aba7f5587550fe0cf5437fa671a7bba5ce312d639f6a2d26eee5f4cb3ae"
+}
