@@ -5023,16 +5023,15 @@ export class GraphScene {
         .map((n) => this.graph.getNodeAttributes(n))
         .filter((n) => !n.hidden);
       dist = neighbourhoodDist(a, around, this.camera.fov, (w - cover) / h, dist);
-      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
     }
     const solidBounds = this.sculpted?.nodeBounds(id);
     if (solidBounds) {
       solidBounds.getCenter(toTarget);
       const radius = solidBounds.getSize(new THREE.Vector3()).length() / 2;
-      const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, this.camera.aspect));
-      dist = Math.max(40, radius * 1.15 / Math.sin(halfFov));
-      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
+      const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, (w - cover) / h));
+      dist = Math.max(dist, 40, radius * 1.15 / Math.sin(halfFov));
     }
+    this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
     const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
     if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
     dir.setLength(

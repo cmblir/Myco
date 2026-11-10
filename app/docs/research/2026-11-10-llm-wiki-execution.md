@@ -15,8 +15,37 @@ requirements and must not be mistaken for passing results.
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
-| G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
+| G6 UI | Browser changes and native Graph navigation checked | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; focus repair awaits rebuilt visual replay. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: native Graph navigation and focus regression
+
+The isolated macOS bundle at `c2e81df3` was exercised with three new synthetic
+linked notes. Searching for the center note selected the correct inspector,
+showed two outgoing links and two backlinks, and opened the correct Reader
+body. Collapsing both rails survived a normal quit/relaunch; both reopened.
+The app was quit afterward and process absence verified. All eleven preexisting
+synthetic raw/wiki files retained their hashes; the three added notes matched
+their fixture bodies.
+
+Visual acceptance failed: selection/neighborhood focus produced an oversized
+pixel planet and inspector-obscured labels in the small graph. Two camera
+regressions reproduced the causes: the previous maximum distance clamped the
+required focus distance, and sculpted bounds replaced the neighborhood fit.
+Both failed before the repair and passed afterward. The camera now retains the
+required distance, accounts for the inspector's uncovered width, and expands
+its maximum distance for ordinary focus too. Search always supplies inspector
+coverage; the neighborhood button now reframes the camera.
+
+Focused camera/label/presentation tests passed (29 tests). The full frontend suite
+passed 6,490 tests across 405 files; type checking and production build passed.
+Lint had zero errors and the two existing `notchDriver.ts` dependency warnings.
+Logs: `/tmp/myco-graph-focus-{full,build,lint}.log`; exit codes were all zero.
+The repaired frontend
+has not yet been replayed in a rebuilt native bundle; this is not a visual
+acceptance pass. Full accessibility, viewport and state review remain open.
+README was unchanged because this repairs existing Graph behavior without
+adding a command, setting or workflow.
 
 ## November 11: native early cancellation preserves submitted and newer drafts
 
