@@ -168,8 +168,13 @@ evidence/descriptor values, preserving titles and outside annotations. It writes
 no map and grants no update or undo permission.
 The native `apply_map_refresh` command independently repeats authorization,
 source checks, private record checks and merge, and requires the preview's current
-revision. It retains a new file anchor and version-2 refresh baseline after a
-successful update. Identical content is a no-op; changed targets are rejected.
+revision. It retains a new file anchor and version-3 record with exact before/after
+snapshots after a successful update. Both snapshots must fit the private record
+budget before the canonical file is replaced. The read-only
+`latest_map_refresh_history` command returns the latest recorded snapshots and
+whether the current file differs from the saved result. Older version-1/2 records
+remain readable but have no before-image; the command returns no history for them.
+Identical content is a no-op; changed targets are rejected.
 Failures after persistence retain output for manual recovery instead of reporting
 success. Refresh issues no creation/undo receipt. Manual map proposals now show
 the native merged diff before applying an existing-map update. Cancelling or

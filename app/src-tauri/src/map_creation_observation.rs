@@ -29,6 +29,13 @@ struct IssuedObject {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PreviousContent {
+    revision: String,
+    content: String,
+}
+
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Observation {
     version: u8,
@@ -38,12 +45,15 @@ struct Observation {
     revision: String,
     file_identity: IssuedObject,
     baseline: String,
+    #[serde(default)]
+    previous: Option<PreviousContent>,
 }
 
 pub(crate) struct CreationContent {
     pub baseline: String,
     pub current: String,
     pub has_owned_content_edits: bool,
+    pub previous_content: Option<String>,
     pin: crate::vault::CompilerPriorFilePin,
     record: std::fs::File,
     record_bytes: Vec<u8>,
@@ -215,8 +225,12 @@ fn read_at(
         leaf.strip_suffix(".json")
             .ok_or("invalid map observation leaf")?
     );
-    let is_creation = observation.version == 1 && observation.state == "creationObserved";
-    let is_refresh = observation.version == 2 && observation.state == "refreshObserved";
+    let is_creation = observation.version == 1
+        && observation.state == "creationObserved"
+        && observation.previous.is_none();
+    let is_refresh = observation.state == "refreshObserved"
+        && ((observation.version == 2 && observation.previous.is_none())
+            || (observation.version == 3 && observation.previous.is_some()));
     if (!is_creation && !is_refresh)
         || observation.scope != expected
         || !leaf.starts_with(&format!("{scope_hash}."))
@@ -232,6 +246,13 @@ fn read_at(
         &observation.baseline,
     ) {
         return Err("map refresh baseline has invalid generated sections".into());
+    }
+    if let Some(previous) = &observation.previous {
+        if previous.revision != format!("{:x}", Sha256::digest(previous.content.as_bytes()))
+            || !crate::map_content::owned_sections_unchanged(&previous.content, &previous.content)
+        {
+            return Err("map refresh previous snapshot is invalid".into());
+        }
     }
     let anchor = std::fs::symlink_metadata(directory.path().join(&observation.anchor))
         .map_err(|error| format!("inspect map creation anchor: {error}"))?;
@@ -263,6 +284,7 @@ fn read_at(
             &current,
         ),
         baseline: observation.baseline,
+        previous_content: observation.previous.map(|previous| previous.content),
         current,
         pin,
         record: held_record,

@@ -18,6 +18,42 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retained map refresh before-images
+
+The private refresh schema now records the exact pre-write content and its hash
+alongside the merged result (version 3). This preserves human titles and outside
+annotations in both snapshots. Serialized record size is checked before replacing
+the map, including JSON escaping overhead. Identical-content refreshes remain
+no-ops and do not manufacture a new history event.
+
+`latest_map_refresh_history` is a read-only, opening-bound native command with a
+typed IPC adapter. It discovers the current physical map's retained record and
+returns its before/after snapshots plus whether current bytes differ from the
+recorded result. It grants neither update nor deletion authority. Version-1/2
+records remain readable but return no before-image rather than invented history.
+Malformed or hash-mismatched version-3 previous snapshots fail closed.
+
+Synthetic native cases cover fresh-process history readback, subsequent human
+edits, stale openings, invalid keys, legacy/missing/corrupt before-images and a
+JSON-escaped two-snapshot budget overflow that leaves the map untouched.
+Validation: targeted refresh tests passed (6 passed, 1 child-only ignored),
+IPC/parity tests passed (6), TypeScript passed, strict all-target Clippy passed,
+and lint reported only the two existing `notchDriver.ts` hook warnings. The first
+full frontend run had 6,449 passes and one timing failure during concurrent Rust
+compilation: `Editor.test.ts:83`, `expected 253.1284169999999 to be less than 250`.
+The threshold and implementation were not changed; this failure is retained here.
+After Rust finished, the standalone Editor suite passed all 6 tests. Full Rust
+verification passed 2,681 library and 28 integration tests (40 ignored overall),
+including the schema and byte-budget regression cases. Formatting passed.
+The full frontend rerun without concurrent Rust compilation passed all 400 files
+and 6,450 tests in 53.79 seconds. Production `npm run build` passed
+(TypeScript and Vite; existing mixed-import warnings retained). Build log:
+`/tmp/myco-refresh-history-build.log`. Other logs: `/tmp/myco-refresh-history-{target,clippy,full,front-full,editor-recheck,front-recheck,lint,tsc}.log`.
+
+This is an API/storage slice: History UI, multi-event browsing, undo, interrupted
+writes and record cleanup remain incomplete. No installed UI, Windows or actual
+model acceptance is claimed by these tests.
+
 ## Environment and isolation
 
 - Host: macOS ARM64, 16 GiB RAM; Node `v24.13.0`, Rust `1.95.0`.

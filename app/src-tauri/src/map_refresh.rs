@@ -20,6 +20,60 @@ pub(crate) struct RefreshResult {
     pub changed: bool,
 }
 
+/// Plain snapshots of the latest recorded refresh, never write or undo authority.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct RefreshHistory {
+    pub path: String,
+    pub before: String,
+    pub after: String,
+    pub has_changes_since_refresh: bool,
+}
+
+#[tauri::command]
+pub(crate) fn latest_map_refresh_history(
+    state: tauri::State<VaultRoot>,
+    origin: AgentVaultSession,
+    key: String,
+) -> Result<Option<RefreshHistory>, String> {
+    history(&state, &origin, &key)
+}
+
+pub(crate) fn history(
+    state: &VaultRoot,
+    origin: &AgentVaultSession,
+    key: &str,
+) -> Result<Option<RefreshHistory>, String> {
+    state.with_origin(origin, |root| {
+        let path = crate::distill_publication::ManagedArtifact::Map { key: key.into() }.path()?;
+        crate::vault::with_root_mutation(root, |canonical, guard| {
+            #[cfg(unix)]
+            {
+                let private_path = crate::settings::settings_dir()?
+                    .canonicalize()
+                    .map_err(|error| error.to_string())?
+                    .join("map-creation-custody");
+                let directory = crate::vault::open_compiler_pin_directory(&private_path)?;
+                let observation = crate::map_creation_observation::discover_creation(
+                    &directory, canonical, &path, guard,
+                )?;
+                // Older records have no before-image; do not fabricate one.
+                Ok(observation.previous_content.map(|before| RefreshHistory {
+                    path,
+                    before,
+                    has_changes_since_refresh: observation.current != observation.baseline,
+                    after: observation.baseline,
+                }))
+            }
+            #[cfg(not(unix))]
+            {
+                let _ = (canonical, guard, path);
+                Err("map refresh history requires native file custody on this platform".into())
+            }
+        })
+    })
+}
+
 /// Rebuild the merge under fresh source and target checks; preview bytes never
 /// become serialized write authority. This command issues no undo receipt.
 #[tauri::command]

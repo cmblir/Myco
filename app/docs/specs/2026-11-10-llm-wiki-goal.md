@@ -81,7 +81,7 @@ after G1. Run actual-model/native scenarios throughout, not only in G7.
 | G2 | Make Ask scope and period consistent | G0 cases | Implemented; native acceptance pending |
 | G3 | Restore Windows native safety and functionality | G0 inventory | Portable paths improved; Windows unverified |
 | G4 | Resolve current project work state | G2 contract | Source-bound route and v5 folder identities implemented; repository equivalence and actual meaning gates remain |
-| G5 | Refresh evidence-based topic maps | G0 evidence contract | Native refresh, fresh-process recovery, manual review and approved automatic flow implemented; History/interruption recovery and meaning gates remain |
+| G5 | Refresh evidence-based topic maps | G0 evidence contract | Native refresh, manual/approved automatic flow and latest before/after snapshot API implemented; History UI/undo, interruption recovery and meaning gates remain |
 | G6 | Improve capture, review and reading screens | G1; G2 for Ask | Main screens improved; full accessibility/state review incomplete |
 | G7 | Complete native acceptance and documentation | G1–G6 | In progress; not release-accepted |
 

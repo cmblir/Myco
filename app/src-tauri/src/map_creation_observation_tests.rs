@@ -321,3 +321,53 @@ fn rejects_pair_replacement_between_named_anchor_check_and_reopen() {
         );
     });
 }
+
+#[test]
+fn refresh_history_requires_valid_before_image_and_preserves_legacy_records() {
+    with_isolated_data("map-history-schema", |data| {
+        let (root, directory, leaf, baseline) = create(data);
+        let path = directory.path().join(&leaf);
+        let mut record: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        record["version"] = 2.into();
+        record["state"] = "refreshObserved".into();
+        record.as_object_mut().unwrap().remove("previous");
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(read(&root, &directory, &leaf)
+            .unwrap()
+            .previous_content
+            .is_none());
+        record["version"] = 3.into();
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(read(&root, &directory, &leaf).is_err());
+        record["previous"] = serde_json::json!({
+            "revision": format!("{:x}", Sha256::digest(baseline.as_bytes())),
+            "content": baseline,
+        });
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert_eq!(
+            read(&root, &directory, &leaf)
+                .unwrap()
+                .previous_content
+                .as_deref(),
+            Some(baseline.as_str())
+        );
+        record["previous"]["content"] = "Corrupted previous content".into();
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(read(&root, &directory, &leaf)
+            .err()
+            .unwrap()
+            .contains("previous snapshot"));
+        record["previous"]["revision"] =
+            format!("{:x}", Sha256::digest(b"Corrupted previous content")).into();
+        std::fs::write(&path, serde_json::to_vec(&record).unwrap()).unwrap();
+        assert!(read(&root, &directory, &leaf)
+            .err()
+            .unwrap()
+            .contains("previous snapshot"));
+        assert_eq!(
+            std::fs::read_to_string(root.join(RELATIVE)).unwrap(),
+            baseline
+        );
+    });
+}

@@ -113,7 +113,7 @@ mod platform {
             written: &RecordedWriteReceipt,
             content: &str,
         ) -> Result<super::MapCreationUndo, String> {
-            self.record_observation(guard, written, content, true)?;
+            self.record_observation(guard, written, content, None)?;
             Ok(super::MapCreationUndo {
                 receipt: written.clone(),
             })
@@ -149,6 +149,16 @@ mod platform {
                 observation.checked_prior(guard)?;
                 return Ok(None);
             }
+            // Ensure both snapshots fit before replacing the canonical file.
+            // Maximum-width identity fields conservatively bound the later receipt.
+            self.observation_bytes(
+                &merged,
+                Some(&observation.current),
+                serde_json::json!({
+                    "device": u64::MAX, "inode": u64::MAX,
+                    "changedSeconds": i64::MIN, "changedNanoseconds": i64::MIN,
+                }),
+            )?;
             let written = crate::vault::write_compiler_file_anchored_locked(
                 guard,
                 Path::new(&self.scope.vault)
@@ -165,11 +175,34 @@ mod platform {
                 format!("map refresh bytes persisted but verification failed: {error}; output retained for manual recovery")
             };
             verify_sources().map_err(retained)?;
-            self.record_observation(guard, &written, &merged, false)
+            self.record_observation(guard, &written, &merged, Some(&observation.current))
                 .map_err(retained)?;
             verify_sources().map_err(retained)?;
             crate::vault::verify_recorded_file_unlocked(&written).map_err(retained)?;
             Ok(Some(written))
+        }
+
+        fn observation_bytes(
+            &self,
+            content: &str,
+            previous: Option<&str>,
+            identity: serde_json::Value,
+        ) -> Result<Vec<u8>, String> {
+            let record = serde_json::json!({
+                "version": if previous.is_some() { 3 } else { 1 },
+                "state": if previous.is_some() { "refreshObserved" } else { "creationObserved" },
+                "scope": self.scope, "anchor": format!("{}.anchor", self.key),
+                "revision": format!("{:x}", Sha256::digest(content.as_bytes())),
+                "fileIdentity": identity, "baseline": content,
+                "previous": previous.map(|before| serde_json::json!({
+                    "revision": format!("{:x}", Sha256::digest(before.as_bytes())), "content": before,
+                })),
+            });
+            let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
+            if bytes.len() > crate::map_custody_record::MAX_BYTES {
+                return Err("map custody record exceeds its byte budget".into());
+            }
+            Ok(bytes)
         }
 
         fn record_observation(
@@ -177,11 +210,11 @@ mod platform {
             guard: &MutexGuard<'_, ()>,
             written: &RecordedWriteReceipt,
             content: &str,
-            is_creation: bool,
+            previous: Option<&str>,
         ) -> Result<(), String> {
             self.directory.verify()?;
             crate::vault::verify_recorded_file_unlocked(written)?;
-            if written.native_created != is_creation
+            if written.native_created != previous.is_none()
                 || written.compiler_anchor_leaf() != Some(format!("{}.anchor", self.key).as_str())
                 || written.path != Path::new(&self.scope.vault).join(&self.scope.path)
                 || written.revision != format!("{:x}", Sha256::digest(content.as_bytes()))
@@ -190,14 +223,11 @@ mod platform {
             }
             // This is an observation of exact native-written bytes, not a
             // serialized capability, publication completion or source review.
-            let record = serde_json::json!({ "version": if is_creation { 1 } else { 2 }, "state": if is_creation { "creationObserved" } else { "refreshObserved" },
-                "scope": self.scope, "anchor": format!("{}.anchor", self.key),
-                "revision": written.revision, "fileIdentity": written.file_identity,
-                "baseline": content });
-            let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
-            if bytes.len() > crate::map_custody_record::MAX_BYTES {
-                return Err("map custody record exceeds its byte budget".into());
-            }
+            let bytes = self.observation_bytes(
+                content,
+                previous,
+                serde_json::to_value(&written.file_identity).map_err(|e| e.to_string())?,
+            )?;
             // create_new preserves an existing or uncertain record. Interrupted
             // writes remain for explicit recovery; never replace or delete them.
             let mut file = OpenOptions::new()

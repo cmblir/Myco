@@ -77,6 +77,15 @@ fn synthetic_refresh_child() {
             .unwrap()
             .contains("Synthetic first restart refresh"));
     }
+    let previous = std::fs::read_to_string(&target).unwrap();
+    if phase == "second" {
+        let prior = history(&state, &origin, "synthetic").unwrap().unwrap();
+        assert!(prior.before.contains("Synthetic relationship"));
+        assert_eq!(prior.after, previous);
+        assert!(!prior.has_changes_since_refresh);
+    } else {
+        assert!(history(&state, &origin, "synthetic").unwrap().is_none());
+    }
     let review = preview(
         &state,
         &sources,
@@ -99,6 +108,18 @@ fn synthetic_refresh_child() {
     )
     .unwrap();
     assert!(result.changed);
+    let recorded = history(&state, &origin, "synthetic").unwrap().unwrap();
+    assert_eq!(recorded.before, previous);
+    assert_eq!(recorded.after, review.content);
+    assert!(!recorded.has_changes_since_refresh);
+    std::fs::write(&target, format!("{}\nLater human note.\n", review.content)).unwrap();
+    assert!(
+        history(&state, &origin, "synthetic")
+            .unwrap()
+            .unwrap()
+            .has_changes_since_refresh
+    );
+    std::fs::write(&target, &review.content).unwrap();
     assert_eq!(std::fs::read_to_string(&target).unwrap(), review.content);
     assert!(review.content.contains(&body));
     assert!(review.content.ends_with("Human restart annotation.\n"));
@@ -262,7 +283,9 @@ fn applies_successive_refreshes_preserving_annotations_and_rejecting_stale_cas()
         .is_err());
         let unchanged = std::fs::read_to_string(&target).unwrap();
         assert!(unchanged.contains("Second synthetic update"));
+        assert!(history(&state, &origin, "../synthetic").is_err());
         state.close().unwrap();
+        assert!(history(&state, &origin, "synthetic").is_err());
         assert!(apply(
             &state,
             &sources,
@@ -358,6 +381,38 @@ fn unchanged_refresh_rechecks_target_after_final_source_check() {
         assert!(std::fs::read_to_string(target)
             .unwrap()
             .ends_with("Late human note.\n"));
+        assert_eq!(
+            std::fs::read_dir(data.join("map-creation-custody"))
+                .unwrap()
+                .count(),
+            2
+        );
+    });
+}
+
+#[test]
+fn oversized_before_and_after_record_rejects_before_canonical_write() {
+    with_isolated_data("map-refresh-history-budget", |data| {
+        let root = data.join("vault");
+        std::fs::create_dir(&root).unwrap();
+        let root = root.canonicalize().unwrap();
+        let (baseline, _) = create(&root);
+        let target = root.join("wiki/maps/synthetic.md");
+        let current = format!("{baseline}\n{}", "\t".repeat(2_200_000));
+        std::fs::write(&target, &current).unwrap();
+        let proposed = candidate(&baseline, "Synthetic changed map [[wiki/synthetic.md]].\n");
+        let store =
+            crate::map_custody::MapCreationStore::open(&root, "wiki/maps/synthetic.md").unwrap();
+        let result = crate::vault::with_root_mutation(&root, |_, guard| {
+            store.refresh(
+                guard,
+                &proposed,
+                &crate::importers::wikify::source_revision(&current),
+                &|| Ok(()),
+            )
+        });
+        assert!(result.err().unwrap().contains("byte budget"));
+        assert_eq!(std::fs::read_to_string(target).unwrap(), current);
         assert_eq!(
             std::fs::read_dir(data.join("map-creation-custody"))
                 .unwrap()
