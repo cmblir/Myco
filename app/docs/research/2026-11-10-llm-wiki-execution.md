@@ -1,7 +1,7 @@
 # LLM Wiki execution record
 
-Baseline: `121c0fa2`. Execution started 2026-11-10. The previous turn delivered
-the [goal contract](../specs/2026-11-10-llm-wiki-goal.md); implementation is now in progress.
+Baseline: `121c0fa2`. Execution started 2026-11-10 with the
+[goal contract](../specs/2026-11-10-llm-wiki-goal.md); implementation is in progress.
 The [acceptance cases](2026-11-10-llm-wiki-acceptance.md) are frozen development
 requirements and must not be mistaken for passing results.
 
@@ -13,10 +13,10 @@ requirements and must not be mistaken for passing results.
 | G1 Ingest drafts | Implemented; installed restart pending | Vault-scoped durable title/body, revision-aware completion and storage recovery. Unit and synthetic browser regressions passed. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
-| G4 project state | Pending | W1–W4 specify requested/reported/reopened state and historical isolation. |
+| G4 project state | Implemented route; acceptance incomplete | Project candidates now enter original-bound resolution with explicit paths, period and coverage. W1–W4 actual-model meaning remains unverified. A reproduced basename-key collision still merges distinct repositories and must be fixed. |
 | G5 maps | Partial; code checks passed | Bounded member excerpts/revisions, explicit supplied-only generation, isolated cluster data and full-path citations added. Native atomic source binding, semantic review and owned-section refresh remain. |
-| G6 UI | Partial | Neutral-background small-text contrast and route-specific loading copy corrected. Home/Ask/Ingest layout changes and full state/viewport review remain. |
-| G7 release acceptance | In progress; model quality failed | Frontend suite/build and default native Cargo/fmt/Clippy passed. Final map label isolation passed its affected tests and static checks. Installed/Windows and repeated semantic acceptance remain unverified. |
+| G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
+| G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
 ## Environment and isolation
 
@@ -31,6 +31,12 @@ requirements and must not be mistaken for passing results.
 - Windows inventory: no repository self-hosted runners, no discovered local
   Wine/Parallels/QEMU command, and only the macOS ARM64 Rust target installed.
   Hosted CI would require an authorized code publication/run; none was started.
+- Installed UI automation did not start: the selected command
+  `orca skills get computer-use --json` failed with exit 127,
+  `zsh:1: command not found: orca`. The computer-use skill requires:
+  "If the selected executable cannot run, report its exact error and stop."
+  Its no-fallback instruction was followed. Independent native model and browser
+  mock checks continued; neither substitutes for installed UI acceptance.
 
 ## Verification receipts
 
@@ -94,6 +100,79 @@ No favorable retry, label change, validator relaxation or mock substitution was
 used. Diagnose extraction omission and empty structure separately before another
 generation experiment.
 
+## Frozen structure comparison and v9 correction
+
+The [structure-only A/B receipt](2026-11-10-structure-prompt-comparison.json)
+retains all eight JSON records from two actual offline 4B calls. Its SHA-256 is
+`174b6aa5fd20f0ebc46d85f73072807bb3ceac16098b334b5d2cb1b17d18f427`.
+The QA harness verifies the frozen baseline receipt bytes, reconstructs packet 2
+and its native claim, and checks the exact recorded payload, grammar, model,
+tokenizer, sampler and 768/4096 output/context budgets. The baseline prompt is
+replayed from the receipt, so later product changes cannot silently alter the
+control arm.
+
+The unchanged prompt again returned an empty title and claim IDs and failed the
+unchanged validator. Replacing only its empty-case guidance produced
+`Draft synthetic report plan`, citing `C-2-0-1a7e5f8260c2aa7d`. The native
+materializer retained assistant / plan / planned / unknown event time / no
+verification. Coordinator and separate worker inspection found no new completion
+claim in this single title. This is not full-source semantic acceptance: no
+extraction, full-source review, whole-compiler or installed attempt ran in this
+comparison. Both arms and the failed baseline remain recorded.
+
+The test passed in 232.16s; process wall time was 232.27s and maximum resident set
+size 3,184,476,160 bytes. This includes debug artifact hashing and model loading;
+individual generation attempts took 10.55s and 13.66s. These are not release
+performance numbers. The source snapshot was parent `72785222` plus the recorded
+QA files in a shared dirty tree; a complete prebuild tree hash was not captured.
+
+The observed candidate prompt was then promoted unchanged. Its SHA-256 is
+`f9a5d6d2e9e87be7ca6835daebc900add458a52aa4f981697843e3e31d314036`.
+The sole production structure caller already skips generation for empty claims;
+empty structure is rendered by application code. The compiler/prompt contract
+was advanced to v9 so v8 completions and checkpoints require fresh admission.
+Three pre-fix regressions failed; the complete compiler test group then passed
+226 tests with 8 opt-in tests ignored. Original sources, human writing, historical
+receipts, grammar and validation rules were preserved. The full v9 witness below confirms that
+this correction does not solve the recorded extraction omission by itself.
+
+## Full v9 actual-model witness: partial, no publication
+
+The [v9 native receipt](2026-11-10-native-compiler-v9.json), SHA-256
+`87ed58240cefa34a2c256765aacefbed25126fbaf917536ecd6c237546591d52`,
+retains all sixteen JSON records and the captured Rust backtrace. It records
+commit `ff809a43`, the native source-tree object and executable SHA-256; native
+sources were clean before launch. Only documentation was uncommitted.
+
+With the same pinned 4B artifact and all network denied, seven generation calls
+visited all three original packets once. The assistant plan produced the same
+nonempty title and bound ID as the comparison; its source-bound title/summary
+review passed. The user request again yielded no claim, and that packet's review
+reported uncertain coverage. Native finalization correctly retained `partial`
+with reason `native_compilation_or_review_incomplete`; no summary or publication
+receipt was created. Before/after original SHA-256 remained
+`f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400`.
+
+The positive completion test **failed**, exit 101:
+
+```text
+thread 'session_compile::execution::tests::model_tests::cached_model_runs_native_source_bound_compilation' panicked at src/session_compile/execution_model_tests.rs:159:5:
+actual native compiler did not complete: None
+stack backtrace:
+   0: __rustc::rust_begin_unwind
+   1: core::panicking::panic_fmt
+   2: myco_lib::session_compile::execution::tests::model_tests::cached_model_runs_native_source_bound_compilation
+             at ./src/session_compile/execution_model_tests.rs:159:5
+```
+
+`None` denotes no thrown step error; the recorded terminal state is partial,
+which fails the test's required completed outcome. The full captured backtrace
+is in the receipt. Test time was 277.15s, process wall time 277.21s and maximum
+resident set size 3,267,870,720 bytes, including debug hashing and preparation.
+This is progress past the original structure error, not positive source
+compilation or semantic/production/installed acceptance. There was no favorable
+retry, changed fixture or relaxed validator.
+
 ## Changes and remaining verification
 
 - G1 adds `ingestDraftStore` with per-vault durable records and a revision token.
@@ -108,6 +187,18 @@ generation experiment.
 - G3 adds `vault_path::relative_key` for already-confined source paths and uses
   portable separators in source scope checks. This is not a Windows file-identity
   implementation. Windows-specific tests were not run.
+- G4 intersects project candidates with current ledger fingerprints, explicit
+  paths and dates, then reuses original-bound activity resolution. Follow-ups and
+  retries retain the selected project and explicit caller restrictions while
+  rediscovering candidate paths and the current default period. Native initial originals are also
+  filtered by the selected start and historical cutoff before model input, so a
+  resumed transcript's later outcome cannot leak through its full-source closure.
+  Malformed/ambiguous discovery, missing projections and changed facts/ledger
+  cannot silently become an unrestricted search. Incomplete candidates stay
+  visible. These contracts passed synthetic-generation tests; actual W1–W4 meaning
+  and the confirmed repository-key collision remain incomplete. The route covers
+  recognized progress and guided remaining-work questions; general free-text
+  remaining-work intent recognition is not complete.
 - G5 supplies at most twelve member excerpts with full-file SHA-256 revisions,
   source size/character budgets and truncation metadata. The complete generation
   path receives no unrelated retrieval context for maps; other organization
@@ -119,9 +210,20 @@ generation experiment.
   are still stripped to plain text; factual assertions are not yet semantically
   verified, and source reads are not natively bounded before IPC returns.
 - G6 raises `ink-3`/`ink-4` neutral-theme contrast and labels Reader/Settings loading
-  by route. The rendered dark Graph rail count measured 6.37:1 in a mock browser;
-  light, selected/hover compositions, responsive widths, keyboard and state-matrix
-  review are not all covered by that observation.
+  by route. Returning-device Home is compact; Ask examples fill/focus the draft
+  without submission. Successful imports prioritize actual changed-note review,
+  readable titles and the source link, tied to the originating vault token.
+  Observed file snapshots determine created/updated labels; otherwise the UI says
+  changed. Partial imports retain Retry. The 769–820px Graph layout now scrolls
+  for mouse and touch and retains fold restoration controls; its panels previously
+  collapsed to 4.9px. Phone sheets preserve the saved desktop fold preferences.
+  The [browser receipt](2026-11-10-ui-browser-review.json) retains viewport and
+  sampled contrast observations and explicitly labels synthetic success fixtures.
+  Home/Ask/Ingest were checked at 320/375/768/1280px; Graph at
+  768/800/1024/1280px in both themes. Sampled small-text contrast was 5.40–11.84:1
+  light and 6.37–10.98:1 dark; hovered links were 15.45/11.92:1. Keyboard examples,
+  review/open-source links, fold/reload restoration and stale-vault result hiding
+  passed. This is not exhaustive state, reduced-motion or screen-reader acceptance.
 - Root English/Korean and app README descriptions now cover draft behavior and
   the actual scope/period policy, bounded new-map drafts and pending refresh.
   Root distillation copy now distinguishes immutable raw sources from eligible
@@ -133,39 +235,88 @@ tests with three unhandled errors; the stable rerun above passed. The initial li
 run also found a new control-character-regex error, which was fixed without a
 suppression. These earlier failures are retained in `/tmp/myco-goal-*` logs.
 
+## Post-fix verification at ff809a43
+
+| Gate | Result |
+| --- | --- |
+| Final `npx vitest run` | 392 files / 6,370 tests passed, 77.40s. Includes final ambiguous-project and Graph regressions. |
+| Final lint, typecheck and production build | Passed. Two pre-existing `notchDriver.ts` hook warnings and the existing build import warning remain; Vite took 14.48s. |
+| `cargo fmt --all --check` and strict default/feature all-target Clippy | Passed. Existing optional QA predicates exposed by Rust 1.95 were changed equivalently; no lint suppression or validation relaxation. |
+| `cargo test --locked --offline` | 2,625 library + 28 integration tests passed; 38 ignored across targets. |
+| `cargo test --locked --offline --features native-index-probe --lib` | 3,065 passed, 55 ignored, 75.01s. These overlap the default library suite. |
+| Five changed probe example test targets | 99 passed, zero failed/ignored. No actual model calls. |
+
+The first strict feature-library check exposed 12 existing `unnecessary_map_or`
+diagnostics; all-target checking then exposed nine more existing Option/divisibility
+diagnostics in examples. Formatting checks also caught the wrapping required by
+these replacements. The final checks above passed after equivalent expressions
+and formatting were applied. Logs are under `/tmp/myco-goal-integrated-*` and
+`/tmp/myco-goal-final-*`; opt-in model tests are reported separately.
+
+## Final boundary corrections and verification at 419ff64a
+
+Independent code review reproduced two data-boundary defects after the initial
+implementation. A project retry/follow-up treated discovered candidate paths and
+dates as user restrictions, silently excluding a newly added reopening session.
+Project selection now stores explicit restrictions separately and rediscovers
+current candidates; historical cutoffs and explicit document filters remain.
+A follow-up explicitly naming another project asks for a new selection instead
+of answering the old one. Ten new store regressions and the related 375-test group
+passed; the frozen source labels were not weakened.
+
+The import report action also lacked the same vault-opening guard as note/source
+links. Four of five real-page SSR tests failed before the one-condition fix; all
+five now pass with synthetic store receipts. This is render-level evidence, not
+an OS file-open or native publication test.
+
+Local import results previously unioned confirmed writes with every concurrent
+wiki mtime change. Two reproduced failures showed an unrelated human edit in the
+review list and a false success when the local pipeline returned no writes. Local
+results/validation now use only the supplied confirmed write set, including an
+empty set. Mtime snapshots only classify those pages. Receipt-less legacy provider
+paths retain their existing whole-vault fallback; they are not reactivated or
+accepted as source-attributed workflows by this change.
+
+Final integrated `npx vitest run` passed **393 files / 6,387 tests** in 77.53s.
+Full lint, TypeScript and production build passed; the same two existing hook
+warnings and import warning remain, and Vite took 22.89s. Native code is unchanged
+from the previously checked source tree, so its default/feature/example counts
+above remain the applicable checks. The full v9 model case still failed with a
+safe partial result; no unit result substitutes for that missing quality gate.
+Logs: `/tmp/myco-goal-boundary-final-*`.
+
 ## Next executable slices
 
-1. Diagnose the actual model failure with a frozen QA-only structure experiment.
-   Packet 2 carries a nonempty planned claim, but the current structure prompt
-   also describes the empty case and its grammar permits empty title/IDs. Compare
-   the unchanged prompt with explicit nonempty-title/claim-ID instructions while
-   keeping input, model, grammar, sampler and 768/4096 budgets fixed. Retain both
-   outputs, apply the unchanged validator and separately review meaning. Existing
-   extraction replay is claims-only and native review replay is review-only, so
-   reuse their binding/receipt patterns in a dedicated QA entry point. The
-   extraction omission is a separate issue; full inputs ended at EOG rather than
-   a token limit. Do not change labels or treat a structured title as full success.
-2. G4 should reuse `activity_synthesis_steps_with_resolution`, not add another
-   state engine. Workstream facts preserve the first user request and latest
-   assistant report, so a later user reopening is lost. A synthetic renderer
-   reproduction retained the older completed report and labelled it with the
-   session's later activity date. `open_items` also unions old text without
-   resolving later completion/cancellation. Bind initial and follow-up evidence
-   to the project's source paths intersected with the user's scope, then route
-   current/historical questions through existing source-bound resolution. Distinct
-   project keys stayed separate in the renderer reproduction; same-basename repo
-   identity and native project filtering still require regression coverage.
-3. G5 refresh requires native source snapshot capability, durable app-owned
-   section custody, target compare-and-swap and source revalidation in one
-   publication operation, plus update prior images in manifest/recovery. Reuse
-   existing custody patterns; a frontmatter hash or marker is not write authority.
-4. G6 can compact the returning-device Home introduction while preserving first
-   visit/onboarding/custom management layout, consolidate Ask examples near the
-   composer without auto-submission, and prioritize reviewing successful imports.
-   Ingest currently exposes changed paths only: derive created/updated metadata
-   from actual before/after results and retain the actual source path, rather than
-   infer change type from a model's plan. Preserve partial/error recovery and
-   vault-bound links. Full viewport/theme/keyboard/state review remains required.
+1. Repair confirmed project identity collisions before accepting G4. The actual
+   `project_key`/`thread_key` functions, extracted with existing normalization and
+   run on synthetic paths, collapse `projects/Atlas` and `work/Atlas`, distinct
+   home/drive roots, case-sensitive `Atlas`/`atlas`, and independently named
+   `Atlas-worktree-*` directories to `atlas`. Facts retain no full cwd or opaque
+   repository identity, and unchanged fingerprints skip rereading. Separate
+   display names from opaque source-provenance identity, version/rebuild facts
+   from immutable originals, and preserve parent/subagent lineage. Do not infer
+   repository equivalence from a basename or worktree suffix. Preserve existing
+   project pages and name overrides; ambiguous old names require review. The
+   existing marker-only project-page writer is not sufficient authority to
+   overwrite a human annotation during migration.
+2. Diagnose the request extraction omission retained by the full v9 witness.
+   The structure correction passed its stage, but native finalization remained
+   partial. Freeze another input-bound comparison
+   before changing their prompts. W1–W4 still need real model meaning checks and
+   three repeated critical cases; mocked resolution tests do not pass those gates.
+3. G5's next implementation slice is native bounded map-source capture/check/
+   release consumed by `draftMap`: at most twelve 128KiB sources, exact native
+   opening/organization role, retained file and directory identity, and bounded
+   UTF-8 reads. Keep its read-only evidence capability separate from write/undo
+   authority; normal compiler files can have private hardlink anchors. A separate
+   check followed by publish is still non-atomic. Follow with source revalidation
+   and target CAS in one writer operation, durable app-owned section custody,
+   and update prior images in manifest/recovery. Preserve human bytes and reject
+   ambiguous ownership; frontmatter hashes/markers are not native authority.
+4. Finish the remaining native/installed and UI acceptance matrix. Browser mocks
+   cannot grant native publication authority. Synthetic success fixtures verify
+   only presentation; they do not prove a completed import. VoiceOver, 3G,
+   exhaustive state/translation combinations and installed restart remain open.
 
 Windows and installed acceptance remain explicit missing evidence while these
 independent slices continue. No commits have been pushed or merged to main.
@@ -181,3 +332,11 @@ independent slices continue. No commits have been pushed or merged to main.
 | `b240b774` | G3 portable confined source keys; Windows runtime still unverified |
 | `3c1e491e` | G7 equivalent Option predicates for Rust 1.95 lint |
 | `8fa8005e` | G5 bounded source packets, path citations and isolated map generation; refresh incomplete |
+| `139c9607` | Equivalent Rust 1.95 predicates in optional native QA and example gates |
+| `234b3f0c` | Frozen actual structure comparison, nonempty prompt and v9 contract admission |
+| `7710f050` | Project-bound original resolution, period isolation and ambiguous-discovery guard |
+| `b755e413` | Compact Home/Ask and vault-bound import review |
+| `ff809a43` | Accessible stacked Graph panels and phone-sheet boundary |
+| `dd0f876a` | Refresh derived project candidates on retry/follow-up while retaining explicit restrictions |
+| `76b9d043` | Hide stale-opening import report links; real-page SSR regressions |
+| `419ff64a` | Attribute local import results to confirmed writes, excluding concurrent human edits |

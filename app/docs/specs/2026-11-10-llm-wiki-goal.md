@@ -4,8 +4,9 @@ Date: 2026-11-10
 
 Baseline: `121c0fa2` on `origin/main`, myco 0.4.0
 
-Status: Active. First implementation slice is under verification; acceptance is
-incomplete. See the [execution record](../research/2026-11-10-llm-wiki-execution.md).
+Status: Active. Draft/scope handling, source-bound project routing and UI fixes
+are implemented; native, project identity and model acceptance remain incomplete.
+See the [execution record](../research/2026-11-10-llm-wiki-execution.md).
 
 ## Objective
 
@@ -73,16 +74,16 @@ in parallel on a separate branch/worktree with a Windows-capable runner. G4 and 
 follow the shared evidence contract from G0/G2. G6 may proceed on separate UI files
 after G1. Run actual-model/native scenarios throughout, not only in G7.
 
-| ID | Package | Depends on | Initial state |
+| ID | Package | Depends on | Current state |
 | --- | --- | --- | --- |
-| G0 | Freeze acceptance cases and establish runtime evidence | None | Pending |
-| G1 | Preserve Ingest drafts | G0 cases | Pending |
-| G2 | Make Ask scope and period consistent | G0 cases | Pending |
-| G3 | Restore Windows native safety and functionality | G0 inventory | Pending |
-| G4 | Resolve current project work state | G2 contract | Pending |
-| G5 | Refresh evidence-based topic maps | G0 evidence contract | Pending |
-| G6 | Improve capture, review and reading screens | G1; G2 for Ask | Pending |
-| G7 | Complete native acceptance and documentation | G1–G6 | Pending |
+| G0 | Freeze acceptance cases and establish runtime evidence | None | Baseline recorded; actual model quality failed |
+| G1 | Preserve Ingest drafts | G0 cases | Implemented; installed restart pending |
+| G2 | Make Ask scope and period consistent | G0 cases | Implemented; native acceptance pending |
+| G3 | Restore Windows native safety and functionality | G0 inventory | Portable paths improved; Windows unverified |
+| G4 | Resolve current project work state | G2 contract | Source-bound route implemented; project-key collision and actual meaning gates remain |
+| G5 | Refresh evidence-based topic maps | G0 evidence contract | New-map evidence improved; native binding and owned refresh remain |
+| G6 | Improve capture, review and reading screens | G1; G2 for Ask | Main screens improved; full accessibility/state review incomplete |
+| G7 | Complete native acceptance and documentation | G1–G6 | In progress; not release-accepted |
 
 Parallel workers must own disjoint files or isolated worktrees. One coordinator
 integrates changes and resolves shared schema/i18n edits. Use feature branches;
@@ -110,7 +111,9 @@ without downloading or changing models as a side effect of inspection.
 Starting points: `src/pages/PageIngest.tsx`, route mounting in `src/App.tsx`,
 existing vault-scoped draft/checkpoint patterns and their tests.
 
-- [ ] Reproduce draft loss in a regression test before changing behavior.
+- [x] Reproduce draft loss before changing behavior and retain an automated
+  regression against the untouched baseline. Manual reproduction preceded
+  implementation; the automated baseline comparison followed it.
 - [ ] Preserve title/body across Ask, Settings and Reader navigation and refresh/
   restart using existing durable storage conventions where suitable.
 - [ ] Isolate drafts by vault; switching vaults cannot expose or overwrite another
@@ -135,7 +138,7 @@ Starting points: `src/stores/queryStore.ts`, `src/lib/queryWorkstreams.ts`,
   result, never an unrelated answer.
 - [ ] Add cases for follow-ups, Korean date wording, document selection, empty
   periods, old-only records and a vault switch while a query is running.
-- [ ] Update relevant README descriptions to match the final policy.
+- [x] Update relevant README descriptions to match the final policy.
 
 ### G3 Restore Windows native behavior
 
@@ -167,6 +170,10 @@ Starting points: `src-tauri/src/workstreams.rs`, existing session claims and
   A request, plan or assistant suggestion is never evidence of performed work.
 - [ ] Do not merge similarly named tasks from different projects. Keep ambiguous
   items as needs confirmation; absence of a record is not proof of no remaining work.
+  The November 10 audit reproduced distinct repository paths collapsing to the
+  same basename-derived project key. Replace that identity with a versioned,
+  provenance-based identity and rebuild derived facts without overwriting human
+  pages or guessing which ambiguous legacy name belongs to which repository.
 - [ ] Resolve historical questions using only evidence within their cutoff and
   selected scope; later completion or reopening cannot leak into an earlier answer.
 - [ ] Render the current supported state with evidence links and coverage limits.
@@ -189,11 +196,11 @@ native publication checks.
 
 Use `docs/design/design-system.md`, the shared UI kit and graph visual rules.
 
-- [ ] Compact the returning-user Home introduction so recent notes and meaningful
+- [x] Compact the returning-user Home introduction so recent notes and meaningful
   review actions are easier to reach. Preserve onboarding and custom layouts.
-- [ ] Consolidate duplicated Ask intent/example guidance around the composer;
+- [x] Consolidate duplicated Ask intent/example guidance around the composer;
   retain guidance while making room for answers and sources.
-- [ ] Make reviewing created/updated pages the main successful-import action.
+- [x] Make reviewing created/updated pages the main successful-import action.
   Show readable titles, change type and source links; retain add-another access.
 - [ ] Keep graph panels collapsible and preserve saved preferences. Improve label
   priority for selected notes/neighbors and verify opening the underlying page.

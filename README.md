@@ -166,14 +166,24 @@ Unsubmitted Ingest titles and text are saved on this device separately for each
 vault, including across navigation and restart. Storage failures keep the input
 in memory and offer Retry. Failed or partial imports keep the draft; a successful
 import clears only the submitted version, preserving anything typed afterward.
+After a successful import, **Review notes** opens the changed content first.
+The result lists readable note titles, observed creation/update status and the
+original source link. Partial imports keep Retry as the main action.
+Local imports exclude unrelated edits made at the same time from that list.
 
 **Project questions** — imported conversations can be grouped into workstreams
 for project progress and remaining-work questions. Guided project questions show
 their conversation scope before submission; explicit wiki/session/all choices and
 selected-note limits remain authoritative. The workstream recent overview uses
 seven local calendar days including today and displays that period. If it is
-empty, older records are not silently substituted. These answers collect reported
-work with source links; they do not independently verify completion.
+empty, older records are not silently substituted. Recognized progress questions
+and guided remaining-work questions use the selected built-in local chat model to review project-bound
+original evidence, including historical cutoffs and later task changes. Missing
+records remain visible as incomplete coverage. The model is never changed
+automatically; these answers still do not independently verify completion.
+
+Returning-device Home keeps a compact introduction so recent notes are easier
+to reach. Ask examples sit beside the composer and fill the draft without sending it.
 
 **Harvest queue** — the Overview opens on the sessions that deserve to become
 wiki pages: archived transcripts sieved for duplicates and boilerplate,
