@@ -314,7 +314,7 @@ export function pageCardCarriesTitle(stage: IngestStage): boolean {
 }
 
 /** The live line (and empty feed) before any stream event. At the gate the
- *  run waits on the user, so it says so: "Starting Claude…" would be false,
+ *  run waits on the user, so it says so: a preparation message would be false,
  *  and a blank polite live region announces nothing. */
 export function feedIdleLine(stage: IngestStage, t: Strings, status?: WorkflowStatus | null): string {
   if (status && status !== "success") return workflowLabel(status, t);

@@ -18,6 +18,45 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: offline native Ingest success clears the submitted draft
+
+With the same fixed sandbox wrapper, copied only existing pinned GGUF weights
+into the isolated state directory. Both source and copied hashes matched the
+repository manifests; no artifact was downloaded and network denial remained.
+The toolbar advertised 4B, but the actual preview route requested 2B, as confirmed
+by native diagnostics and the final saved page. Preparing only 4B therefore did
+not establish the prerequisites for Ingest. Both pinned artifacts were eventually
+available without changing provider settings.
+
+Retained all four attempts: cold 4B state ended with `time_budget`; the next
+attempt reported `generation_unavailable_or_rejected` for missing 2B; the first
+attempt after copying 2B also ended with `time_budget`; the same-process warm
+retry succeeded. A process sample during the initial wait showed software SHA-256
+inside model verification. No inference-only latency is inferred from the UI
+clock. Repeated submissions reused the same raw file, whose SHA-256 stayed exact.
+
+The native UI showed three review entries (source note, index, log), completion,
+empty title/body and disabled submit. Add-another kept the form empty. The saved
+page contains a 2B-generated Korean preview and explicit 6-of-24-chunk coverage;
+it says completion is not recorded and the outcome is unknown. This is one
+synthetic current-revision success case, not the frozen project meaning suite or
+three repeated trials. Both synthetic Reader files and Beta's file counts were
+unchanged. The owned native process was quit and absence verified. Production
+marker metadata stayed unchanged relative to the existing unresolved incident.
+Full synthetic input/output and limits are in
+[the native success receipt](2026-11-11-native-ingest-success.json).
+
+During this run the local path visibly said “Starting Claude”. Replaced the
+shared warm-up copy in English, Korean and Japanese with provider-neutral source
+preparation wording. This fixes the false provider claim without changing model
+selection. The existing seven IngestProgress tests and full 6,488-test frontend
+suite passed; lint had zero errors and the same two existing hook warnings;
+type-check/production build passed. Logs are `/tmp/myco-ingest-neutral-*`.
+This text change was not rebuilt into the diagnostic bundle. README was unchanged
+because only transient copy changed. No Rust source changed or native suite was
+rerun. G1 still requires the older-success/newer-draft race and D4 native recovery;
+G7 full model and cross-platform acceptance remain open.
+
 ## November 11: map cleanup errors preserve publication recovery state
 
 A new regression reproduced a frontend error-classification bug in
