@@ -157,7 +157,10 @@ mod platform {
                 &self.scope.path,
                 guard,
             )?;
-            if observation.baseline != content || observation.current != content {
+            if observation.has_owned_content_edits
+                || observation.baseline != content
+                || observation.current != content
+            {
                 return Err("map creation observation differs from native output".into());
             }
             crate::vault::verify_recorded_file_unlocked(written)?;

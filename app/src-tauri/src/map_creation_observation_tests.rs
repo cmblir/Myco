@@ -215,10 +215,16 @@ fn reopens_creation_evidence_after_handles_close_and_keeps_human_text_separate()
         let edited = read(&root, &directory, &leaf).unwrap();
         assert_eq!(edited.baseline, baseline);
         assert_eq!(edited.current, annotated);
+        assert!(!edited.has_owned_content_edits);
         assert_eq!(
             std::fs::read_to_string(root.join(RELATIVE)).unwrap(),
             annotated
         );
+        let owned_edit = annotated.replace("Synthetic relationship", "Human revised relationship");
+        std::fs::write(root.join(RELATIVE), &owned_edit).unwrap();
+        let edited = read(&root, &directory, &leaf).unwrap();
+        assert!(edited.has_owned_content_edits);
+        assert_eq!(edited.current, owned_edit);
     });
 }
 

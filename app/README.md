@@ -157,6 +157,10 @@ checks its exact bytes and file identity; unstable or unsafe records stop comple
 Creation observations also validate their schema, vault/target scope, baseline
 revision and retained file object. Reading a baseline and current human-edited
 text does not restore an update or deletion permit.
+Readback separately flags edits to the generated body or its evidence/descriptor
+metadata. Titles and annotations outside the generated markers do not count as
+generated-content edits. Ambiguous markers or metadata require manual review;
+the classifier does not overwrite either kind of edit.
 Native creation now also discovers its observation by vault/path and current file
 identity, without relying on a remembered generation key. Missing, corrupt or
 ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory

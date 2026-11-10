@@ -43,6 +43,7 @@ struct Observation {
 pub(crate) struct CreationContent {
     pub baseline: String,
     pub current: String,
+    pub has_owned_content_edits: bool,
 }
 
 /// Find the current object's retained observation without a process-local key.
@@ -223,6 +224,10 @@ fn read_at(
         return Err("map creation vault identity changed during read".into());
     }
     Ok(CreationContent {
+        has_owned_content_edits: !crate::map_content::owned_sections_unchanged(
+            &observation.baseline,
+            &current,
+        ),
         baseline: observation.baseline,
         current,
     })
