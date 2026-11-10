@@ -18,6 +18,37 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: preview generation budget starts after model preparation
+
+The [native Ingest receipt](2026-11-11-native-ingest-success.json) retained cold
+preparation timeouts and a same-process warm success. Code inspection found that
+`transform` started its 45-second timer before entering the blocking task, source
+validation, artifact verification, model-lock acquisition and model loading.
+This contradicted the documented *generation* budget and could exhaust it before
+any generation began. The sampled software SHA-256 verification provides runtime
+evidence of preparation work during the original wait, not a model latency claim.
+
+Moved the existing 45-second deadline into the verified/loaded model callback.
+Prompt preparation and decoding remain bounded by it; cancellation is never reset,
+and pre/post source and vault checks remain unchanged. A scoped deadline guard
+aborts the timer task on normal return, early error or unwinding. Added tests for
+expiry setting both timeout/cancellation flags and for dropping the scope
+terminating an already-started timer task. The focused native generation suite
+passed all 39 tests. The initial formatting check required one line wrap, which
+was fixed; the repeated formatting check passed.
+
+The full native library suite with `native-app-acceptance` passed 2,707 tests
+with 38 existing ignored tests (`/tmp/myco-generation-budget-full.log`).
+Strict all-target Clippy with the same feature and final `cargo fmt --check`
+also passed. Command exit codes are in `/tmp/myco-generation-budget-status.json`.
+Frontend tests were not repeated because frontend code did not change.
+
+Updated app README to explain that cold model preparation is outside the
+generation budget. This changes preview timing, not source authority, model
+selection or fallback policy. The previously exercised bundle still has the old
+binary: cold-start native acceptance must be rerun after rebuilding, and no
+first-attempt success is claimed yet.
+
 ## November 11: offline native Ingest success clears the submitted draft
 
 With the same fixed sandbox wrapper, copied only existing pinned GGUF weights

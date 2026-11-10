@@ -682,7 +682,9 @@ the latest question. Quote-only Ask remains available without this notice.
 Local Ask has no automatic time limit for model verification or generation.
 The page shows elapsed time while it runs. Stop cancels the request and rejects
 a late reply; source rechecks and token/context bounds remain in place. Import
-previews retain a 45-second generation budget.
+previews retain a 45-second generation budget, starting after model artifact
+verification and loading. Cold preparation does not consume that budget;
+cancellation and source rechecks still apply.
 The [design system](docs/design/design-system.md) records theme and type tokens,
 component states, responsive layout, accessibility, brand and mascot motion.
 It distinguishes current implementation from requirements for subsequent work.
