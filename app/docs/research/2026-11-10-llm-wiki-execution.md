@@ -442,6 +442,25 @@ successful check was inferred from that rejected invocation. Logs are under
 
 ## Next executable slices
 
+The [seven-case actual comparison](2026-11-10-request-controls-comparison.json)
+retains all 44 records from 14 offline calls using the pinned 4B model. Runner
+`e4dbbd9e` passed build, strict feature all-target Clippy, formatting and its
+seven model-free regressions. The copied binary's pre-execution hashes are in
+the receipt. Actual inference completed with exit 0 because transport and native
+binding succeeded; **semantic acceptance failed**. Coordinator review matched
+only R5/R7 for the baseline and R1/R5/R6/R7 for the new performer-guidance arm.
+The candidate recovered the unspecified request but lost the explicitly named
+performer, changed a reported completion into a request, and changed a plan into
+a request while losing its actor. No candidate was promoted and no labels changed.
+The baseline also emitted a question activity for the frozen no-task question.
+
+Test time was 473.65s, wall time 477.29s and maximum resident set size
+3,233,431,552 bytes, including debug artifact verification and loading. All
+fourteen telemetry records show actual prefill and sampled tokens. This was one
+call per arm/case, with no full compiler, independent semantic judge or installed
+app run. Next diagnose speech-act and actor interpretation together; improving
+request recall alone is insufficient. Production prompts remain unchanged.
+
 After `04fce3c6`, the worktree was rechecked clean and the previous turn classified
 as progress: it changed code and retained a failed actual-model observation.
 Seven supplemental request-extraction originals and gold labels are now frozen in
