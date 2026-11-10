@@ -184,6 +184,12 @@
     "termination": "Both generations ended at eog, not output-token exhaustion.",
     "nativeOutcome": "review_rejected",
     "causalLimit": "Matches the observed native failure code, but native hidden draft/reviewer outputs were not captured; cannot prove identical cause for that earlier run.",
-    "nextAction": "Compare reviewer input representations or guidance against this frozen positive plus unsupported-answer negative controls; keep current production gate."
+    "nextAction": "Compare reviewer input representations or guidance against this frozen positive plus unsupported-answer negative controls; keep current production gate.",
+    "reasonLengthAudit": {
+      "characters": 128,
+      "grammarMaximumCharacters": 128,
+      "source": "local_synthesis/answer_review.rs ASK_ANSWER_REVIEW_JSON_GRAMMAR",
+      "interpretation": "The reason reaches the grammar character cap. Its mid-sentence ending does not independently establish premature model termination."
+    }
   }
 }

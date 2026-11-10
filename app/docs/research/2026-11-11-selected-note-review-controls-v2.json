@@ -1,0 +1,31 @@
+{
+  "sourceControls": "2026-11-11-selected-note-controls.json",
+  "cases": [
+    {
+      "id": "supported_pair",
+      "answer": "Synthetic Graph Center \ub294 Synthetic Graph East \uacfc Synthetic Graph West \uc5d0 \ub9c1\ud06c\ub429\ub2c8\ub2e4.",
+      "expectedAccepted": true,
+      "goldReason": "The center explicitly links east and west, whose source titles give these names."
+    },
+    {
+      "id": "invented_north",
+      "answer": "Synthetic Graph Center \ub294 Synthetic Graph East \uacfc Synthetic Graph North \uc5d0 \ub9c1\ud06c\ub429\ub2c8\ub2e4.",
+      "expectedAccepted": false,
+      "goldReason": "No supplied original supports a North link."
+    },
+    {
+      "id": "missing_west",
+      "answer": "Synthetic Graph Center \ub294 Synthetic Graph East \uc5d0 \ub9c1\ud06c\ub429\ub2c8\ub2e4.",
+      "expectedAccepted": false,
+      "goldReason": "The question asks for both links; the West link is omitted."
+    },
+    {
+      "id": "invented_cross_link",
+      "answer": "Synthetic Graph East \uc640 Synthetic Graph West \ub294 \uc11c\ub85c \uc9c1\uc811 \ub9c1\ud06c\ub429\ub2c8\ub2e4.",
+      "expectedAccepted": false,
+      "goldReason": "Both supplied notes link to Center, not to each other, and this does not answer the question."
+    }
+  ],
+  "policy": "Constructed candidate answers with frozen labels; actual reviewer calls only, not generated drafts.",
+  "revisionNote": "Revision 2 uses Korean prose to reach the unchanged Korean draft gate; original semantic labels and source/question bytes are unchanged."
+}

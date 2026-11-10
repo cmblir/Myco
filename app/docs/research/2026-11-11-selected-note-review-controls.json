@@ -1,0 +1,30 @@
+{
+  "sourceControls": "2026-11-11-selected-note-controls.json",
+  "cases": [
+    {
+      "id": "supported_pair",
+      "answer": "Synthetic Graph Center \ub294 Synthetic Graph East \uacfc Synthetic Graph West \uc5d0 \ub9c1\ud06c\ub429\ub2c8\ub2e4.",
+      "expectedAccepted": true,
+      "goldReason": "The center explicitly links east and west, whose source titles give these names."
+    },
+    {
+      "id": "invented_north",
+      "answer": "Synthetic Graph Center links to Synthetic Graph East and Synthetic Graph North.",
+      "expectedAccepted": false,
+      "goldReason": "No supplied original supports a North link."
+    },
+    {
+      "id": "missing_west",
+      "answer": "Synthetic Graph Center links to Synthetic Graph East.",
+      "expectedAccepted": false,
+      "goldReason": "The question asks for both links; the West link is omitted."
+    },
+    {
+      "id": "invented_cross_link",
+      "answer": "Synthetic Graph East and Synthetic Graph West link directly to each other.",
+      "expectedAccepted": false,
+      "goldReason": "Both supplied notes link to Center, not to each other, and this does not answer the question."
+    }
+  ],
+  "policy": "Constructed candidate answers with frozen labels; actual reviewer calls only, not generated drafts."
+}

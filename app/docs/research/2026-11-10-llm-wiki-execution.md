@@ -18,6 +18,49 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: citation-mapping guidance does not repair answer review
+
+Added an opt-in paired reviewer experiment with one supported answer and three
+constructed negative answers: an invented North link, omission of the required
+West link, and an invented East↔West link. Only reviewer responses use actual
+inference; drafted answers are deliberately fixed controls. The candidate adds
+generic guidance to join citation IDs to original paths, distinguish ID
+namespaces, interpret explicit wikilinks and check complete question coverage.
+The original source/question bytes, model, sampler, grammar and acceptance gate
+remain unchanged. Neither gold labels nor case-specific answers enter guidance.
+
+The [initial run](2026-11-11-selected-note-review-comparison.json) is retained as
+incomplete: both positive arms falsely rejected the answer, but English negative
+answers failed Korean-language validation before review. Its eight-call assertion
+failed (exit 101; two actual reviews). This was a fixture error, not successful
+negative semantic testing. [Revised controls](2026-11-11-selected-note-review-controls-v2.json)
+translate only negative answer prose while preserving labels and relationships.
+A model-free regression now proves all four controls reach the reviewer.
+
+The [complete rerun](2026-11-11-selected-note-review-comparison-v2.json) recorded
+eight actual reviews and exited zero. Both baseline and candidate rejected all
+three negative controls, but both also rejected the supported answer. The
+candidate therefore provides no positive-case improvement and was not promoted.
+Some coverage/disposition fields and reasons remain inaccurate even when the
+binary rejection is appropriate. Safe refusal of every case is not useful
+grounded synthesis and does not pass G2/G7. This was one call per arm/case, not
+three-repeat release acceptance.
+
+An additional audit found the preceding replay's unfinished reason is exactly
+128 characters, the current grammar's maximum. Its ending alone is not evidence
+of spontaneous premature termination; the earlier receipt now records that
+limit. The production grammar was not changed. Next compare original-source
+representations under these same positive/negative controls, keeping every
+original and native rejection condition intact.
+
+Verification: ordinary-flow tests passed 16 with two opt-in model tests ignored;
+the explicit reviewer rerun separately completed eight calls. Rust fmt and strict
+all-target Clippy passed. Both model processes stopped. Initial socket denial was
+verified, and the rerun used the identical sandbox profile with a fresh writable
+temporary directory. Full runtime/RSS and raw responses remain in the receipts;
+Clippy overlapped part of rerun startup, so these are not clean performance
+benchmarks. README and production behavior were unchanged.
+
 ## November 11: actual-model replay isolates a false-negative answer review
 
 The [selected-note controls](2026-11-11-selected-note-controls.json) freeze the

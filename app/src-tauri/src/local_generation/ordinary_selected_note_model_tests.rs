@@ -1,4 +1,7 @@
 //! Explicit model replay of synthetic native-app inputs, not a Wry authority test.
+#[path = "ordinary_selected_note_review_model_tests.rs"]
+mod reviewer_comparison;
+
 use super::*;
 use crate::importers::wikify::source_revision;
 use crate::local_llm::LocalLlm;
