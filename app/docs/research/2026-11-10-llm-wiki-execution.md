@@ -442,6 +442,23 @@ successful check was inferred from that rejected invocation. Logs are under
 
 ## Next executable slices
 
+The subsequent [action/speech-act comparison](2026-11-10-request-speech-act-comparison.json)
+also failed semantic acceptance. Runner `be1a2218` preserves the previous candidate
+and adds a separately named experimental arm. Build, seven model-free tests,
+strict feature all-target Clippy and formatting passed. Fourteen actual offline
+calls completed with successful native binding, but the new arm matched only
+the three negative controls R5–R7. It omitted both positive requests and still
+classified the past report and future plan as request/requested. The baseline
+again matched only R5/R7. All 44 records are retained; no prompt was promoted.
+
+Test time was 443.13s, wall time 446.68s and maximum resident set size
+3,235,168,256 bytes, including debug preparation. Every call has actual prefill
+and sampled-token telemetry. These single-call observations do not satisfy
+repeated semantic, full-compiler or installed acceptance. Before adding more
+verbal instructions, inspect the source representation and decoder constraints
+for the persistent action-verb versus speech-act confusion. Preserve the frozen
+labels and all failed candidates during that investigation.
+
 The [seven-case actual comparison](2026-11-10-request-controls-comparison.json)
 retains all 44 records from 14 offline calls using the pinned 4B model. Runner
 `e4dbbd9e` passed build, strict feature all-target Clippy, formatting and its
