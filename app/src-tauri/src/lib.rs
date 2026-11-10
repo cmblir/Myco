@@ -403,6 +403,7 @@ pub fn run() {
             map_refresh::apply_map_refresh,
             map_refresh::latest_map_refresh_history,
             map_recovery::retained_map_snapshots,
+            map_recovery::retained_map_keys,
             commands::capture_map_sources,
             commands::check_map_sources,
             commands::release_map_sources,

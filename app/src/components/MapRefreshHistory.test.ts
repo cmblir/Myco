@@ -45,3 +45,21 @@ it("labels both immutable snapshots, escapes their content and discloses later e
   expect(html).not.toContain("<script>");
   expect(html).toContain("Human note preserved");
 });
+
+it("labels a retained-only map without suggesting a new or legacy current file", () => {
+  const html = renderToStaticMarkup(
+    createElement(MapRefreshHistoryView, {
+      t: STRINGS.ko,
+      keys: ["deleted-map"],
+      selected: "deleted-map",
+      retainedOnly: ["deleted-map"],
+      read: { phase: "ready", history: null },
+      onSelect: vi.fn(),
+      onReload: vi.fn(),
+    }),
+  );
+  expect(html).toContain(STRINGS.ko.map_recovery_retained_only);
+  expect(html).toContain(STRINGS.ko.map_recovery_missing_file);
+  expect(html).not.toContain(STRINGS.ko.map_history_missing);
+  expect(html).toMatch(/<button[^>]*disabled/);
+});

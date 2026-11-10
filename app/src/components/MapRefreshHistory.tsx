@@ -5,6 +5,7 @@ import { readMapHistory, type MapHistoryRead } from "../lib/mapRefreshHistory";
 import { useVaultStore } from "../stores/vaultStore";
 import "../styles/mapRefreshHistory.css";
 import MapRecoverySnapshots from "./MapRecoverySnapshots";
+import { readMapCatalog, type CatalogRead } from "../lib/mapRecoverySnapshots";
 
 export function MapRefreshHistoryView({
   t,
@@ -13,6 +14,7 @@ export function MapRefreshHistoryView({
   read,
   onSelect,
   onReload,
+  retainedOnly = [],
 }: {
   t: Strings;
   keys: string[];
@@ -20,6 +22,7 @@ export function MapRefreshHistoryView({
   read: MapHistoryRead;
   onSelect: (key: string) => void;
   onReload: () => void;
+  retainedOnly?: string[];
 }) {
   const id = useId();
   return (
@@ -42,6 +45,9 @@ export function MapRefreshHistoryView({
           {keys.map((key) => (
             <option key={key} value={key}>
               {key}
+              {retainedOnly.includes(key)
+                ? ` (${t.map_recovery_retained_only})`
+                : ""}
             </option>
           ))}
         </select>
@@ -49,7 +55,11 @@ export function MapRefreshHistoryView({
           type="button"
           className="btn"
           onClick={onReload}
-          disabled={!selected || read.phase === "loading"}
+          disabled={
+            !selected ||
+            read.phase === "loading" ||
+            retainedOnly.includes(selected)
+          }
         >
           {t.map_history_reload}
         </button>
@@ -64,7 +74,11 @@ export function MapRefreshHistoryView({
       )}
       {read.phase === "ready" &&
         (read.history === null ? (
-          <p>{t.map_history_missing}</p>
+          <p>
+            {retainedOnly.includes(selected)
+              ? t.map_recovery_missing_file
+              : t.map_history_missing}
+          </p>
         ) : (
           <>
             {read.history.hasChangesSinceRefresh && (
@@ -103,25 +117,72 @@ function OpenMapHistory({
 }) {
   const [selected, setSelected] = useState("");
   const [retry, setRetry] = useState(0);
+  const [catalog, setCatalog] = useState<CatalogRead>({ phase: "idle" });
+  const [catalogRequest, setCatalogRequest] = useState(0);
   const [result, setResult] = useState<{ key: string; read: MapHistoryRead }>({
     key: "",
     read: { phase: "idle" },
   });
-  const validKey = keys.includes(selected) ? selected : "";
+  const allKeys = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...keys,
+          ...(catalog.phase === "ready" ? catalog.catalog.keys : []),
+        ]),
+      ].sort(),
+    [keys, catalog],
+  );
+  const retainedOnly = allKeys.filter((key) => !keys.includes(key));
+  const validKey = allKeys.includes(selected) ? selected : "";
+  const hasCurrentFile = keys.includes(validKey);
   useEffect(() => {
-    if (!validKey) return;
+    if (!catalogRequest) return;
+    return readMapCatalog(vaultPath, vaultToken, setCatalog).cancel;
+  }, [vaultPath, vaultToken, catalogRequest]);
+  useEffect(() => {
+    if (!validKey || !hasCurrentFile) return;
     return readMapHistory(vaultPath, vaultToken, validKey, (read) =>
       setResult({ key: validKey, read }),
     ).cancel;
-  }, [vaultPath, vaultToken, validKey, retry]);
+  }, [vaultPath, vaultToken, validKey, hasCurrentFile, retry]);
   return (
     <>
+      <div
+        className="map-refresh-history"
+        aria-busy={catalog.phase === "loading"}
+      >
+        <button
+          type="button"
+          className="btn"
+          disabled={catalog.phase === "loading"}
+          onClick={() => setCatalogRequest((value) => value + 1)}
+        >
+          {t.map_recovery_discover}
+        </button>
+        {catalog.phase === "loading" && <p role="status">{t.st_loading}</p>}
+        {catalog.phase === "error" && (
+          <div role="alert">
+            <p>{t.map_recovery_catalog_error}</p>
+            <pre>{catalog.error}</pre>
+          </div>
+        )}
+        {catalog.phase === "ready" &&
+          catalog.catalog.hasUnidentifiedRecords && (
+            <p role="status">{t.map_recovery_catalog_incomplete}</p>
+          )}
+      </div>
       <MapRefreshHistoryView
         t={t}
-        keys={keys}
+        keys={allKeys}
+        retainedOnly={retainedOnly}
         selected={validKey}
         read={
-          validKey && result.key === validKey ? result.read : { phase: "idle" }
+          validKey && !hasCurrentFile
+            ? { phase: "ready", history: null }
+            : validKey && result.key === validKey
+              ? result.read
+              : { phase: "idle" }
         }
         onSelect={(key) => {
           setResult({ key: "", read: { phase: "idle" } });

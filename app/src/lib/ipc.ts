@@ -1828,6 +1828,8 @@ export const ipc = {
     invoke<{ path: string; before: string; after: string; hasChangesSinceRefresh: boolean } | null>("latest_map_refresh_history", { origin, key }),
   retainedMapSnapshots: (origin: AgentVaultSession, key: string) =>
     invoke<{ path: string; records: { recordId: string; evidence: "currentObject" | "publicationUnknown" | "invalidRecord"; before: string | null; after: string | null }[] }>("retained_map_snapshots", { origin, key }),
+  retainedMapKeys: (origin: AgentVaultSession) =>
+    invoke<{ keys: string[]; hasUnidentifiedRecords: boolean }>("retained_map_keys", { origin }),
   applyMapRefresh: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, key: string, candidate: string, sourceSnapshotId: string, expectedSha256: string) =>
     invoke<{ path: string; revision: string; changed: boolean }>("apply_map_refresh", { origin, roleSnapshot, key, candidate, sourceSnapshotId, expectedSha256 }),
   agentToolCall: (

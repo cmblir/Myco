@@ -18,6 +18,57 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: discover retained maps missing from the file list
+
+The opening-bound `retained_map_keys` command discovers canonical map names from
+private records without depending on current map files. It checks the recorded
+vault path and native vault identity, shared observation schema/scope/hash rules,
+canonical artifact path and retained anchor identity. Other vault names are not
+returned. Opened records, anchors, root and private-directory metadata are rechecked
+before returning the sorted unique names. The scan is bounded to 4,096 entries,
+32 MiB of private record bytes and 256 unique names. Because names must first be
+identified, this byte limit covers the private store scan, not just one known map.
+
+Stable records that cannot be identified do not supply guessed names. The response
+instead carries a generic incomplete-list flag; it does not expose other vault
+names or malformed text. I/O, privacy, anchor and concurrent replacement failures
+abort the query. This is still read-only evidence and cannot restore a deleted map
+or establish publication status.
+
+History adds **Find retained maps**. Returned names join the existing file selector;
+names absent from that tree are labelled **retained records only**. Selecting one
+skips the latest-current-file read and directs the user to saved snapshots. Catalog
+reload/errors and uncertain completeness are explicit. Opening changes clear the
+catalog, selection and snapshots; late responses cannot populate another opening.
+The new command has an explicit native-unavailable browser mock handler.
+
+Three native regressions cover deleted-map discovery and snapshot readback,
+cross-vault name isolation, invalid/traversal record suppression, changed records
+and stale openings. Targeted native checks passed 86 tests. Full Rust passed
+2,699 library and 28 integration tests (42 ignored overall); the library suite
+took 65.07s. Final formatting and diff checks passed. The initial strict
+Clippy run rejected an unused unit expression (`map_recovery_catalog.rs:62`);
+removing it fixed the check without changing semantics. Frontend targeted tests
+passed 25, and the full 404-file suite passed 6,478 tests in 79.46s. TypeScript/build
+passed, with Vite taking 14.83s. The first lint run raced a Vite temporary config
+file (`ENOENT` in `eslint-helpers.js:1305`); after stopping Vite, lint passed with
+zero errors and the two existing notch hook dependency warnings. Logs use
+`/tmp/myco-map-catalog-*`, with failed logs retained separately from final logs.
+
+Ego-browser used the actual History page with synthetic IPC and an empty file tree.
+Discovery found the retained-only map, keyboard expansion displayed its snapshots,
+and the current-file read count remained zero. The incomplete-list warning,
+retryable catalog error and same-path reopen reset were checked. Light/dark
+320/375/768/1280px observations showed no horizontal overflow. Screenshots:
+`/tmp/myco-deleted-map-{dark-320,light-1280}.png`. Theme-switch captures include
+transition colors and do not establish settled WCAG contrast. The browser task
+was finished and its Vite process stopped. This is not installed/native combined
+acceptance.
+
+README documents discovery and bounds. Restoring maps, repairing corrupt records,
+inspection when parent directories have also been removed, safe undo, chronology,
+model meaning and Windows/installed gates remain open.
+
 ## November 11: retained map records in History
 
 History now offers **Retained map records** for the selected existing map, separate

@@ -1684,6 +1684,11 @@ export interface Strings extends EverydayStrings {
   pf_retired: string;
   pf_outcome_delete: string;
   pf_confirm_msg_draft_map: string;
+  map_recovery_discover: string;
+  map_recovery_catalog_error: string;
+  map_recovery_catalog_incomplete: string;
+  map_recovery_retained_only: string;
+  map_recovery_missing_file: string;
   map_recovery_title: string;
   map_recovery_note: string;
   map_recovery_empty: string;
@@ -4312,6 +4317,11 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "No longer needed — the originals stay as they are",
     pf_outcome_delete: "Moves {n} quarantined item(s) to the trash.",
     pf_confirm_msg_draft_map: "Drafts a topic map or prepares an existing map update for review (one model call).",
+    map_recovery_discover: "Find retained maps",
+    map_recovery_catalog_error: "Could not find retained maps. Try Find retained maps again.",
+    map_recovery_catalog_incomplete: "Some stored records could not be identified. This list may be incomplete.",
+    map_recovery_retained_only: "retained records only",
+    map_recovery_missing_file: "The current map file is not in the vault list. Open Retained map records below to inspect saved snapshots.",
     map_recovery_title: "Retained map records",
     map_recovery_note: "These are saved snapshots, not a timeline or confirmation of a completed update. Records marked publication unknown may be past updates or interrupted attempts. Nothing can be restored or deleted here.",
     map_recovery_empty: "No retained records for this map.",
@@ -6924,6 +6934,11 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "더 이상 필요 없어요 — 원본은 그대로 둡니다",
     pf_outcome_delete: "격리된 자료 {n}개를 휴지통으로 옮깁니다.",
     pf_confirm_msg_draft_map: "주제 지도 초안을 쓰거나 기존 지도 갱신안을 검토할 수 있게 준비합니다 (모델을 한 번 씁니다).",
+    map_recovery_discover: "보관된 지도 찾기",
+    map_recovery_catalog_error: "보관된 지도를 찾지 못했습니다. 보관된 지도 찾기로 다시 시도하세요.",
+    map_recovery_catalog_incomplete: "확인할 수 없는 보관 기록이 있어 목록이 완전하지 않을 수 있습니다.",
+    map_recovery_retained_only: "보관 기록만 있음",
+    map_recovery_missing_file: "현재 볼트 목록에 지도 파일이 없습니다. 아래 보관된 지도 기록을 펼쳐 저장된 스냅샷을 확인하세요.",
     map_recovery_title: "보관된 지도 기록",
     map_recovery_note: "저장된 스냅샷이며 시간순 이력이나 갱신 완료를 뜻하지 않습니다. 게시 여부 불명 기록은 과거 갱신 또는 중단된 시도일 수 있습니다. 여기서는 복원하거나 삭제할 수 없습니다.",
     map_recovery_empty: "이 지도에 보관된 기록이 없습니다.",
@@ -9329,6 +9344,11 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "もう必要ありません — 元の資料はそのまま残します",
     pf_outcome_delete: "隔離された資料 {n} 件をゴミ箱へ移します。",
     pf_confirm_msg_draft_map: "トピックマップの下書き、または既存マップの更新案を作成して確認します（モデルを1回使います）。",
+    map_recovery_discover: "保管マップを探す",
+    map_recovery_catalog_error: "保管マップを取得できませんでした。「保管マップを探す」で再試行してください。",
+    map_recovery_catalog_incomplete: "識別できない保存記録があるため、一覧に不足がある可能性があります。",
+    map_recovery_retained_only: "保管記録のみ",
+    map_recovery_missing_file: "現在のボルト一覧にマップファイルがありません。下の保管されたマップ記録を開いてスナップショットを確認してください。",
     map_recovery_title: "保管されたマップ記録",
     map_recovery_note: "保存されたスナップショットです。時系列の履歴や更新完了を示すものではありません。反映状況が不明な記録には、過去の更新と中断された試行が含まれます。ここでは復元や削除はできません。",
     map_recovery_empty: "このマップに保管された記録はありません。",

@@ -203,8 +203,16 @@ existing map and expand **Retained map records** to load these snapshots separat
 from its latest update. Each record discloses current-file association, unknown
 publication or invalid data; invalid text stays hidden. Records expand as escaped
 plain text, with reload, empty and error states. Switching or reopening the vault
-clears them. Records for maps absent from the file selector still require the
-native inspection API; deleted-map discovery and repair remain incomplete.
+clears them. **Find retained maps** adds names from validated private records to
+the selector, including maps missing from the current file list. Those entries
+are labelled **retained records only** and open the saved snapshots without
+reading a nonexistent current map. The opening-bound `retained_map_keys` command
+validates vault identity, canonical map names, record hashes and anchors before
+returning names. It scans at most 4,096 entries and 32 MiB of private records and
+returns at most 256 unique names. Unidentifiable records produce an incomplete-list
+warning, never guessed names or text from another vault. Corrupt-record repair,
+restoring deleted maps and inspection after removal of map parent directories
+remain incomplete.
 Refresh issues no creation/undo receipt. Manual map proposals show the native
 merged diff before applying an existing-map update. Cancelling or switching vaults
 stops the update; sources and the target revision are rechecked after approval.

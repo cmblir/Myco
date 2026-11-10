@@ -305,6 +305,9 @@ fn validate_observation(bytes: &[u8], expected: &Scope, leaf: &str) -> Result<Ob
 #[path = "map_recovery_observation.rs"]
 pub(crate) mod recovery;
 
+#[path = "map_recovery_catalog.rs"]
+pub(crate) mod catalog;
+
 #[cfg(test)]
 #[path = "map_creation_observation_tests.rs"]
 mod tests;

@@ -10,6 +10,68 @@ export type RecoveryRead =
   | { phase: "error"; error: string }
   | { phase: "ready"; snapshots: RecoverySnapshots };
 
+export type CatalogRead =
+  | { phase: "idle" }
+  | { phase: "loading" }
+  | { phase: "error"; error: string }
+  | {
+      phase: "ready";
+      catalog: Awaited<ReturnType<typeof ipc.retainedMapKeys>>;
+    };
+
+/** Discover retained names only in the current opening, including absent files. */
+export function readMapCatalog(
+  vaultPath: string,
+  vaultToken: string,
+  onRead: (read: CatalogRead) => void,
+): { cancel: () => void; finished: Promise<void> } {
+  let cancelled = false;
+  const isCurrent = () => {
+    const active = useVaultStore.getState();
+    return (
+      !cancelled &&
+      !!vaultToken &&
+      !active.isOpeningVault &&
+      active.currentVault?.path === vaultPath &&
+      active.vaultToken === vaultToken
+    );
+  };
+  const finished = (async () => {
+    if (!isCurrent()) return;
+    onRead({ phase: "loading" });
+    try {
+      const origin = await ipc.agentVaultSession();
+      if (!isCurrent()) return;
+      if (origin?.vaultPath !== vaultPath || !origin.openingToken)
+        throw new Error(
+          "Map catalog opening does not match the selected vault",
+        );
+      const catalog = await ipc.retainedMapKeys(origin);
+      if (!isCurrent()) return;
+      if (
+        !catalog ||
+        !Array.isArray(catalog.keys) ||
+        catalog.keys.length > 256 ||
+        typeof catalog.hasUnidentifiedRecords !== "boolean" ||
+        catalog.keys.some(
+          (key) => typeof key !== "string" || !/^[a-z0-9][a-z0-9-]*$/.test(key),
+        ) ||
+        new Set(catalog.keys).size !== catalog.keys.length
+      )
+        throw new Error("Map catalog response is invalid");
+      onRead({ phase: "ready", catalog });
+    } catch (error) {
+      if (isCurrent()) onRead({ phase: "error", error: String(error) });
+    }
+  })();
+  return {
+    cancel: () => {
+      cancelled = true;
+    },
+    finished,
+  };
+}
+
 function validSnapshots(value: RecoverySnapshots, key: string): boolean {
   if (
     !value ||

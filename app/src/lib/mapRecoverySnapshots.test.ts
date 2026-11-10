@@ -1,20 +1,22 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const { agentVaultSession, retainedMapSnapshots, active } = vi.hoisted(() => ({
-  agentVaultSession: vi.fn(),
-  retainedMapSnapshots: vi.fn(),
-  active: {
-    currentVault: { path: "/synthetic" },
-    vaultToken: "ui-1",
-    isOpeningVault: false,
-  },
-}));
+const { agentVaultSession, retainedMapSnapshots, retainedMapKeys, active } =
+  vi.hoisted(() => ({
+    agentVaultSession: vi.fn(),
+    retainedMapSnapshots: vi.fn(),
+    retainedMapKeys: vi.fn(),
+    active: {
+      currentVault: { path: "/synthetic" },
+      vaultToken: "ui-1",
+      isOpeningVault: false,
+    },
+  }));
 vi.mock("./ipc", () => ({
-  ipc: { agentVaultSession, retainedMapSnapshots },
+  ipc: { agentVaultSession, retainedMapSnapshots, retainedMapKeys },
 }));
 vi.mock("../stores/vaultStore", () => ({
   useVaultStore: { getState: () => active },
 }));
-import { readMapRecovery } from "./mapRecoverySnapshots";
+import { readMapRecovery, readMapCatalog } from "./mapRecoverySnapshots";
 const record = {
   path: "wiki/maps/synthetic.md",
   records: [
@@ -26,6 +28,52 @@ const record = {
     },
   ],
 };
+
+it("returns retained map names and incomplete-catalog warning without deriving file existence", async () => {
+  const catalog = { keys: ["deleted-map"], hasUnidentifiedRecords: true };
+  retainedMapKeys.mockResolvedValue(catalog);
+  const observed = vi.fn();
+  await readMapCatalog("/synthetic", "ui-1", observed).finished;
+  expect(observed).toHaveBeenLastCalledWith({ phase: "ready", catalog });
+});
+
+it.each([
+  { keys: ["../outside"], hasUnidentifiedRecords: false },
+  { keys: ["duplicate", "duplicate"], hasUnidentifiedRecords: false },
+  { keys: [], hasUnidentifiedRecords: "false" },
+])("rejects invalid native catalog names and flags", async (catalog) => {
+  retainedMapKeys.mockResolvedValue(catalog);
+  const observed = vi.fn();
+  await readMapCatalog("/synthetic", "ui-1", observed).finished;
+  expect(observed).toHaveBeenLastCalledWith({
+    phase: "error",
+    error: expect.stringContaining("invalid"),
+  });
+});
+
+it.each(["cancel", "reopen", "opening"])(
+  "drops a late catalog after %s",
+  async (change) => {
+    let resolve!: (value: {
+      keys: string[];
+      hasUnidentifiedRecords: boolean;
+    }) => void;
+    retainedMapKeys.mockReturnValue(
+      new Promise((done) => {
+        resolve = done;
+      }),
+    );
+    const observed = vi.fn();
+    const request = readMapCatalog("/synthetic", "ui-1", observed);
+    await Promise.resolve();
+    if (change === "cancel") request.cancel();
+    if (change === "reopen") active.vaultToken = "ui-2";
+    if (change === "opening") active.isOpeningVault = true;
+    resolve({ keys: ["deleted-map"], hasUnidentifiedRecords: false });
+    await request.finished;
+    expect(observed.mock.calls).toEqual([[{ phase: "loading" }]]);
+  },
+);
 beforeEach(() => {
   active.vaultToken = "ui-1";
   active.isOpeningVault = false;

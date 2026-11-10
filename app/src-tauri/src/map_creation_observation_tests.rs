@@ -156,6 +156,75 @@ fn recovery_snapshot_budget_fails_without_a_partial_result() {
 }
 
 #[test]
+fn recovery_catalog_finds_deleted_maps_without_exposing_another_vault() {
+    with_isolated_data("map-catalog-deleted", |data| {
+        let (root, directory, _, baseline) = create(data);
+        let other = data.join("other-vault");
+        std::fs::create_dir_all(other.join("wiki/maps")).unwrap();
+        let other = other.canonicalize().unwrap();
+        let relative = "wiki/maps/other-private-map.md";
+        let store = MapCreationStore::open(&other, relative).unwrap();
+        crate::vault::with_root_mutation(&other, |_, guard| {
+            let written = store.write(guard, other.join(relative).to_str().unwrap(), &baseline)?;
+            store.record(guard, &written, &baseline)?;
+            Ok(())
+        })
+        .unwrap();
+        std::fs::remove_file(root.join(RELATIVE)).unwrap();
+        let found = catalog::discover(&directory, &root).unwrap();
+        assert_eq!(found.keys, vec!["synthetic"]);
+        assert!(!found.has_unidentified_records);
+        let found = catalog::discover(&directory, &other).unwrap();
+        assert_eq!(found.keys, vec!["other-private-map"]);
+        assert!(!found.has_unidentified_records);
+        let snapshots = recovery::inspect(&directory, &root, RELATIVE).unwrap();
+        assert_eq!(
+            snapshots[0].evidence,
+            crate::map_recovery::Evidence::PublicationUnknown
+        );
+        assert_eq!(snapshots[0].after.as_deref(), Some(baseline.as_str()));
+    });
+}
+
+#[test]
+fn recovery_catalog_reports_unidentified_records_without_using_their_paths() {
+    with_isolated_data("map-catalog-invalid", |data| {
+        let (root, directory, leaf, _) = create(data);
+        let path = directory.path().join(&leaf);
+        let original = std::fs::read(&path).unwrap();
+        for content in [b"{broken".to_vec(), {
+            let mut record: serde_json::Value = serde_json::from_slice(&original).unwrap();
+            record["scope"]["path"] = serde_json::json!("wiki/maps/../../private.md");
+            serde_json::to_vec(&record).unwrap()
+        }] {
+            std::fs::write(&path, content).unwrap();
+            let found = catalog::discover(&directory, &root).unwrap();
+            assert!(found.keys.is_empty());
+            assert!(found.has_unidentified_records);
+        }
+    });
+}
+
+#[test]
+fn recovery_catalog_rejects_changes_during_scan_and_stale_openings() {
+    with_isolated_data("map-catalog-race", |data| {
+        let (root, directory, leaf, _) = create(data);
+        let error = catalog::discover_at(&directory, &root, || {
+            std::fs::write(directory.path().join(&leaf), "{}").map_err(|e| e.to_string())
+        })
+        .unwrap_err();
+        assert!(error.contains("readback differs"));
+        let state = crate::vault_session::VaultRoot::default();
+        let generation = state.begin_open().unwrap();
+        state.finish_open(generation, root.clone(), || ()).unwrap();
+        let origin = state.snapshot().unwrap();
+        let generation = state.begin_open().unwrap();
+        state.finish_open(generation, root, || ()).unwrap();
+        assert!(crate::map_recovery::catalog(&state, &origin).is_err());
+    });
+}
+
+#[test]
 #[ignore = "invoked only by the isolated two-process discovery test"]
 fn synthetic_discovery_child() {
     let data = PathBuf::from(std::env::var_os("MYCO_DATA_DIR").unwrap());
