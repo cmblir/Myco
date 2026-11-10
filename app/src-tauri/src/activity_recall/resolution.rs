@@ -236,7 +236,7 @@ fn frozen_key(key: &ResolutionTaskKey, initial: &SourceSet) -> bool {
 
 fn keeps(page: &str, scope: Scope, paths: Option<&[String]>, include_archived: bool) -> bool {
     scope.keeps(page)
-        && paths.map_or(true, |paths| paths.iter().any(|path| path == page))
+        && paths.is_none_or(|paths| paths.iter().any(|path| path == page))
         && !crate::vector_index::is_cold_for(page, include_archived)
         && page.len() <= 1024
         && !page.contains(['[', ']', '|'])

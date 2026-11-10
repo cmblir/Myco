@@ -232,7 +232,7 @@ fn provider_session_prefix(
         .filter(|records| !records.is_empty())
         .ok_or("invalid provider session provenance metadata")?;
     if records.iter().any(|record| {
-        record.as_object().map_or(true, |record| {
+        record.as_object().is_none_or(|record| {
             record.is_empty()
                 || record.keys().any(|key| {
                     !matches!(

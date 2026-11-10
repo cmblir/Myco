@@ -177,7 +177,7 @@ pub(crate) fn prepare_answer_with_resolution(
             || claim.provenance.iter().any(|span| {
                 frozen
                     .get(span.id())
-                    .map_or(true, |original| **original != *span)
+                    .is_none_or(|original| **original != *span)
             })
     }) {
         return Err("activity answer claims lack frozen original support".into());

@@ -300,7 +300,7 @@ fn activity_synthesis_steps_inner(
             "activity requires a native opening origin",
         ));
     }
-    if request.origin.as_ref().map_or(true, |origin| {
+    if request.origin.as_ref().is_none_or(|origin| {
         origin.vault_path != current_origin.vault_path
             || origin.opening_token != current_origin.opening_token
     }) {

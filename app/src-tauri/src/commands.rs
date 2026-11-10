@@ -3265,7 +3265,7 @@ pub(crate) fn collect_inflow(
     // take strictly-greater to break ties on the alphabetically first name.
     let mut top: Option<(&str, u32)> = None;
     for (name, n) in per_tool {
-        if top.map_or(true, |(_, best)| n > best) {
+        if top.is_none_or(|(_, best)| n > best) {
             top = Some((name, n));
         }
     }
@@ -6952,11 +6952,14 @@ fn source_duplicate_chunks(
     hashes
         .into_iter()
         .enumerate()
-        .filter(|(section, _)| dated.as_ref().map_or(true, |mask| mask[*section]))
+        .filter(|(section, _)| dated.as_ref().is_none_or(|mask| mask[*section]))
         .map(|(_, hash)| hash)
         .collect()
 }
 
+// ponytail: no caller since the round4 retrieval path; kept until it is
+// confirmed unneeded, then delete it.
+#[allow(dead_code)]
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rank_hybrid(
     root: &std::path::Path,
@@ -7016,7 +7019,7 @@ pub(crate) fn rank_hybrid_as_of(
             && scope.keeps(page)
             && wanted
                 .as_ref()
-                .map_or(true, |set| set.contains(crate::norm::nfc(page).as_ref()))
+                .is_none_or(|set| set.contains(crate::norm::nfc(page).as_ref()))
     };
     let collapse_sources = scope == crate::retrieval::Scope::All && paths.is_none();
     let mut duplicate_chunks =
@@ -7043,12 +7046,8 @@ pub(crate) fn rank_hybrid_as_of(
             let chunks = embeddings::chunk_page(&content);
             Some((content, chunks))
         });
-        let Some((content, chunks)) = snapshot else {
-            return None;
-        };
-        let Some(text) = chunks.get(section) else {
-            return None;
-        };
+        let (content, chunks) = snapshot.as_ref()?;
+        let text = chunks.get(section)?;
         if let Some(end) = as_of_end {
             let original = historical.entry(page.to_string()).or_insert_with(|| {
                 let hashes = bm25.page_hashes(page);
@@ -7074,7 +7073,7 @@ pub(crate) fn rank_hybrid_as_of(
                         .contains(&hash))
         }) && !text.trim().is_empty()
             && crate::retrieval::text_matches_phrases(text, &phrases)
-            && range.map_or(true, |r| {
+            && range.is_none_or(|r| {
                 date_masks
                     .entry(page.to_string())
                     .or_insert_with(|| chunk_date_mask(page, content, chunks, r))
@@ -7393,10 +7392,10 @@ pub async fn semantic_search(
             };
             let chunks = embeddings::chunk_page(&content);
             chunks.get(hit.section) == Some(&hit.text)
-                && range.as_ref().map_or(true, |r| {
+                && range.as_ref().is_none_or(|r| {
                     chunk_in_date_range(&hit.page, &content, &chunks, hit.section, r)
                 })
-                && as_of_end.map_or(true, |end| {
+                && as_of_end.is_none_or(|end| {
                     let hashes = historical_index
                         .as_ref()
                         .and_then(|index| index.page_hashes(&hit.page));

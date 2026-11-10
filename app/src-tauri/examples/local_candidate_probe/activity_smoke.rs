@@ -338,7 +338,7 @@ fn run_case(
     );
     let gold = positive.then(|| positive_gold(&outputs, &schemas));
     let failure=result.as_ref().err().map(|error|format!("activity smoke {}: {}",error.code,error.detail))
-        .or_else(||gold.as_ref().filter(|checks|checks.as_object().map_or(true,|checks|checks.values().any(|value|value!=&Value::Bool(true))))
+        .or_else(||gold.as_ref().filter(|checks|checks.as_object().is_none_or(|checks|checks.values().any(|value|value!=&Value::Bool(true))))
             .map(|_|"positive activity smoke failed fixed fixture assertions; inspect actual outputs".to_string()));
     println!(
         "{}",

@@ -344,7 +344,7 @@ fn prepare_base(
                 .iter()
                 .enumerate()
                 .find(|(index, _)| *id == format!("S{}", index + 1))
-                .map_or(true, |(_, hit)| {
+                .is_none_or(|(_, hit)| {
                     !packet.spans().any(|span| span.selection_path() == hit.page)
                 })
         })

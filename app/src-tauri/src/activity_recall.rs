@@ -266,7 +266,7 @@ pub(crate) fn curated_kind(content: &str) -> Option<String> {
 }
 
 pub(crate) fn curated_activity_days(content: &str) -> Vec<String> {
-    if curated_kind(content).map_or(true, |kind| kind == "catalog") {
+    if curated_kind(content).is_none_or(|kind| kind == "catalog") {
         return Vec::new();
     }
     let mut days: Vec<_> = metadata(content)
@@ -1069,7 +1069,7 @@ fn recall_with_limits(
     let keeps = |page: &str| {
         scope.keeps(page)
             && !crate::vector_index::is_cold_for(page, include_archived)
-            && paths.map_or(true, |paths| paths.iter().any(|path| path == page))
+            && paths.is_none_or(|paths| paths.iter().any(|path| path == page))
     };
     // Prefer overlapping dated buckets, then undated identities, then older
     // buckets. Even old folders remain candidates: a resumed transcript can
@@ -1421,7 +1421,7 @@ fn recall_with_limits(
                     && crate::local_synthesis::is_source_attribution_only(&page[0].evidence.text)
                 {
                     if selected.len() + 2 > limits.hits
-                        || page.get(1).map_or(true, |body| {
+                        || page.get(1).is_none_or(|body| {
                             body.quote_start != page[0].quote_start
                                 || body.evidence.section != page[0].evidence.section + 1
                                 || !(body.evidence.text.trim().starts_with("- ")
@@ -1692,7 +1692,7 @@ fn chunk_dates(
                 .as_deref()
                 .and_then(crate::importers::parse_iso8601);
             *incomplete |= timestamp.is_none();
-            mapped.extend(std::iter::repeat(timestamp).take(turn_chunks.len()));
+            mapped.extend(std::iter::repeat_n(timestamp, turn_chunks.len()));
         }
         if mapped.len() != chunks.len() {
             *incomplete = true;

@@ -91,7 +91,7 @@ fn is_codex_quote_scaffolding(line: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_'))
         && is_source_actor(&marker.role)
-        && marker.date.as_deref().map_or(true, is_attribution_date)
+        && marker.date.as_deref().is_none_or(is_attribution_date)
 }
 
 fn is_source_quote_body(text: &str) -> bool {

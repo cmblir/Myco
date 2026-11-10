@@ -184,7 +184,7 @@ pub(crate) fn catalog(
             && request
                 .paths
                 .as_ref()
-                .map_or(true, |paths| paths.iter().any(|path| path == page))
+                .is_none_or(|paths| paths.iter().any(|path| path == page))
     };
     let mut candidates = BinaryHeap::new();
     let mut eligible_pages = 0;

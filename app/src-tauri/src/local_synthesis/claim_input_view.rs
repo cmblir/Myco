@@ -28,7 +28,7 @@ pub(super) fn serialize(original_user: &str) -> Result<String, String> {
         "allowedSpanIds",
         "independentVerificationReceipts",
     ];
-    if original.as_object().map_or(true, |object| {
+    if original.as_object().is_none_or(|object| {
         object.len() != fields.len() || fields.iter().any(|key| !object.contains_key(*key))
     }) {
         return Err("source reading activity packet fields changed".into());

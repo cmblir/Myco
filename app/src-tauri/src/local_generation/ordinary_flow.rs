@@ -151,7 +151,7 @@ pub(crate) fn run(
 ) -> Result<OrdinaryAnswer, ActivityFlowFailure> {
     if request.activity_overview
         || request.resolution.is_some()
-        || request.origin.as_ref().map_or(true, |origin| {
+        || request.origin.as_ref().is_none_or(|origin| {
             origin.vault_path != current_origin.vault_path
                 || origin.opening_token != current_origin.opening_token
         })

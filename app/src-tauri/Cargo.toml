@@ -4,9 +4,9 @@ version = "0.4.0"
 description = "myco — desktop wiki for plain markdown vaults"
 authors = ["myco contributors"]
 edition = "2021"
-# 1.77.2 is what tauri 2.11.1 and tauri-plugin-updater 2.10.1 both declare; the
-# old "1.77" here was below our own dependencies' floor.
-rust-version = "1.77.2"
+# The highest floor among our dependencies: rusqlite 0.41.1 declares 1.89
+# (calamine 0.36.1 1.88, tauri 2.11.1 1.77.2). Clippy checks against this.
+rust-version = "1.89"
 
 [lib]
 name = "myco_lib"

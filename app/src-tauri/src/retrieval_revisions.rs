@@ -42,9 +42,7 @@ pub(crate) fn transcript_chunks(
     else {
         return None;
     };
-    let Some(metadata) = parsed.data else {
-        return None;
-    };
+    let metadata = parsed.data?;
     let (Some(source), Some(conversation), Some(turns)) = (
         field(&metadata, "source"),
         field(&metadata, "conversation_id"),

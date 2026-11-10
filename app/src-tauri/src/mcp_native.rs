@@ -4284,8 +4284,7 @@ fn import_conversation_at(
     } else {
         crate::profile::sanitize_line(title)
     };
-    if unchanged
-        && (title.trim().is_empty() || previous_title.map_or(true, |old| old == safe_title))
+    if unchanged && (title.trim().is_empty() || previous_title.is_none_or(|old| old == safe_title))
     {
         return Ok(json!({ "ok": true, "status": "skipped_duplicate", "key": key }));
     }

@@ -1367,6 +1367,7 @@ fn open_patterns() -> &'static OpenPatterns {
 ///   heading that says something is not done;
 /// - any other line with a cue of its own ("검증은 보류했습니다", "아직
 ///   커밋하지 않았습니다", "remaining issues: …").
+///
 /// Not a line that closes what it names ("남은 문제 없습니다", "no remaining
 /// issues", "남은 작업은 직접 구현했습니다"), a checked `- [x]` item, code,
 /// a table or a heading.
@@ -1485,7 +1486,7 @@ fn open_items(sessions: &[Session]) -> Vec<OpenItem> {
             })
         })
         .collect();
-    items.sort_by(|a, b| b.epoch.cmp(&a.epoch));
+    items.sort_by_key(|item| std::cmp::Reverse(item.epoch));
     let mut seen = BTreeSet::new();
     items.retain(|item| seen.insert(item.text.to_lowercase()));
     items.truncate(OPEN_ITEMS);
@@ -1993,6 +1994,7 @@ struct WordUse<'a> {
 ///   project its conversations call by its folder name keeps that name),
 ///   and is no word of another workstream's key;
 /// - it is not a generic word.
+///
 /// Shown in its most common capitalized form, else capitalized ("Nimbus"
 /// for NIMBUS).
 fn derived_names(conversations: &BTreeMap<String, ConversationFacts>) -> BTreeMap<String, String> {

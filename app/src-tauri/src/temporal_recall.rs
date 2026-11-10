@@ -147,7 +147,7 @@ fn recall_with_limits(
         is_original(page)
             && scope.keeps(page)
             && !crate::vector_index::is_cold_for(page, include_archived)
-            && paths.map_or(true, |paths| paths.iter().any(|path| path == page))
+            && paths.is_none_or(|paths| paths.iter().any(|path| path == page))
     }) {
         eligible += 1;
         if limits.candidates == 0 {

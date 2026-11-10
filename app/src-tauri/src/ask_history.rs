@@ -170,7 +170,7 @@ fn read_execution<'de, D: serde::Deserializer<'de>>(
                         call.purpose == AskRequestPurpose::Answer
                             && call.state == AskRequestState::ResponseReceived
                     }))
-                && execution.selected.as_ref().map_or(true, route)
+                && execution.selected.as_ref().is_none_or(route)
                 && execution.calls.iter().all(|call| {
                     id(&call.id, 200, false)
                         && ids.insert(&call.id)
@@ -178,8 +178,8 @@ fn read_execution<'de, D: serde::Deserializer<'de>>(
                         && execution
                             .selected
                             .as_ref()
-                            .map_or(true, |selected| *selected == call.requested)
-                        && call.identity.as_ref().map_or(true, |identity| {
+                            .is_none_or(|selected| *selected == call.requested)
+                        && call.identity.as_ref().is_none_or(|identity| {
                             call.state == AskRequestState::ResponseReceived
                                 && id(&identity.model_id, 512, false)
                                 && (identity.source == AskIdentitySource::LocalManifest)
@@ -271,9 +271,9 @@ fn valid_guided_question(value: &serde_json::Value) -> bool {
         && value
             .get("subject")
             .and_then(|v| v.as_str())
-            .map_or(false, |s| !s.trim().is_empty() && s.chars().count() <= 240)
-        && value.get("asOf").map_or(true, |v| {
-            v.as_str().map_or(false, |s| {
+            .is_some_and(|s| !s.trim().is_empty() && s.chars().count() <= 240)
+        && value.get("asOf").is_none_or(|v| {
+            v.as_str().is_some_and(|s| {
                 s.len() == 10 && s.is_ascii() && crate::distill::iso_week(s).is_some()
             })
         })
@@ -293,9 +293,9 @@ fn read_search_context<'de, D: serde::Deserializer<'de>>(
         .filter(|context| {
             const MAX_SAFE_INTEGER: u64 = 9_007_199_254_740_991;
             context.version == 1
-                && context.range_ignored.map_or(true, |value| value)
-                && context.period_clarification.map_or(true, |value| value)
-                && context.range.as_ref().map_or(true, |range| {
+                && context.range_ignored.is_none_or(|value| value)
+                && context.period_clarification.is_none_or(|value| value)
+                && context.range.as_ref().is_none_or(|range| {
                     let day = |s: &str| {
                         s.len() == 10
                             && s.is_ascii()
@@ -310,12 +310,12 @@ fn read_search_context<'de, D: serde::Deserializer<'de>>(
                     };
                     day(&range.start) && day(&range.end) && range.start <= range.end
                 })
-                && context.packing.as_ref().map_or(true, |packing| {
+                && context.packing.as_ref().is_none_or(|packing| {
                     packing.selected_passages <= MAX_SAFE_INTEGER
                         && packing.omitted_passages <= MAX_SAFE_INTEGER
                         && packing.omitted_on_included_pages <= packing.omitted_passages
                 })
-                && context.activity_coverage.as_ref().map_or(true, |coverage| {
+                && context.activity_coverage.as_ref().is_none_or(|coverage| {
                     coverage.scanned_pages <= MAX_SAFE_INTEGER
                         && coverage.sources <= MAX_SAFE_INTEGER
                 })

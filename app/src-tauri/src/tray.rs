@@ -543,7 +543,7 @@ fn spawn_icon_animator(app: AppHandle) {
         let mut last = (usize::MAX, usize::MAX);
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
-            if tick % 150 == 0 && tick > 0 {
+            if tick.is_multiple_of(150) && tick > 0 {
                 // Appearance changes are rare; a re-read every ~30s is plenty.
                 dark = menu_bar_is_dark();
             }

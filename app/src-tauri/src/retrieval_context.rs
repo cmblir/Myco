@@ -106,6 +106,9 @@ fn bounds(range: Option<&DateRange>) -> Option<(i64, i64)> {
 }
 /// Only callers' already accepted hits may anchor context. Related passages
 /// carry a relationship, never an invented cosine or independent relevance claim.
+// ponytail: no caller since the round4 retrieval path; kept until it is
+// confirmed unneeded, then delete it.
+#[allow(dead_code)]
 pub(crate) fn retrieve(
     root: &Path,
     index: &Bm25Index,
@@ -154,7 +157,7 @@ pub(crate) fn retrieve_with_cutoff(
         page.starts_with("raw/conversations/")
             && scope.keeps(page)
             && !crate::vector_index::is_cold(page)
-            && paths.map_or(true, |paths| paths.iter().any(|p| p == page))
+            && paths.is_none_or(|paths| paths.iter().any(|p| p == page))
     };
     let read = |page: &str| -> Option<String> {
         let path = crate::vault::confine_path(root, &root.join(page).to_string_lossy()).ok()?;
@@ -164,7 +167,8 @@ pub(crate) fn retrieve_with_cutoff(
         std::fs::read_to_string(path).ok()
     };
     // Four conversation groups; multiple anchors in one group share its budget.
-    let mut groups: Vec<((String, String), Vec<(String, usize, String)>)> = Vec::new();
+    type Group = ((String, String), Vec<(String, usize, String)>);
+    let mut groups: Vec<Group> = Vec::new();
     let mut sources = HashMap::new();
     for anchor in anchors.iter().filter(|a| keeps(&a.page)) {
         if !sources.contains_key(&anchor.page) {
@@ -302,7 +306,7 @@ pub(crate) fn retrieve_with_cutoff(
                     .iter()
                     .rev()
                     .take(2)
-                    .last()
+                    .next_back()
                     .map(|t| t.saturating_sub(1));
                 for event in src
                     .events
@@ -523,7 +527,7 @@ mod tests {
         assert!(retrieve(
             dir.path(),
             &index,
-            &[anchor.clone()],
+            std::slice::from_ref(&anchor),
             Some(&range),
             Scope::All,
             None,
@@ -534,7 +538,7 @@ mod tests {
         assert!(retrieve(
             dir.path(),
             &index,
-            &[anchor.clone()],
+            std::slice::from_ref(&anchor),
             None,
             Scope::Wiki,
             None,
@@ -545,10 +549,10 @@ mod tests {
         assert!(retrieve(
             dir.path(),
             &index,
-            &[anchor.clone()],
+            std::slice::from_ref(&anchor),
             None,
             Scope::All,
-            Some(&[anchor.page.clone()]),
+            Some(std::slice::from_ref(&anchor.page)),
             "status"
         )
         .passages

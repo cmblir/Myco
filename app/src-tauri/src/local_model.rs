@@ -572,7 +572,7 @@ fn is_official_download_url(url: &url::Url) -> bool {
     url.scheme() == "https"
         && url.username().is_empty()
         && url.password().is_none()
-        && url.port().map_or(true, |port| port == 443)
+        && url.port().is_none_or(|port| port == 443)
         && url.host_str().is_some_and(|host| {
             host == "huggingface.co"
                 || host.ends_with(".huggingface.co")

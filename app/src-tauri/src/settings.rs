@@ -911,8 +911,10 @@ mod tests {
     #[test]
     fn model_server_endpoint_survives_reload_and_rejects_unsafe_urls() {
         with_isolated_data("model-server-endpoint", |_| {
-            let mut settings = Settings::default();
-            settings.ollama_url = "http://127.0.0.1:11436".into();
+            let mut settings = Settings {
+                ollama_url: "http://127.0.0.1:11436".into(),
+                ..Settings::default()
+            };
             save(&settings).unwrap();
             assert_eq!(read_checked().unwrap().ollama_url, settings.ollama_url);
             for value in [

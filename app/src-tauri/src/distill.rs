@@ -1393,7 +1393,7 @@ fn valid_manifest_id(id: &str) -> bool {
     let is_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
     let mut segs = rest.split('-');
     is_digits(segs.next().unwrap_or(""))
-        && segs.next().map_or(true, is_digits)
+        && segs.next().is_none_or(is_digits)
         && segs.next().is_none()
 }
 
@@ -1421,7 +1421,7 @@ fn valid_lookup_id(id: &str) -> bool {
         && is_digits(day)
         && time.len() == 6
         && is_digits(time)
-        && segs.next().map_or(true, is_digits)
+        && segs.next().is_none_or(is_digits)
         && segs.next().is_none()
 }
 
@@ -1886,7 +1886,7 @@ fn may_hold_session(trash_dir: &Path) -> bool {
             let p = e.path();
             kind.is_file()
                 && p.extension().and_then(|x| x.to_str()) == Some("md")
-                && sidecar_from(&sidecar_path(&p)).map_or(true, |f| is_session(&f))
+                && sidecar_from(&sidecar_path(&p)).is_none_or(|f| is_session(&f))
         })
 }
 
