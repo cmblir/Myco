@@ -2,7 +2,7 @@
 // intake channels and technical settings stay behind disclosures. The store
 // still owns judgement, write consent, progress, cancellation and results.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, JSX, ReactNode } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../lib/icons";
@@ -30,6 +30,7 @@ import ConversationImport from "../components/ConversationImport";
 import SessionBackfill from "../components/SessionBackfill";
 import SessionCompileQueue from "../components/SessionCompileQueue";
 import { isShortNote, refusalLine, useIngestStore } from "../stores/ingestStore";
+import { useIngestDraftStore } from "../stores/ingestDraftStore";
 import { selectedLocalTransformModel } from "../lib/localTransform";
 import type {
   IngestRefusal,
@@ -76,15 +77,34 @@ const fill = (s: string, vars: Record<string, string | number>): string =>
   );
 
 export default function PageIngest({ t }: { t: Strings }): JSX.Element {
+  const root = useVaultStore((s) => s.currentVault?.path ?? "");
+  const opening = useVaultStore((s) => s.vaultToken);
+  // Async source loaders and local UI state belong to one vault opening.
+  return <IngestForm key={`${root}:${opening}`} t={t} />;
+}
+
+function IngestForm({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
+  const root = currentVault?.path ?? "";
+  const draft = useIngestDraftStore((s) => s.drafts[root]);
+  const title = draft?.title ?? "";
+  const body = draft?.body ?? "";
+  useEffect(() => useIngestDraftStore.getState().load(root), [root]);
+  const setTitle = useCallback((value: string | ((previous: string) => string)) => {
+    const store = useIngestDraftStore.getState();
+    store.load(root);
+    const previous = useIngestDraftStore.getState().drafts[root]?.title ?? "";
+    store.edit(root, { title: typeof value === "function" ? value(previous) : value });
+  }, [root]);
+  const setBody = useCallback((value: string) => {
+    useIngestDraftStore.getState().edit(root, { body: value });
+  }, [root]);
   const lang = useUIStore((s) => s.lang);
   const copy = INTAKE_COPY[lang];
   const settings = useSettingsStore((s) => s.settings);
   const hasLocalTransform = Boolean(settings && selectedLocalTransformModel(settings.ingest_provider, settings.ingest_model));
   const localHint = hasLocalTransform ? t.ing_local_transform_hint : t.ing_extractive_hint;
   const [over, setOver] = useState(false);
-  const [title, setTitle] = useState("");
-  const [body, setBody] = useState("");
   const [ytBusy, setYtBusy] = useState(false);
   const [webBusy, setWebBusy] = useState(false);
   const [fileBusy, setFileBusy] = useState(false);
@@ -169,7 +189,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       loader.dispose();
       if (fileLoad.current === loader) fileLoad.current = null;
     };
-  }, []);
+  }, [setBody, setTitle]);
 
   // Pending _inbox sources — the `_inbox` channel row. Refetched when a run
   // finishes because ingest archives the consumed source.
@@ -307,35 +327,43 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   function resetForAnother(): void {
     fileLoad.current?.invalidate();
     resetIngest();
-    setTitle("");
     lastAutoTitle.current = "";
-    setBody("");
     setDropError(null);
     setDropNotice(null);
     setFileNeedsSettings(false);
     setWebMsg(null);
   }
 
+  function discardDraft(): void {
+    useIngestDraftStore.getState().discard(root);
+    resetForAnother();
+  }
+
   function resetForRetry(): void {
     fileLoad.current?.invalidate();
     // Keep this form's draft; a reopened result can recover its stored input.
-    const source = useIngestStore.getState().sourceText;
-    if (!body.trim()) setBody(source);
+    const previous = useIngestStore.getState();
+    if (!body.trim() && previous.vaultPath === root) setBody(previous.sourceText);
     resetIngest();
   }
 
   // UX S35: keep a short note the judge turned away, then clear the form —
   // the text now lives in the vault. Each path says itself when it fails.
   async function saveShort(where: "daily" | "new"): Promise<void> {
+    const snapshot = useIngestDraftStore.getState().drafts[root];
+    if (!snapshot) return;
+    const submittedRunId = useIngestStore.getState().runId;
     setSavingShort(true);
     try {
       if (where === "daily") {
-        if (await captureToDaily(shortDailyLine(title, body), t)) resetForAnother();
-        return;
+        if (!(await captureToDaily(shortDailyLine(snapshot.title, snapshot.body), t))) return;
+      } else {
+        const path = await saveAsNewNote(shortNoteName(snapshot.title, snapshot.body) ?? "", snapshot.body);
+        if (!path) throw new Error("no note name");
       }
-      const path = await saveAsNewNote(shortNoteName(title, body) ?? "", body);
-      if (!path) throw new Error("no note name");
-      resetForAnother();
+      useIngestDraftStore.getState().complete(root, snapshot.revision, "success");
+      if (useVaultStore.getState().currentVault?.path === root &&
+        useIngestStore.getState().runId === submittedRunId) resetForAnother();
     } catch (err) {
       notice.warn(t.ing_short_new_failed, { sub: String(err) });
     } finally {
@@ -348,8 +376,12 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     fileLoad.current?.invalidate();
     setDropError(null);
     setYtBusy(true);
+    const snapshot = useIngestDraftStore.getState().drafts[root];
+    const id = ++webReq.current;
     try {
       const txt = await ipc.fetchYoutubeTranscript(body.trim());
+      if (!bodyRef.current || id !== webReq.current ||
+        useIngestDraftStore.getState().drafts[root]?.revision !== snapshot?.revision) return;
       setBody(txt);
       setTitle((prev) => prev || "YouTube transcript");
     } catch (err) {
@@ -540,6 +572,14 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
         className={"sv intake-page" + (hero.spinning ? " is-running" : "")}
         data-testid="sieve"
       >
+        {draft?.storageError ? (
+          <div className="sv-dz-note is-error" role="alert" data-testid="ingest-draft-storage-error">
+            {copy.draftStorageFailed}
+            <button type="button" className="btn" onClick={() => useIngestDraftStore.getState().retry(root)}>
+              {copy.retryDraftSave}
+            </button>
+          </div>
+        ) : null}
         {/* ── 2 · Judgement — the hero ─────────────────────────────────── */}
         <Hero
           titleId="sv-judge-title"
@@ -671,7 +711,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                         onClick={() => {
                           // The note unmounts with the reset; the textarea
                           // stays, so the caret lands in the emptied field.
-                          resetForAnother();
+                          discardDraft();
                           bodyRef.current?.focus();
                         }}
                       >
@@ -753,12 +793,25 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                     type="button"
                     className="btn btn-primary hq-btn"
                     onClick={() => {
-                      void startIngest(title, body);
+                      const snapshot = useIngestDraftStore.getState().drafts[root];
+                      if (!snapshot) return;
+                      const previousRunId = useIngestStore.getState().runId;
+                      const pending = startIngest(title, body, { expectedVaultPath: root });
                       // startIngest claims its run synchronously, before its
                       // first await, so this is the new run's id.
+                      const submittedRunId = useIngestStore.getState().runId;
                       setSubmitted({
-                        runId: useIngestStore.getState().runId,
+                        runId: submittedRunId,
                         text: body,
+                      });
+                      void pending.then(() => {
+                        const result = useIngestStore.getState();
+                        if (submittedRunId && submittedRunId !== previousRunId &&
+                          result.runId === submittedRunId && result.stage === "done") {
+                          useIngestDraftStore.getState().complete(root, snapshot.revision, result.workflowStatus);
+                        }
+                      }).catch((error: unknown) => {
+                        notice.warn(t.workflow_retry_hint, { sub: String(error) });
                       });
                     }}
                     disabled={!canRun}
@@ -767,6 +820,11 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                       ? hasLocalTransform ? t.ing_run_local_transform : t.ing_run_extractive
                       : t.ing_run}
                   </button>
+                  {title || body ? (
+                    <button type="button" className="btn btn-ghost" onClick={discardDraft}>
+                      {t.ing_clear}
+                    </button>
+                  ) : null}
                 </div>
               </div>
               {dropError ? (
@@ -1176,10 +1234,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
             {!showResults ? (
               <button
                 className="btn"
-                onClick={() => {
-                  setTitle("");
-                  setBody("");
-                }}
+                onClick={discardDraft}
               >
                 {t.ing_clear}
               </button>

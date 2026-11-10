@@ -10,6 +10,8 @@ interface IntakeCopy {
   processingSettings: string;
   savedIn: string;
   titleOptional: string;
+  draftStorageFailed: string;
+  retryDraftSave: string;
   sessionsHint: string;
   clipperHint: string;
   connectionHint: string;
@@ -37,6 +39,8 @@ export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
     processingSettings: "Processing settings",
     savedIn: "Save to",
     titleOptional: "Title (optional)",
+    draftStorageFailed: "The saved draft could not be read or updated. Keep this window open to preserve your current text, then retry.",
+    retryDraftSave: "Retry draft storage",
     sessionsHint: "Conversations from your AI tools",
     clipperHint: "Pages saved from your browser",
     connectionHint: "Sources sent by connected tools",
@@ -65,6 +69,8 @@ export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
     processingSettings: "처리 설정",
     savedIn: "저장 위치",
     titleOptional: "제목 (선택)",
+    draftStorageFailed: "저장된 초안을 읽거나 갱신하지 못했어요. 현재 입력을 보존하려면 창을 닫지 말고 다시 시도해 주세요.",
+    retryDraftSave: "초안 저장 다시 시도",
     sessionsHint: "AI 도구에서 나눈 대화",
     clipperHint: "브라우저에서 저장한 페이지",
     connectionHint: "연결한 도구에서 보낸 자료",
@@ -93,6 +99,8 @@ export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
     processingSettings: "処理の設定",
     savedIn: "保存先",
     titleOptional: "タイトル（任意）",
+    draftStorageFailed: "保存した下書きを読み込むか更新できませんでした。現在の入力を保つため、ウィンドウを閉じずに再試行してください。",
+    retryDraftSave: "下書きの保存を再試行",
     sessionsHint: "AIツールでの会話",
     clipperHint: "ブラウザーで保存したページ",
     connectionHint: "連携ツールから届いた資料",
