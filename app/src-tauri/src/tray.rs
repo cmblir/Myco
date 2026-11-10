@@ -34,6 +34,7 @@ const PANEL_LABEL: &str = "tray-panel";
 const PANEL_WIDTH: f64 = 324.0; // logical px
 const PANEL_HEIGHT: f64 = 520.0; // first-paint guess; resize_tray_panel fits it to content
 /// Must match `.tray-panel { border-radius }` in styles.css.
+#[cfg(target_os = "macos")]
 const PANEL_RADIUS: f64 = 22.0;
 const PANEL_GAP: f64 = 2.0; // logical px between the menu bar and the window edge
 

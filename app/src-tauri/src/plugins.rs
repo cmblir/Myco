@@ -89,6 +89,7 @@ fn read_manifest(folder: &Path, dir: String) -> PluginFile {
 mod tests {
     use super::*;
     use std::fs;
+    #[cfg(unix)]
     use std::os::unix::fs::symlink;
 
     fn vault() -> (tempfile::TempDir, std::path::PathBuf) {
@@ -138,6 +139,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn refuses_links_into_raw_and_out_of_the_vault() {
         let (_d, root) = vault();
         let outside = tempfile::tempdir().unwrap();
@@ -166,6 +168,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(unix)]
     fn a_linked_plugins_folder_lists_nothing() {
         let (_d, root) = vault();
         fs::remove_dir(root.join(".myco/plugins")).unwrap();

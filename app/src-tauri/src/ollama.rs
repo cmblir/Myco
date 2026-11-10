@@ -65,10 +65,9 @@ fn locate_binary() -> (bool, Option<String>) {
         return (true, Some(p));
     }
     // macOS app-bundle fallback (Ollama.app ships the binary outside PATH).
-    for candidate in ["/Applications/Ollama.app/Contents/Resources/ollama"] {
-        if std::path::Path::new(candidate).exists() {
-            return (true, Some(candidate.to_string()));
-        }
+    let bundled = "/Applications/Ollama.app/Contents/Resources/ollama";
+    if std::path::Path::new(bundled).exists() {
+        return (true, Some(bundled.to_string()));
     }
     (false, None)
 }

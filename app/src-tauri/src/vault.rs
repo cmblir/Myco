@@ -2385,8 +2385,10 @@ fn is_markdown(path: &Path) -> bool {
 /// disk. macOS Sonoma+ iCloud Drive with "Optimise Mac Storage" leaves evicted
 /// notes under their own `.md` name with this flag set, and reading one starts
 /// a download (or fails offline).
+#[cfg(any(target_os = "macos", target_os = "ios", test))]
 const SF_DATALESS: u32 = 0x4000_0000;
 
+#[cfg(any(target_os = "macos", target_os = "ios", test))]
 pub(crate) fn is_dataless_flags(flags: u32) -> bool {
     flags & SF_DATALESS != 0
 }
