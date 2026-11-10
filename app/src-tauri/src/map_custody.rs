@@ -17,9 +17,8 @@ mod platform {
     use crate::vault::{CompilerPinDirectory, RecordedWriteReceipt};
     use serde::Serialize;
     use sha2::{Digest, Sha256};
-    use std::fs::{File, OpenOptions};
-    use std::io::Write;
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt};
+    use std::fs::File;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
     use std::path::Path;
     use std::sync::MutexGuard;
 
@@ -252,27 +251,11 @@ mod platform {
         }
 
         fn persist_observation(&self, bytes: &[u8]) -> Result<File, String> {
-            self.directory.verify()?;
-            // create_new preserves an existing or uncertain record. Interrupted
-            // writes remain for explicit recovery; never replace or delete them.
-            let mut file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .mode(0o600)
-                .custom_flags(libc::O_NOFOLLOW)
-                .open(self.directory.path().join(format!("{}.json", self.key)))
-                .map_err(|e| format!("create map custody record: {e}"))?;
-            file.write_all(bytes)
-                .and_then(|()| file.sync_all())
-                .map_err(|e| format!("sync map custody record: {e}"))?;
-            self.directory.sync()?;
-            crate::map_custody_record::verify_held_record(
+            crate::map_custody_record::write_record(
                 &self.directory,
                 &format!("{}.json", self.key),
-                &file,
                 bytes,
-            )?;
-            Ok(file)
+            )
         }
 
         fn verify_observation(

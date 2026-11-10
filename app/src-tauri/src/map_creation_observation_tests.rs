@@ -371,3 +371,16 @@ fn refresh_history_requires_valid_before_image_and_preserves_legacy_records() {
         );
     });
 }
+
+#[test]
+fn partial_staging_is_not_discovered_as_a_map_observation() {
+    with_isolated_data("map-partial-staging", |data| {
+        let (root, directory, _, baseline) = create(data);
+        let pending = directory.path().join(".map-record-synthetic.tmp");
+        std::fs::write(&pending, b"{\"partial\":").unwrap();
+        let observed = discover(&root, &directory).unwrap();
+        assert_eq!(observed.baseline, baseline);
+        assert_eq!(observed.current, baseline);
+        assert_eq!(std::fs::read(pending).unwrap(), b"{\"partial\":");
+    });
+}

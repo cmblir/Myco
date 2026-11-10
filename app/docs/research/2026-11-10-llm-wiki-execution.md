@@ -18,6 +18,47 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: stage complete custody records before publication
+
+Direct writes to the final JSON leaf could expose a truncated observation if the
+process exited during record writing. Both creation and refresh preparation now
+share a bounded private record writer: write/sync a `.map-record-*.tmp`, verify
+held/named identity, private-file metadata and exact staged bytes, then publish without clobbering the
+final name, sync the directory and compare the retained handle and bytes again.
+Staging names are outside observation discovery's scope/generation JSON pattern.
+Existing final records are preserved; final-name collisions still fail closed.
+
+The installed tempfile implementation was inspected before using its APIs. Its
+no-clobber operation may fall back to link/unlink on unsupported filesystems;
+there is no universal atomicity or power-loss claim. A retained extra link is
+still rejected by the existing single-link record verifier. Interrupted staging
+and failures retain private temporary paths; automatic cleanup is deliberately
+not granted over a potentially replaced pathname. Existing corrupt final JSON
+records are not silently skipped or deleted.
+
+Tests cover complete publication, collision preservation, rejected staging-path
+replacement without deleting the replacement, unexpected trailing staging bytes
+rejected before final-name publication, and a fault-injected partial
+staged write followed by process exit and a fresh-process read. A separate map
+observation test proves a partial `.tmp` does not poison discovery of the valid
+current map. The first targeted run exposed a validation-order bug in the new
+writer (`map_custody_record_tests.rs:191`, `assertion failed:
+error.contains("staging object changed")`; 75 passed, 1 failed). Corrected the
+order and disabled temporary-path cleanup on all writer failure paths instead of
+weakening the test. Baseline log: `/tmp/myco-map-record-staging-target.log`.
+
+This prevents new truncated staging writes from appearing as final observations.
+Repairing already corrupt JSON, safe pending-file cleanup, unpublished-attempt
+review, undo, Windows and actual-model acceptance remain open.
+
+Final validation: 77 targeted map tests passed (3 child-only ignored); Rust fmt
+and strict all-target Clippy passed. Full Rust passed 2,690 library and 28
+integration tests (42 ignored overall), with the library suite taking 61.39s.
+Frontend source did not change, so frontend checks were not rerun. Final logs:
+`/tmp/myco-map-record-staging-{verified-target,verified-clippy,verified-full}.log`.
+The next independent priority is the failed actual-model speech-act/actor meaning
+gate; this storage improvement does not stand in for grounded LLM Wiki behavior.
+
 ## November 11: durable preparation before map replacement
 
 Map refresh now uses a native pre-publication observer after the staging file and

@@ -170,7 +170,12 @@ The native `apply_map_refresh` command independently repeats authorization,
 source checks, private record checks and merge, and requires the preview's current
 revision. Before canonical replacement, it retains the staged file anchor and a
 synced version-4 preparation record with exact before/after snapshots and the
-staged native file identity. Both snapshots must fit the private record budget.
+staged native file identity. Record bytes are written and synced under a private
+`.tmp` name before no-clobber publication to the final `.json` name; interrupted
+staging is excluded from observation discovery. Existing final records are never
+replaced. Failed staging paths are retained, including replaced paths, for later
+recovery rather than automatically unlinked. Both snapshots must fit the private
+record budget.
 Failure to save the record stops canonical replacement; the writer rechecks the
 staged object and target before replacing it. A prepared record does not certify
 publication completion or source validation.

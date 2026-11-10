@@ -3,8 +3,8 @@
 
 use crate::vault::CompilerPinDirectory;
 use std::fs::{File, Metadata, OpenOptions};
-use std::io::Read;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+use std::io::{Read, Seek, Write};
+use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
 
 pub(crate) const MAX_BYTES: usize = 8 * 1024 * 1024;
 
@@ -46,6 +46,96 @@ fn valid_leaf(leaf: &str) -> bool {
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     };
     scope.len() == 64 && generation.len() == 32 && hex(scope) && hex(generation)
+}
+
+/// Publish complete synced bytes without exposing a partial final JSON record.
+/// A no-clobber publish failure never replaces an existing observation.
+pub(crate) fn write_record(
+    directory: &CompilerPinDirectory,
+    leaf: &str,
+    bytes: &[u8],
+) -> Result<File, String> {
+    write_at(
+        directory,
+        leaf,
+        bytes,
+        #[cfg(test)]
+        |_| Ok(()),
+    )
+}
+
+fn write_at(
+    directory: &CompilerPinDirectory,
+    leaf: &str,
+    bytes: &[u8],
+    #[cfg(test)] checkpoint: impl FnOnce(&mut tempfile::NamedTempFile) -> Result<(), String>,
+) -> Result<File, String> {
+    if !valid_leaf(leaf) || bytes.len() > MAX_BYTES {
+        return Err("invalid map custody record leaf or byte budget".into());
+    }
+    directory.verify()?;
+    match std::fs::symlink_metadata(directory.path().join(leaf)) {
+        Ok(_) => return Err("map custody record already exists; existing record preserved".into()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => (),
+        Err(error) => return Err(format!("inspect map custody publication target: {error}")),
+    }
+    let mut staged = tempfile::Builder::new()
+        .prefix(".map-record-")
+        .suffix(".tmp")
+        // Do not unlink a possibly replaced pathname on any failure path.
+        .disable_cleanup(true)
+        .tempfile_in(directory.path())
+        .map_err(|error| format!("stage map custody record: {error}"))?;
+    staged
+        .as_file()
+        .set_permissions(std::fs::Permissions::from_mode(0o600))
+        .map_err(|error| error.to_string())?;
+    #[cfg(test)]
+    checkpoint(&mut staged)?;
+    staged
+        .write_all(bytes)
+        .and_then(|()| staged.as_file().sync_all())
+        .map_err(|error| format!("sync staged map custody record: {error}"))?;
+    let held = staged
+        .as_file()
+        .metadata()
+        .map_err(|error| error.to_string())?;
+    let named = std::fs::symlink_metadata(staged.path()).map_err(|error| error.to_string())?;
+    if !same_snapshot(&held, &named) {
+        return Err("map custody staging object changed before publication".into());
+    }
+    private_file(&held)?;
+    staged
+        .as_file_mut()
+        .rewind()
+        .map_err(|error| error.to_string())?;
+    let mut observed = Vec::new();
+    staged
+        .as_file_mut()
+        .take(MAX_BYTES as u64 + 1)
+        .read_to_end(&mut observed)
+        .map_err(|error| format!("read staged map custody record: {error}"))?;
+    let after = staged
+        .as_file()
+        .metadata()
+        .map_err(|error| error.to_string())?;
+    let named_after =
+        std::fs::symlink_metadata(staged.path()).map_err(|error| error.to_string())?;
+    if observed != bytes || !same_snapshot(&held, &after) || !same_snapshot(&after, &named_after) {
+        return Err("map custody staging bytes changed before publication".into());
+    }
+    directory.verify()?;
+    let file = staged
+        .persist_noclobber(directory.path().join(leaf))
+        .map_err(|error| {
+            format!(
+                "publish map custody record without overwrite: {}",
+                error.error
+            )
+        })?;
+    directory.sync()?;
+    verify_held_record(directory, leaf, &file, bytes)?;
+    Ok(file)
 }
 
 /// Bounded no-follow read, retaining the opened record for issuance comparison.
