@@ -1782,7 +1782,7 @@ pub struct QuarantineEntry {
 /// and so is an item whose sidecar recorded no origin (`from`), which may be
 /// one. Conservative asks about everything.
 fn expiry_asks(conservative: bool, from: Option<&str>) -> bool {
-    conservative || !from.is_some_and(|f| !is_session(f))
+    conservative || from.is_none_or(is_session)
 }
 
 /// First `PREVIEW_CHARS` characters of `content`'s body (frontmatter stripped

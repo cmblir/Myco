@@ -479,7 +479,7 @@ pub(super) fn commit(
     let published = read(directory, &prepared.committed, scope).map_err(|error| {
         format!("retirement commit publication is uncertain; full copies retained: {error}")
     })?;
-    if !published.is_some_and(|record| record.digest == prepared.record.digest) {
+    if published.is_none_or(|record| record.digest != prepared.record.digest) {
         return Err(
             "retirement commit publication is uncertain; marker bytes differ; full copies retained"
                 .into(),

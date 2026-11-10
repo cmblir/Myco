@@ -71,10 +71,10 @@ fn observe_expired_pair(
         return Err("expiry origin requires owner review".into());
     }
     if verdict.get("tier").and_then(|value| value.as_str()) != Some("quarantine")
-        || !verdict
+        || verdict
             .get("expires")
             .and_then(|value| value.as_i64())
-            .is_some_and(|expires| expires <= now)
+            .is_none_or(|expires| expires > now)
     {
         return Err("verdict does not authorize expired quarantine cleanup".into());
     }

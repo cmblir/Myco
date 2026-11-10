@@ -317,7 +317,7 @@ pub(crate) fn retrieve_with_cutoff(
                     let near = distance <= 2;
                     if !near
                         && !tail.contains(&event.turn)
-                        && !exchange_start.is_some_and(|first| event.turn >= first)
+                        && exchange_start.is_none_or(|first| event.turn < first)
                     {
                         continue;
                     }
