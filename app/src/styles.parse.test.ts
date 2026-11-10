@@ -450,9 +450,17 @@ describe("Graph rails", () => {
     }
   });
 
-  it("offer no fold at 820px and under, where the stacked rails get no height", () => {
-    // The tab would expand a 0px rail and hand focus to a clipped chevron.
-    expect(decls("(max-width: 820px)", ".graph-page [data-rail-toggle]").get("display")).toBe("none");
+  it("reserve the sheet for phones and retain restoration controls at 800px", () => {
+    expect(decls("(max-width: 768px)", ".graph-page [data-rail-toggle]").get("display")).toBe("none");
+    expect(decls("(max-width: 820px)", ".graph-page [data-rail-toggle]").get("display")).not.toBe("none");
+  });
+
+  it("lets stacked desktop panels grow beyond their heading for either pointer type", () => {
+    const stacked = "(min-width: 769px) and (max-width: 820px)";
+    const page = decls(stacked, ".workspace-wide.u-page.graph-page");
+    expect(page.get("height")).toBe("auto");
+    expect(page.get("overflow")).toBe("visible");
+    expect(Number.parseFloat(decls(stacked, ".u-page.graph-page .u-page__rail > .u-rail").get("min-height") ?? "0")).toBeGreaterThan(44);
   });
 });
 

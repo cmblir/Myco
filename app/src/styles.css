@@ -5313,19 +5313,16 @@ body:has(.editor-toolbar) .help-widget__fab {
     transform: scaleX(-1);
   }
 }
-/* At 820px and under the frame (styles/ui.css) stacks the rails in 0px rows,
-   so a tab would expand a rail that cannot show and hand focus to a clipped
-   chevron. No fold is offered there: neither control, nor the keys (railKey). */
-@media (max-width: 820px) {
+/* Phones use the panel sheet; desktop fold controls must remain reachable
+   in the stacked 769–820px layout, including a previously folded rail. */
+@media (max-width: 768px) {
   .graph-page [data-rail-toggle] {
     display: none;
   }
 }
-/* An iPad held upright with a finger (769–820px, coarse): the rails stack
-   under the stage, where a fixed-height page squeezed each to its 40px head
-   (and to 17px before). The page scrolls instead, and each rail keeps its head
-   and a few rows (UX S53). A mouse at these widths keeps the desktop page. */
-@media (min-width: 769px) and (max-width: 820px) and (any-pointer: coarse) {
+/* Stacked rails need a scrolling page for mouse and touch alike. A fixed-height
+   frame squeezed them into inaccessible rows while the stage kept its floor. */
+@media (min-width: 769px) and (max-width: 820px) {
   .workspace-wide.u-page.graph-page {
     height: auto;
     overflow: visible;

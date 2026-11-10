@@ -5,11 +5,10 @@
 export type GraphRail = "gaps" | "legend";
 
 /**
- * The width at and under which the frame (styles/ui.css) stacks a wide page's
- * rails under the stage. There the graph's rails get a 0px row, so a fold has
- * nothing to show or bring back: the keys, the chevron and the tab are off.
+ * Phones reach both panels through the sheet, independently of saved desktop
+ * folds. Wider stacked panels keep their keyboard and tab restoration controls.
  */
-export const RAILS_STACKED_QUERY = "(max-width: 820px)";
+export const RAILS_SHEET_QUERY = "(max-width: 768px)";
 
 const MODAL = '[aria-modal="true"]';
 
@@ -20,7 +19,7 @@ const MODAL = '[aria-modal="true"]';
  * field, where the bracket is text (the graph's own search box among them),
  * any open modal, which would otherwise fold a rail behind its backdrop (focus
  * need not be inside it: a click on a sheet's text drops focus to <body>), or
- * a window narrow enough to stack the rails (RAILS_STACKED_QUERY).
+ * a phone where panels use the sheet (RAILS_SHEET_QUERY).
  */
 export function railKey(
   e: Pick<KeyboardEvent, "key" | "repeat" | "metaKey" | "ctrlKey" | "altKey"> & {
@@ -44,8 +43,8 @@ export function railKey(
       el.isContentEditable === true);
   const doc = el?.ownerDocument ?? globalThis.document;
   const inModal = !!el?.closest?.(MODAL) || !!doc?.querySelector(MODAL);
-  const stacked = !!doc?.defaultView?.matchMedia(RAILS_STACKED_QUERY).matches;
-  return typing || inModal || stacked ? null : rail;
+  const sheet = !!doc?.defaultView?.matchMedia(RAILS_SHEET_QUERY).matches;
+  return typing || inModal || sheet ? null : rail;
 }
 
 /**
