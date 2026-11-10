@@ -15,6 +15,7 @@ const checkSources = vi.fn();
 const releaseSources = vi.fn();
 const writeFile = vi.fn();
 const publishDistillNote = vi.fn();
+const previewMapRefresh = vi.fn();
 const ORIGIN = { vaultPath: "/v", openingToken: "synthetic-opening" };
 let openingSequence = 0;
 const createFolder = vi.fn();
@@ -25,6 +26,7 @@ vi.mock("./ipc", () => ({
     agentVaultSession: async () => ORIGIN,
     captureModelRole: (...a: unknown[]) => captureModelRole(...a),
     publishDistillNote: (...a: unknown[]) => publishDistillNote(...a),
+    previewMapRefresh: (...a: unknown[]) => previewMapRefresh(...a),
     readFile: (...a: unknown[]) => readFile(...a),
     captureMapSources: (...a: unknown[]) => captureSources(...a),
     checkMapSources: (...a: unknown[]) => checkSources(...a),
@@ -78,6 +80,7 @@ beforeEach(() => {
   });
   releaseSources.mockReset().mockResolvedValue(undefined);
   complete.mockReset();
+  previewMapRefresh.mockReset();
   readFile.mockReset().mockImplementation(readFixture);
   writeFile.mockReset();
   createFolder.mockReset();
@@ -88,6 +91,28 @@ beforeEach(() => {
 });
 
 describe("draftMap", () => {
+  it("does not let a completed creation receipt bypass a later interactive refresh review", async () => {
+    complete.mockResolvedValue("Synthetic old relationship.");
+    await draftMap("/v", "synthetic-reviewed", ["wiki/x.md"], "llm-100");
+    const before = writeFile.mock.calls[0][1] as string;
+    const path = "/v/wiki/maps/synthetic-reviewed.md";
+    listFiles.mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+      { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [{ kind: "file", name: "synthetic-reviewed.md", path }] },
+    ] }]);
+    readFile.mockResolvedValue({ raw: before, content: "", frontmatter: { cluster: "synthetic-reviewed" } });
+    complete.mockResolvedValue("Synthetic changed relationship.");
+    previewMapRefresh.mockImplementation(async (_origin, _role, _key, candidate: string) => ({
+      path: "wiki/maps/synthetic-reviewed.md", currentRevision: await sha256(before), content: candidate,
+    }));
+    const review = vi.fn(async () => false);
+    await expect(draftMap("/v", "synthetic-reviewed", ["wiki/x.md"], "llm-200", undefined, "foreground", undefined, review))
+      .rejects.toMatchObject({ status: "stopped" });
+    expect(review).toHaveBeenCalledOnce();
+    expect(complete).toHaveBeenCalledTimes(2);
+    expect(publishDistillNote).toHaveBeenCalledOnce();
+    expect(appendDistillManifest).toHaveBeenCalledOnce();
+    expect(releaseSources).toHaveBeenCalledTimes(2);
+  });
   it.each(["", "<!-- /myco:map-generated -->Injected boundary"])("does not publish invalid generated sections: %j", async body => {
     complete.mockResolvedValue(body);
     await expect(draftMap("/v", "synthetic-invalid-section", ["wiki/a.md"]))

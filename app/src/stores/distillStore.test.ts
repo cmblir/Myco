@@ -35,6 +35,7 @@ import type { DistillStatus } from "../lib/distill";
 import { roleFixture, selectedRolesFixture } from "../lib/modelRoles.testSupport";
 import { BUILTIN_CHAT_MODEL } from "../lib/providers";
 import { sha256 } from "../lib/tidyRun";
+import { renderMapDraft } from "../lib/mapContent";
 
 function mockOrganizationRole(): void {
   vi.spyOn(ipc, "captureModelRole").mockImplementation(async (origin, role, usage) => {
@@ -579,6 +580,36 @@ describe("useDistillStore", () => {
     expect(await useDistillStore.getState().dismiss("work/feedback/2026-08-10-rope.md")).toBe(false);
     expect(read).not.toHaveBeenCalled();
     expect(write).not.toHaveBeenCalled();
+  });
+
+  it("reviews an existing map update before applying and never records it as a new creation", async () => {
+    const proposalPath = "/v/work/feedback/synthetic-refresh.md";
+    const mapPath = "/v/wiki/maps/attention.md";
+    const raw = '---\ntype: distill-proposal\naction: draft-map\nstatus: approved\ncreated: 2026-11-11\npayload: {"cluster":"attention","members":["wiki/a.md"]}\n---\n\n# Synthetic map update\n';
+    const before = await renderMapDraft("attention", "Synthetic old body.", [], "2026-11-11");
+    const after = await renderMapDraft("attention", "Synthetic new body.", [], "2026-11-11");
+    mockMapSources();
+    complete.mockResolvedValue("Synthetic new body.");
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+      { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [{ kind: "file", name: "attention.md", path: mapPath }] },
+    ] }]);
+    vi.spyOn(ipc, "readFile").mockImplementation(async path => ({ path, raw: path === proposalPath ? raw : before,
+      content: "", frontmatter: path === proposalPath ? null : { cluster: "attention" } }));
+    const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    const preview = vi.spyOn(ipc, "previewMapRefresh").mockResolvedValue({ path: "wiki/maps/attention.md", currentRevision: await sha256(before), content: after });
+    const apply = vi.spyOn(ipc, "applyMapRefresh").mockResolvedValue({ path: "wiki/maps/attention.md", revision: await sha256(after), changed: true });
+    const publish = vi.spyOn(ipc, "publishDistillNote");
+    const manifest = vi.spyOn(ipc, "appendDistillManifest");
+    const pending = useDistillStore.getState().apply("work/feedback/synthetic-refresh.md");
+    await vi.waitFor(() => expect(useDialogStore.getState().request?.title).toBe(STRINGS[useUIStore.getState().lang].map_refresh_title));
+    expect(preview).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    useDialogStore.getState().close("ok");
+    await expect(pending).resolves.toBe("wiki/maps/attention.md");
+    expect(apply).toHaveBeenCalledOnce();
+    expect(write).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: done"));
+    expect(publish).not.toHaveBeenCalled();
+    expect(manifest).not.toHaveBeenCalled();
   });
 
   it("keeps an already-mapped legacy proposal approved for manual recovery", async () => {

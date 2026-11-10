@@ -171,8 +171,11 @@ source checks, private record checks and merge, and requires the preview's curre
 revision. It retains a new file anchor and version-2 refresh baseline after a
 successful update. Identical content is a no-op; changed targets are rejected.
 Failures after persistence retain output for manual recovery instead of reporting
-success. Refresh issues no creation/undo receipt. The frontend review/apply flow,
-refresh History/undo integration and interruption recovery are not yet connected.
+success. Refresh issues no creation/undo receipt. Manual map proposals now show
+the native merged diff before applying an existing-map update. Cancelling or
+switching vaults stops the update; sources and the target revision are rechecked
+after approval. The review explains that History undo is not yet available.
+Refresh History/undo integration and interruption recovery remain incomplete.
 Native creation now also discovers its observation by vault/path and current file
 identity, without relying on a remembered generation key. Missing, corrupt or
 ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory
@@ -191,8 +194,9 @@ role. Source checks and new-map publication share the cooperating-writer lock;
 external edits are checked before and after writing, not atomically excluded.
 Oversized, missing or changed sources leave the proposal pending. A failure after
 writing retains the output for manual recovery without publication/undo authority.
-Existing maps are preserved: durable ownership and automatic refresh of app-owned
-sections are still incomplete. Native map identity remains unavailable on Windows.
+Existing maps without native custody remain pending for manual recovery. Automatic
+proposal processing leaves existing-map updates for interactive review; automatic
+refresh remains incomplete. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
 Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight completes at its destination once. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.

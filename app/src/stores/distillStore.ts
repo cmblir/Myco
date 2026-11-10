@@ -10,6 +10,7 @@ import type { DistillStatus } from "../lib/distill";
 import { batchConfirm } from "../lib/quarantine";
 import type { QuarantineGroup, QuarantineItem } from "../lib/quarantine";
 import { draftMap } from "../lib/maps";
+import { reviewMapRefresh } from "../lib/reviewMapRefresh";
 import { canGenerate, getActiveModel, roleFor } from "../lib/chat";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
@@ -418,7 +419,8 @@ export const useDistillStore = create<DistillState>((set, get) => ({
         if (!parsed.cluster || !parsed.members) {
           throw new Error(`draft-map proposal ${path} is missing its cluster/members payload`);
         }
-        const rel = await draftMap(vault.path, parsed.cluster, parsed.members, undefined, isCurrent);
+        const rel = await draftMap(vault.path, parsed.cluster, parsed.members, undefined, isCurrent, "foreground", undefined,
+          (review) => reviewMapRefresh(review, isCurrent));
         if (!isCurrent()) return null;
         await ipc.writeFile(full, rewriteStatus(raw, "done"));
         return isCurrent() ? rel : null;

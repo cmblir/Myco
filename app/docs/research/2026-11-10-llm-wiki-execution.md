@@ -761,6 +761,50 @@ are invoked explicitly by their parent process tests. README and the goal status
 table reflect native refresh availability and the remaining product integration.
 No frontend, Windows, actual-model or installed-app checks were run in this slice.
 
+The next frontend slice connects manual proposal application to native refresh.
+`mapRefresh.ts` validates preview path/revision, reads the exact current text for
+review, requires explicit approval, rechecks sources and verifies the native result
+against the reviewed merged hash. `reviewMapRefresh.tsx` uses the existing dialog
+and diff renderer, closes on vault departure and settles replaced dialogs without
+closing their replacement. Large lines use full before/after blocks to avoid the
+shared quadratic word-diff pass. English/Korean/Japanese review text discloses
+preserved human content and unavailable History undo. No created-file manifest
+or creation receipt is fabricated for refresh.
+
+Manual `draftMap` callers can review an existing native map. Completed creation
+receipts no longer short-circuit that interactive refresh, while failed manifest
+recovery remains prioritized. Noninteractive automatic callers keep existing maps
+pending for review. Legacy maps lacking generated markers fail before a model
+call; markers alone still do not prove custody, which the native preview enforces.
+The store only marks the proposal done after a verified refresh result. The
+frontend flow uses synthetic IPC tests; installed native UI and model meaning
+acceptance are still required, as are automatic flow and History/recovery work.
+
+Initial validation exposed a legacy-map store test reaching an unstubbed source
+capture (`ReferenceError: window is not defined`); retaining the explicit legacy
+boundary check restored its manual-recovery behavior without loosening assertions.
+Lint also caught three empty test callbacks, which now return explicit undefined.
+The focused final set passed 87 tests across four files, including the real
+draftMap/store flow waiting on the real review dialog before dispatching apply,
+real IPC argument routing with synthetic results, source/vault/cancellation guards,
+inconsistent native result rejection and dialog replacement/long-output handling.
+The first full frontend run found two further integration gaps: devMock command
+parity lacked the new preview/apply commands, and Korean glossary rejected the
+new review wording. Both were corrected without changing the checks: the browser
+mock explicitly rejects the native-authority commands, and the Korean copy uses
+the project's terminology and History navigation label. Failure evidence remains
+in `/tmp/myco-map-refresh-ui-full.log`. An additional regression ensures a completed
+creation receipt cannot bypass a later interactive update review; cancelled
+review releases its source grant and creates no new manifest or publication.
+Final frontend validation passed 400 files / 6,441 tests in 73.31s
+(`/tmp/myco-map-refresh-ui-final-full.log`). `npm run build` passed TypeScript
+and Vite (17.86s; existing import warnings remain), and lint passed with only the
+two existing notchDriver hook warnings (`/tmp/myco-map-refresh-ui-final-build.log`,
+`/tmp/myco-map-refresh-ui-check-lint.log`). README and the goal table describe the
+manual review/apply flow and remaining automatic/history/recovery gates. Native
+code was unchanged; Rust, installed-app, actual-model and Windows checks were
+not rerun. SSR/dialog-store tests do not substitute for visible native UI testing.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

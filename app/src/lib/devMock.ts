@@ -1864,6 +1864,8 @@ function mockInvoke(
     case "select_model_role":
     case "set_role_automatic_use":
     case "publish_distill_note":
+    case "preview_map_refresh":
+    case "apply_map_refresh":
     case "session_compile_begin":
     case "session_compile_read":
     case "session_compile_publish":

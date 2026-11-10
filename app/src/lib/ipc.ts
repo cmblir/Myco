@@ -1822,6 +1822,10 @@ export const ipc = {
   },
   agentToolsSchema: () =>
     invoke<AgentToolDescriptor[]>("agent_tools_schema", {}),
+  previewMapRefresh: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, key: string, candidate: string, sourceSnapshotId: string) =>
+    invoke<{ path: string; currentRevision: string; content: string }>("preview_map_refresh", { origin, roleSnapshot, key, candidate, sourceSnapshotId }),
+  applyMapRefresh: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, key: string, candidate: string, sourceSnapshotId: string, expectedSha256: string) =>
+    invoke<{ path: string; revision: string; changed: boolean }>("apply_map_refresh", { origin, roleSnapshot, key, candidate, sourceSnapshotId, expectedSha256 }),
   agentToolCall: (
     name: string,
     args: Record<string, unknown>,

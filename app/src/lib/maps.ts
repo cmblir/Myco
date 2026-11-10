@@ -18,6 +18,7 @@ import { isMissingFile } from "./sessionEvidence";
 import { mapEvidencePrompt, mapMemberStem, withMapEvidence } from "./mapEvidence";
 import { renderMapDraft } from "./mapContent";
 import { newMapRunId } from "./mapRunId";
+import { refreshExistingMap, type ReviewMapRefresh } from "./mapRefresh";
 import { pendingMapPublication, rememberMapPublication, type PendingMapPublication } from "./mapPublicationRecovery";
 
 export class MapPublicationError extends WorkflowOperationError {
@@ -27,11 +28,14 @@ export class MapPublicationError extends WorkflowOperationError {
   }
 }
 
+const recordedPublications = new WeakSet<object>();
+
 async function recordPublication(vaultPath: string, origin: AgentVaultSession, pending: PendingMapPublication): Promise<void> {
   try {
     requireNativeCreation(pending.publication);
     await ipc.appendDistillManifest(vaultPath, pending.manifestId, [], [pending.publication.path], origin,
       [publicationClaim(pending.publication)], [pending.publication.publicationId]);
+    recordedPublications.add(pending.publication);
   } catch (error) {
     throw new MapPublicationError(pending.publication.path, error);
   }
@@ -88,6 +92,9 @@ async function findExistingMapPath(
     const fm = file?.frontmatter as { cluster?: unknown } | null | undefined;
     if (typeof fm?.cluster !== "string") continue;
     if (fm.cluster === cluster || memberStems.has(fm.cluster.toLowerCase())) {
+      if (typeof file.raw !== "string" || !file.raw.includes("<!-- myco:map-generated:v1 -->\n")) {
+        throw new WorkflowOperationError("pending", "unavailable", `Existing map ${f.path} has no generated-section boundary; manual recovery required`);
+      }
       return f.path.startsWith(`${vaultPath}/`) ? f.path.slice(vaultPath.length + 1) : f.path;
     }
   }
@@ -179,6 +186,7 @@ export async function draftMap(
   isCurrent: () => boolean = () => true,
   usage: RoleUsage = "foreground",
   capturedRole?: RoleSnapshot,
+  reviewRefresh?: ReviewMapRefresh,
 ): Promise<string> {
   const assertCurrent = () => {
     if (!isCurrent()) throw new Error("Vault changed; topic map cancelled");
@@ -189,7 +197,7 @@ export async function draftMap(
   requirePublicationOrigin(origin, vaultPath);
   const roleSnapshot = capturedRole ?? await ipc.captureModelRole(origin, "organization", usage);
   const pending = pendingMapPublication(origin, cluster);
-  if (pending) {
+  if (pending && (!reviewRefresh || !recordedPublications.has(pending.publication))) {
     await recordPublication(vaultPath, origin, pending);
     assertCurrent();
     return pending.publication.path;
@@ -197,7 +205,7 @@ export async function draftMap(
   const memberStems = new Set(members.map((m) => mapMemberStem(m).toLowerCase()));
   const existing = await findExistingMapPath(vaultPath, cluster, memberStems, assertCurrent);
   assertCurrent();
-  if (existing) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} has no native creation capability in this opening; manual recovery required`);
+  if (existing && !reviewRefresh) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} requires an interactive refresh review`);
 
   return withMapEvidence(origin, roleSnapshot, members, assertCurrent, async (evidence, snapshotId, recheck) => {
     assertCurrent();
@@ -228,6 +236,9 @@ export async function draftMap(
     const content = await renderMapDraft(cluster, safeBody, evidence, created);
 
     assertCurrent();
+    if (existing && reviewRefresh) {
+      return refreshExistingMap(origin, roleSnapshot, existing, content, snapshotId, reviewRefresh, assertCurrent, recheck);
+    }
     const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
     assertCurrent();
     const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
