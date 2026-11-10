@@ -34,6 +34,8 @@ jobs:
         run: npm run lint
       - name: typecheck
         run: npx tsc -b
+      - name: pinned template checkout
+        run: node --test scripts/pinned-template-checkout.test.mjs
       - name: unit tests
         run: npm test
 

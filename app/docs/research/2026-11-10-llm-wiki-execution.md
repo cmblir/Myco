@@ -18,6 +18,52 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: Windows failure inventory and pinned-template checkout fix
+
+Fetched baseline CI run 42773670030, job 129687133365 (`rust-windows`), and
+confirmed its head is `121c0fa21bcffbc5ab831ef7f730169b7ed1ad9c`. The log contains
+340 unique failed-test blocks, matching 1,994 passed / 340 failed / 29 ignored.
+The [inventory](2026-11-11-windows-failure-inventory.json) retains test names,
+panic locations, diagnostic groups and the downloaded log hash, without copying
+large fixture payloads or runner paths.
+
+| Diagnostic group | Failed tests | Interpretation |
+| --- | ---: | --- |
+| Explicit unsupported identity/custody | 71 | Non-Unix fail-closed branches remain in inbox, audio, publication and compiler custody. |
+| Path/scope rejection | 82 | Baseline includes separator-sensitive checks; current portable fixes still need Windows execution. |
+| Poisoned lock | 42 | Secondary failures: 29 session compiler, four settings and nine workstreams tests. Do not treat each as an independent platform defect or weaken lock errors. |
+| Access denied | 27 | Includes directory opens and ledger replacement; Windows handle/share/ACL behavior needs native investigation. |
+| Missing path/file | 6 | May be secondary to failed preparation; not established as independent missing-file defects. |
+| Expiry timing | 4 | Test seam/clock assumptions need an isolated Windows rerun. |
+| Pinned Qwen3 template | 5 | Checkout conversion reproduced and fixed below. |
+| Other assertions/unresolved | 103 | First cause not yet established. |
+
+These are diagnostic groups, not 340 fully resolved causes. Nested child failure
+output stays with its parent. Serial focused Windows runs are required to locate
+the first poison-producing panic and resolve the remaining assertion failures.
+For example, current `recorded_identity` returns None outside Unix,
+`inbox_source::verify_identity` explicitly refuses non-Unix, compiler pin/custody
+operations refuse non-Unix, and archive directories are opened via `File::open`.
+Replacing errors with success or skipping those tests would not satisfy G3.
+
+The pinned-template test failed on Windows with length 4,200 rather than 4,116.
+A new isolated Git checkout regression reproduced exactly `4200 !== 4116` on
+macOS by checking out with `core.autocrlf=true` and `core.eol=crlf`. The repository
+only had GGUF attributes. Added `-text` for this one byte-pinned Jinja fixture;
+the same checkout now preserves length 4,116 and SHA-256
+`87a2728cb8dc9fe424d624542f6060ec05a1d285ebbec578bb078900e33396b5`.
+Neither the fixture nor the runtime hash check was changed. The regression uses
+a temporary Git index without commits, user identity changes or dependencies.
+The frontend CI job now runs it before its existing unit tests.
+
+Validation: `node --test app/scripts/pinned-template-checkout.test.mjs` passed;
+all six `local_llm::qwen3::tests` passed in the existing feature-enabled native
+test binary; diff whitespace checks passed. Baseline failure log:
+`/tmp/myco-template-checkout-baseline.log`; native result:
+`/tmp/myco-template-qwen-tests.log`. No Windows run, push, model inference or GUI
+launch occurred. README was unchanged because this fixes checkout/test behavior.
+G3 remains incomplete, including its first-cause inventory for unresolved cases.
+
 ## November 11: native startup refusal and OS canary evidence
 
 On clean `ee06a75c`, `cargo build --features native-app-acceptance --bin myco`
