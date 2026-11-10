@@ -1,6 +1,9 @@
 //! Fresh draft comparison: preserve corrections without inventing history.
 use super::*;
 
+#[path = "ordinary_selected_note_grouped_writer_tests.rs"]
+mod grouped;
+
 const WRITER_CONTROLS: &str =
     include_str!("../../../docs/research/2026-11-11-selected-note-writer-controls.json");
 const CORRECTION_GUIDANCE: &str = " If the supplied original explicitly corrects or withdraws a statement relevant to the question, explain that correction and its effect on the current answer. Identify the earlier description as superseded when the source says so, rather than returning only a bare current-state negation. Cite the source containing the correction. Do not invent a correction, withdrawal, or historical change when the originals do not state one.";
@@ -65,6 +68,13 @@ fn writer_candidate_keeps_original_packet_and_reviewer_unchanged() {
 #[test]
 #[ignore = "requires cached 4B weights and MYCO_QA_GENERATION=1; up to eight actual calls"]
 fn cached_model_compares_correction_writer() {
+    run_writer_comparison("preserve-correction", writer_input);
+}
+
+fn run_writer_comparison(
+    candidate_arm: &str,
+    project: impl Fn(bool, bool, &str, &str) -> Result<(String, String), String>,
+) {
     assert_eq!(std::env::var("MYCO_QA_GENERATION").as_deref(), Ok("1"));
     let manifest = crate::local_model::manifest_for(Some("qwen3.5-4b-q4_k_m")).unwrap();
     let directory =
@@ -79,13 +89,13 @@ fn cached_model_compares_correction_writer() {
         "{}",
         json!({"phase":"selected_note_preflight","writerControlsSha256":source_revision(WRITER_CONTROLS),
         "sourceControlsSha256":source_revision(CONTROLS),"guidanceSha256":source_revision(CORRECTION_GUIDANCE),
-        "model":manifest,"drafts":"actual fresh generation","semanticAccepted":false,"nativeAuthorityAccepted":false})
+        "model":manifest,"candidateArm":candidate_arm,"drafts":"actual fresh generation","semanticAccepted":false,"nativeAuthorityAccepted":false})
     );
     let cancelled = AtomicBool::new(false);
     let mut calls = 0;
     let mut failures = 0;
     for case in controls["cases"].as_array().unwrap() {
-        for arm in ["baseline", "preserve-correction"] {
+        for arm in ["baseline", candidate_arm] {
             let (request, evidence, sources) =
                 selected_note_fixture_with_tail(case["appendToCenter"].as_str());
             let result = run(
@@ -94,7 +104,7 @@ fn cached_model_compares_correction_writer() {
                 &sources,
                 request.origin.as_ref().unwrap(),
                 |system, user| {
-                    let (system, user) = writer_input(
+                    let (system, user) = project(
                         arm != "baseline",
                         system.starts_with("Review the complete answer"),
                         system,
@@ -109,7 +119,7 @@ fn cached_model_compares_correction_writer() {
                         _ => panic!("unexpected schema"),
                     };
                     let stage = if review { "review" } else { "draft" };
-                    let (system, user) = writer_input(arm != "baseline", review, system, user)?;
+                    let (system, user) = project(arm != "baseline", review, system, user)?;
                     calls += 1;
                     println!(
                         "{}",

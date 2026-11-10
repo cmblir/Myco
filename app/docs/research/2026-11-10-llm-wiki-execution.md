@@ -18,6 +18,35 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: grouped draft originals retain targets but still fail acceptance
+
+Reused the existing lossless `SourceDocumentGroupsQaV1.apply_draft` projection
+with the same frozen writer controls, correction guidance and coverage reviewer.
+The generic two-arm writer harness keeps the prior comparison selectable. A
+regression restores both actual draft inputs byte-value-for-byte-value, including
+all non-original fields, and verifies the new baseline equals the previous
+candidate's exact input. No source is filtered or marked as semantically trusted.
+
+The [eight-call receipt](2026-11-11-selected-note-grouped-writer-review.json)
+reproduces all previous candidate outputs in its baseline arm. Both arms pass the
+ordinary control. The grouped withdrawal answer now names East and West, reports
+withdrawal and denies current links, but does not explicitly retain the obsolete
+earlier hub description required by frozen gold. Review remains unsupported /
+uncertain / missing. Its reason acknowledges the original Correction section;
+that is not evidence that the current-state claim is unsupported. Neither arm
+passes withdrawal acceptance and no candidate is promoted. Grouping alone is
+insufficient; explicit qualification retention and reliable factual review both
+remain necessary, without weakening either gate.
+
+Verification: final ordinary-flow run passed 27 tests with eight model tests
+ignored; explicit inference completed eight actual calls and exited zero. Rust
+fmt and feature-enabled strict all-target Clippy passed. An initial test-edit
+script used the wrong working directory and failed before modifying its target;
+the corrected test was rebuilt before inference. The receipt retains full raw
+inputs/outputs, exact model/binary/settings, runtime and peak RSS. Network denial
+and final owned-process termination were verified. Startup overlapped Clippy.
+No production or README changes were made; G2/G7 remain incomplete.
+
 ## November 11: fresh writer guidance retains withdrawal but loses context
 
 The [frozen writer controls](2026-11-11-selected-note-writer-controls.json)
