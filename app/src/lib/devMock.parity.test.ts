@@ -63,7 +63,10 @@ describe("devMock / ipc / lib.rs command parity", () => {
     const unused = [...registered()].filter((c) => !invoked().has(c)).sort();
     // Dead backend surface — either wire it up or delete it. If something is
     // deliberately called from outside ipc.ts, list it here with a reason.
-    expect(unused).toEqual([]);
+    // The two diagnostic commands serve only the isolated real-record
+    // diagnostic (src/realRecordDiagnostic.ts, lib/diagnosticAnswerContract.ts),
+    // which calls them through invoke so no app flow can reach them.
+    expect(unused).toEqual(["diagnostic_ask_packet", "diagnostic_reindex_lexical"]);
   });
 
   it("every command the frontend invokes is answered by the mock", () => {

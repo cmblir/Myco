@@ -68,6 +68,13 @@ describe("initSpotlightBridge", () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
     vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
     vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+    // No runtime context budget: Ask packs with its own estimate, as in the
+    // other provider tests.
+    vi.spyOn(ipc, "modelContextBudget").mockResolvedValue(null);
+    // Ask retrieves before it calls the model; one source lets the stop land
+    // on the model call, which is what this test is about.
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue({ hits: [{ page: "wiki/a.md", stem: "a", section: 0,
+      text: "Synthetic source for the Spotlight stop test", score: 0.1, similarity: null, exact_match: true }], floor: 0.42, below_floor: [] });
     const answers: ((content: string) => void)[] = [];
     vi.spyOn(ipc, "chatComplete").mockImplementation(
       () =>

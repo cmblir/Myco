@@ -2975,6 +2975,15 @@ function mockInvoke(
         // in every ?mock=1 flow (Ask, CLI injection, Related).
         model: "builtin-local:e5-small-ko",
       });
+    case "model_context_budget":
+      // MOCK: no runtime tokenizer here, so Ask packs with its own estimate.
+      return Promise.resolve(null);
+    case "count_model_context":
+      // MOCK: only asked after a runtime budget, which the mock never gives.
+      return Promise.reject(new Error("mock: no runtime context to count against"));
+    case "record_context_packing":
+      // MOCK: the packing audit has nowhere to go in a browser.
+      return Promise.resolve();
     case "temporal_recall":
       // MOCK: the sample graph has no original turn-date evidence. Browser
       // recall tests supply explicit dated fixtures through their IPC override.
