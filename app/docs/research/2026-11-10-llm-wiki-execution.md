@@ -702,6 +702,33 @@ The ignored discovery child helper is still executed explicitly by its parent
 restart test. README describes conflict classification. No frontend, Windows,
 actual-model or installed-app acceptance was run for this slice.
 
+The next slice implements three-input owned-section merge and registers the
+read-only Tauri `preview_map_refresh` command. It requires current vault/organization
+authorization and an exact native source grant, opens private creation evidence,
+rejects owned-content conflicts, merges only the marked body and canonical
+`map_generated`/`map_evidence` values, then rechecks sources. Other frontmatter,
+titles and outside annotations remain byte-preserved. The response contains path,
+current full-file revision and merged review text. It grants no update/undo permit
+and performs no map write. Metadata presence changes are rejected for review.
+
+Tests cover preserved human titles/custom fields/Unicode annotations, evidence
+replacement, repeat merge against the accepted new baseline, rejection against a
+stale baseline, edited owned text and unmarked candidates. An isolated native
+case exercises role/source guards, retained creation evidence, returned current
+revision, unchanged on-disk bytes, missing source grants, wrong feature role,
+public-marker-only human files, invalid paths, owned edits, changed sources and
+closed vault origin. Generated text in these tests is synthetic, not a model
+quality acceptance result. The frontend review UI, anchored update-only publication,
+successive durable refresh baselines and recovery/manifest behavior remain open.
+Validation passed: 64 focused map-related tests (one child helper ignored by the
+filter), then the final full suite with 2,675 library and 28 integration tests,
+39 ignored and no failures. Formatting and all-target strict Clippy passed.
+Logs: `/tmp/myco-map-refresh-preview-tests.log`,
+`/tmp/myco-map-refresh-preview-full.log`, and
+`/tmp/myco-map-refresh-preview-clippy.log`. README documents the native preview
+contract and its missing UI/publication integration. Frontend, actual-model,
+Windows and installed-app checks were not run for this native slice.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

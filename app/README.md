@@ -161,6 +161,12 @@ Readback separately flags edits to the generated body or its evidence/descriptor
 metadata. Titles and annotations outside the generated markers do not count as
 generated-content edits. Ambiguous markers or metadata require manual review;
 the classifier does not overwrite either kind of edit.
+The native `preview_map_refresh` command returns merged review text and the current
+file revision after checking the active vault/organization role, native source
+snapshot and private creation record. It replaces only generated body and
+evidence/descriptor values, preserving titles and outside annotations. It writes
+no map and grants no update or undo permission. The frontend review UI and actual
+refresh publication are not yet connected.
 Native creation now also discovers its observation by vault/path and current file
 identity, without relying on a remembered generation key. Missing, corrupt or
 ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory
