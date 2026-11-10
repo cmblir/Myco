@@ -10,13 +10,43 @@ requirements and must not be mistaken for passing results.
 | Package | State | Evidence and remaining work |
 | --- | --- | --- |
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
-| G1 Ingest drafts | Implemented; fresh bundled macOS D1/D2 passed | Exact frozen navigation/restart and vault-isolation cases passed through the fixed sandbox launcher. Earlier contaminated results remain withdrawn; D3/D4, other platforms and signed-release acceptance remain open. |
+| G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention passed; older-success/newer-draft race, cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | v5 identity repair; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: native draft write failure and recovery pass D4
+
+Used CUA to open the isolated app's Web Inspector and inject `QuotaExceededError`
+only for writes to the exact Alpha Ingest draft key. The wrapper forwarded all
+other storage calls to the original function; native IPC, providers and vault
+files were not mocked. The injection refused an unexpected origin/startup vault.
+This implements the frozen D4 instruction to inject a storage write failure; it
+is not a claim about physical disk exhaustion or hardware failure.
+
+Alpha's typed title/body stayed visible with the storage error and retry button.
+Retrying while the fault remained retained both input and error. After editing to
+a newer body, switching to Beta showed only Beta's own old draft; a new Beta body
+saved normally. Returning to Alpha retained its latest input and error. Restored
+the exact original property descriptor in the console and confirmed that Alpha
+had no persisted record before retry. Clicking draft-save retry removed the
+error and preserved the latest title/body.
+
+Normal quit, process-absence verification and relaunch then restored Alpha's exact
+latest fields without an error. Switching to Beta restored only its separate
+body. The final app was quit; no fault wrapper or native process was left active.
+No import was submitted, file counts stayed Alpha 4 raw/5 wiki and Beta 0 raw/1
+wiki, and both synthetic Readers and prior generated source pages retained their
+bytes. Production marker metadata was unchanged relative to the unresolved prior
+incident baseline. See [the D4 receipt](2026-11-11-native-draft-storage-recovery.json).
+
+D4 now passes for injected write failure in this bundled macOS build. Read/remove
+failure, other platforms and the remaining D3 races/cancellation are not covered
+by this result. No application code or README changed; validation-only records
+were checked as JSON and with `git diff --check`, without rerunning code suites.
 
 ## November 11: rebuilt native cold-process first submission succeeds
 

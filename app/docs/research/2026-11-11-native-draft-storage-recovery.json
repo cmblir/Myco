@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "case": "D4",
+  "result": "passed for injected draft write failure in the isolated bundled macOS app",
+  "codeRevision": "c2e81df3ab4f3d46ada455d09a26deb358221e4c",
+  "nativeSha256": "589bbe9c472bbf50946ba343338ac82f164ab48b0d3dd0ae10c9d03aee0585fb",
+  "launcherSha256": "bfc4ac65983747ac3e95dec7c415b92056c51c85f2ed82f398406365cfb1a656",
+  "sandboxProfileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+  "fault": {
+    "method": "CUA UI input to the isolated WKWebView Web Inspector console; no devMock or native IPC replacement",
+    "scope": "Storage.prototype.setItem only when this === localStorage and key equals myco.ingestDraft.v1: plus encoded synthetic Alpha root",
+    "exception": {
+      "name": "QuotaExceededError",
+      "message": "Synthetic acceptance write failure"
+    },
+    "contextGuard": "tauri: protocol and exact synthetic Alpha startup URL; refuse an existing fault installation",
+    "restore": "Restore the exact original setItem property descriptor, verify function identity, then delete the temporary __mycoDraftFault variable",
+    "restorationObserved": true,
+    "AlphaPersistedRecordBeforeRetry": null
+  },
+  "observations": [
+    {
+      "step": "Edit Alpha while storage writes fail",
+      "title": "Synthetic storage recovery",
+      "body": "Synthetic first unsaved draft",
+      "errorAndRetryVisible": true
+    },
+    {
+      "step": "Retry while fault remains",
+      "inputRetained": true,
+      "errorRemained": true
+    },
+    {
+      "step": "Edit Alpha again",
+      "body": "Synthetic latest unsaved draft after retry"
+    },
+    {
+      "step": "Switch to Beta",
+      "oldBody": "Different synthetic draft",
+      "newBody": "Synthetic Beta saved during Alpha failure",
+      "AlphaErrorAbsent": true
+    },
+    {
+      "step": "Return to Alpha",
+      "latestTitleAndBodyRetained": true,
+      "errorVisible": true
+    },
+    {
+      "step": "Restore storage and click draft-save retry",
+      "errorAndRetryButtonGone": true,
+      "latestTitleAndBodyRetained": true
+    },
+    {
+      "step": "Quit, verify process stopped, relaunch",
+      "AlphaTitle": "Synthetic storage recovery",
+      "AlphaBody": "Synthetic latest unsaved draft after retry",
+      "errorAbsent": true
+    },
+    {
+      "step": "Switch to Beta after restart",
+      "BetaBody": "Synthetic Beta saved during Alpha failure",
+      "AlphaBodyAbsent": true,
+      "errorAbsent": true
+    }
+  ],
+  "integrity": {
+    "noIngestSubmission": true,
+    "finalNativeProcessStopped": true,
+    "AlphaRawFiles": 4,
+    "AlphaWikiFiles": 5,
+    "BetaRawFiles": 0,
+    "BetaWikiFiles": 1,
+    "bothSyntheticReadersUnchanged": true,
+    "bothPreviouslyGeneratedSourcePagesUnchanged": true,
+    "productionMarkerMetadataUnchangedRelativeToIncidentBaseline": true
+  },
+  "limitations": [
+    "Injected synchronous write exception, not actual disk exhaustion or a hardware failure",
+    "No read/remove storage failure injected in this native trial",
+    "Unsigned debug macOS only, not Windows or signed-release acceptance",
+    "Does not cover D3 older-success/newer-draft race or cancellation",
+    "Previous production active-vault marker incident remains unresolved"
+  ]
+}
