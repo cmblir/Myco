@@ -128,7 +128,7 @@ mod platform {
                 "revision": written.revision, "fileIdentity": written.file_identity,
                 "baseline": content });
             let bytes = serde_json::to_vec(&record).map_err(|e| e.to_string())?;
-            if bytes.len() > 8 * 1024 * 1024 {
+            if bytes.len() > crate::map_custody_record::MAX_BYTES {
                 return Err("map custody record exceeds its byte budget".into());
             }
             // create_new preserves an existing or uncertain record. Interrupted
@@ -144,6 +144,12 @@ mod platform {
                 .and_then(|()| file.sync_all())
                 .map_err(|e| format!("sync map custody record: {e}"))?;
             self.directory.sync()?;
+            crate::map_custody_record::verify_written_record(
+                &self.directory,
+                &format!("{}.json", self.key),
+                &file,
+                &bytes,
+            )?;
             crate::vault::verify_recorded_file_unlocked(written)?;
             Ok(super::MapCreationUndo {
                 receipt: written.clone(),

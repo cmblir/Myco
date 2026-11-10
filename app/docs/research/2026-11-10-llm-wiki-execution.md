@@ -584,6 +584,35 @@ The app README describes confirmed undo and fresh map run identities. Rust was
 unchanged and not rerun for this frontend slice. No restart-derived native update
 permission, map refresh, Windows or installed acceptance is claimed.
 
+The next native slice adds a bounded private-record reader and uses it immediately
+in `MapCreationStore::record`, before the live creation/undo permit can be issued.
+It admits only a canonical scope-hash/generation JSON leaf, a regular single-link
+0600 file owned by the process user, and at most 8 MiB. It opens with no-follow
+and nonblocking flags, checks the named/opened object and before/after metadata,
+rechecks the held directory, and compares readback bytes plus identity with the
+actual native writer. Errors retain output and prevent completion through the
+existing Prepared publication path. It does not deserialize an ownership grant.
+
+Actual temporary-filesystem tests cover writer-close readback, same-byte object
+replacement, altered expected bytes, symlink/hardlink/directory/FIFO, unsafe mode,
+oversize records, escaped leaf names, same-length writes and identical-byte
+replacement during reading. The first test run failed at the existing directory
+guard because the macOS temporary path used a symlink component; the fixture was
+canonicalized as production already does, without weakening the guard. Initial
+and corrected focused logs remain at `/tmp/myco-map-record-read-tests.log` and
+`/tmp/myco-map-record-read-green.log`. Reading stable bytes is only a prerequisite:
+versioned record schema, scope and anchor validation for restart recovery and an
+update-only permit remain unfinished. No installed or Windows acceptance follows
+from these Unix tests, and no persisted data restores deletion authority.
+
+Validation: final default `cargo test` passed 2,662 library tests (34 ignored)
+and 28 integration tests (4 ignored), without failures; compilation took 56.59s
+and the library suite 55.37s. Strict all-target Clippy passed in 21.20s, and
+formatting/diff checks passed. Final logs are
+`/tmp/myco-map-record-read-{clippy,full}.log`. The app README was updated. No
+frontend runtime changed, so its previous gates were not rerun. No map-specific
+process-restart acceptance, model inference or Windows run was performed.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

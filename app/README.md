@@ -152,6 +152,8 @@ app data to support hard links on the same filesystem. Conflicting or failed
 records preserve output for recovery instead of confirming publication. These
 records are not yet reopened into update authority; automatic refresh and custody
 cleanup remain incomplete.
+Before publication completes, the native writer re-reads the private record and
+checks its exact bytes and file identity; unstable or unsafe records stop completion.
 Live undo can remove an unchanged map created in that opening; human edits block
 removal. The private baseline and file anchor remain retained after undo.
 After confirmed undo through History or Settings, drafting the topic again starts
