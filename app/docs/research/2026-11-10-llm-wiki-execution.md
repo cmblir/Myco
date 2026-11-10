@@ -18,6 +18,38 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: actual source-first input comparison rejected
+
+The [source-order receipt](2026-11-11-request-source-order-comparison.json)
+retains all 44 native records and individual semantic reviews from 14 actual
+offline calls at runner `f21294a9`. The candidate puts original text and speaker
+before packet metadata. Every parsed input pair is equal, and the system prompt,
+model, grammar and sampler are unchanged. Nested metadata key order is also
+canonicalized; this experiment does not isolate a single field move.
+
+Native generation and binding succeeded, but meaning acceptance failed. Baseline
+matched R5/R7; candidate matched R5/R6/R7. Both omitted R1/R2 requests. Candidate
+classified R3's past report as request/requested and omitted R4's future plan;
+baseline omitted R3 and classified R4 as request/requested. Correct abstention
+on negative controls does not compensate for missing positive activity. No
+production prompt or input representation was changed.
+
+All outputs include actual prefill and sampled-token telemetry. The network-denied
+run used the pinned cached 4B artifact and an isolated synthetic state directory.
+Native test time was 423.23s, wrapper wall time 426.39s, and maximum resident set
+size 3,190,767,616 bytes. The model-free QA group passed eight tests (four ignored),
+the payload-equality regression passed, and feature all-target strict Clippy
+passed. The runtime command, artifact hashes and raw log hashes are in the receipt.
+README needs no change for this test-only diagnostic.
+
+Input order alone did not repair the frozen controls. One unproven next hypothesis
+is interaction between the source word "synthetic" and the system's exclusion of
+test-harness chatter. Diagnose that with additional paired fictional sources,
+keeping the existing controls and labels unchanged, before attributing failures
+to model capacity or promoting another instruction change. Three repeated
+critical cases, full-compiler meaning, Windows and installed acceptance remain
+open; this single comparison does not satisfy those gates.
+
 ## November 11: stage complete custody records before publication
 
 Direct writes to the final JSON leaf could expose a truncated observation if the
