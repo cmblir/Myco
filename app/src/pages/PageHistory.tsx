@@ -18,6 +18,7 @@ import { buildRunRows, type RunRows } from "../lib/runDetailView";
 import DiffView from "../components/DiffView";
 import Viewer from "../components/Viewer";
 import AppPage from "../components/AppPage";
+import MapRefreshHistory from "../components/MapRefreshHistory";
 
 interface ReportRow {
   path: string; // absolute
@@ -172,6 +173,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
 
   return (
     <AppPage eyebrow={t.nav_tools} title={t.h_title} note={t.h_lede}>
+      <MapRefreshHistory t={t} />
 
       {/* Distill runs (W3–6 item 6): expand → file rows + word diff; WHY →
           the run's ingest report; undo → existing undo_distill_run. */}

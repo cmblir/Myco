@@ -18,6 +18,38 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: latest map refresh in History
+
+History now reads the retained native before/after API on map selection, rather
+than fetching every map snapshot. It labels missing legacy history separately
+from errors, offers Reload, and discloses later edits and the absence of undo/full
+timeline. Korean, English and Japanese copy follow the existing strings table.
+
+The observation loader rejects mismatched origins/paths and drops late results
+when cancelled, reopening or switching vaults. The section remounts for each UI
+opening, and selected-key-bound results cannot be shown under another map.
+Presentation uses labelled plain-text snapshots (escaped, without Markdown HTML
+execution), scrollable keyboard-focusable regions, and one/two responsive columns.
+
+Targeted synthetic tests passed 9 cases. The first full frontend run found one
+new Korean glossary violation (`i18n.glossary.test.ts:79`, the English word
+`vault` in `map_history_no_maps`); corrected it to the established `볼트` term,
+without weakening the test. The final full run passed 402 files / 6,457 tests
+in 56.45 seconds; production TypeScript/Vite build passed. Lint retained only
+the two existing notch warnings. Logs: `/tmp/myco-map-history-ui-{target,full,final,lint,build,tsc}.log`.
+
+Ego browser checked the actual History page with explicitly synthetic IPC data,
+not native custody: light/dark widths 320/375/768/1280 had no horizontal overflow;
+select/reload controls measured 44px high. Inspected wide-light and narrow-dark
+screenshots; selection → Reload keyboard focus worked. Empty legacy history,
+retryable error and same-path reopen clearing old errors/selection were observed.
+A mock file-tree poll initially replaced the injected fixture; stabilizing that
+fixture and reapplying it after HMR allowed the checks to finish. Screenshots:
+`/tmp/myco-map-history-light-1280.png`,
+`/tmp/myco-map-history-320-confirmed.png`.
+This does not establish installed-app, screen-reader, native Windows, actual-model
+or full History/undo acceptance. No native Rust source changed in this slice.
+
 ## November 11: retained map refresh before-images
 
 The private refresh schema now records the exact pre-write content and its hash

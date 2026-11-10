@@ -1684,6 +1684,16 @@ export interface Strings extends EverydayStrings {
   pf_retired: string;
   pf_outcome_delete: string;
   pf_confirm_msg_draft_map: string;
+  map_history_title: string;
+  map_history_note: string;
+  map_history_select: string;
+  map_history_reload: string;
+  map_history_no_maps: string;
+  map_history_error: string;
+  map_history_missing: string;
+  map_history_changed: string;
+  map_history_before: string;
+  map_history_after: string;
   map_refresh_title: string;
   map_refresh_message: string;
   map_refresh_apply: string;
@@ -4292,6 +4302,16 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "No longer needed — the originals stay as they are",
     pf_outcome_delete: "Moves {n} quarantined item(s) to the trash.",
     pf_confirm_msg_draft_map: "Drafts a topic map or prepares an existing map update for review (one model call).",
+    map_history_title: "Latest map update",
+    map_history_note: "Shows the latest saved update for one map, not the full timeline. Undo is not available.",
+    map_history_select: "Select a map",
+    map_history_reload: "Reload",
+    map_history_no_maps: "No topic maps in this vault.",
+    map_history_error: "Could not read this update. Retry with Reload.",
+    map_history_missing: "No before/after record is available. This map may be new or use an older record format.",
+    map_history_changed: "This map has been edited since the saved update. The snapshots below show the saved update only.",
+    map_history_before: "Before update",
+    map_history_after: "After update",
     map_refresh_title: "Review map update",
     map_refresh_message: "Review the generated section changes. Your title and outside notes are preserved. History undo is not available for this update.",
     map_refresh_apply: "Update map",
@@ -6884,6 +6904,16 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "더 이상 필요 없어요 — 원본은 그대로 둡니다",
     pf_outcome_delete: "격리된 자료 {n}개를 휴지통으로 옮깁니다.",
     pf_confirm_msg_draft_map: "주제 지도 초안을 쓰거나 기존 지도 갱신안을 검토할 수 있게 준비합니다 (모델을 한 번 씁니다).",
+    map_history_title: "최근 지도 갱신",
+    map_history_note: "지도별로 마지막 저장된 갱신을 표시합니다. 전체 이력은 아니며 되돌리기는 아직 지원하지 않습니다.",
+    map_history_select: "지도 선택",
+    map_history_reload: "다시 조회",
+    map_history_no_maps: "이 볼트에는 토픽 지도가 없습니다.",
+    map_history_error: "갱신 기록을 읽지 못했습니다. 다시 조회해 주세요.",
+    map_history_missing: "변경 전후 기록이 없습니다. 새 지도이거나 이전 형식의 기록일 수 있습니다.",
+    map_history_changed: "저장된 갱신 이후 지도가 편집되었습니다. 아래 내용은 저장 당시의 기록입니다.",
+    map_history_before: "갱신 전",
+    map_history_after: "갱신 후",
     map_refresh_title: "지도 변경 검토",
     map_refresh_message: "생성 영역의 변경 내용을 확인하세요. 제목과 영역 밖에 작성한 내용은 보존됩니다. 이 갱신은 히스토리에서 되돌릴 수 없습니다.",
     map_refresh_apply: "지도 갱신",
@@ -9269,6 +9299,16 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_retired: "もう必要ありません — 元の資料はそのまま残します",
     pf_outcome_delete: "隔離された資料 {n} 件をゴミ箱へ移します。",
     pf_confirm_msg_draft_map: "トピックマップの下書き、または既存マップの更新案を作成して確認します（モデルを1回使います）。",
+    map_history_title: "最新のマップ更新",
+    map_history_note: "マップごとの最後に保存された更新を表示します。全履歴ではなく、元に戻す操作は利用できません。",
+    map_history_select: "マップを選択",
+    map_history_reload: "再読み込み",
+    map_history_no_maps: "この保管庫にトピックマップはありません。",
+    map_history_error: "更新記録を読み込めませんでした。再読み込みしてください。",
+    map_history_missing: "更新前後の記録がありません。新しいマップか、古い形式の記録の可能性があります。",
+    map_history_changed: "保存された更新後にマップが編集されています。以下は保存時点の記録です。",
+    map_history_before: "更新前",
+    map_history_after: "更新後",
     map_refresh_title: "マップの変更を確認",
     map_refresh_message: "生成部分の変更を確認してください。タイトルと範囲外のメモは保持されます。この更新は履歴から元に戻せません。",
     map_refresh_apply: "マップを更新",

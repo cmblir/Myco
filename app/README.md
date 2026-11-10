@@ -180,7 +180,11 @@ success. Refresh issues no creation/undo receipt. Manual map proposals now show
 the native merged diff before applying an existing-map update. Cancelling or
 switching vaults stops the update; sources and the target revision are rechecked
 after approval. The review explains that History undo is not yet available.
-Refresh History/undo integration and interruption recovery remain incomplete.
+History now offers a map selector with the latest saved before/after snapshots,
+a notice for edits since that update, and explicit empty/error/reload states.
+Snapshots stack on narrow screens and appear side by side on wide screens.
+Switching or reopening a vault clears the selection and old responses. This is
+not a full update timeline; refresh undo and interruption recovery remain incomplete.
 Native creation now also discovers its observation by vault/path and current file
 identity, without relying on a remembered generation key. Missing, corrupt or
 ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory
