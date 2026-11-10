@@ -1191,7 +1191,7 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
               >
                 {t.ing_open_index}
               </button>
-              {reportPath ? (
+              {runRoot && reportPath ? (
                 <button
                   className="btn"
                   onClick={() => void ipc.openExternal(reportPath)}
