@@ -21,6 +21,7 @@ import { runFullTierIngest } from "./fullTierIngest";
 import type { FullTierOutcome } from "./fullTierIngest";
 import { draftMap } from "./maps";
 import { newMapRunId } from "./mapRunId";
+import { sha256 } from "./tidyRun";
 import {
   feedbackFileNodes,
   parseProposal,
@@ -239,6 +240,7 @@ export const lastFullTierOutcome = new Map<string, FullTierOutcome>();
 // outcome, same idiom as the two maps above; the Overview card's "LLM steps
 // waiting" note reads all three.
 export interface MapDraftOutcome extends WorkflowProgress {
+  /** Completed approved proposals, including refreshed or unchanged maps; not a created-file count. */
   drafted: number;
   skipped: "no-provider" | null;
   pending?: number;
@@ -420,13 +422,28 @@ async function applyApprovedDraftMaps(
   let drafted = 0;
   const publishedPending: string[] = [];
   const issues = [];
-  // One undo-manifest for ALL maps this run drafts — per-call ids fragmented
-  // a multi-map run so "undo this run" only reached the last map drafted.
+  // New maps share one creation-undo manifest. Existing-map refreshes return
+  // verified completion separately and never enter that deletion manifest.
   const manifestId = newMapRunId();
   for (const p of approved.slice(0, budget)) {
     try {
-      await draftMap(vaultPath, p.cluster, p.members, manifestId, undefined, usage, roleSnapshot);
-      await ipc.writeFile(p.path, rewriteStatus(p.raw, "done"));
+      const recheckApproval = async () => {
+        const current = await ipc.agentVaultSession();
+        if (!roleSnapshot || current.vaultPath !== vaultPath || current.openingToken !== roleSnapshot.origin.openingToken) {
+          throw new WorkflowOperationError("stopped", "cancelled", "Vault opening changed during approved map work");
+        }
+        if ((await ipc.readFile(p.path)).raw !== p.raw) {
+          throw new WorkflowOperationError("pending", "validation_rejected", "Map proposal approval changed; review required");
+        }
+      };
+      await draftMap(vaultPath, p.cluster, p.members, manifestId, undefined, usage, roleSnapshot,
+        { kind: "approved-proposal", recheck: recheckApproval });
+      const proposalRevision = await sha256(p.raw);
+      const current = await ipc.agentVaultSession();
+      if (!roleSnapshot || current.vaultPath !== vaultPath || current.openingToken !== roleSnapshot.origin.openingToken) {
+        throw new WorkflowOperationError("stopped", "cancelled", "Vault opening changed before map proposal finalization");
+      }
+      await ipc.writeFileIfUnchanged(p.path, rewriteStatus(p.raw, "done"), proposalRevision);
       drafted++;
     } catch (e) {
       console.error(`[distill] auto draft-map apply failed for ${p.path}:`, e);

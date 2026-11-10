@@ -805,6 +805,42 @@ manual review/apply flow and remaining automatic/history/recovery gates. Native
 code was unchanged; Rust, installed-app, actual-model and Windows checks were
 not rerun. SSR/dialog-store tests do not substitute for visible native UI testing.
 
+The next slice enables existing-map refresh for already-approved automatic
+proposals. Its explicit frontend routing decision carries an approval recheck,
+not native authority: the original organization role/usage and source grant still
+govern generation and native apply. The runner checks exact proposal bytes and
+vault opening before generation and publication, and uses CAS to mark completion.
+The shared model budget and pending-proposal filter remain in place. Completed
+proposal counts include new, updated and unchanged maps, not created-file counts.
+Native post-persist failures are surfaced as retained incomplete output; stale
+target failures do not fabricate a retained-write claim.
+
+Review found that leaving a cancelled manual map in `approved` could allow the
+automatic runner to apply it later. Manual map work now stays `pending` during
+generation/review; an earlier approved status is changed with an exact-revision
+write before starting, after checking native/UI vault identity. Successful manual
+completion also uses CAS. Automatic proposal rechecks reject withdrawn or edited
+approval. Settings copy in English/Korean/Japanese explains approved automatic
+updates, preserved human text and unavailable History undo.
+
+Focused verification passed 150 tests across map generation, native IPC routing,
+manual proposal review and the automatic runner. Added cases cover an automatic
+role updating one existing map without a creation manifest, approval withdrawal,
+same-path reopening before finalization, retained native failures, cancellation
+remaining pending and unchanged proposal revisions at completion. Earlier focused
+failures exposed stale store fixture expectations for the former approved status
+and missing CAS stubs; the tests now assert the new pending/CAS contract while
+retaining their vault/session guards (`/tmp/myco-map-auto-approval-tests.log`,
+`/tmp/myco-map-auto-cas-final-tests.log`). These are synthetic frontend contracts;
+installed automatic runs and actual generated meaning are still unverified.
+Final verification passed 400 frontend files / 6,450 tests in 71.85s, TypeScript
+and production build (Vite 24.71s), and lint with only the two existing notchDriver
+hook warnings. Logs: `/tmp/myco-map-auto-final-full.log`,
+`/tmp/myco-map-auto-final-build.log`, `/tmp/myco-map-auto-final-lint.log`.
+README and the goal table reflect approved automatic refresh and pending
+History/interruption/model gates. Native code was unchanged; Rust, Windows,
+actual-model and installed-app checks were not rerun in this slice.
+
 G6 reduced-motion inspection reproduced direction arrows advancing despite the
 scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
 but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps

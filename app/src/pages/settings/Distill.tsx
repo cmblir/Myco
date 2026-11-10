@@ -273,6 +273,7 @@ export function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           <label style={{ fontSize: 13, fontWeight: 500 }}>
             {t.set_distill_intensity ?? "Intensity"}
           </label>
+          <p className="muted">{t.set_distill_map_refresh_desc}</p>
           <div className="row" style={{ gap: 6, marginTop: 6 }}>
             {(
               [

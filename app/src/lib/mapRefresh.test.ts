@@ -48,3 +48,39 @@ it("rejects changed review input and an inconsistent native result", async () =>
     ? { path, revision: await sha256(after), changed: false } : original(...args));
   await expect(run(review)).rejects.toMatchObject({ status: "pending" });
 });
+
+it("uses approved-proposal routing without fabricating review or skipping source checks", async () => {
+  const recheck = vi.fn(async () => undefined);
+  await expect(refreshExistingMap(origin, role, path, "Synthetic candidate", "c".repeat(64), { kind: "approved-proposal", recheck: async () => undefined }, () => undefined, recheck)).resolves.toBe(path);
+  expect(recheck).toHaveBeenCalledOnce();
+  expect(invoke.mock.calls.map(([command]) => command)).toEqual(["preview_map_refresh", "read_file", "apply_map_refresh"]);
+});
+
+it.each(["map refresh bytes persisted but verification failed: synthetic", "compiler canonical persisted but admission incomplete; synthetic"])("reports native retained output as incomplete: %s", async message => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (...args) => {
+    if (args[0] === "apply_map_refresh") throw message;
+    return original(...args);
+  });
+  await expect(run(async () => true)).rejects.toMatchObject({ status: "pending", writtenPath: path });
+});
+
+it("does not claim a retained write for a stale target rejection", async () => {
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (...args) => {
+    if (args[0] === "apply_map_refresh") throw new Error("map revision changed since preview");
+    return original(...args);
+  });
+  try { await run(async () => true); throw new Error("Expected rejection"); }
+  catch (error) {
+    expect(error).toMatchObject({ status: "pending" });
+    expect(error).not.toHaveProperty("writtenPath");
+  }
+});
+
+it("rejects a withdrawn automatic approval before native apply", async () => {
+  await expect(refreshExistingMap(origin, role, path, "Synthetic candidate", "c".repeat(64), {
+    kind: "approved-proposal", recheck: async () => { throw new Error("Approval withdrawn"); },
+  }, () => undefined, async () => undefined)).rejects.toThrow("Approval withdrawn");
+  expect(invoke.mock.calls.some(([command]) => command === "apply_map_refresh")).toBe(false);
+});

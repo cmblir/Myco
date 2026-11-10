@@ -1580,6 +1580,7 @@ export interface Strings extends EverydayStrings {
   set_distill_intensity_conservative: string;
   set_distill_intensity_standard: string;
   set_distill_intensity_aggressive: string;
+  set_distill_map_refresh_desc: string;
   set_distill_gate: string;
   set_distill_gate_strict: string;
   set_distill_gate_normal: string;
@@ -4185,6 +4186,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_intensity_conservative: "Conservative",
     set_distill_intensity_standard: "Standard",
     set_distill_intensity_aggressive: "Aggressive",
+    set_distill_map_refresh_desc: "Approved map proposals can update existing generated sections automatically. Your title and outside notes are preserved; edited generated sections wait for review. Map updates cannot yet be undone from History.",
     set_distill_gate: "Gate preset",
     set_distill_gate_strict: "Strict",
     set_distill_gate_normal: "Normal",
@@ -6778,6 +6780,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_intensity_conservative: "보수",
     set_distill_intensity_standard: "표준",
     set_distill_intensity_aggressive: "적극",
+    set_distill_map_refresh_desc: "승인된 지도 제안은 기존 생성 영역을 자동으로 갱신할 수 있어요. 제목과 영역 밖에 작성한 내용은 보존하며, 생성 영역을 직접 수정했다면 검토를 기다려요. 지도 갱신은 아직 히스토리에서 되돌릴 수 없어요.",
     set_distill_gate: "게이트 프리셋",
     set_distill_gate_strict: "엄격",
     set_distill_gate_normal: "보통",
@@ -9161,6 +9164,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_intensity_conservative: "保守的",
     set_distill_intensity_standard: "標準",
     set_distill_intensity_aggressive: "積極的",
+    set_distill_map_refresh_desc: "承認済みのマップ提案は既存の生成部分を自動更新できます。タイトルと範囲外の記述は保持され、生成部分を編集した場合は確認を待ちます。マップ更新はまだ履歴から元に戻せません。",
     set_distill_gate: "ゲートプリセット",
     set_distill_gate_strict: "厳格",
     set_distill_gate_normal: "通常",

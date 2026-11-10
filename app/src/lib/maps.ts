@@ -18,7 +18,7 @@ import { isMissingFile } from "./sessionEvidence";
 import { mapEvidencePrompt, mapMemberStem, withMapEvidence } from "./mapEvidence";
 import { renderMapDraft } from "./mapContent";
 import { newMapRunId } from "./mapRunId";
-import { refreshExistingMap, type ReviewMapRefresh } from "./mapRefresh";
+import { refreshExistingMap, type MapRefreshDecision } from "./mapRefresh";
 import { pendingMapPublication, rememberMapPublication, type PendingMapPublication } from "./mapPublicationRecovery";
 
 export class MapPublicationError extends WorkflowOperationError {
@@ -186,7 +186,7 @@ export async function draftMap(
   isCurrent: () => boolean = () => true,
   usage: RoleUsage = "foreground",
   capturedRole?: RoleSnapshot,
-  reviewRefresh?: ReviewMapRefresh,
+  reviewRefresh?: MapRefreshDecision,
 ): Promise<string> {
   const assertCurrent = () => {
     if (!isCurrent()) throw new Error("Vault changed; topic map cancelled");
@@ -208,6 +208,8 @@ export async function draftMap(
   if (existing && !reviewRefresh) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} requires an interactive refresh review`);
 
   return withMapEvidence(origin, roleSnapshot, members, assertCurrent, async (evidence, snapshotId, recheck) => {
+    assertCurrent();
+    if (reviewRefresh && typeof reviewRefresh !== "function") await reviewRefresh.recheck();
     assertCurrent();
 
     const body = await complete({
@@ -244,6 +246,7 @@ export async function draftMap(
     const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
     const key = rel.slice("wiki/maps/".length).replace(/\.md$/, "");
     await recheck();
+    if (reviewRefresh && typeof reviewRefresh !== "function") await reviewRefresh.recheck();
     assertCurrent();
     const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot, snapshotId);
     rememberMapPublication(origin, cluster, { manifestId, publication });

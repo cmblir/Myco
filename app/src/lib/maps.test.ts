@@ -16,6 +16,7 @@ const releaseSources = vi.fn();
 const writeFile = vi.fn();
 const publishDistillNote = vi.fn();
 const previewMapRefresh = vi.fn();
+const applyMapRefresh = vi.fn();
 const ORIGIN = { vaultPath: "/v", openingToken: "synthetic-opening" };
 let openingSequence = 0;
 const createFolder = vi.fn();
@@ -27,6 +28,7 @@ vi.mock("./ipc", () => ({
     captureModelRole: (...a: unknown[]) => captureModelRole(...a),
     publishDistillNote: (...a: unknown[]) => publishDistillNote(...a),
     previewMapRefresh: (...a: unknown[]) => previewMapRefresh(...a),
+    applyMapRefresh: (...a: unknown[]) => applyMapRefresh(...a),
     readFile: (...a: unknown[]) => readFile(...a),
     captureMapSources: (...a: unknown[]) => captureSources(...a),
     checkMapSources: (...a: unknown[]) => checkSources(...a),
@@ -81,6 +83,7 @@ beforeEach(() => {
   releaseSources.mockReset().mockResolvedValue(undefined);
   complete.mockReset();
   previewMapRefresh.mockReset();
+  applyMapRefresh.mockReset();
   readFile.mockReset().mockImplementation(readFixture);
   writeFile.mockReset();
   createFolder.mockReset();
@@ -91,6 +94,35 @@ beforeEach(() => {
 });
 
 describe("draftMap", () => {
+  it("refreshes an already-approved automatic map in place under its captured automatic role", async () => {
+    complete.mockResolvedValue("Synthetic old relationship.");
+    await draftMap("/v", "synthetic-auto", ["wiki/x.md"], "llm-100", undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined });
+    const before = writeFile.mock.calls[0][1] as string;
+    const path = "/v/wiki/maps/synthetic-auto.md";
+    listFiles.mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+      { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [{ kind: "file", name: "synthetic-auto.md", path }] },
+    ] }]);
+    readFile.mockResolvedValue({ raw: before, content: "", frontmatter: { cluster: "synthetic-auto" } });
+    complete.mockResolvedValue("Synthetic updated relationship.");
+    previewMapRefresh.mockImplementation(async (_origin, role, key, candidate: string) => {
+      expect(role.usage).toBe("automatic");
+      expect(key).toBe("synthetic-auto");
+      return { path: "wiki/maps/synthetic-auto.md", currentRevision: await sha256(before), content: candidate };
+    });
+    applyMapRefresh.mockImplementation(async (origin, role, key, candidate: string, snapshotId, expected) => {
+      expect(origin).toEqual(ORIGIN);
+      expect(role.usage).toBe("automatic");
+      expect(snapshotId).toBe("c".repeat(64));
+      expect(expected).toBe(await sha256(before));
+      return { path: `wiki/maps/${key}.md`, revision: await sha256(candidate), changed: true };
+    });
+    await expect(draftMap("/v", "synthetic-auto", ["wiki/x.md"], "llm-200", undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined }))
+      .resolves.toBe("wiki/maps/synthetic-auto.md");
+    expect(applyMapRefresh).toHaveBeenCalledOnce();
+    expect(publishDistillNote).toHaveBeenCalledOnce();
+    expect(appendDistillManifest).toHaveBeenCalledOnce();
+    expect(releaseSources).toHaveBeenCalledTimes(2);
+  });
   it("does not let a completed creation receipt bypass a later interactive refresh review", async () => {
     complete.mockResolvedValue("Synthetic old relationship.");
     await draftMap("/v", "synthetic-reviewed", ["wiki/x.md"], "llm-100");

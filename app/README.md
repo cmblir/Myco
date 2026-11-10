@@ -150,8 +150,8 @@ On supported Unix filesystems, new maps also retain their native file object and
 creation baseline under `<app-data>/map-creation-custody`. This requires vault and
 app data to support hard links on the same filesystem. Conflicting or failed
 records preserve output for recovery instead of confirming publication. These
-records can support a freshly authorized native refresh; frontend automatic
-refresh and custody cleanup remain incomplete.
+records support freshly authorized native refreshes. Custody cleanup remains
+incomplete.
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.
 Creation observations also validate their schema, vault/target scope, baseline
@@ -195,8 +195,12 @@ external edits are checked before and after writing, not atomically excluded.
 Oversized, missing or changed sources leave the proposal pending. A failure after
 writing retains the output for manual recovery without publication/undo authority.
 Existing maps without native custody remain pending for manual recovery. Automatic
-proposal processing leaves existing-map updates for interactive review; automatic
-refresh remains incomplete. Native map identity remains unavailable on Windows.
+organization can refresh existing maps only from already-approved proposals,
+within its shared model budget and original organization-role authorization.
+It rechecks the approved proposal before generation and publication; changed or
+withdrawn approval stays pending. Manual map work remains pending during review,
+so cancellation cannot leave an automatic approval behind. Proposal completion
+uses a revision-checked write. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
 Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight completes at its destination once. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.

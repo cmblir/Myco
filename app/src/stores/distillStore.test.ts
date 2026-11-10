@@ -243,6 +243,7 @@ describe("useDistillStore", () => {
     // Native origin capture is IPC; the store/map logic remains real in Node.
     vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: "/v", openingToken: "synthetic-native-opening" });
     mockOrganizationRole();
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     complete.mockReset();
     generateProvider = "anthropic-api";
     useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
@@ -582,7 +583,7 @@ describe("useDistillStore", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
-  it("reviews an existing map update before applying and never records it as a new creation", async () => {
+  it.each([true, false])("reviews an existing map update without exposing manual approval to the automatic runner: accept=%s", async accept => {
     const proposalPath = "/v/work/feedback/synthetic-refresh.md";
     const mapPath = "/v/wiki/maps/attention.md";
     const raw = '---\ntype: distill-proposal\naction: draft-map\nstatus: approved\ncreated: 2026-11-11\npayload: {"cluster":"attention","members":["wiki/a.md"]}\n---\n\n# Synthetic map update\n';
@@ -604,15 +605,22 @@ describe("useDistillStore", () => {
     await vi.waitFor(() => expect(useDialogStore.getState().request?.title).toBe(STRINGS[useUIStore.getState().lang].map_refresh_title));
     expect(preview).toHaveBeenCalledOnce();
     expect(apply).not.toHaveBeenCalled();
-    useDialogStore.getState().close("ok");
-    await expect(pending).resolves.toBe("wiki/maps/attention.md");
-    expect(apply).toHaveBeenCalledOnce();
-    expect(write).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: done"));
+    expect(ipc.writeFileIfUnchanged).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: pending"), await sha256(raw));
+    useDialogStore.getState().close(accept ? "ok" : null);
+    await expect(pending).resolves.toBe(accept ? "wiki/maps/attention.md" : null);
+    if (accept) {
+      expect(apply).toHaveBeenCalledOnce();
+      expect(ipc.writeFileIfUnchanged).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: done"), await sha256(raw.replace("status: approved", "status: pending")));
+    } else {
+      expect(apply).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+    }
     expect(publish).not.toHaveBeenCalled();
     expect(manifest).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
   });
 
-  it("keeps an already-mapped legacy proposal approved for manual recovery", async () => {
+  it("returns an already-mapped legacy proposal to pending for manual recovery", async () => {
     // Existing bytes and a matching cluster do not prove native ownership.
     const draftMapProposalRaw = [
       "---",
@@ -658,6 +666,8 @@ describe("useDistillStore", () => {
     expect(rel).toBeNull();
     expect(writeSpy).not.toHaveBeenCalled();
     expect(useDistillStore.getState().error).toContain("manual recovery");
+    expect(ipc.writeFileIfUnchanged).toHaveBeenCalledWith(proposalPath,
+      expect.stringContaining("status: pending"), await sha256(draftMapProposalRaw));
   });
 
   // The activity popover / tray panel approve buttons call this very action
@@ -718,8 +728,8 @@ describe("useDistillStore", () => {
       const approvals = writeSpy.mock.calls.filter(
         ([p, c]) => p === path && c.includes("status: approved"),
       );
-      expect(approvals).toHaveLength(1);
-      expect(files.get(path)).toContain("status: approved");
+      expect(approvals).toHaveLength(0);
+      expect(files.get(path)).toContain("status: pending");
       expect(files.get(path)).not.toContain("status: done");
     }
   });
@@ -767,6 +777,7 @@ describe("proposal actions retain their originating vault session", () => {
     vi.spyOn(ipc, "listQuarantine").mockResolvedValue([]);
     vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
     vi.spyOn(ipc, "applyDistillProposal").mockResolvedValue("synthetic applied");
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
   });
 
   it.each(["apply", "dismiss"] as const)("stops %s after a late read across A → B → A", async (action) => {
