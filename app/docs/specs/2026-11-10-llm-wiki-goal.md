@@ -1,7 +1,9 @@
 # Reliable local LLM Wiki execution goal
 
-Date: 2026-11-10  
-Baseline: `121c0fa2` on `origin/main`, myco 0.4.0  
+Date: 2026-11-10
+
+Baseline: `121c0fa2` on `origin/main`, myco 0.4.0
+
 Status: Active. First implementation slice is under verification; acceptance is
 incomplete. See the [execution record](../research/2026-11-10-llm-wiki-execution.md).
 
@@ -204,7 +206,7 @@ Use `docs/design/design-system.md`, the shared UI kit and graph visual rules.
 
 ### G7 Complete acceptance and update documentation
 
-- [ ] Pass applicable frontend lint, type/build and unit gates, Rust fmt/clippy/
+- [x] Pass applicable frontend lint, type/build and unit gates, Rust fmt/clippy/
   tests, and relevant browser workflows. Report existing warnings separately.
 - [ ] Execute the native scenario matrix below with real local inference and
   network disabled after artifacts are prepared. Record latency and peak memory;

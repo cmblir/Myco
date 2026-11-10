@@ -162,6 +162,19 @@ provider), audio/video (built-in speech recognition), YouTube URLs. A bundled
 offline embedding index (e5-small-ko, in-process llama.cpp) powers semantic search
 and per-page Related notes.
 
+Unsubmitted Ingest titles and text are saved on this device separately for each
+vault, including across navigation and restart. Storage failures keep the input
+in memory and offer Retry. Failed or partial imports keep the draft; a successful
+import clears only the submitted version, preserving anything typed afterward.
+
+**Project questions** — imported conversations can be grouped into workstreams
+for project progress and remaining-work questions. Guided project questions show
+their conversation scope before submission; explicit wiki/session/all choices and
+selected-note limits remain authoritative. The workstream recent overview uses
+seven local calendar days including today and displays that period. If it is
+empty, older records are not silently substituted. These answers collect reported
+work with source links; they do not independently verify completion.
+
 **Harvest queue** — the Overview opens on the sessions that deserve to become
 wiki pages: archived transcripts sieved for duplicates and boilerplate,
 clustered against the wiki, each with an estimated citation yield. Tick the
@@ -219,7 +232,7 @@ sweeps, topic trackers. Each run writes a cited markdown note into `digests/`.
 **Distillation** — an idle-time housekeeping pass scores new raw/session
 inflow against the wiki's topic clusters: junk is filtered before it costs an
 embedding, near-duplicate or off-topic items are quarantined then trashed, and
-raw sources already folded into the wiki move to a dated archive. Review its
+original raw sources stay unchanged while eligible derived notes can be archived. Review its
 proposals on the Feedback page; tune intensity, gate strictness, and schedule
 from Settings. It also compresses in three layers — a day's session logs into
 `daily/`, a settled week's daily digests into `weekly/`, and a settled month's
@@ -227,6 +240,11 @@ weekly rollups into `monthly/`, each layer's source moving to a cold archive
 once summarised — drafts topic maps for its
 clusters, and, with an optional profile, personalises Ask and ingest toward
 your stated role and interests.
+
+New topic-map drafts use bounded excerpts from the selected member pages with
+full-path citations and source revisions. They require review: citations do not
+verify every explanation. Existing maps are preserved pending a safe refresh;
+automatic updates that preserve human annotations are not yet available.
 
 **Run log & undo** — distill and ingest runs are listed newest-first with what
 each one moved, created and trashed. Open one for per-file rows and, once vault

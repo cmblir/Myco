@@ -31,7 +31,7 @@ together yourself:
   (1.27 GB of disk space) adds import drafts when explicitly selected for import,
   plus organization drafts when Ask uses the built-in provider. Drafts retain
   source quotes and require review.
-  Classification, maps and other file-tool workflows still need a connected
+  Classification and other file-tool workflows still need a connected
   provider. Intel Mac with 8 GB RAM inference
   performance has not been measured.
 
@@ -51,10 +51,15 @@ together yourself:
   generation prevents literal angle-bracket markup before validation. Valid links still
   do not certify the answer's meaning.
 
-  Topic-free recent-work questions such as “내가 최근에 한 일들에 대해서 정리해줘”
-  let the selected local chat model choose a period from the question and the
-  available record dates, without a fixed seven-day default. Ask displays that
-  period, reads date-grounded records within the selected scope, and summarizes
+  When imported workstream facts answer a topic-free recent-work question such
+  as “내가 최근에 한 일들에 대해서 정리해줘”, the overview uses seven local
+  calendar days including today, displayed in the answer and saved with it. An
+  empty period stays empty and offers an explicit search of older records.
+  Guided project questions disclose their session evidence before submission;
+  explicit scope and selected-note restrictions take priority. If the workstream
+  route is unavailable, the selected local chat model can choose a period from
+  the question and available record dates. Ask displays that period, reads
+  date-grounded records within the selected scope, and summarizes
   work themes, reported results and requests with unrecorded outcomes.
   Related records become concrete work themes rather than a list of worker
   handoffs. Failed period planning and failed summary generation have separate
@@ -89,6 +94,24 @@ the sidebar collapsed; the saved folder is preserved. The default Documents
 folder is created only when no previous folder has been selected.
 
 ## Highlights
+
+Unsubmitted Ingest titles and text persist on this device per vault across page
+changes and restarts. A storage failure retains the input in memory and offers
+Retry. Failed, cancelled and partial imports keep the draft; successful completion
+clears only the exact submitted version. Clear text explicitly discards a draft.
+
+Follow-up questions retain a previous date window only within the same scope and
+selected-note context. An explicitly supplied new date takes priority. Switching
+scope or note does not carry the previous answer's topic or evidence into the new
+question. The current document-specific control is the selected-note scope; a
+general checked-document selector is not available in this build.
+
+New topic-map drafts use at most twelve selected member pages, bounded body
+excerpts, full relative-path citations and source revisions. Maps do not add
+unrelated retrieval context. Oversized, missing or changed sources leave the
+proposal pending for retry. Existing maps are preserved: native atomic source
+binding and automatic refresh of app-owned sections are still incomplete.
+Generated explanations require review; link validation is not semantic validation.
 
 ### Writing
 
@@ -166,7 +189,7 @@ palette. Void and grid backgrounds contain no residual decorative stars.
 
 Settings → Connections lets you connect any combination of:
 
-- **Built-in (offline)** — multilingual-e5-small-ko-v2 embedder (42 MB) bundled in the app, in-process llama.cpp — no install or key for search, quote-only Ask and extractive Ingest. Optionally download the separate Qwen3.5-4B Q4_K_M artifact (2.71 GB of disk space) under Settings → AI settings, then choose **Use Qwen for Ask**. It summarizes retrieved evidence locally; factual similarity questions preserve the quote-only answer when generation is unavailable or rejected, while recent-work overviews offer Retry. Rejected source evidence requires a fresh search through Retry. Optional Qwen3.5-2B Q4_K_M (1.27 GB of disk space), selected with **Use 2B for import and organization drafts**, adds reviewable summaries beside source quotes. Local organization uses the selected import model when Ask uses the built-in provider. Installation and model selection are explicit. Classification, maps and other file-tool workflows still need a connected provider. Intel Mac with 8 GB RAM inference performance has not been measured.
+- **Built-in (offline)** — multilingual-e5-small-ko-v2 embedder (42 MB) bundled in the app, in-process llama.cpp — no install or key for search, quote-only Ask and extractive Ingest. Optionally download the separate Qwen3.5-4B Q4_K_M artifact (2.71 GB of disk space) under Settings → AI settings, then choose **Use Qwen for Ask**. It summarizes retrieved evidence locally; factual similarity questions preserve the quote-only answer when generation is unavailable or rejected, while recent-work overviews offer Retry. Rejected source evidence requires a fresh search through Retry. Optional Qwen3.5-2B Q4_K_M (1.27 GB of disk space), selected with **Use 2B for import and organization drafts**, adds reviewable summaries beside source quotes. Local organization uses the selected import model when Ask uses the built-in provider. Installation and model selection are explicit. Classification and other file-tool workflows still need a connected provider. Intel Mac with 8 GB RAM inference performance has not been measured.
 - **Claude Code (CLI)** — uses your Pro/Max subscription. No key needed; just have `claude` on PATH.
 - **Anthropic API** — direct `/v1/messages`. Key from console.anthropic.com.
 - **OpenAI API** — `/v1/chat/completions`. Live model list fetched from `/v1/models`.
