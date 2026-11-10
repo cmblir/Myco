@@ -322,8 +322,8 @@ interface IngestState {
   log: string;
   events: IngestEvent[];
   touched: TouchedFile[];
-  /** Vault-relative wiki pages the run changed, from the mtime diff that
-   * verified it; set at "done". The success card links these, not `touched`:
+  /** Vault-relative wiki pages from confirmed writes, or a legacy provider's
+   * mtime diff; set at "done". The success card links these, not `touched`:
    * that list is the model's streamed tool input (claude.rs cuts it at 160
    * chars) and stays empty for providers that stream no events. */
   changedPages: string[];
@@ -1051,6 +1051,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       );
       let out: string;
       let confirmedWrites: string[] = [];
+      let hasConfirmedWrites = false;
       if (provider === "anthropic-cli") {
         // Pass the chosen model (e.g. "haiku") so ingest can run on a cheaper
         // model; empty -> the CLI's configured default.
@@ -1090,6 +1091,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           onCoverage: (sourceChunksPending) => set({ sourceChunksPending }),
           onWritten: (paths) => {
             confirmedWrites = paths;
+            hasConfirmedWrites = true;
           },
         });
       }
@@ -1102,8 +1104,9 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       await useVaultStore.getState().refreshLinkGraph();
       if (!canPublishResult()) return;
 
-      // Verify the wiki changed: a new wiki page appeared or an existing one
-      // was modified. If nothing changed, the model replied but did not ingest.
+      // Confirmed writes belong to this run. An empty receipt must not borrow
+      // another writer's edits; mtimes only classify these pages for review.
+      // Providers without receipts retain their legacy whole-vault mtime diff.
       const afterMtimes = await ipc.fileMtimes(vault.path);
       if (!canPublishResult()) return;
       // ipc.fileMtimes returns absolute filesystem paths, but validateIngest
@@ -1111,16 +1114,15 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // `if !rel.starts_with("wiki/")` and silently skips anything else, so an
       // un-relativized path here makes the validator a silent no-op.
       const changed = [
-        ...new Set([
-          ...afterMtimes
+        ...new Set(hasConfirmedWrites
+          ? confirmedWrites.filter((path) => path.startsWith("wiki/"))
+          : afterMtimes
             .filter(
               ([p, m]) =>
                 p.includes("/wiki/") &&
                 (!wikiBefore.has(p) || m > (wikiBefore.get(p) ?? 0)),
             )
-            .map(([p]) => relativize(p, vault.path)),
-          ...confirmedWrites.filter((path) => path.startsWith("wiki/")),
-        ]),
+            .map(([p]) => relativize(p, vault.path))),
       ];
       if (changed.length === 0) {
         set((st) => ({
