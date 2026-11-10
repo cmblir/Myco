@@ -589,3 +589,88 @@ fn prepared_map_history_reopens_after_exit_inside_native_persist() {
         );
     }
 }
+
+#[test]
+fn noncurrent_prepared_records_do_not_distinguish_unpublished_from_past_updates() {
+    use std::os::unix::fs::MetadataExt;
+
+    let data = tempfile::Builder::new()
+        .prefix("myco-synthetic-map-recovery-classification-")
+        .tempdir()
+        .unwrap();
+    std::fs::write(
+        data.path().join("synthetic.marker"),
+        "Synthetic map refresh restart only",
+    )
+    .unwrap();
+    // One attempt exits before publication; two later updates succeed. The
+    // first successful update then becomes a noncurrent retained object too.
+    for (phase, expected_code) in [
+        ("create", 0),
+        ("native-before", 25),
+        ("inspect-native-before", 0),
+        ("first", 0),
+        ("second", 0),
+    ] {
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "map_refresh::apply_tests::synthetic_refresh_child",
+                "--ignored",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("MYCO_DATA_DIR", data.path())
+            .env("MYCO_MAP_REFRESH_PHASE", phase)
+            .env_remove("MEMEX_DATA_DIR")
+            .output()
+            .unwrap();
+        assert_eq!(
+            output.status.code(),
+            Some(expected_code),
+            "{phase}: stdout={} stderr={}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let target = data.path().join("vault/wiki/maps/synthetic.md");
+    let current = std::fs::symlink_metadata(&target).unwrap();
+    let mut noncurrent = Vec::new();
+    for entry in std::fs::read_dir(data.path().join("map-creation-custody")).unwrap() {
+        let path = entry.unwrap().path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let record: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+        if record["version"] == 4
+            && (
+                record["fileIdentity"]["device"].as_u64().unwrap(),
+                record["fileIdentity"]["inode"].as_u64().unwrap(),
+            ) != (current.dev(), current.ino())
+        {
+            assert_eq!(record["state"], "refreshPrepared");
+            noncurrent.push(record);
+        }
+    }
+    assert_eq!(noncurrent.len(), 2);
+    for phrase in [
+        "Synthetic native-before restart refresh",
+        "Synthetic first restart refresh",
+    ] {
+        assert_eq!(
+            noncurrent
+                .iter()
+                .filter(|record| record["baseline"].as_str().unwrap().contains(phrase))
+                .count(),
+            1
+        );
+    }
+    let content = std::fs::read_to_string(target).unwrap();
+    assert!(content.contains("Synthetic second restart refresh"));
+    assert!(content.ends_with("Human restart annotation.\n"));
+    assert_eq!(
+        std::fs::read_to_string(data.path().join("vault/wiki/synthetic.md")).unwrap(),
+        "Synthetic source."
+    );
+}

@@ -18,6 +18,34 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: recovery classification cannot infer unpublished state
+
+A new native five-process regression runs creation, exit immediately before
+canonical publication, fresh-process inspection of the unchanged map, then two
+successful refreshes. It finds two noncurrent version-4 `refreshPrepared` records:
+one for the never-published attempt and one for the first successful refresh that
+the second refresh superseded. Both have the same state label and neither matches
+the current canonical object's identity. The latest map, human annotation and
+synthetic source remain intact. The test passed in 0.46s; strict all-target Clippy
+passed. Logs: `/tmp/myco-map-recovery-classification{,-clippy}.log`.
+
+This directly rules out classifying every noncurrent preparation as unpublished.
+The recovery view must distinguish current-object evidence, independently recorded
+publication evidence, and unknown publication state. Existing version-4 records
+without such evidence must retain the unknown state; a missing completion marker
+cannot prove that replacement never occurred. Future publication observations
+would also have a crash gap after replacement and before recording, so they could
+prove observed publication when present but not nonpublication when absent.
+Matching content hashes or filesystem timestamps must not substitute for native
+object identity or establish chronology across human edits.
+
+The next recovery implementation should expose retained snapshots and uncertainty
+through an opening-bound read-only path before offering retry or undo. It must
+not mint write authority from those records, delete uncertain attempts, or report
+a complete ordered timeline from the current schema. No recovery UI or mutation
+was added by this regression; G5 recovery, full history and undo remain open.
+README is unchanged because product behavior is unchanged.
+
 ## November 11: actual minimal prose reading still fails action fidelity
 
 The [prose-reading contract](2026-11-11-request-prose-reading.json) keeps all
