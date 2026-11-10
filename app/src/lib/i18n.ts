@@ -775,6 +775,7 @@ export interface Strings extends EverydayStrings {
   p_lint_failed: string;
   h_empty: string;
   s_title: string;
+  s_loading: string;
   s_search_ph: string;
   s_search_empty: string; // {q}
   s_account: string;
@@ -3372,6 +3373,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint done",
     p_lint_failed: "Lint failed",
     s_title: "Settings",
+    s_loading: "Opening settings…",
     s_search_ph: "Search settings",
     s_search_empty: "No settings match “{q}”",
     s_account: "My space",
@@ -5964,6 +5966,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint 완료",
     p_lint_failed: "Lint 실패",
     s_title: "설정",
+    s_loading: "설정을 여는 중…",
     s_search_ph: "설정 검색",
     s_search_empty: "“{q}”에 해당하는 설정이 없습니다",
     s_account: "내 공간",
@@ -8348,6 +8351,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint 完了",
     p_lint_failed: "Lint 失敗",
     s_title: "設定",
+    s_loading: "設定を開いています…",
     s_search_ph: "設定を検索",
     s_search_empty: "「{q}」に一致する設定はありません",
     s_account: "自分のスペース",

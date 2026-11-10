@@ -304,6 +304,19 @@ describe("Home's quiet band", () => {
   const resolve = (value: string, theme: Map<string, string>) =>
     hex(value.replace(/^var\((--[\w-]+)\)$/, (_, name) => theme.get(name) ?? ""));
 
+  it("keeps small supporting text readable on neutral surfaces and interaction states", () => {
+    const failing: string[] = [];
+    for (const [name, theme] of [["light", light], ["dark", dark]] as const) {
+      for (const ink of ["--ink-3", "--ink-4"]) {
+        for (const background of ["--bg", "--bg-elev", "--bg-soft", "--bg-hover", "--bg-active"]) {
+          const ratio = contrast(hex(theme.get(ink)!), hex(theme.get(background)!));
+          if (ratio < 4.5) failing.push(`${name} ${ink} on ${background}: ${ratio.toFixed(2)}`);
+        }
+      }
+    }
+    expect(failing).toEqual([]);
+  });
+
   it("keeps the text on it AA: every text line sits on its own opaque pill", () => {
     const pill = ".home-band .home-ask__greet,\n.home-band .home-ask__keys";
     const texts = [

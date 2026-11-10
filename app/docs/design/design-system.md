@@ -60,8 +60,8 @@ Choose a token by its role rather than copying a color into a new component.
 | `--line-soft` | `#f0efeb` | `#232323` | Quiet grouping |
 | `--ink` | `#181715` | `#ededec` | Primary readable text |
 | `--ink-2` | `#37352f` | `#d4d4d2` | Secondary readable text |
-| `--ink-3` | `#6f6e69` | `#9b9a93` | Supporting copy |
-| `--ink-4` | `#6b6a64` | `#6f6e69` | Subtle metadata; verify contrast |
+| `--ink-3` | `#62615c` | `#b1b0aa` | Supporting copy |
+| `--ink-4` | `#696862` | `#a3a29c` | Readable secondary metadata |
 | `--ink-5` | `#cfcdc5` | `#4a4a48` | Very faint visual detail |
 | `--accent` | `#181715` | `#ededec` | Neutral emphasis and focus |
 | `--accent-soft` | `#ebe9e3` | `#2c2c2c` | Neutral selection ground |
@@ -245,8 +245,10 @@ as the universal AA threshold.
 Target at least 4.5:1 for ordinary readable text and 3:1 for qualifying large
 text, following [WCAG contrast guidance](https://www.w3.org/WAI/WCAG22/Understanding/contrast-minimum.html).
 Measure the final composited background, including selected and dimmed states.
-Existing subtle tokens, especially dark `--ink-4` and either `--ink-5`, do not
-grant blanket contrast compliance for small text.
+The supporting `--ink-3` and `--ink-4` tokens meet 4.5:1 on the five opaque neutral
+surfaces, including hover and active, in both themes. Opacity and composited
+backgrounds still need rendered checks. `--ink-5` is a decorative token, not a
+readable small-text color.
 
 Keep focus visible and unclipped. Keyboard users must reach row actions without
 hover; dialogs should restore a useful focus position. Route focus should not

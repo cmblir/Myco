@@ -609,16 +609,15 @@ export default function App(): JSX.Element {
     void restoreVault(urlVault).finally(() => setBootDone(true));
   }, [restoreVault]);
 
-  // The three.js chunk is ~800KB — the parse gap used to be a BLANK pane on
-  // the marquee view. Reuse the constellation tip so the wait reads as part of
-  // the show; the lazy reader and settings chunks borrow the same fallback.
-  const chunkFallback = (
-    <div className="graph-loading">
+  // Keep lazy routes visible while their chunks load, with the actual operation
+  // named for assistive technology as well as the visible reading surface.
+  const chunkFallback = (label: string) => (
+    <div className="graph-loading" role="status">
       <div className="graph-loading-tip">
         {/* MYCO keeps the chunk-parse gap company. */}
         <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
           <MascotClip clip="idle" size={140} />
-          <span>{t.gr_loading ?? "aligning constellations…"}</span>
+          <span>{label}</span>
         </div>
       </div>
     </div>
@@ -630,7 +629,7 @@ export default function App(): JSX.Element {
     if (r === "graph")
       return (
         <ErrorBoundary area="graph" home>
-          <Suspense fallback={chunkFallback}>
+          <Suspense fallback={chunkFallback(t.gr_loading)}>
             <PageGraph t={t} />
           </Suspense>
         </ErrorBoundary>
@@ -642,13 +641,13 @@ export default function App(): JSX.Element {
     if (r === "feedback") return <PageFeedback t={t} />;
     if (r === "settings")
       return (
-        <Suspense fallback={chunkFallback}>
+        <Suspense fallback={chunkFallback(t.s_loading)}>
           <PageSettings t={t} />
         </Suspense>
       );
     if (r.startsWith("page:"))
       return (
-        <Suspense fallback={chunkFallback}>
+        <Suspense fallback={chunkFallback(t.rd_loading)}>
           <PageReader t={t} pageRoute={r.slice(5)} />
         </Suspense>
       );
