@@ -18,6 +18,41 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: unrelated-action examples improve some controls, still rejected
+
+Added an opt-in, QA-only comparison that appends six photograph-archiving and
+filename examples to the frozen baseline system prompt. Original R1–R7 texts,
+speakers, gold labels, pinned 4B artifact, grammar, sampler seed and token budgets
+were unchanged. The comparison contract was written before inference. No
+production prompt, decoder, safety boundary or model selection was changed.
+
+All 14 actual local-model calls completed with native bindings in an isolated
+synthetic runtime under OS network denial. The run took 484.84 seconds including
+cold verification/loading; `/usr/bin/time -l` reported 3,183,902,720 bytes maximum
+resident set size. A startup process sample showed artifact SHA-256 verification,
+not a stalled inference. These figures are diagnostic observations, not release
+performance acceptance or per-generation latency.
+
+Source-based review matched baseline R5/R7 and candidate R1/R4/R5/R6/R7. The
+candidate preserved an unknown performer for R1 and correctly distinguished
+R4's future plan. However, R2 turned the explicitly named assistant performer
+into a report recipient with unknown actor; R3 still classified a past report
+as a new request. Both are required semantic failures. The candidate is rejected
+for production; its 5/7 development-control result is not a promotion, held-out
+generalization result or full-compiler pass. One run per arm also leaves the
+three-repeat gate open. Full raw outputs, bindings, telemetry and review are in
+the [comparison receipt](2026-11-11-request-examples-comparison.json).
+
+The model-free request QA group passed 11 tests with eight model tests ignored.
+Formatting passed after correcting the new call's line wrapping. The remaining
+G4/G7 semantic gates stay incomplete; further work must distinguish nested
+performer assignment and reported actions without weakening the frozen labels.
+The feature-native suite passed 3,156 tests with 67 ignored, and strict
+`native-index-probe` all-target Clippy passed. All owned model/check processes
+stopped. Logs: `/tmp/myco-request-examples-{full,clippy,fmt}.log`. Frontend tests
+were not rerun and README was unchanged because this slice changes only opt-in
+QA code and research records.
+
 ## November 11: ambiguous map targets require review
 
 Existing-map discovery returned the first topic/member-label match in directory

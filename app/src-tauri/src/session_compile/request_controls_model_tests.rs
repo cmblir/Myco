@@ -34,6 +34,17 @@ fn cached_model_compares_request_presence_penalty() {
 }
 
 #[test]
+#[ignore = "requires pinned cached weights and explicit MYCO_QA_GENERATION=1; fourteen model calls"]
+fn cached_model_compares_unrelated_action_examples() {
+    let guidance = "Illustrative readings only, never facts to extract from the supplied original: User says 'Please archive the photograph.' => action archive the photograph, speechAct=request, status=requested, actor role=unknown and basis=unknown. User says 'Assistant, please archive the photograph.' => same action/request/requested, actor role=assistant and basis=explicit_subject, supported by that original span. Assistant says 'I archived the photograph.' => action archive the photograph, speechAct=report, status=reported_completed, actor role=assistant and basis=speaker; not independently verified. Assistant says 'I will archive the photograph.' => action archive the photograph, speechAct=plan, status=planned, actor role=assistant and basis=speaker. User says 'Always use short filenames.' => no concrete task activity. User asks 'Was the photograph archived?' => no assertion that the work happened. Apply these distinctions to the supplied original's own action and object, without copying any example content or inventing a performer.";
+    run_controls(
+        guidance,
+        "unrelated-action-examples",
+        ControlVariant::Original,
+    );
+}
+
+#[test]
 fn request_presence_control_changes_only_the_presence_penalty() {
     let baseline = sampler_parameters().unwrap();
     let mut candidate = serde_json::to_value(
