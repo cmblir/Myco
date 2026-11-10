@@ -14,6 +14,8 @@ pub(crate) mod schema;
 pub(crate) mod sources;
 mod state;
 pub(crate) mod structure;
+#[cfg(all(test, feature = "native-index-probe"))]
+mod structure_prompt_qa;
 use crate::importers::wikify::{import_lock, source_revision, Pending};
 use crate::role_authorization::{self, RoleId, RoleSnapshot, RoleUsage};
 use crate::vault_session::{AgentVaultSession, VaultRoot};
@@ -87,9 +89,9 @@ fn nonce() -> Result<String, String> {
 
 fn contract() -> CompilerContract {
     CompilerContract {
-        compiler: "whole-session-compiler-v8".into(),
+        compiler: "whole-session-compiler-v9".into(),
         schema: "SessionStructureV1".into(),
-        prompt: "source-reading-layout-v1-structure-canonical-materialization-and-source-bound-review-v8"
+        prompt: "source-reading-layout-v1-nonempty-structure-canonical-materialization-and-source-bound-review-v9"
             .into(),
     }
 }

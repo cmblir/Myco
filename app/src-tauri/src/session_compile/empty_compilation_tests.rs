@@ -31,8 +31,12 @@ fn empty_claims_use_app_structure_and_review_the_entire_original() {
             &origin("process-a:1"),
             "en",
             &mut progress,
-            |_, _| Ok(800),
-            |_, user, _, _, schema| {
+            |system, _| {
+                assert_ne!(system, structure::SYSTEM);
+                Ok(800)
+            },
+            |system, user, _, _, schema| {
+                assert_ne!(system, structure::SYSTEM);
                 calls.push(schema);
                 match schema {
                     CompilerSchema::Claims => {
