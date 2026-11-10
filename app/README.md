@@ -137,6 +137,13 @@ show a refresh-pending notice. Different machines using the same path are not
 distinguished yet; verified equivalence between a repository's subdirectories or
 worktrees remains incomplete.
 
+New topic-map drafts delimit the generated body with `myco:map-generated:v1`
+comments and record its exact SHA-256 revision in `map_generated`. Titles and
+text outside that block remain separate from the generated section. These public
+descriptors are not ownership credentials and do not enable existing-map refresh.
+Empty output or output containing reserved section markers stays pending for retry
+without publishing a map. Durable native refresh authority is still required.
+
 New topic-map drafts use at most twelve selected member pages, bounded body
 excerpts, full relative-path citations and source revisions. Maps do not add
 unrelated retrieval context. Native reads accept at most 128KiB per member and

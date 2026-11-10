@@ -16,6 +16,7 @@ import { WorkflowOperationError } from "./workflowOutcome";
 import { publicationClaim, publishManagedNote, requireNativeCreation, requirePublicationOrigin } from "./distillPublication";
 import { isMissingFile } from "./sessionEvidence";
 import { mapEvidencePrompt, mapMemberStem, withMapEvidence } from "./mapEvidence";
+import { renderMapDraft } from "./mapContent";
 
 interface PendingMapPublication { manifestId: string; publication: DistillPublicationReceipt }
 // Session-local recovery only; restart discovery requires the native journal.
@@ -227,18 +228,7 @@ export async function draftMap(
     }
 
     const created = new Date().toISOString().slice(0, 10);
-    const content =
-      `---\n` +
-      `title: ${JSON.stringify(`Map: ${cluster}`)}\n` +
-      `type: map\n` +
-      `cluster: ${JSON.stringify(cluster)}\n` +
-      `created: ${created}\n` +
-      `confidence: medium\n` +
-      `status: draft\n` +
-      `map_evidence: ${JSON.stringify({ version: 1, members: evidence.map(({ path, revision, sourceChars, excerpt, truncated }) =>
-        ({ path, revision, sourceChars, excerptChars: Array.from(excerpt).length, truncated })) })}\n` +
-      `tags: [map]\n` +
-      `---\n\n${safeBody}\n`;
+    const content = await renderMapDraft(cluster, safeBody, evidence, created);
 
     assertCurrent();
     const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
