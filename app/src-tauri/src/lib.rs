@@ -42,6 +42,7 @@ pub mod local_transform;
 pub mod machine_session;
 pub mod mcp_native;
 pub mod myco_pro;
+mod model_context;
 #[cfg(feature = "native-index-probe")]
 pub mod native_ask_probe;
 #[cfg(feature = "native-index-probe")]
@@ -82,6 +83,9 @@ mod study_deck_commands;
 pub(crate) mod study_deck_io;
 pub mod tasks;
 pub(crate) mod temporal_recall;
+mod retrieval_revisions;
+mod retrieval_context;
+mod retrieval_dates;
 pub mod tray;
 pub mod validator;
 pub mod vault;
@@ -161,13 +165,22 @@ fn install_panic_hook() {
 }
 
 pub fn run() {
+    let isolated_diagnostic = match settings::isolated_diagnostic_startup() {
+        Ok(isolated) => isolated,
+        Err(error) => {
+            eprintln!("refusing diagnostic startup: {error}");
+            return;
+        }
+    };
     install_panic_hook();
     // M8: BEFORE the builder — WebKit creates its per-identifier container as
     // soon as a webview exists, and windows declared in tauri.conf.json are
     // built before `.setup()` runs. Move the pre-rename container first, or the
     // frontend's localStorage key migration renames keys in an empty store.
-    for warning in webview_data::migrate_legacy_container() {
-        eprintln!("webview data migration: {warning}");
+    if !isolated_diagnostic {
+        for warning in webview_data::migrate_legacy_container() {
+            eprintln!("webview data migration: {warning}");
+        }
     }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -300,6 +313,9 @@ pub fn run() {
             commands::write_settings_export,
             commands::read_settings_import,
             commands::chat_complete,
+            model_context::model_context_budget,
+            model_context::count_model_context,
+            model_context::record_context_packing,
             commands::agent_tools_schema,
             commands::agent_vault_session,
             commands::agent_tool_call,
@@ -324,12 +340,14 @@ pub fn run() {
             commands::local_chat_model_available,
             commands::local_chat_status,
             commands::local_synthesize,
+            commands::diagnostic_ask_packet,
             commands::local_query_plan,
             commands::local_transform,
             commands::cancel_local_synthesis,
             commands::download_local_chat_model,
             commands::cancel_local_chat_model_download,
             commands::reindex_embeddings,
+            commands::diagnostic_reindex_lexical,
             commands::semantic_search,
             commands::temporal_recall,
             commands::activity_recall,
@@ -408,7 +426,7 @@ pub fn run() {
             commands::record_noop,
             commands::page_at_revision,
         ])
-        .setup(|app| {
+        .setup(move |app| {
             // Retarget the panic hook at the app log dir now that the path
             // resolver is available. Best-effort: on failure the hook keeps
             // writing to the temp-dir fallback.
@@ -421,8 +439,10 @@ pub fn run() {
             // Best-effort: a locked or unavailable keychain only produces
             // warnings — it must never block startup, and it never deletes an
             // old entry whose copy was not verified.
-            for warning in secrets::migrate_legacy_service() {
-                eprintln!("keychain migration: {warning}");
+            if !isolated_diagnostic {
+                for warning in secrets::migrate_legacy_service() {
+                    eprintln!("keychain migration: {warning}");
+                }
             }
             // Auto-start the native in-process MCP server (rmcp) on every launch.
             // No install / venv / Python, so it always comes up — the Obsidian-
@@ -430,13 +450,15 @@ pub fn run() {
             // runtime and reads the active-vault marker per call, so it follows
             // project switches with no restart. Best-effort: a bind failure
             // never blocks startup.
-            let mcp_ct = tokio_util::sync::CancellationToken::new();
-            let mcp_app = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = mcp_native::serve(mcp_app, mcp_ct).await {
-                    eprintln!("native MCP server failed to start: {e}");
-                }
-            });
+            if !isolated_diagnostic {
+                let mcp_ct = tokio_util::sync::CancellationToken::new();
+                let mcp_app = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    if let Err(e) = mcp_native::serve(mcp_app, mcp_ct).await {
+                        eprintln!("native MCP server failed to start: {e}");
+                    }
+                });
+            }
             // Background index updater: debounces wiki writes into incremental
             // re-embeds so the vector index never goes stale (Task 4). Binding
             // starts only after a native vault opening supplies its token.
@@ -454,7 +476,9 @@ pub fn run() {
             // Global ask shortcut (option+space by default). Best-effort in the
             // same sense as the tray: it reports failure into ShortcutState
             // rather than returning an error that would abort startup.
-            spotlight::init(app.handle());
+            if !isolated_diagnostic {
+                spotlight::init(app.handle());
+            }
             // P0 notch spike probe. Compiled out unless the `notch-probe`
             // feature is on; even then it needs MYCO_NOTCH_PROBE=1 to open.
             notch::spawn_probe(app.handle());

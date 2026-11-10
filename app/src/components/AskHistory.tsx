@@ -1,3 +1,5 @@
+import type { CitationEvidence } from "../lib/citationEvidence";
+import { GUIDED_QUESTION_COPY } from "../lib/guidedQuestion";
 // The Ask page's 기록 (UX S36): this device's past questions for the open
 // vault, newest first, with a search field. Opening a row shows the turn as
 // the page showed it, read back from the log — never asked again.
@@ -9,6 +11,9 @@ import type { AskRecord } from "../lib/ipc";
 import { askedAgo, matchHistory } from "../lib/askHistory";
 import { scopeLabel } from "./SourceLadder";
 import Viewer from "./Viewer";
+import AskEvidenceCoverage from "./AskEvidenceCoverage";
+import AskExecutionDetails from "./AskExecutionDetails";
+import { readAskSearchContext } from "../lib/askSearchContext";
 
 export default function AskHistory({
   t,
@@ -26,7 +31,7 @@ export default function AskHistory({
   error: string | null;
   now?: number;
   /** A [[link]] in a past answer. */
-  onOpenStem: (target: string) => void;
+  onOpenStem: (target: string, evidence?: CitationEvidence) => void;
 }): JSX.Element | null {
   const [query, setQuery] = useState("");
   if (!records.length && !error) return null;
@@ -95,16 +100,16 @@ function HistoryRow({
   lang: Lang;
   rec: AskRecord;
   now: number;
-  onOpenStem: (target: string) => void;
+  onOpenStem: (target: string, evidence?: CitationEvidence) => void;
 }): JSX.Element {
   const [open, setOpen] = useState(false);
-  const chip = scopeChipOf(t, rec);
+  const context = readAskSearchContext(rec.searchContext);
   const badge = rec.error
     ? t.q_history_failed
     : rec.stopped
       ? t.q_stopped
-      : rec.abstained
-        ? t.q_history_abstained
+      : rec.abstained && !context?.periodClarification
+        ? rec.abstainReason === "model_evidence" ? t.q_model_evidence_title : t.q_history_abstained
         : null;
   return (
     <li>
@@ -117,25 +122,42 @@ function HistoryRow({
               <span>{t.q_history_cited.replace("{n}", String(rec.cited.length))}</span>
             ) : null}
             {badge ? <span className="chip">{badge}</span> : null}
+            {!badge && context?.packing?.omittedPassages ? <span className="chip">{t.q_context_packing_badge}</span> : null}
+            {context?.periodClarification ? <span className="chip">{t.q_history_period_needed}</span> : null}
           </span>
         </summary>
-        {open ? (
-          <div className="ask-hrow__body">
-            {chip ? <span className="chip">{chip}</span> : null}
-            {rec.error ? (
-              <p className="ask-hrow__error">{rec.error}</p>
-            ) : rec.stopped ? (
-              <p className="muted">{t.q_stopped_sub}</p>
-            ) : rec.abstained ? (
-              <p className="muted">{t.q_abstain_title}</p>
-            ) : (
-              <div className="prose">
-                <Viewer content={rec.a} onLinkClick={onOpenStem} displayNames />
-              </div>
-            )}
-          </div>
-        ) : null}
+        {open ? <HistoryAnswer t={t} lang={lang} rec={rec} onOpenStem={onOpenStem} /> : null}
       </details>
     </li>
   );
+}
+
+
+/** Lazy body for a reopened saved turn; opening never reruns retrieval or generation. */
+export function HistoryAnswer({t,lang,rec,onOpenStem}: {
+  t: Strings; lang: Lang; rec: AskRecord;
+  onOpenStem: (target: string, evidence?: CitationEvidence) => void;
+}): JSX.Element {
+  const chip=scopeChipOf(t,rec),context=readAskSearchContext(rec.searchContext);
+  return <div className="ask-hrow__body">
+    <div className="row" style={{gap:6,flexWrap:"wrap"}}>
+      {chip ? <span className="chip">{chip}</span> : null}
+      {context?.guidedQuestion ? <span className="chip">{GUIDED_QUESTION_COPY[lang].intents[context.guidedQuestion.intent]} · {context.guidedQuestion.subject}{context.guidedQuestion.asOf ? ` · ${context.guidedQuestion.asOf}` : ""}</span> : null}
+      {context?.range ? <span className="chip">{t.q_range_chip.replace("{s}",context.range.start).replace("{e}",context.range.end)}</span> : null}
+      {context?.rangeIgnored ? <span className="chip">{t.q_range_unrestricted}</span> : null}
+      {context?.periodClarification ? <span className="chip">{t.q_history_period_needed}</span> : null}
+    </div>
+    {context?.activityQuestion && context.activityQuestion !== rec.q ?
+      <p className="muted">{t.q_history_original_question.replace("{question}",context.activityQuestion)}</p> : null}
+    {rec.error ? <p className="ask-hrow__error">{rec.error}</p>
+      : rec.stopped ? <p className="muted">{t.q_stopped_sub}</p>
+      : rec.abstained && !context?.periodClarification ? <p className="muted">{rec.abstainReason === "model_evidence" ? t.q_model_evidence_insufficient : t.q_abstain_title}</p>
+      : <div className="prose"><Viewer content={rec.a} onLinkClick={target=>onOpenStem(target,rec.citationEvidence)} displayNames /></div>}
+    {!rec.error && !rec.stopped ? <AskEvidenceCoverage t={t} lang={lang} context={context} /> : null}
+    <AskExecutionDetails t={t} value={rec.execution} />
+    {context?.paths?.length ? <details className="intake-disclosure">
+      <summary>{t.q_history_searched_paths.replace("{n}",new Intl.NumberFormat(lang).format(context.paths.length))}</summary>
+      <ul>{context.paths.map((path,index)=><li key={`${path}#${index}`}>{path}</li>)}</ul>
+    </details> : null}
+  </div>;
 }

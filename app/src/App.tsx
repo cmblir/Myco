@@ -655,9 +655,9 @@ export default function App(): JSX.Element {
     return <PageOverview t={t} />;
   };
 
-  // key={route} remounts only the PRIMARY pane's content on navigation, so
-  // the fade replays without React reusing the old DOM node. Scoped to this
-  // one element (not the split wrapper below) so navigating the primary
+  // key={route} remounts only the PRIMARY pane's content on navigation.
+  // Its wrapper stays visible from the first paint. Scoped to this one
+  // element (not the split wrapper below) so navigating the primary
   // route never remounts the secondary pane. The secondary pane carries no
   // key at all — its content changes only because renderRoute(splitRoute)
   // returns a different component type when splitRoute changes, which is

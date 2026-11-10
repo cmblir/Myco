@@ -254,6 +254,8 @@ fn fingerprint(settings: &Settings) -> Result<String, String> {
     digest(&(
         &settings.model_roles,
         &settings.providers,
+        &settings.ollama_url,
+        crate::providers::ollama_endpoint(settings),
         &settings.myco_pro_url,
         settings.auto_ingest_enabled,
         settings.auto_reflect_enabled,
@@ -285,11 +287,8 @@ fn connected(settings: &Settings, provider: &str) -> bool {
         _ => false,
     }
 }
-fn ollama_is_loopback() -> bool {
-    let endpoint = std::env::var("MYCO_OLLAMA_URL")
-        .ok()
-        .filter(|url| crate::providers::override_allowed(url))
-        .unwrap_or_else(|| "http://localhost:11434".into());
+fn ollama_is_loopback(settings: &Settings) -> bool {
+    let endpoint = crate::providers::ollama_endpoint(settings);
     reqwest::Url::parse(&endpoint)
         .ok()
         .and_then(|url| url.host_str().map(str::to_owned))
@@ -376,7 +375,7 @@ pub(crate) fn route_for(
         effort: selected.effort.clone(),
         execution_location: if local {
             ExecutionLocation::InProcess
-        } else if selected.provider_id == "ollama" && ollama_is_loopback() {
+        } else if selected.provider_id == "ollama" && ollama_is_loopback(settings) {
             ExecutionLocation::Loopback
         } else {
             ExecutionLocation::Remote

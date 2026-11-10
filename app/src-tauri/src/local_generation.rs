@@ -1,5 +1,8 @@
 //! Optional local Ask execution; model files and inference never run at startup.
 
+#[cfg(debug_assertions)]
+pub(crate) mod diagnostic_ask;
+
 mod activity_flow;
 #[cfg(test)]
 #[path = "local_generation/activity_originals_tests.rs"]
@@ -90,6 +93,8 @@ pub struct Request {
     pub question: String,
     // Topic context only; answers and prior date constraints are never inherited.
     pub previous_question: Option<String>,
+    #[serde(default)]
+    pub guided_question: Option<local_synthesis::guided_question::GuidedQuestion>,
     pub lang: String,
     pub hits: Vec<Evidence>,
     pub expected_vault: String,
@@ -459,6 +464,17 @@ fn checked_evidence(
     index: &Bm25Index,
     request: &Request,
 ) -> Result<CheckedEvidence, String> {
+    checked_evidence_selection(root, index, request, false)
+}
+
+// Whole-source closure remains mandatory for the production native flow.
+// Only the explicitly isolated debug diagnostic may select bounded original turns.
+fn checked_evidence_selection(
+    root: &Path,
+    index: &Bm25Index,
+    request: &Request,
+    diagnostic_selected_turns: bool,
+) -> Result<CheckedEvidence, String> {
     use std::io::Read;
     let canonical_root = root
         .canonicalize()
@@ -578,7 +594,7 @@ fn checked_evidence(
                 hit.page.clone(),
                 format!("{:x}", Sha256::digest(content.as_bytes())),
             );
-            let requested_sections: Vec<_> = if request.activity_overview {
+            let requested_sections: Vec<_> = if request.activity_overview || diagnostic_selected_turns {
                 request
                     .hits
                     .iter()
@@ -729,7 +745,7 @@ fn checked_evidence(
                 })
             })?;
             sources = sources.merged(&additional)?;
-        } else {
+        } else if !diagnostic_selected_turns {
             let selected_pages = pages
                 .iter()
                 .map(|(page, (content, ..))| (page.clone(), content.clone()))
@@ -1039,6 +1055,14 @@ pub async fn synthesize(
         }
         Ok(manifest)
     })?;
+    if let Some(guided) = &request.guided_question {
+        if request.activity_overview {
+            return Ok(Answer::fallback("response_rejected", manifest.id));
+        }
+        if let Err(code) = guided.validate() {
+            return Ok(Answer::fallback(code, manifest.id));
+        }
+    }
     let flag = registry()
         .lock()
         .map_err(|_| "local synthesis state poisoned")?
@@ -1558,9 +1582,75 @@ mod tests {
             paths: None,
             max_tokens: Some(256),
             activity_overview: false,
+            guided_question: None,
             resolution: None,
         };
         (dir, index, request)
+    }
+
+    #[test]
+    fn diagnostic_selected_turns_preserve_production_whole_source_closure() {
+        let (dir, mut index, mut request) = source_fixture();
+        let body = "---\ncreated: 2026-10-08\nturn_metadata: [{message_id: synthetic-user, timestamp: '2026-10-03T08:00:00Z'}, {message_id: synthetic-assistant, timestamp: '2026-10-04T09:00:00Z'}]\n---\n\n**User:**\nPlease prepare the synthetic export.\n\n**Assistant:**\nThe synthetic export is now ready.\n";
+        std::fs::write(dir.path().join("wiki/a.md"), body).unwrap();
+        let chunks = crate::embeddings::chunk_page(body);
+        index.upsert_page("wiki/a.md", "a", &chunks);
+        request.hits[0].section = chunks.iter().position(|text| text.contains("Please prepare")).unwrap();
+        request.hits[0].text = chunks[request.hits[0].section].clone();
+        let whole = checked_evidence(dir.path(), &index, &request).unwrap();
+        let selected = checked_evidence_selection(dir.path(), &index, &request, true).unwrap();
+        assert_eq!(whole.originals.unwrap().spans().count(), 2);
+        let selected = selected.originals.unwrap();
+        assert_eq!(selected.spans().count(), 1);
+        let span = selected.spans().next().unwrap();
+        assert_eq!(span.speaker(), crate::wiki_claims::ActorRole::User);
+        assert_eq!(&body[span.start()..span.end()], span.text());
+        request.hits[0].text.push_str(" injected");
+        assert!(checked_evidence_selection(dir.path(), &index, &request, true).is_err());
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn diagnostic_packet_rebinds_originals_and_rejects_unknown_source_ids() {
+        let (dir, index, mut request) = source_fixture();
+        let origin = request.origin.clone().unwrap();
+        request.role_snapshot = Some(serde_json::from_value(serde_json::json!({
+            "snapshotId":"synthetic-diagnostic-role", "origin":origin,
+            "role":"ask", "usage":"foreground", "authorizationRevision":"synthetic",
+            "routeSignature":{"role":"ask", "providerId":"ollama", "modelId":"synthetic",
+                "effort":"none", "executionLocation":"in-process", "artifactRevision":"synthetic",
+                "artifactSha256":"0".repeat(64), "runtimeContract":"synthetic", "signature":"synthetic"}
+        })).unwrap());
+        request.lang = "en".into();
+        request.question = "What does the synthetic record contain?".into();
+        let packet = diagnostic_ask::exchange(dir.path(), &index, &request, None, None).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(packet["user"].as_str().unwrap()).unwrap();
+        assert!(payload["sources"][0]["originalSpans"][0]["text"].as_str().unwrap().contains("SYNTHETIC_ONLY_FACT"));
+        let revision = packet["revision"].as_str();
+        let raw = r#"{"answer":"The record contains original evidence.","sources":["S1"]}"#;
+        let review = diagnostic_ask::review_input(dir.path(), &index, &request, raw, revision).unwrap();
+        let review_payload: serde_json::Value = serde_json::from_str(review["user"].as_str().unwrap()).unwrap();
+        assert_eq!(review_payload["answer"]["proseWithoutModelLinkLabels"], "The record contains original evidence.");
+        assert!(review_payload["originalSpans"][0]["sha256"].as_str().is_some());
+        assert_eq!(review["modelExecuted"], false);
+        assert_eq!(review["productionAccepted"], false);
+        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, raw, Some("stale")).is_err());
+        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, &raw.replace("S1", "S999"), revision).is_err());
+        let rendered = diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), revision).unwrap();
+        assert_eq!(rendered["paths"], serde_json::json!(["wiki/a.md"]));
+        let blank = r#"{"answer":"","sources":[]}"#;
+        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, blank, revision).is_err());
+        let declined = diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), revision).unwrap();
+        assert_eq!(declined["abstained"], true);
+        assert_eq!(declined["semanticAccepted"], false);
+        assert_eq!(declined["paths"], serde_json::json!([]));
+        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), Some("stale")).is_err());
+        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), Some("stale")).is_err());
+        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(&raw.replace("S1", "S999")), revision).is_err());
+        std::fs::write(dir.path().join("wiki/a.md"), "changed source").unwrap();
+        assert!(diagnostic_ask::review_input(dir.path(), &index, &request, raw, revision).is_err());
+        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(raw), revision).is_err());
+        assert!(diagnostic_ask::exchange(dir.path(), &index, &request, Some(blank), revision).is_err());
     }
 
     #[test]
@@ -1625,6 +1715,7 @@ mod tests {
             paths: None,
             max_tokens: Some(768),
             activity_overview: true,
+            guided_question: None,
             resolution: None,
         };
         (source, index, request)

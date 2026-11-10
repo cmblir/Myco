@@ -49,7 +49,7 @@ async fn anthropic_chat_parses_text_content_and_usage() {
                 { "type": "tool_use", "id": "t1", "name": "noop", "input": {} },
                 { "type": "text", "text": " More text." }
             ],
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-4-6-resolved",
             "usage": { "input_tokens": 7, "output_tokens": 12 }
         })))
         .expect(1)
@@ -65,6 +65,11 @@ async fn anthropic_chat_parses_text_content_and_usage() {
     };
     let resp = chat_complete(req, Some("test-key".into())).await.unwrap();
     assert_eq!(resp.content, "Hello back. More text.");
+    assert_eq!(resp.model, "claude-sonnet-4-6");
+    assert_eq!(
+        resp.reported_model.as_deref(),
+        Some("claude-sonnet-4-6-resolved")
+    );
     let u = resp.usage.unwrap();
     assert_eq!(u.input_tokens, 7);
     assert_eq!(u.output_tokens, 12);
@@ -128,6 +133,7 @@ async fn openai_chat_parses_choices() {
         .and(header("authorization", "Bearer sk-test"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
             "id": "chatcmpl-1",
+            "model": "gpt-4o-mini-resolved",
             "choices": [{
                 "message": { "role": "assistant", "content": "Hi from gpt." }
             }],
@@ -145,6 +151,8 @@ async fn openai_chat_parses_choices() {
     };
     let resp = chat_complete(req, Some("sk-test".into())).await.unwrap();
     assert_eq!(resp.content, "Hi from gpt.");
+    assert_eq!(resp.model, "gpt-4o-mini");
+    assert_eq!(resp.reported_model.as_deref(), Some("gpt-4o-mini-resolved"));
     let u = resp.usage.unwrap();
     assert_eq!(u.input_tokens, 3);
     assert_eq!(u.output_tokens, 5);
@@ -199,6 +207,7 @@ async fn openrouter_chat_uses_openrouter_url() {
         .and(path("/api/v1/chat/completions"))
         .and(header("authorization", "Bearer sk-or-test"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "model": "meta-llama/llama-3.1-70b-instruct:resolved",
             "choices": [{ "message": { "role": "assistant", "content": "via openrouter" } }]
         })))
         .mount(&server)
@@ -212,6 +221,11 @@ async fn openrouter_chat_uses_openrouter_url() {
     };
     let resp = chat_complete(req, Some("sk-or-test".into())).await.unwrap();
     assert_eq!(resp.content, "via openrouter");
+    assert_eq!(resp.model, "meta-llama/llama-3.1-70b-instruct");
+    assert_eq!(
+        resp.reported_model.as_deref(),
+        Some("meta-llama/llama-3.1-70b-instruct:resolved")
+    );
 }
 
 #[tokio::test]
@@ -248,6 +262,8 @@ async fn google_chat_uses_system_instruction_and_concatenates_parts() {
         // matches when the header is present.
         .and(header("x-goog-api-key", "gkey"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+            "model": "not-the-model-version",
+            "modelVersion": "gemini-2.0-flash-001",
             "candidates": [{
                 "content": {
                     "role": "model",
@@ -270,6 +286,8 @@ async fn google_chat_uses_system_instruction_and_concatenates_parts() {
     };
     let resp = chat_complete(req, Some("gkey".into())).await.unwrap();
     assert_eq!(resp.content, "part-a part-b");
+    assert_eq!(resp.model, "gemini-2.0-flash");
+    assert_eq!(resp.reported_model.as_deref(), Some("gemini-2.0-flash-001"));
     let u = resp.usage.unwrap();
     assert_eq!(u.input_tokens, 9);
     assert_eq!(u.output_tokens, 4);
@@ -285,7 +303,7 @@ async fn ollama_chat_returns_content_and_token_counts() {
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
-            "model": "llama3.2:3b",
+            "model": "llama3.2:3b-resolved",
             "message": { "role": "assistant", "content": "local hello" },
             "done": true,
             "prompt_eval_count": 11,
@@ -302,6 +320,8 @@ async fn ollama_chat_returns_content_and_token_counts() {
     };
     let resp = chat_complete(req, None).await.unwrap();
     assert_eq!(resp.content, "local hello");
+    assert_eq!(resp.model, "llama3.2:3b");
+    assert_eq!(resp.reported_model.as_deref(), Some("llama3.2:3b-resolved"));
     let u = resp.usage.unwrap();
     assert_eq!(u.input_tokens, 11);
     assert_eq!(u.output_tokens, 22);

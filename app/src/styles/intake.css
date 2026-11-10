@@ -144,6 +144,68 @@
   padding: 1rem 1.25rem;
   margin-top: 0.5rem;
 }
+.ask-guided {
+  min-width: 0;
+  margin: 0 0 1rem;
+  padding: 0;
+  border: 0;
+}
+.ask-guided legend {
+  margin-bottom: 0.625rem;
+  padding: 0;
+  color: var(--ink-2);
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.ask-guided__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.ask-guided__choices .btn {
+  min-height: 2.75rem;
+  white-space: normal;
+  text-align: start;
+}
+.ask-guided__choices .btn[aria-pressed="true"] {
+  border-color: var(--live);
+  background: var(--bg-hover);
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1px var(--live);
+}
+.ask-guided__fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: start;
+  gap: 0.75rem;
+  margin-top: 0.875rem;
+}
+.ask-guided__fields label {
+  display: grid;
+  min-width: 0;
+  gap: 0.375rem;
+  font-size: 0.8125rem;
+  color: var(--ink-2);
+}
+.ask-guided__subject {
+  flex: 1 1 15rem;
+}
+.ask-guided__date {
+  flex: 0 1 12rem;
+}
+.ask-guided__fields .input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.75rem;
+}
+.ask-guided__fields p {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8125rem;
+}
+.ask-guided__fields [role="alert"] {
+  color: var(--danger);
+}
 .ask-composer__input {
   display: flex;
   align-items: center;

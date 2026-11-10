@@ -1,3 +1,5 @@
+import CitationPassages from "../components/CitationPassages";
+import { readCitationEvidence, type CitationEvidence, type CitationSource } from "../lib/citationEvidence";
 // Ask in plain language, with source links beside each answer. Search scope
 // stays close to the question; model details, profile hints and ranking
 // controls are optional. queryStore owns in-flight work across navigation.
@@ -12,6 +14,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import {
   askCopy,
   reasksOf,
+  searchContextOf,
   useQueryStore,
   type AskOpts,
   type ChatTurn,
@@ -36,6 +39,8 @@ import NodePreview from "../components/NodePreview";
 import RetrievalStepper from "../components/RetrievalStepper";
 import AbstainCard from "../components/AbstainCard";
 import AskHistory from "../components/AskHistory";
+import AskEvidenceCoverage from "../components/AskEvidenceCoverage";
+import AskExecutionDetails from "../components/AskExecutionDetails";
 import AskScopePicker from "../components/AskScope";
 import { extractWikilinks } from "../lib/askHistory";
 import SourceLadder, {
@@ -49,7 +54,7 @@ import { captureToDaily, openCaptured, questionLine, type Captured } from "../li
 import { loadProfile } from "../lib/profile";
 import AppPage from "../components/AppPage";
 import { Segment } from "../components/ui";
-import { wikilinkBase } from "../lib/wikilinks";
+import { resolveAnswerCitation } from "../lib/answerCitation";
 import {
   answerMarkdown,
   passageSection,
@@ -62,6 +67,14 @@ import { notice } from "../lib/notice";
 import { INTAKE_COPY } from "../lib/intakeCopy";
 import { BUILTIN_CHAT_MODEL } from "../lib/providers";
 import { formatTicker } from "../lib/time";
+import {
+  buildGuidedQuestion,
+  GUIDED_QUESTION_COPY,
+  GUIDED_QUESTION_INTENTS,
+  isGuidedQuestionDate,
+  readGuidedQuestion,
+  type GuidedQuestionIntent,
+} from "../lib/guidedQuestion";
 import "../styles/intake.css";
 
 /** Dismissible flag for the "set up your profile" hint below — same
@@ -82,6 +95,8 @@ function localFallbackCopy(t: Strings, reason: NonNullable<ChatTurn["localFallba
       return t.q_local_fallback_timeout;
     case "model_unavailable":
       return t.q_local_fallback_unavailable;
+    case "historical_cutoff_unsupported":
+      return t.q_guided_cutoff_unsupported;
     case "prompt_unavailable":
       return t.q_local_fallback_prompt;
     case "index_stale":
@@ -103,9 +118,9 @@ function localFallbackCopy(t: Strings, reason: NonNullable<ChatTurn["localFallba
 export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const isOpeningVault = useVaultStore((s) => s.isOpeningVault);
+  const vaultToken = useVaultStore((s) => s.vaultToken);
   const fileTree = useVaultStore((s) => s.fileTree);
   const adjacency = useVaultStore((s) => s.adjacency);
-  const openWikilink = useVaultStore((s) => s.openWikilink);
   const setRoute = useUIStore((s) => s.setRoute);
   const setSettingsTab = useUIStore((s) => s.setSettingsTab);
   const setCmdOpen = useUIStore((s) => s.setCmdOpen);
@@ -114,6 +129,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const copy = INTAKE_COPY[lang];
   const questionRef = useRef<HTMLInputElement>(null);
+  const guidedSubjectRef = useRef<HTMLInputElement>(null);
   const askScope = useUIStore((s) => s.askScope);
   const setAskScope = useUIStore((s) => s.setAskScope);
   const weights = useUIStore((s) => s.askTierWeights);
@@ -121,6 +137,25 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const settings = useSettingsStore((s) => s.settings);
   const [mode, setMode] = useState<"ask" | "agent">("ask");
   const [q, setQ] = useState("");
+  const [guidedIntent, setGuidedIntent] = useState<GuidedQuestionIntent | null>(null);
+  const [guidedSubject, setGuidedSubject] = useState("");
+  const [guidedAsOf, setGuidedAsOf] = useState("");
+  const guidedQuestion = guidedIntent ? readGuidedQuestion({
+    version: 1, intent: guidedIntent, subject: guidedSubject,
+    ...(guidedAsOf ? { asOf: guidedAsOf } : {}),
+  }) : undefined;
+  const composerQuestion = guidedIntent
+    ? (guidedQuestion ? buildGuidedQuestion(guidedQuestion, lang) : "")
+    : q;
+  useEffect(() => {
+    // A project typed for one vault must not silently become another vault's
+    // target after a switch. Free-question prefill has its own existing path.
+    setGuidedIntent(null);
+    setGuidedSubject("");
+    setGuidedAsOf("");
+  }, [currentVault?.path, vaultToken]);
+  const [citationChoice, setCitationChoice] = useState<{source: CitationSource; root: string; token: string} | null>(null);
+  useEffect(() => { setCitationChoice(null); }, [currentVault?.path, vaultToken, isOpeningVault]);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // Turn whose answer was just copied — its button reads "Copied" for a moment.
   const [copied, setCopied] = useState<number | null>(null);
@@ -210,7 +245,10 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   // A surface elsewhere (e.g. the graph's gap panel, ⌘K) may have drafted a
   // question for us — consume it once on mount, into a focused composer.
   useEffect(() => {
-    consumeQueryPrefill(setQ, () => questionRef.current?.focus());
+    consumeQueryPrefill((value) => {
+      setGuidedIntent(null);
+      setQ(value);
+    }, () => questionRef.current?.focus());
   }, []);
   // "Ask this note" (UX S37) lands in the composer, ready for the question —
   // also when Ask is already open beside the note.
@@ -259,18 +297,13 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     return t.q_answering ?? "answering…";
   })();
 
-  const openByStem = (target: string): void => {
-    const base = wikilinkBase(target);
-    if (!base) return;
-    const abs = stemMap.get(base.toLowerCase());
-    if (abs) {
-      setRoute(`page:${abs}`);
-      return;
-    }
-    // Unresolved link: create the note and open it, instead of a silent no-op.
-    void openWikilink(base).then((p) => {
-      if (p) setRoute(`page:${p}`);
-    });
+  const openByStem = (target: string, evidence?: CitationEvidence): void => {
+    if (!currentVault) return;
+    const abs = resolveAnswerCitation(target, currentVault.path, flattenMarkdown(fileTree));
+    const source = readCitationEvidence(evidence)?.sources.find(s => `${currentVault.path}/${s.path}` === abs);
+    if (abs && source) setCitationChoice({source, root: currentVault.path, token: useVaultStore.getState().vaultToken});
+    else if (abs) setRoute(`page:${abs}`);
+    else notice.warn(t.q_source_changed);
   };
   // Vault-relative page (as retrieval hits carry it) → open in the reader;
   // with the quoted passage, the reader opens AT it (scrolled to, flashed).
@@ -361,10 +394,14 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   // queryStore.ask so it keeps running when this page unmounts. The page only
   // hands over the localized copy the store bakes into turns.
   async function ask(): Promise<void> {
-    const question = q.trim();
+    const question = composerQuestion.trim();
     if (!question || !currentVault || busy || isOpeningVault) return;
-    setQ("");
-    await askStore(question, lang, askCopy(t), noteScope ? { note: noteScope } : undefined);
+    if (!guidedIntent) setQ("");
+    const opts: AskOpts = {
+      ...(noteScope ? { note: noteScope } : {}),
+      ...(guidedQuestion ? { guidedQuestion } : {}),
+    };
+    await askStore(question, lang, askCopy(t), Object.keys(opts).length ? opts : undefined);
   }
 
   return (
@@ -406,6 +443,18 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         />
       )}
 
+      {citationChoice && !isOpeningVault && citationChoice.root === currentVault?.path && citationChoice.token === vaultToken ? <CitationPassages source={citationChoice.source} lang={lang}
+        onClose={() => setCitationChoice(null)} onOpen={span => {
+          const state = useVaultStore.getState();
+          const {source, root, token} = citationChoice;
+          setCitationChoice(null);
+          if (state.isOpeningVault || state.currentVault?.path !== root || state.vaultToken !== token) return;
+          const abs = resolveAnswerCitation(source.path, root, flattenMarkdown(state.fileTree));
+          if (!abs) { notice.warn(t.q_source_changed); return; }
+          setReaderIntent(abs, {kind:"show", section:null, quote:span.text, original:{source, span, vaultPath:root, vaultToken:token}});
+          setRoute(`page:${abs}`);
+        }} /> : null}
+
       {/* Turns, then the composer under them (UX S32); a fresh page has the
           composer first and its examples below, as before. The container is
           what the narrow rules measure: a split pane is narrow too. */}
@@ -444,7 +493,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                       {t.q_scope_chip.replace("{scope}", scopeLabel(t, turn.scope))}
                     </span>
                   ) : null}
-                  {turn.followUp ? (
+                  {turn.followUp && !turn.needsClarification ? (
                     // Retrieval ran with the previous question in front (A2).
                     <span className="chip">
                       <Icon name="chevL" size={11} /> {t.q_followup_chip}
@@ -460,6 +509,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                         .replace("{e}", turn.range.end)}
                     </span>
                   ) : null}
+                  {turn.ignoreRange ? <span className="chip">{t.q_range_unrestricted}</span> : null}
                   {turn.localModel ? (
                     <span className="chip">{turn.localModel} · {t.s_provider_kind_local}</span>
                   ) : null}
@@ -491,7 +541,11 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                     ) : null}
                   </div>
                 ) : null}
-                {turn.abstained ? (
+                {turn.needsClarification ? (
+                  <section className="ask-abstain" role="status">
+                    <p>{turn.a}</p>
+                  </section>
+                ) : turn.abstained ? (
                   // Abstention is the answer: the card, never a quoted passage.
                   // Its re-asks run the same question once, wider — over every
                   // scope, or without its period. The saved scope segment stays
@@ -509,6 +563,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                     onOpenNoted={openNoted(turn.notedIn)}
                     range={turn.range}
                     explanation={turn.abstainExplanation}
+                    modelEvidence={turn.abstainReason === "model_evidence"}
                     onWiden={reask(turn.q, reasksOf(turn).widen)}
                     onDropRange={reask(turn.q, reasksOf(turn).dropRange)}
                   />
@@ -549,21 +604,17 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                         </span>
                       </div>
                     ) : turn.a ? (
-                      <Viewer content={turn.a} onLinkClick={openByStem} displayNames />
+                      <Viewer content={turn.a} onLinkClick={target => openByStem(target, turn.citationEvidence)} displayNames />
                     ) : (
                       <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel}
                         elapsed={i === turns.length - 1 ? elapsed : undefined} />
                     )}
                   </div>
                 )}
-                {turn.activityCoverage && !turn.error && !turn.stopped ? (
-                  <p className="muted" data-testid="ask-activity-coverage" style={{ fontSize: "0.8125rem", marginBlock: "0.75rem" }}>
-                    {t.q_activity_coverage
-                      .replace("{scanned}", new Intl.NumberFormat(lang).format(turn.activityCoverage.scannedPages))
-                      .replace("{sources}", new Intl.NumberFormat(lang).format(turn.activityCoverage.sources))}
-                    {turn.activityCoverage.incomplete ? ` · ${t.q_activity_limited}` : ""}
-                  </p>
+                {!turn.error && !turn.stopped ? (
+                  <AskEvidenceCoverage t={t} lang={lang} context={searchContextOf(turn)} />
                 ) : null}
+                <AskExecutionDetails t={t} value={turn.execution} running={busy && i === turns.length - 1} />
                 {turn.a && !turn.error && !turn.abstained ? (
                   <div className="row" style={{ gap: 4, marginTop: 6, flexWrap: "wrap" }}>
                     {turn.hits?.length || (turn.localModel && turn.activityCoverage) ? (
@@ -647,14 +698,33 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           className="card ask-composer"
           style={{ display: mode === "agent" ? "none" : undefined }}
         >
+          <GuidedQuestionPicker
+            lang={lang}
+            intent={guidedIntent}
+            subject={guidedSubject}
+            asOf={guidedAsOf}
+            disabled={busy || !currentVault || isOpeningVault}
+            subjectRef={guidedSubjectRef}
+            onIntent={(intent) => {
+              setGuidedIntent(intent);
+              requestAnimationFrame(() => {
+                if (intent) guidedSubjectRef.current?.focus();
+                else questionRef.current?.focus();
+              });
+            }}
+            onSubject={setGuidedSubject}
+            onAsOf={setGuidedAsOf}
+            onSubmit={() => void ask()}
+          />
           <div className="ask-composer__input">
             <Icon name="msg" size={20} />
             <input
               ref={questionRef}
               className="input"
               aria-label={t.q_title}
-              placeholder={copy.askPlaceholder}
-              value={q}
+              placeholder={guidedIntent ? GUIDED_QUESTION_COPY[lang].subjectPlaceholder : copy.askPlaceholder}
+              value={composerQuestion}
+              readOnly={guidedIntent !== null}
               aria-describedby="ask-scope"
               onChange={(e) => setQ(e.target.value)}
               onKeyDown={(e) => {
@@ -682,7 +752,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
               <button
                 className="btn btn-primary"
                 onClick={() => void ask()}
-                disabled={busy || !currentVault || isOpeningVault || !q.trim()}
+                disabled={busy || !currentVault || isOpeningVault || !composerQuestion.trim()}
               >
                 {busy ? "…" : t.q_send}
               </button>
@@ -842,6 +912,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                   className="btn"
                   disabled={!currentVault}
                   onClick={() => {
+                    setGuidedIntent(null);
                     setQ(example);
                     questionRef.current?.focus();
                   }}
@@ -857,6 +928,65 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
 
       <AudioOverviewPanel t={t} />
     </AppPage>
+  );
+}
+
+/** The chosen intent is submitted separately from the visible question. */
+export function GuidedQuestionPicker({ lang, intent, subject, asOf, disabled,
+  subjectRef, onIntent, onSubject, onAsOf, onSubmit,
+}: {
+  lang: "en" | "ko" | "ja";
+  intent: GuidedQuestionIntent | null;
+  subject: string;
+  asOf: string;
+  disabled: boolean;
+  subjectRef?: { current: HTMLInputElement | null };
+  onIntent: (intent: GuidedQuestionIntent | null) => void;
+  onSubject: (value: string) => void;
+  onAsOf: (value: string) => void;
+  onSubmit: () => void;
+}): JSX.Element {
+  const copy = GUIDED_QUESTION_COPY[lang];
+  const invalidDate = Boolean(asOf && !isGuidedQuestionDate(asOf));
+  return (
+    <fieldset className="ask-guided" disabled={disabled}>
+      <legend>{copy.label}</legend>
+      <div className="ask-guided__choices">
+        {GUIDED_QUESTION_INTENTS.map((value) => (
+          <button key={value} type="button" className="btn"
+            aria-pressed={intent === value} onClick={() => onIntent(value)}>
+            {copy.intents[value]}
+          </button>
+        ))}
+        <button type="button" className="btn btn-ghost"
+          aria-pressed={intent === null} onClick={() => onIntent(null)}>
+          {copy.free}
+        </button>
+      </div>
+      {intent ? (
+        <div className="ask-guided__fields">
+          <label className="ask-guided__subject">
+            <span>{copy.subject}</span>
+            <input ref={subjectRef} className="input" value={subject}
+              placeholder={copy.subjectPlaceholder} maxLength={240}
+              aria-describedby="ask-guided-hint ask-scope"
+              onChange={(e) => onSubject(e.target.value)}
+              onKeyDown={(e) => {
+                if (!isComposingKey(e) && e.key === "Enter") onSubmit();
+              }} />
+          </label>
+          <label className="ask-guided__date">
+            <span>{copy.asOf}</span>
+            <input type="date" className="input" value={asOf}
+              aria-invalid={invalidDate || undefined}
+              aria-describedby={invalidDate ? "ask-guided-date-error ask-guided-hint" : "ask-guided-hint"}
+              onChange={(e) => onAsOf(e.target.value)} />
+          </label>
+          <p id="ask-guided-hint" className="muted">{copy.hint}</p>
+          {invalidDate ? <p id="ask-guided-date-error" role="alert">{copy.invalidDate}</p> : null}
+        </div>
+      ) : null}
+    </fieldset>
   );
 }
 

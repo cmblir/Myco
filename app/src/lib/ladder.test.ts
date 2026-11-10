@@ -44,15 +44,30 @@ describe("ladderOf", () => {
     // Backend order with the default priors applied: the session log's RRF
     // (0.92) beats the note's (0.9), but 0.92 × 0.6 < 0.9 × 1.0.
     chunk({ page: "wiki/bpe.md", stem: "bpe", score: 0.9 }),
-    chunk({ page: "sessions/2026-08/s1.md", stem: "s1", score: 0.92, similarity: 0.7 }),
-    chunk({ page: "daily/2026-08-19.md", stem: "2026-08-19", score: 0.8, similarity: 0.58 }),
+    chunk({
+      page: "sessions/2026-08/s1.md",
+      stem: "s1",
+      score: 0.92,
+      similarity: 0.7,
+    }),
+    chunk({
+      page: "daily/2026-08-19.md",
+      stem: "2026-08-19",
+      score: 0.8,
+      similarity: 0.58,
+    }),
   ];
 
   it("orders by rrf × prior and reports the move against the pure-RRF order", () => {
     const rows = ladderOf(hits, DEFAULT_TIER_WEIGHTS);
     expect(rows.map((r) => r.stem)).toEqual(["bpe", "2026-08-19", "s1"]);
     expect(rows.map((r) => r.rankChange)).toEqual([1, 1, -2]);
-    expect(rows[0]).toMatchObject({ tier: "note", prior: 1, rrf: 0.9, final: 0.9 });
+    expect(rows[0]).toMatchObject({
+      tier: "note",
+      prior: 1,
+      rrf: 0.9,
+      final: 0.9,
+    });
     expect(rows[2]).toMatchObject({ tier: "session", prior: 0.6 });
     expect(rows[2].final).toBeCloseTo(0.552);
   });
@@ -99,27 +114,68 @@ describe("ladderOf", () => {
 });
 
 describe("traceOf", () => {
-  it("counts arms, fusion size and rejects from one response", () => {
+  it("reports returned chunks even with no stored dense pages, without claiming retrieval-arm totals", () => {
     const trace = traceOf(
       {
-        hits: [chunk({}), chunk({ page: "wiki/x.md", stem: "x", similarity: null })],
+        hits: [
+          chunk({}),
+          chunk({ page: "wiki/x.md", stem: "x", similarity: null }),
+        ],
         nearMisses: [
-          { page: "wiki/y.md", tier: "note", score_final: 0.3, similarity: 0.4 },
-          { page: "wiki/z.md", tier: "note", score_final: 0.2 },
+          {
+            page: "wiki/y.md",
+            tier: "note",
+            score_final: 0.3,
+            similarity: 0.4,
+          },
         ],
         floor: 0.42,
       },
-      51,
+      0,
       12,
     );
     expect(trace).toEqual({
-      indexedPages: 51,
-      lexicalOnly: 1,
-      dense: 2,
-      fused: 4,
+      indexedPages: 0,
+      returnedWithoutSimilarity: 1,
+      returnedWithSimilarity: 2,
+      returnedChunks: 3,
       cap: 12,
-      rejected: 2,
+      rejectedExamples: 1,
       floor: 0.42,
     });
+  });
+
+  it("leaves the similarity split unknown when an older response omits a value", () => {
+    const trace = traceOf(
+      {
+        hits: [chunk({})],
+        nearMisses: [{ page: "wiki/z.md", tier: "note", score_final: 0.2 }],
+        floor: 0.42,
+      },
+      null,
+      12,
+    );
+    expect(trace.indexedPages).toBeNull();
+    expect(trace.returnedWithSimilarity).toBeNull();
+    expect(trace.returnedWithoutSimilarity).toBeNull();
+    expect(trace.returnedChunks).toBe(2);
+    expect(trace.rejectedExamples).toBe(1);
+  });
+
+  it("keeps the bounded rejection examples distinct from a total rejected count", () => {
+    const nearMisses = Array.from({ length: 4 }, (_, section) => ({
+      page: `wiki/${section}.md`,
+      tier: "note" as const,
+      score_final: 0.1,
+      similarity: 0.3,
+    }));
+    const trace = traceOf(
+      { hits: [chunk({})], nearMisses, floor: 0.42 },
+      500,
+      12,
+    );
+    expect(trace.returnedChunks).toBe(5);
+    expect(trace.rejectedExamples).toBe(4);
+    expect(trace.cap).toBe(12);
   });
 });

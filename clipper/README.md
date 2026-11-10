@@ -39,7 +39,10 @@ analytics.
 1. Open `chrome://extensions`, enable **Developer mode**.
 2. **Load unpacked** → select this `clipper/` folder.
 3. Clip via the toolbar button or the right-click → **Clip to myco** menu
-   (selected text comes along).
+   (selected text comes along). The toolbar button first asks "Why save
+   this?" — an optional one-line note, sent as `note=` and written as the
+   clip's first line (`> 내 메모: …`). Press Enter (or **Clip to myco**) to
+   clip; leave it empty to clip without a note.
 
 The first clip asks the browser for permission to open the external `myco:`
 handler — allow it (optionally "always").

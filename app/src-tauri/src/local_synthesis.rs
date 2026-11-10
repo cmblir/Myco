@@ -5,6 +5,7 @@ pub(crate) mod answer_correction;
 pub(crate) mod answer_draft;
 pub(crate) mod answer_review;
 pub(crate) mod claim_prompt;
+pub(crate) mod guided_question;
 #[cfg(feature = "native-index-probe")]
 pub(crate) mod focus_answer_qa;
 #[cfg(feature = "native-index-probe")]

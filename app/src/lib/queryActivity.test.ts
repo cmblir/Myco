@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ipc, type ActivityRecallResult, type LocalQueryPlan } from "./ipc";
-import { isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "./queryActivity";
+import { ActivityPeriodRequired, isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "./queryActivity";
 import { roleFixture } from "./modelRoles.testSupport";
+import type { AskExecutionEvent } from "./askExecution";
 
 const modelId = "qwen3.5-4b-q4_k_m";
 const range = { start: "2026-09-21", end: "2026-10-07" };
@@ -76,6 +77,69 @@ describe("isNextWorkOverview", () => {
 });
 
 describe("retrieveActivity", () => {
+  const selectedModel = "myco-trained-kanana15-r10-1200-local";
+  const selectedRole = roleFixture("ask", "ollama", selectedModel, origin);
+  const externalOptions = { ...options, modelId: selectedModel, roleSnapshot: selectedRole };
+
+  it("reads an explicit dated period under the selected Ollama grant without loading or borrowing a builtin model", async () => {
+    const scopedEvidence = { ...evidence, hits: [{ ...evidence.hits[0], page: "wiki/synthetic.md" }] };
+    vi.mocked(ipc.activityRecall).mockResolvedValue(scopedEvidence);
+    await expect(retrieveActivity({ ...externalOptions, range, scope: "wiki", paths: ["wiki/synthetic.md"] }))
+      .resolves.toEqual({ ...scopedEvidence, range });
+    expect(ipc.activityRecall).toHaveBeenCalledWith({ expectedVault: "/synthetic", origin,
+      roleSnapshot: selectedRole, range, scope: "wiki", paths: ["wiki/synthetic.md"] });
+    expect(ipc.localChatStatus).not.toHaveBeenCalled();
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+  });
+
+  it("rejects native activity evidence outside the selected-note path boundary", async () => {
+    await expect(retrieveActivity({ ...externalOptions, range, paths: ["wiki/selected.md"] }))
+      .rejects.toThrow("activity evidence is invalid");
+  });
+
+  it("requests a period for a vague external-provider overview instead of inventing a window or borrowing a planner", async () => {
+    await expect(retrieveActivity(externalOptions)).rejects.toBeInstanceOf(ActivityPeriodRequired);
+    expect(ipc.activityRecall).not.toHaveBeenCalled();
+    expect(ipc.localChatStatus).not.toHaveBeenCalled();
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+  });
+
+  it("checks the external model and vault grant before reading dated records", async () => {
+    await expect(retrieveActivity({ ...externalOptions, range,
+      roleSnapshot: roleFixture("ask", "ollama", "a-different-selected-model", origin) }))
+      .rejects.toMatchObject({ name: "QueryAuthorizationError" });
+    await expect(retrieveActivity({ ...externalOptions, range, origin: { ...origin, openingToken: "reopened" } }))
+      .rejects.toMatchObject({ name: "QueryAuthorizationError" });
+    expect(ipc.activityRecall).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { start: "2026-02-30", end: "2026-10-07" },
+    { start: "2026-10-07", end: "2026-10-08" },
+    { start: "2026-10-07", end: "2026-09-21" },
+  ])("rejects an invalid or future external activity period before native reading: %j", async selectedRange => {
+    await expect(retrieveActivity({ ...externalOptions, range: selectedRange })).rejects.toThrow();
+    expect(ipc.activityRecall).not.toHaveBeenCalled();
+  });
+
+  it("stops an external dated read immediately and ignores its late result", async () => {
+    let release!: (result: ActivityRecallResult) => void;
+    vi.mocked(ipc.activityRecall).mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const controller = new AbortController();
+    const pending = retrieveActivity({ ...externalOptions, range, signal: controller.signal });
+    const rejection = expect(pending).rejects.toThrow("stopped");
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ipc.activityRecall).toHaveBeenCalledOnce();
+    controller.abort();
+    await rejection;
+    release(evidence);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ipc.cancelLocalSynthesis).not.toHaveBeenCalled();
+    expect(ipc.localChatStatus).not.toHaveBeenCalled();
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+  });
+
   it.each(["read-failure", "stopped-before-plan"] as const)(
     "exposes only a live validated selected period before retrieval: %s", async phase => {
       const onRangeSelected = vi.fn();
@@ -265,7 +329,8 @@ describe("retrieveActivity", () => {
     let release!: (reply: LocalQueryPlan) => void;
     vi.mocked(ipc.localQueryPlan).mockImplementation(() => new Promise(resolve => { release = resolve; }));
     const controller = new AbortController();
-    const pending = retrieveActivity({ ...options, signal: controller.signal });
+    const onExecution = vi.fn();
+    const pending = retrieveActivity({ ...options, signal: controller.signal, onExecution });
     const rejection = expect(pending).rejects.toThrow("stopped");
     await vi.advanceTimersByTimeAsync(0);
     const request = vi.mocked(ipc.localQueryPlan).mock.calls[0][0];
@@ -276,6 +341,7 @@ describe("retrieveActivity", () => {
     release(plan);
     await vi.advanceTimersByTimeAsync(0);
     expect(ipc.activityRecall).not.toHaveBeenCalled();
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "cancelled"]);
   });
 
   it("ignores late recall evidence after Stop without cancelling a completed plan", async () => {
@@ -338,4 +404,49 @@ describe("retrieveActivity", () => {
       expect((rejection as Error).message).not.toContain("PRIVATE-SYNTHETIC-PAYLOAD");
     },
   );
+});
+
+describe("retrieveActivity app generation request provenance", () => {
+  it("records only the model period planner with a local manifest identifier", async () => {
+    const events: AskExecutionEvent[] = [];
+    await expect(retrieveActivity({ ...options, onExecution: event => events.push(event) })).resolves.toEqual({ ...evidence, range });
+    expect(events.map(event => event.state)).toEqual(["submitted", "response_received"]);
+    expect(events[1]).toMatchObject({ purpose: "period_plan", requested: { providerId: "builtin-local", modelId },
+      identity: { modelId, source: "local_manifest" } });
+    expect(ipc.localChatStatus).toHaveBeenCalledOnce();
+    expect(ipc.activityRecall).toHaveBeenCalledOnce();
+  });
+
+  it("records no generation for an explicit period even though status and source retrieval run", async () => {
+    const onExecution = vi.fn();
+    await expect(retrieveActivity({ ...options, range, onExecution })).resolves.toEqual({ ...evidence, range });
+    expect(ipc.localChatStatus).toHaveBeenCalledOnce();
+    expect(ipc.activityRecall).toHaveBeenCalledOnce();
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+    expect(onExecution).not.toHaveBeenCalled();
+  });
+
+  it("records a returned plan before period validation rejects it", async () => {
+    const onExecution = vi.fn();
+    vi.mocked(ipc.localQueryPlan).mockResolvedValue({ ...plan, end: "2026-10-08" });
+    await expect(retrieveActivity({ ...options, onExecution })).rejects.toThrow("future");
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "response_received"]);
+    expect(ipc.activityRecall).not.toHaveBeenCalled();
+  });
+
+  it("omits malformed planner identity while preserving the existing model mismatch rejection", async () => {
+    const onExecution = vi.fn();
+    vi.mocked(ipc.localQueryPlan).mockResolvedValue({ ...plan, model_id: "bad\nmodel" });
+    await expect(retrieveActivity({ ...options, onExecution })).rejects.toThrow("model mismatch");
+    expect(onExecution.mock.calls[1][0]).not.toHaveProperty("identity");
+    expect(onExecution.mock.calls[1][0].state).toBe("response_received");
+  });
+
+  it.each(["status", "plan"])("distinguishes a %s failure from a returned response", async phase => {
+    const onExecution = vi.fn();
+    if (phase === "status") vi.mocked(ipc.localChatStatus).mockRejectedValue(new Error("status rejected"));
+    else vi.mocked(ipc.localQueryPlan).mockRejectedValue(new Error("plan rejected"));
+    await expect(retrieveActivity({ ...options, onExecution })).rejects.toThrow();
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(phase === "status" ? [] : ["submitted", "failed"]);
+  });
 });

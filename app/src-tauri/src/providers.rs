@@ -29,7 +29,7 @@ const RETRY_BACKOFFS_MS: [u64; 2] = [300, 900];
 // Read a response body with an enforced size cap. We stream chunk-by-chunk so a
 // hostile endpoint cannot force us to allocate more than `max` bytes before we
 // bail out, regardless of (or in the absence of) a Content-Length header.
-async fn read_capped(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
+pub(crate) async fn read_capped(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, String> {
     // Fail fast when the server advertises an over-large body up front.
     if let Some(len) = resp.content_length() {
         if len as usize > max {
@@ -109,6 +109,25 @@ pub(crate) fn override_allowed(value: &str) -> bool {
     false
 }
 
+/// The persisted endpoint and runtime override share one native resolver.
+/// Invalid saved values fail settings admission instead of silently rerouting.
+pub(crate) fn validate_ollama_url(value: &str) -> Result<(), String> {
+    if value.is_empty() { return Ok(()); }
+    let url = reqwest::Url::parse(value).map_err(|_| "invalid Ollama endpoint URL")?;
+    if !url.username().is_empty() || url.password().is_some() || url.query().is_some()
+        || url.fragment().is_some() || !override_allowed(value) {
+        return Err("Ollama endpoint must use HTTPS or loopback HTTP without credentials/query/fragment".into());
+    }
+    Ok(())
+}
+pub(crate) fn ollama_endpoint(settings: &crate::settings::Settings) -> String {
+    let saved = if settings.ollama_url.is_empty() { "http://localhost:11434" } else { &settings.ollama_url };
+    http_url_or(saved, "MYCO_OLLAMA_URL")
+}
+fn selected_ollama_endpoint() -> Result<String, String> {
+    Ok(ollama_endpoint(&crate::settings::read_checked()?))
+}
+
 // Endpoints. Production URLs that can be overridden via env for tests.
 fn url_anthropic() -> String {
     http_url_or(
@@ -163,9 +182,28 @@ pub struct ChatRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct ChatResponse {
     pub provider_id: String,
+    /// Requested model retained for compatibility; this is not a provider report.
     pub model: String,
+    /// Provider-supplied identity, not evidence of loaded weights or answer quality.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reported_model: Option<String>,
     pub content: String,
     pub usage: Option<TokenUsage>,
+}
+
+/// Optional identity metadata must never invalidate an otherwise usable answer.
+/// Preserve accepted identifiers exactly instead of replacing them with the request.
+fn deserialize_reported_model<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    Ok(value
+        .as_str()
+        .filter(|model| {
+            !model.trim().is_empty() && model.len() <= 512 && !model.chars().any(char::is_control)
+        })
+        .map(str::to_owned))
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -310,6 +348,8 @@ struct AnthropicMessage<'a> {
 
 #[derive(Deserialize)]
 struct AnthropicResponse {
+    #[serde(default, deserialize_with = "deserialize_reported_model")]
+    model: Option<String>,
     content: Vec<AnthropicContent>,
     usage: Option<AnthropicUsage>,
 }
@@ -386,6 +426,7 @@ async fn call_anthropic(
     Ok(ChatResponse {
         provider_id: req.provider_id,
         model: req.model,
+        reported_model: parsed.model,
         content,
         usage: parsed.usage.map(|u| TokenUsage {
             input_tokens: u.input_tokens,
@@ -414,6 +455,8 @@ struct OpenAIMessage<'a> {
 
 #[derive(Deserialize)]
 struct OpenAIResponse {
+    #[serde(default, deserialize_with = "deserialize_reported_model")]
+    model: Option<String>,
     choices: Vec<OpenAIChoice>,
     usage: Option<OpenAIUsage>,
 }
@@ -481,6 +524,7 @@ async fn call_openai_compatible(
     Ok(ChatResponse {
         provider_id: req.provider_id,
         model: req.model,
+        reported_model: parsed.model,
         content,
         usage: parsed.usage.map(|u| TokenUsage {
             input_tokens: u.prompt_tokens,
@@ -592,6 +636,12 @@ struct GeminiGenConfig {
 
 #[derive(Deserialize)]
 struct GeminiResponse {
+    #[serde(
+        rename = "modelVersion",
+        default,
+        deserialize_with = "deserialize_reported_model"
+    )]
+    model_version: Option<String>,
     candidates: Option<Vec<GeminiCandidate>>,
     #[serde(rename = "usageMetadata")]
     usage_metadata: Option<GeminiUsage>,
@@ -685,6 +735,7 @@ async fn call_google(
     Ok(ChatResponse {
         provider_id: req.provider_id,
         model: req.model,
+        reported_model: parsed.model_version,
         content,
         usage: parsed.usage_metadata.map(|u| TokenUsage {
             input_tokens: u.prompt_token_count,
@@ -720,6 +771,8 @@ struct OllamaOptions {
 
 #[derive(Deserialize)]
 struct OllamaResponse {
+    #[serde(default, deserialize_with = "deserialize_reported_model")]
+    model: Option<String>,
     message: Option<OllamaResponseMessage>,
     #[serde(default)]
     prompt_eval_count: u32,
@@ -749,7 +802,7 @@ async fn call_ollama(client: &reqwest::Client, req: ChatRequest) -> Result<ChatR
             num_predict: req.max_tokens,
         }),
     };
-    let endpoint = http_url_or("http://localhost:11434", "MYCO_OLLAMA_URL");
+    let endpoint = selected_ollama_endpoint()?;
     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
     let resp = send_with_retry(|| client.post(&url).json(&body))
         .await
@@ -769,6 +822,7 @@ async fn call_ollama(client: &reqwest::Client, req: ChatRequest) -> Result<ChatR
     Ok(ChatResponse {
         provider_id: req.provider_id,
         model: req.model,
+        reported_model: parsed.model,
         content,
         usage: Some(TokenUsage {
             input_tokens: parsed.prompt_eval_count,
@@ -778,7 +832,7 @@ async fn call_ollama(client: &reqwest::Client, req: ChatRequest) -> Result<ChatR
 }
 
 async fn list_ollama_models(client: &reqwest::Client) -> Result<Vec<String>, String> {
-    let endpoint = http_url_or("http://localhost:11434", "MYCO_OLLAMA_URL");
+    let endpoint = selected_ollama_endpoint()?;
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
@@ -1415,6 +1469,130 @@ async fn send_image_with_retry(
 #[cfg(test)]
 mod tests {
     use super::{http_url_or, parse_codex_models};
+
+    fn assert_reported_model_metadata<T: serde::de::DeserializeOwned>(
+        body: serde_json::Value,
+        field: &str,
+        extract: impl Fn(T) -> (Option<String>, String),
+    ) {
+        let boundary = format!("{}ab", "가".repeat(170));
+        let mut cases = vec![
+            (None, None),
+            (
+                Some(serde_json::json!("resolved-model")),
+                Some("resolved-model".to_string()),
+            ),
+            (
+                Some(serde_json::json!(" model-as-provided ")),
+                Some(" model-as-provided ".to_string()),
+            ),
+            (Some(serde_json::json!(boundary)), Some(boundary)),
+        ];
+        for invalid in [
+            serde_json::Value::Null,
+            serde_json::json!(false),
+            serde_json::json!(7),
+            serde_json::json!(["model"]),
+            serde_json::json!({"id": "model"}),
+            serde_json::json!(""),
+            serde_json::json!("   "),
+            serde_json::json!("model\nname"),
+            serde_json::json!("model\rname"),
+            serde_json::json!("model\u{0}name"),
+            serde_json::json!("model\u{7f}name"),
+            serde_json::json!("model\u{85}name"),
+            serde_json::json!("x".repeat(513)),
+            serde_json::json!("가".repeat(171)),
+        ] {
+            cases.push((Some(invalid), None));
+        }
+        for (metadata, expected) in cases {
+            let mut value = body.clone();
+            if let Some(metadata) = metadata {
+                value[field] = metadata;
+            }
+            let parsed = serde_json::from_value::<T>(value)
+                .expect("optional identity cannot reject answer");
+            let (reported, content) = extract(parsed);
+            assert_eq!(reported, expected);
+            assert_eq!(content, "usable answer");
+        }
+    }
+
+    #[test]
+    fn anthropic_reported_model_metadata_is_optional_and_lenient() {
+        assert_reported_model_metadata::<super::AnthropicResponse>(
+            serde_json::json!({"content": [{"type": "text", "text": "usable answer"}]}),
+            "model",
+            |response| (response.model, response.content[0].text.clone().unwrap()),
+        );
+    }
+
+    #[test]
+    fn openai_reported_model_metadata_is_optional_and_lenient() {
+        assert_reported_model_metadata::<super::OpenAIResponse>(
+            serde_json::json!({"choices": [{"message": {"content": "usable answer"}}]}),
+            "model",
+            |response| {
+                (
+                    response.model,
+                    response.choices[0].message.content.clone().unwrap(),
+                )
+            },
+        );
+    }
+
+    #[test]
+    fn google_reported_model_uses_optional_lenient_model_version() {
+        assert_reported_model_metadata::<super::GeminiResponse>(
+            serde_json::json!({"model": "not-the-model-version", "candidates": [{
+                "content": {"parts": [{"text": "usable answer"}]}
+            }]}),
+            "modelVersion",
+            |response| {
+                (
+                    response.model_version,
+                    response.candidates.unwrap()[0]
+                        .content
+                        .as_ref()
+                        .unwrap()
+                        .parts
+                        .as_ref()
+                        .unwrap()[0]
+                        .text
+                        .clone()
+                        .unwrap(),
+                )
+            },
+        );
+    }
+
+    #[test]
+    fn ollama_reported_model_metadata_is_optional_and_lenient() {
+        assert_reported_model_metadata::<super::OllamaResponse>(
+            serde_json::json!({"message": {"content": "usable answer"}}),
+            "model",
+            |response| (response.model, response.message.unwrap().content.unwrap()),
+        );
+    }
+
+    #[test]
+    fn chat_response_keeps_requested_identity_and_omits_unknown_reported_model() {
+        let mut response = super::ChatResponse {
+            provider_id: "synthetic-provider".into(),
+            model: "requested-alias".into(),
+            reported_model: Some("resolved-model-id".into()),
+            content: "usable answer".into(),
+            usage: None,
+        };
+        let value = serde_json::to_value(&response).unwrap();
+        assert_eq!(value["model"], "requested-alias");
+        assert_eq!(value["reported_model"], "resolved-model-id");
+        response.reported_model = None;
+        let value = serde_json::to_value(&response).unwrap();
+        assert_eq!(value["model"], "requested-alias");
+        assert!(value.get("reported_model").is_none());
+    }
 
     // A trimmed copy of a real ~/.codex/models_cache.json (codex-cli 0.147.0):
     // same nesting, same field names, two entries.

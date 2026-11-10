@@ -10,11 +10,15 @@ import { useVaultStore } from "../stores/vaultStore";
 import { checkedResolutionSources } from "./queryResolution";
 import type { RoleSnapshot } from "./modelRoles";
 import { checkedAskRole, isQueryAuthorizationError, QueryAuthorizationError } from "./queryRole";
+import type { AskExecutionEvent } from "./askExecution";
+import { traceGenerationRequest } from "./generationRequest";
+import { readGuidedQuestion, type GuidedQuestionSelection } from "./guidedQuestion";
 
 const FALLBACK_REASONS = [
   "status_timeout", "model_unavailable", "prompt_unavailable", "generation_failed",
   "answer_rejected", "answer_incomplete", "time_budget", "response_rejected", "status_failed", "synthesis_failed",
   "index_stale", "retrieval_failed",
+  "historical_cutoff_unsupported",
 ] as const;
 export type LocalSynthesisFallbackReason = typeof FALLBACK_REASONS[number];
 
@@ -29,6 +33,7 @@ interface SynthesisOptions {
   modelId?: string;
   activityOverview?: boolean;
   question: string;
+  guidedQuestion?: GuidedQuestionSelection;
   previousQuestion?: string;
   lang: Lang;
   hits: readonly ActivitySource[];
@@ -42,6 +47,7 @@ interface SynthesisOptions {
   signal?: AbortSignal;
   onThinking?: (stems: string[]) => void;
   onFallback?: (reason: LocalSynthesisFallbackReason) => void;
+  onExecution?: (event: AskExecutionEvent) => void;
 }
 
 const citationPath = (page: string): string => page.replace(/\.md$/i, "");
@@ -128,6 +134,13 @@ export async function tryLocalSynthesis(options: SynthesisOptions): Promise<Loca
   if (roleSnapshot.routeSignature.providerId !== "builtin-local") throw new QueryAuthorizationError();
   if (modelId === BUILTIN_MODEL) return null;
   if (!isBuiltinChatModel(modelId)) throw new LocalSynthesisError("model_unavailable");
+  const guidedQuestion = options.guidedQuestion ? readGuidedQuestion(options.guidedQuestion) : undefined;
+  if (options.guidedQuestion && !guidedQuestion) throw new LocalSynthesisError("response_rejected");
+  if (guidedQuestion && options.activityOverview) throw new LocalSynthesisError("response_rejected");
+  // Native ordinary synthesis preserves the entire verified source closure.
+  // A historical cutoff needs an independently verified bounded closure first;
+  // it must not be silently treated as a current-state ordinary request.
+  if (guidedQuestion?.asOf) throw new LocalSynthesisError("historical_cutoff_unsupported");
   if (options.activityOverview && (!options.origin || options.origin.vaultPath !== expectedVault ||
       typeof options.origin.openingToken !== "string" || !options.origin.openingToken ||
       options.origin.openingToken.length > 256 || !range)) throw new LocalSynthesisSourceError("source_verification_failed");
@@ -161,15 +174,21 @@ export async function tryLocalSynthesis(options: SynthesisOptions): Promise<Loca
     if (signal?.aborted) throw new Error("stopped");
     phase = "synthesis";
     requestId = `ask-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
-    const reply = await Promise.race([ipc.localSynthesize({ requestId, expectedVault, question, lang,
+    // One localSynthesize command can perform several native generations and reviews.
+    const reply = await Promise.race([traceGenerationRequest({
+      requested: { providerId: roleSnapshot.routeSignature.providerId, modelId },
+      purpose: "answer", signal, onExecution: options.onExecution,
+      reportedIdentity: reply => ({ modelId: reply?.model_id, source: "local_manifest" }),
+    }, () => ipc.localSynthesize({ requestId: requestId!, expectedVault, question, lang,
       origin: roleSnapshot.origin, roleSnapshot,
       ...(previousQuestion ? { previousQuestion } : {}),
+      ...(guidedQuestion ? { guidedQuestion } : {}),
       scope, ...(range ? { range } : {}), ...(paths ? { paths } : {}), maxTokens: 768,
       ...(options.activityOverview ? { activityOverview: true } : {}),
       ...(options.resolution ? { resolution: options.resolution } : {}),
       hits: hits.map(({ page, stem, section, text }) => ({ page, stem, section, text })),
       modelId,
-    }), aborted]);
+    })), aborted]);
     if (signal?.aborted) throw new Error("stopped");
     if (isQueryAuthorizationError(reply?.fallback_reason)) throw new QueryAuthorizationError();
     // A rejected or unavailable review cannot authorize prose or quote success.

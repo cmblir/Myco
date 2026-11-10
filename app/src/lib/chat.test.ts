@@ -1,5 +1,7 @@
+import { registerModelContextBudget } from "./modelContextBudget";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  MissingQueryEvidence,
   canGenerate,
   complete,
   isIndexStale,
@@ -7,11 +9,15 @@ import {
   roleFor,
   RELEVANCE_FLOOR,
   type AskStage,
+  type CompleteArgs,
+  type SimpleMessage,
 } from "./chat";
 import { ipc, type ScoredChunk } from "./ipc";
 import { BUILTIN_CHAT_MODEL, BUILTIN_EMBED_MODEL } from "./providers";
 import { roleFixture, selectedRolesFixture } from "./modelRoles.testSupport";
 import { log } from "./log";
+import * as budget from "./budget";
+import type { AskExecutionEvent } from "./askExecution";
 
 // The id a healthy (non-stale) index is tagged with today — matches
 // `CURRENT_BUILTIN_INDEX_ID` in chat.ts.
@@ -41,6 +47,7 @@ const SETTINGS = {
 } as never;
 
 function mockCapturedRoles(): void {
+  vi.spyOn(ipc, "modelContextBudget").mockResolvedValue(null);
   vi.spyOn(ipc, "captureModelRole").mockImplementation(async (origin, role, usage) => {
     const selected = roleFor(role, await ipc.getSettings());
     return roleFixture(role, selected.provider, selected.model, origin, usage, selected.effort);
@@ -317,10 +324,11 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
     expect(search).toHaveBeenCalledTimes(1);
-    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
+    expect(seen).toEqual([{ kind: "retrieving" }]);
   });
+
 
   it.each([0, 10])("uses verified lexical context with %i dense pages without a whole-vault dump", async (indexedPages) => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
@@ -353,11 +361,12 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
-    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
+    expect(seen).toEqual([{ kind: "retrieving" }]);
   });
 
-  it("still reaches the model when retrieval throws, and marks the failure as visible, not empty", async () => {
+
+  it("stops generation when retrieval throws and preserves the failure status", async () => {
     // Before this fix, a rejected embeddings_status call was swallowed into
     // `null` and treated exactly like "no index exists" — indistinguishable
     // from a legitimately empty vault. This is the regression test for that:
@@ -371,16 +380,15 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
-    expect(out).toBe("an answer");
-    expect(seen).toEqual([
-      { kind: "thinking", stems: [], retrievalFailed: true },
-    ]);
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
+    expect((out as MissingQueryEvidence).retrieval.retrievalFailed).toBe(true);
+    expect(seen).toEqual([]);
     expect(warn).toHaveBeenCalledWith(
       "retrieve_chunks.embeddings_status_failed",
       { code: "embeddings_status_failed" },
     );
   });
+
 
   it("flags retrievalFailed and logs when semantic_search rejects (not an empty hit list)", async () => {
     // A rejected semantic_search must be distinguishable from "retrieval ran
@@ -398,18 +406,16 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
 
-    expect(out).toBe("an answer");
-    expect(seen).toEqual([
-      { kind: "retrieving" },
-      { kind: "thinking", stems: [], retrievalFailed: true },
-    ]);
+    expect((out as MissingQueryEvidence).retrieval.retrievalFailed).toBe(true);
+    expect(seen).toEqual([{ kind: "retrieving" }]);
     expect(warn).toHaveBeenCalledWith(
       "retrieve_chunks.semantic_search_failed",
       { code: "semantic_search_failed" },
     );
   });
+
 
   it("does NOT flag retrievalFailed for a legitimately never-indexed vault (false-positive guard)", async () => {
     // indexed_pages === 0 is a normal, expected state (fresh vault) — it must
@@ -424,11 +430,12 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
 
     expect(search).toHaveBeenCalledTimes(1);
-    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
+    expect(seen).toEqual([{ kind: "retrieving" }]);
   });
+
 
   it("does NOT flag retrievalFailed when semantic_search legitimately resolves to no hits", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
@@ -443,21 +450,22 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
 
-    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
+    expect(seen).toEqual([{ kind: "retrieving" }]);
   });
+
 
   it("does not replace a healthy empty search with unfiltered vault content", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 3, model: CURRENT_INDEX_MODEL });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
     const fallback = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("Unrelated private notes.");
     const generate = vi.spyOn(ipc, "localQuery").mockResolvedValue("No evidence.");
-    await complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "unknown fact" }] });
+    await complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "unknown fact" }] }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
     expect(fallback).not.toHaveBeenCalled();
-    expect(generate.mock.calls[0][0]).toContain("No matching source passages");
-    expect(generate.mock.calls[0][0]).not.toContain("Unrelated private notes.");
+    expect(generate).not.toHaveBeenCalled();
   });
+
 
   it("uses the supplied retrieval question and date window instead of the raw follow-up", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 3, model: CURRENT_INDEX_MODEL });
@@ -465,11 +473,12 @@ describe("complete() ask stages", () => {
     const fallback = vi.spyOn(ipc, "readVaultContext");
     const range = { start: "2026-08-01", end: "2026-08-05" };
     await complete({ task: "query", cwd: VAULT, range, scope: "all", retrievalQuery: "caching decision why",
-      messages: [{ role: "user", content: "why last week?" }] });
+      messages: [{ role: "user", content: "why last week?" }] }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
     expect(search.mock.calls[0][0]).toBe("caching decision why");
     expect(search.mock.calls[0][4]).toEqual(range);
     expect(fallback).not.toHaveBeenCalled();
   });
+
 
   it("a stale index still sets `stale`, not `retrievalFailed` (they are distinct signals)", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
@@ -485,11 +494,12 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
 
     expect(search).toHaveBeenCalledTimes(1);
-    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [], stale: true }]);
+    expect(seen).toEqual([{ kind: "retrieving" }]);
   });
+
 
   it("an Ask over one note searches only its pages and never falls back to the whole vault", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
@@ -503,16 +513,17 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       paths: ["wiki/a.md"],
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
     expect(search.mock.calls[0][7]).toEqual(["wiki/a.md"]);
     expect(fallback).not.toHaveBeenCalled();
   });
+
 
   it("works without an onStage callback", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
     await expect(
       complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "q" }] }),
-    ).resolves.toBe("an answer");
+    ).rejects.toBeInstanceOf(MissingQueryEvidence);
   });
 
   it("inlines retrieved chunk passages, grouped by page, not whole files", async () => {
@@ -594,13 +605,14 @@ describe("complete() ask stages", () => {
       cwd: VAULT,
       messages: [{ role: "user", content: "q" }],
       onStage,
-    });
+    }).catch((error: unknown) => { expect(error).toBeInstanceOf(MissingQueryEvidence); return error as MissingQueryEvidence; });
 
     expect(search).toHaveBeenCalledTimes(1);
-    expect(fallback).toHaveBeenCalled(); // the fallback must still run
-    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [], stale: true }]);
-    expect(out).toBe("an answer");
+    expect(fallback).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ kind: "retrieving" }]);
+    expect((out as MissingQueryEvidence).retrieval.retrievalFailed).toBe(false);
   });
+
 
   it("skips retrieval entirely when the selected local model requires preparation", async () => {
     vi.spyOn(ipc, "localChatStatus").mockResolvedValue({ model_id: BUILTIN_CHAT_MODEL, state: "missing", bytes: 0 });
@@ -785,7 +797,7 @@ describe("complete() profile injection (Phase B, Task 6)", () => {
     vi.spyOn(ipc, "getSettings").mockResolvedValue(SETTINGS);
     vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(true);
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
-    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([{ page: "wiki/synthetic.md", stem: "synthetic", section: 0, text: "Synthetic profile test source", score: 1, similarity: null, exact_match: true }]));
     vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
   });
 
@@ -947,6 +959,18 @@ describe("isIndexStale", () => {
 });
 
 describe("retrieveChunks", () => {
+  it("does not admit related context whose anchor failed the relevance floor", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 2, model: CURRENT_INDEX_MODEL });
+    const anchors = [
+      {page:"raw/conversations/a.md",stem:"a",section:1,text:"Accepted",score:0.2,similarity:0.7},
+      {page:"raw/conversations/b.md",stem:"b",section:1,text:"Rejected",score:0.1,similarity:0.1},
+    ];
+    const passages = anchors.map(h => ({page:h.page,stem:h.stem,section:2,text:"Related",source_revision:"fixture",
+      role:"user",timestamp:1790899200,message_id:"id",relation:"adjacent_turn",anchor_page:h.page,anchor_section:1}));
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue({...found(anchors), related_context:{passages,incomplete:false,scanned_pages:2}});
+    const result = await retrieveChunks("Question");
+    expect(result.relatedContext?.passages.map(p => p.page)).toEqual([anchors[0].page]);
+  });
   beforeEach(() => {
     vi.restoreAllMocks();
     mockCapturedRoles();
@@ -997,6 +1021,21 @@ describe("retrieveChunks", () => {
     expect(r.stale).toBe(false);
     expect(r.hits).toEqual([]);
     expect(warn).toHaveBeenCalledWith("retrieve_chunks.semantic_search_failed", { code: "semantic_search_failed" });
+  });
+
+  it("accepts freshly measured candidates without trusting an old index or changing the floor", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
+    const hits = [
+      { page: "wiki/relevant.md", stem: "relevant", section: 0, text: "A relevant source", score: 0.02, similarity: 0.7, exact_match: false },
+      { page: "wiki/noise.md", stem: "noise", section: 0, text: "Noise", score: 0.01, similarity: 0.1, exact_match: false },
+    ];
+    const response = { ...found(hits), candidate_embedding: { model: CURRENT_INDEX_MODEL, signature: "checked-encoder", dim: 384 } };
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(response);
+    expect((await retrieveChunks("natural language question")).hits.map(h => h.page)).toEqual(["wiki/relevant.md"]);
+    for (const identity of [{ ...response.candidate_embedding, signature: "" }, { ...response.candidate_embedding, model: "retired" }]) {
+      vi.mocked(ipc.semanticSearch).mockResolvedValue({ ...response, candidate_embedding: identity });
+      expect((await retrieveChunks("natural language question")).hits).toEqual([]);
+    }
   });
 
   it("reports a status IPC failure without pretending to search", async () => {
@@ -1149,6 +1188,18 @@ describe("retrieveChunks", () => {
       weights,
       ["wiki/a.md"],
     );
+  });
+
+  it("forwards the explicit selected-question intent to semantic_search, with or without a cutoff", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
+    });
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([]));
+    await retrieveChunks("subject", 12, undefined, undefined, "all", undefined, undefined, "2026-10-08", "progress");
+    await retrieveChunks("subject", 12, undefined, undefined, "all", undefined, undefined, undefined, "remaining");
+    expect(search.mock.calls[0].slice(8)).toEqual(["2026-10-08", "progress"]);
+    expect(search.mock.calls[1].slice(8)).toEqual([undefined, "remaining"]);
   });
 
   it("returns nothing for an off-vault question instead of the least-bad chunks", async () => {
@@ -1377,4 +1428,302 @@ describe("complete() stopped", () => {
     c.abort();
     expect(cancel).not.toHaveBeenCalled();
   });
+});
+
+
+describe("complete() exact selected-runtime context", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks(); mockCapturedRoles();
+    vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({vaultPath:VAULT,openingToken:"synthetic-opening"});
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({model_roles:selectedRolesFixture({ask:{providerId:"ollama",modelId:"synthetic-budget"}})} as never);
+    vi.spyOn(ipc, "getDistillConfig").mockRejectedValue(new Error("no profile"));
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({indexed_pages:1,model:CURRENT_INDEX_MODEL});
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found([{page:"wiki/verified.md",stem:"verified",section:0,text:"Checked: still open.",score:1,similarity:.7}]));
+  });
+  it("dispatches the exact messages measured last and accepts only supplied source paths",async()=>{
+    const countMessages=vi.fn(async(_messages: SimpleMessage[])=>20);
+    const dispose=registerModelContextBudget("ollama","synthetic-budget",{contextTokens:100,outputTokens:30,countMessages});
+    const chat=vi.spyOn(ipc,"chatComplete").mockResolvedValue({content:"Still open. [[wiki/verified]]"} as never);
+    try {
+      await complete({task:"query",cwd:VAULT,messages:[{role:"system",content:"System rules."},{role:"assistant",content:"Earlier answer."},{role:"user",content:"What remains?"}]});
+      expect(chat.mock.calls[0][0].messages).toEqual(countMessages.mock.calls.at(-1)?.[0]);
+      expect(JSON.stringify(chat.mock.calls[0][0].messages)).toContain("Earlier answer.");
+    } finally {dispose();}
+  });
+  it.each(["accepted", "invalid citation", "stopped"])("publishes UI provenance only after accepted rendering: %s", async (mode) => {
+    const evidence = {version: 1 as const, sources: [{path: "wiki/verified.md", revision: "a".repeat(64), spans: [{id:"s1",start:0,end:4,text:"Fact",sha256:"b".repeat(64),speaker:"user",turnTime:null}]}]};
+    const ctrl = new AbortController();
+    const onCitationEvidence = vi.fn();
+    const messages = [{role: "user" as const, content:"Exact frozen model input"}];
+    const dispose=registerModelContextBudget("ollama","synthetic-budget",{
+      contextTokens:100,outputTokens:30,countMessages:async()=>20,
+      prepareInput:async()=>({messages,paths:["wiki/verified.md"],stems:["verified"],citationEvidence:()=>evidence,
+        renderAnswer:async()=>{
+          expect(onCitationEvidence).not.toHaveBeenCalled();
+          if(mode === "stopped")ctrl.abort();
+          return mode === "invalid citation" ? "[[wiki/unbound]]" : "Fact [[wiki/verified]]";
+        }}),
+    });
+    const chat=vi.spyOn(ipc,"chatComplete").mockResolvedValue({content:"raw structured output"} as never);
+    try {
+      const result=complete({task:"query",cwd:VAULT,messages:[{role:"user",content:"Question"}],signal:ctrl.signal,onCitationEvidence});
+      if(mode === "accepted"){
+        await expect(result).resolves.toBe("Fact [[wiki/verified]]");
+        expect(onCitationEvidence).toHaveBeenCalledTimes(1);
+        expect(onCitationEvidence).toHaveBeenCalledWith(evidence);
+      } else {
+        await expect(result).rejects.toThrow();
+        expect(onCitationEvidence).not.toHaveBeenCalled();
+      }
+      expect(chat.mock.calls[0][0].messages).toEqual(messages);
+    } finally {dispose();}
+  });
+
+  it("does not generate when history alone exceeds the allowance",async()=>{
+    const dispose=registerModelContextBudget("ollama","synthetic-budget",{contextTokens:100,outputTokens:30,countMessages:async()=>101});
+    const chat=vi.spyOn(ipc,"chatComplete");
+    try {
+      await expect(complete({task:"query",cwd:VAULT,messages:[{role:"user",content:"What remains?"}]})).rejects.toThrow();
+      expect(chat).not.toHaveBeenCalled();
+    } finally {dispose();}
+  });
+});
+
+
+describe("complete() discovered plain runtime and supplied activity evidence",()=>{
+ const model="selected-plain-model-any-name";
+ const hit:ScoredChunk={page:"sessions/dated.md",stem:"dated",section:0,text:"Dated source: follow-up remains open.",score:0,similarity:null};
+ const supplied={hits:[hit],nearMisses:[],floor:0,indexedPages:42,stale:false,retrievalFailed:false};
+ const capability={model,contextTokens:4096,outputTokens:768,tokenizerRevision:"current-template-sha"};
+ beforeEach(()=>{
+  vi.restoreAllMocks();mockCapturedRoles();
+  vi.spyOn(ipc,"agentVaultSession").mockResolvedValue({vaultPath:VAULT,openingToken:"synthetic-opening"});
+  vi.spyOn(ipc,"getSettings").mockResolvedValue({model_roles:selectedRolesFixture({ask:{providerId:"ollama",modelId:model}})} as never);
+  vi.spyOn(ipc,"getDistillConfig").mockRejectedValue(new Error("no profile"));
+  vi.spyOn(ipc,"modelContextBudget").mockResolvedValue(capability);
+  vi.spyOn(ipc,"recordContextPacking").mockResolvedValue(undefined);
+ });
+ it("uses the ordinary runtime capability without a diagnostic registration and dispatches exact final messages",async()=>{
+  const count=vi.spyOn(ipc,"countModelContext").mockResolvedValue({...capability,promptTokens:3209});
+  const search=vi.spyOn(ipc,"semanticSearch"),status=vi.spyOn(ipc,"embeddingsStatus");
+  const chat=vi.spyOn(ipc,"chatComplete").mockResolvedValue({content:"Still open [[sessions/dated|dated]]"} as never);
+  const audit=vi.fn();
+  await complete({task:"query",cwd:VAULT,retrievedEvidence:supplied,range:{start:"2026-10-01",end:"2026-10-07"},scope:"sessions",
+    messages:[{role:"system",content:"System contract"},{role:"assistant",content:"Complete previous answer"},{role:"user",content:"What remains this week?"}],onContextPacking:audit});
+  expect(search).not.toHaveBeenCalled();expect(status).not.toHaveBeenCalled();
+  expect(chat.mock.calls[0][0].messages).toEqual(count.mock.calls.at(-1)?.[0].messages);
+  expect(chat.mock.calls[0][0].max_tokens).toBe(768);
+  expect(JSON.stringify(chat.mock.calls[0][0].messages)).toContain("Complete previous answer");
+  expect(audit).toHaveBeenCalledWith(expect.objectContaining({promptTokens:3209,selected:[hit]}));
+  expect(ipc.recordContextPacking).toHaveBeenCalledTimes(1);
+ });
+ it("surfaces deterministic base overflow and saves its audit before any generation",async()=>{
+  vi.spyOn(ipc,"countModelContext").mockResolvedValue({...capability,promptTokens:4000});
+  const chat=vi.spyOn(ipc,"chatComplete");
+  await expect(complete({task:"query",cwd:VAULT,retrievedEvidence:supplied,messages:[{role:"user",content:"Long complete conversation"}]})).rejects.toMatchObject({code:"base_overflow"});
+  expect(chat).not.toHaveBeenCalled();expect(ipc.recordContextPacking).toHaveBeenCalledWith(expect.objectContaining({audit:expect.objectContaining({status:"base_overflow"})}));
+ });
+ it("does not turn a tokenizer failure into missing evidence or an unmeasured provider call",async()=>{
+  vi.spyOn(ipc,"countModelContext").mockRejectedValue(new Error("tokenizer unavailable"));
+  const chat=vi.spyOn(ipc,"chatComplete");
+  const onExecution=vi.fn();
+  await expect(complete({task:"query",cwd:VAULT,retrievedEvidence:supplied,messages:[{role:"user",content:"Question"}],onExecution})).rejects.toMatchObject({code:"tokenizer_contract"});
+  expect(chat).not.toHaveBeenCalled();
+  expect(onExecution).not.toHaveBeenCalled();
+ });
+ it("keeps supplied dated evidence on the CLI path without a new semantic search",async()=>{
+  vi.spyOn(ipc,"getSettings").mockResolvedValue({model_roles:selectedRolesFixture({ask:{providerId:"anthropic-cli",modelId:"sonnet"}})} as never);
+  const search=vi.spyOn(ipc,"semanticSearch");
+  const run=vi.spyOn(ipc,"claudeRun").mockResolvedValue({stdout:"Recorded report [[sessions/dated]]",stderr:"",status:0});
+  await expect(complete({task:"query",cwd:VAULT,retrievedEvidence:supplied,messages:[{role:"user",content:"Activity this week"}]})).resolves.toBe("Recorded report [[sessions/dated]]");
+  expect(search).not.toHaveBeenCalled();expect(run.mock.calls[0][0]).toContain(hit.text);
+  run.mockResolvedValue({stdout:"[[sessions/not-supplied]]",stderr:"",status:0});
+  await expect(complete({task:"query",cwd:VAULT,retrievedEvidence:supplied,messages:[{role:"user",content:"Activity this week"}]})).rejects.toThrow("citation");
+ });
+});
+
+describe("complete() app generation request provenance", () => {
+  const origin = { vaultPath: VAULT, openingToken: "synthetic-execution-opening" };
+  const model = "synthetic-selected-alias";
+  const hit: ScoredChunk = { page: "wiki/verified.md", stem: "verified", section: 0,
+    text: "Synthetic verified evidence.", score: 1, similarity: 1 };
+  const supplied = { hits: [hit], nearMisses: [], floor: 0, indexedPages: 1, stale: false, retrievalFailed: false };
+  const args = (extra: Partial<CompleteArgs> = {}): CompleteArgs => ({ task: "query", cwd: VAULT, origin,
+    roleSnapshot: roleFixture("ask", "ollama", model, origin), retrievedEvidence: supplied,
+    messages: [{ role: "user", content: "Synthetic question" }], ...extra });
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(ipc, "getDistillConfig").mockRejectedValue(new Error("no profile"));
+    vi.spyOn(ipc, "modelContextBudget").mockResolvedValue(null);
+    vi.spyOn(budget, "overBudget").mockReturnValue(false);
+  });
+
+  it("records a provider-reported alias independently from the selected request", async () => {
+    const onExecution = vi.fn();
+    vi.spyOn(ipc, "chatComplete").mockResolvedValue({ provider_id: "ollama", model,
+      reported_model: "provider-resolved-artifact", content: "Verified. [[wiki/verified]]", usage: null });
+    await expect(complete(args({ onExecution }))).resolves.toBe("Verified. [[wiki/verified]]");
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "response_received"]);
+    expect(onExecution.mock.calls[1][0]).toMatchObject({ purpose: "answer", requested: { providerId: "ollama", modelId: model },
+      identity: { modelId: "provider-resolved-artifact", source: "provider_response" } });
+  });
+
+  it.each([undefined, "", "bad\nmodel"])("does not promote a request echo or malformed reported ID: %j", async reported_model => {
+    const onExecution = vi.fn();
+    vi.spyOn(ipc, "chatComplete").mockResolvedValue({ provider_id: "ollama", model,
+      reported_model, content: "Verified. [[wiki/verified]]", usage: null });
+    await expect(complete(args({ onExecution }))).resolves.toBe("Verified. [[wiki/verified]]");
+    expect(onExecution.mock.calls[1][0]).not.toHaveProperty("identity");
+  });
+
+  it("records the returned response before later structured rendering or citation rejection", async () => {
+    const events: AskExecutionEvent[] = [];
+    const dispose = registerModelContextBudget("ollama", model, { contextTokens: 100, outputTokens: 30,
+      countMessages: async () => 20, prepareInput: async () => ({ messages: [{ role: "user", content: "Frozen input" }],
+        paths: [hit.page], stems: [hit.stem], renderAnswer: async () => {
+          expect(events.map(event => event.state)).toEqual(["submitted", "response_received"]);
+          return "Unbound. [[wiki/not-supplied]]";
+        } }) });
+    vi.spyOn(ipc, "chatComplete").mockResolvedValue({ provider_id: "ollama", model,
+      reported_model: "reported", content: "raw reply", usage: null });
+    try {
+      await expect(complete(args({ onExecution: event => events.push(event) }))).rejects.toThrow("citation");
+      expect(events.map(event => event.state)).toEqual(["submitted", "response_received"]);
+    } finally { dispose(); }
+  });
+
+  it.each(["budget", "evidence", "overflow"])("records no command when %s rejects before generation", async phase => {
+    const onExecution = vi.fn();
+    const chat = vi.spyOn(ipc, "chatComplete");
+    if (phase === "budget") vi.mocked(budget.overBudget).mockReturnValue(true);
+    const dispose = phase === "overflow" ? registerModelContextBudget("ollama", model,
+      { contextTokens: 100, outputTokens: 30, countMessages: async () => 101 }) : vi.fn();
+    try {
+      await expect(complete(args({ onExecution,
+        ...(phase === "evidence" ? { retrievedEvidence: { ...supplied, hits: [] } } : {}) }))).rejects.toThrow();
+      expect(chat).not.toHaveBeenCalled();
+      expect(onExecution).not.toHaveBeenCalled();
+    } finally { dispose(); }
+  });
+
+  it.each(["already stopped", "thinking callback"])("records no command after %s cancels before IPC", async phase => {
+    const controller = new AbortController();
+    const onExecution = vi.fn();
+    const chat = vi.spyOn(ipc, "chatComplete");
+    if (phase === "already stopped") controller.abort();
+    await expect(complete(args({ signal: controller.signal, onExecution,
+      onStage: stage => { if (stage.kind === "thinking") controller.abort(); } }))).rejects.toThrow("stopped");
+    expect(chat).not.toHaveBeenCalled();
+    expect(onExecution).not.toHaveBeenCalled();
+  });
+
+  it("keeps a cancelled HTTP request cancelled when its late provider reply arrives", async () => {
+    const controller = new AbortController();
+    const events: AskExecutionEvent[] = [];
+    let release!: (reply: Awaited<ReturnType<typeof ipc.chatComplete>>) => void;
+    const chat = vi.spyOn(ipc, "chatComplete").mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const pending = complete(args({ signal: controller.signal, onExecution: event => events.push(event) }));
+    await vi.waitFor(() => expect(chat).toHaveBeenCalledOnce());
+    controller.abort();
+    release({ provider_id: "ollama", model, reported_model: "late-reported", content: "Verified. [[wiki/verified]]", usage: null });
+    await expect(pending).rejects.toThrow("stopped");
+    expect(events.map(event => event.state)).toEqual(["submitted", "cancelled"]);
+    expect(events[1]).not.toHaveProperty("identity");
+  });
+
+  it("records localQuery without inventing a reported ID from its string reply", async () => {
+    const onExecution = vi.fn();
+    vi.spyOn(ipc, "localChatStatus").mockResolvedValue({ model_id: BUILTIN_CHAT_MODEL, state: "ready", bytes: 100 });
+    vi.spyOn(ipc, "localQuery").mockResolvedValue("Verified. [[wiki/verified]]");
+    await expect(complete(args({ roleSnapshot: roleFixture("ask", "builtin-local", BUILTIN_CHAT_MODEL, origin), onExecution })))
+      .resolves.toBe("Verified. [[wiki/verified]]");
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "response_received"]);
+    expect(onExecution.mock.calls[1][0]).toMatchObject({ requested: { providerId: "builtin-local", modelId: BUILTIN_CHAT_MODEL } });
+    expect(onExecution.mock.calls[1][0]).not.toHaveProperty("identity");
+  });
+
+  it.each(["anthropic-cli", "codex-cli", "gemini-cli"])("records native %s refusal as a failed app command", async providerId => {
+    const onExecution = vi.fn();
+    const refused = new Error("external CLI boundary unavailable before spawn");
+    vi.spyOn(ipc, "claudeRun").mockRejectedValue(refused);
+    vi.spyOn(ipc, "agentRun").mockRejectedValue(refused);
+    await expect(complete(args({ roleSnapshot: roleFixture("ask", providerId, "synthetic-cli-model", origin), onExecution })))
+      .rejects.toBe(refused);
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "failed"]);
+    expect(onExecution.mock.calls[1][0]).not.toHaveProperty("identity");
+  });
+
+  it("records the signal-aware Claude native refusal without claiming a model response", async () => {
+    const onExecution = vi.fn();
+    const refused = new Error("external CLI boundary unavailable before spawn");
+    const stream = vi.spyOn(ipc, "claudeRunStream").mockRejectedValue(refused);
+    await expect(complete(args({ roleSnapshot: roleFixture("ask", "anthropic-cli", "synthetic-cli-model", origin),
+      signal: new AbortController().signal, onExecution }))).rejects.toBe(refused);
+    expect(stream).toHaveBeenCalledOnce();
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "failed"]);
+    expect(onExecution.mock.calls[1][0]).not.toHaveProperty("identity");
+  });
+
+  it.each([false,true])("historical supplied evidence excludes unknown/future copies with exact tokenizer adapter=%s",async exact=>{
+    const page="raw/conversations/fictional/dated.md";
+    const anchor={...hit,page,stem:"dated",text:"Unknown capture header",section:0};
+    const poison={...hit,page:"wiki/future-copy.md",text:"UNTRUSTED_FUTURE_COPY quoting an earlier date and an answer table"};
+    const cutoff=new Date(2026,8,16).getTime()/1000;
+    const original={page,stem:"dated",section:1,text:"Original dated library sign request.",source_revision:"a".repeat(64),
+      role:"user",timestamp:cutoff-60,message_id:"dated-user",relation:"accepted_original",anchor_page:page,anchor_section:0};
+    const future={...original,section:2,timestamp:cutoff,message_id:"later",text:"FUTURE_REVERSAL after the cutoff"};
+    const exclusions=vi.fn(),audit=vi.fn();
+    const dispose=exact?registerModelContextBudget("ollama",model,{contextTokens:4096,outputTokens:768,countMessages:async()=>100}):()=>{};
+    const chat=vi.spyOn(ipc,"chatComplete").mockResolvedValue({provider_id:"ollama",model,content:`Original request [[${page.replace(/\.md$/,"")}|dated]]`,usage:null});
+    const suppliedHistorical={...supplied,hits:[anchor,poison],relatedContext:{passages:[original,future],incomplete:false,scanned_pages:1}};
+    try{
+      await complete(args({retrievedEvidence:suppliedHistorical,guidedQuestion:{version:1,intent:"progress",subject:"library sign",asOf:"2026-09-15"},onHistoricalExclusions:exclusions,onContextPacking:audit}));
+      const sent=JSON.stringify(chat.mock.calls[0][0].messages);
+      expect(sent).toContain(original.text);expect(sent).not.toContain(poison.text);expect(sent).not.toContain(future.text);
+      expect(sent).toContain("speaker: user");expect(exclusions).toHaveBeenCalledOnce();
+      expect(exclusions.mock.calls[0][0].map((e:{reason:string})=>e.reason)).toEqual(expect.arrayContaining(["historical_date_unverified","after_historical_cutoff"]));
+      if(exact)expect(audit.mock.calls[0][0].omitted).toEqual(expect.arrayContaining([anchor,poison,future]));
+      else expect(audit).not.toHaveBeenCalled();
+    }finally{dispose();}
+  });
+
+  it("never calls a generator or whole-vault fallback when historical records have no verified date",async()=>{
+    const exclusions=vi.fn(),audit=vi.fn();
+    const chat=vi.spyOn(ipc,"chatComplete"),fallback=vi.spyOn(ipc,"readVaultContext");
+    const dispose=registerModelContextBudget("ollama",model,{contextTokens:4096,outputTokens:768,countMessages:async()=>100});
+    try{
+      await expect(complete(args({guidedQuestion:{version:1,intent:"progress",subject:"library sign",asOf:"2026-09-15"},onHistoricalExclusions:exclusions,onContextPacking:audit}))).rejects.toBeInstanceOf(MissingQueryEvidence);
+      expect(exclusions.mock.calls[0][0]).toEqual([{passage:hit,reason:"historical_date_unverified"}]);
+      expect(audit.mock.calls[0][0]).toMatchObject({selected:[],omitted:[hit]});
+      expect(chat).not.toHaveBeenCalled();expect(fallback).not.toHaveBeenCalled();
+    }finally{dispose();}
+  });
+
+  it("forwards the explicit cutoff as a separate pre-topK search parameter",async()=>{
+    vi.spyOn(ipc,"embeddingsStatus").mockResolvedValue({indexed_pages:1,model:CURRENT_INDEX_MODEL});
+    const search=vi.spyOn(ipc,"semanticSearch").mockResolvedValue(found([]));
+    await retrieveChunks("library sign",12,undefined,undefined,"all",undefined,undefined,"2026-09-15");
+    expect(search).toHaveBeenCalledWith("library sign",12,"builtin-local",BUILTIN_EMBED_MODEL,undefined,"all",undefined,undefined,"2026-09-15");
+  });
+
+  it("refuses historical CLI file reads rather than reopening unbounded source files",async()=>{
+    const cli=vi.spyOn(ipc,"claudeRun"),other=vi.spyOn(ipc,"agentRun");
+    await expect(complete(args({roleSnapshot:roleFixture("ask","anthropic-cli","synthetic-cli",origin),guidedQuestion:{version:1,intent:"progress",subject:"library sign",asOf:"2026-09-15"}}))).rejects.toThrow("source-bound supplied evidence");
+    expect(cli).not.toHaveBeenCalled();expect(other).not.toHaveBeenCalled();
+  });
+
+  it("does not expand eligible historical chunks back into an unbounded structured source closure",async()=>{
+    const original={page:hit.page,stem:hit.stem,section:0,text:"Dated original.",source_revision:"a".repeat(64),role:"user",
+      timestamp:new Date(2026,8,15,12).getTime()/1000,message_id:"dated-original",relation:"accepted_original",anchor_page:hit.page,anchor_section:0};
+    const expand=vi.fn();
+    const dispose=registerModelContextBudget("ollama",model,{contextTokens:4096,outputTokens:768,countMessages:async()=>100,prepareInput:expand});
+    const chat=vi.spyOn(ipc,"chatComplete");
+    try{
+      await expect(complete(args({retrievedEvidence:{...supplied,relatedContext:{passages:[original],incomplete:false,scanned_pages:1}},
+        guidedQuestion:{version:1,intent:"progress",subject:"library sign",asOf:"2026-09-15"}}))).rejects.toThrow("Structured source expansion");
+      expect(expand).not.toHaveBeenCalled();expect(chat).not.toHaveBeenCalled();
+    }finally{dispose();}
+  });
+
 });

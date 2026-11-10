@@ -77,6 +77,7 @@ fn fixture() -> (Request, Vec<Evidence>, SourceSet) {
         paths: Some(vec!["sessions/synthetic.md".into()]),
         max_tokens: Some(768),
         activity_overview: true,
+        guided_question: None,
         resolution: Some(ResolutionRequest {
             mode: ResolutionMode::HistoricalAsOf,
             as_of_epoch: 1791125999,

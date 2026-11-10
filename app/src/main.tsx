@@ -16,6 +16,12 @@ import "./styles.css";
 // order, never on !important. See src/styles/ui.css.
 import "./styles/ui.css";
 
+// Confine diagnostic bootstrap before App reads the persisted vault path.
+// The isolated vault is named by the diagnostic run (VITE_MYCO_REAL_DIAG_VAULT).
+if (import.meta.env.DEV && import.meta.env.VITE_MYCO_REAL_DIAG === "1" && import.meta.env.VITE_MYCO_REAL_DIAG_VAULT) {
+  localStorage.setItem("myco.lastVaultPath", import.meta.env.VITE_MYCO_REAL_DIAG_VAULT);
+}
+
 const ERROR_LOG_KEY = "myco.errorlog";
 const ERROR_LOG_MAX = 20;
 
@@ -203,3 +209,8 @@ async function bootstrap(): Promise<void> {
 }
 
 void bootstrap();
+
+// Explicit isolated real-record diagnostic only; no mocked IPC.
+if (import.meta.env.DEV && import.meta.env.VITE_MYCO_REAL_DIAG === "1") {
+  void import("./realRecordDiagnostic").then(m => m.runRealRecordDiagnostic());
+}

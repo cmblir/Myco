@@ -60,6 +60,7 @@ fn fixture() -> (tempfile::TempDir, Request, super::super::CheckedEvidence) {
         paths: None,
         max_tokens: Some(768),
         activity_overview: true,
+        guided_question: None,
         resolution: None,
     };
     let checked = super::super::checked_evidence(dir.path(), &index, &request).unwrap();

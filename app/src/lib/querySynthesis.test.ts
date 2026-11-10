@@ -6,6 +6,7 @@ import { extractWikilinks } from "./askHistory";
 import { useVaultStore } from "../stores/vaultStore";
 import { queryDateRange } from "./timeQuery";
 import { roleFixture } from "./modelRoles.testSupport";
+import type { AskExecutionEvent } from "./askExecution";
 
 const model = "qwen3.5-4b-q4_k_m";
 const hit: ScoredChunk = { page: "wiki/synthetic.md", stem: "synthetic", section: 2,
@@ -63,6 +64,34 @@ describe("ordinary generative failure boundary", () => {
   it("requests the shared ordinary reviewed draft budget", async () => {
     await expect(tryLocalSynthesis(options)).resolves.toEqual(result);
     expect(ipc.localSynthesize).toHaveBeenCalledWith(expect.objectContaining({ maxTokens: 768 }));
+  });
+
+  it("forwards a selected intent as metadata without changing the native source or review contract", async () => {
+    const guidedQuestion = { version: 1 as const, intent: "decision" as const, subject: "Canvas exporter" };
+    await expect(tryLocalSynthesis({ ...options, guidedQuestion })).resolves.toEqual(result);
+    expect(ipc.localSynthesize).toHaveBeenCalledWith(expect.objectContaining({
+      guidedQuestion, question: options.question, hits: [expect.objectContaining({page:hit.page,text:hit.text})], maxTokens:768,
+    }));
+  });
+
+  it("rejects unsupported native historical selection before model status or generation", async () => {
+    await expect(tryLocalSynthesis({ ...options,
+      guidedQuestion: {version:1,intent:"progress",subject:"Canvas exporter",asOf:"2026-09-15"},
+    })).rejects.toMatchObject({name:"LocalSynthesisError",code:"historical_cutoff_unsupported"});
+    expect(ipc.localChatStatus).not.toHaveBeenCalled();
+    expect(ipc.localSynthesize).not.toHaveBeenCalled();
+  });
+
+  it("rejects selected metadata on the distinct activity pipeline instead of silently dropping it", async () => {
+    await expect(tryLocalSynthesis({ ...options, activityOverview:true, range:activityRange,
+      guidedQuestion: {version:1,intent:"remaining",subject:"Canvas exporter"},
+    })).rejects.toMatchObject({name:"LocalSynthesisError",code:"response_rejected"});
+    expect(ipc.localSynthesize).not.toHaveBeenCalled();
+  });
+
+  it("preserves the native unsupported-cutoff response for callers that cross the IPC boundary", async () => {
+    vi.mocked(ipc.localSynthesize).mockResolvedValue({...result,answer:"",used_sources:[],fallback_reason:"historical_cutoff_unsupported"});
+    await expect(tryLocalSynthesis(options)).rejects.toMatchObject({name:"LocalSynthesisError",code:"historical_cutoff_unsupported"});
   });
 
   it("reserves null quote permission for explicit extractive selection without generation", async () => {
@@ -656,18 +685,75 @@ describe("tryLocalSynthesis", () => {
     vi.mocked(ipc.localSynthesize).mockImplementation(() => new Promise(resolve => { release = resolve; }));
     const control = new AbortController();
     const fallback = vi.fn();
-    const pending = tryLocalSynthesis({ ...options, signal: control.signal, onFallback: fallback });
+    const onExecution = vi.fn();
+    const pending = tryLocalSynthesis({ ...options, signal: control.signal, onFallback: fallback, onExecution });
     await vi.waitFor(() => expect(ipc.localSynthesize).toHaveBeenCalled());
     control.abort();
     await expect(pending).rejects.toThrow("stopped");
     expect(ipc.cancelLocalSynthesis).toHaveBeenCalledWith(vi.mocked(ipc.localSynthesize).mock.calls[0][0].requestId);
     release(result);
+    await Promise.resolve();
     expect(fallback).not.toHaveBeenCalled();
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "cancelled"]);
   });
 
   it("checks cancellation again if the thinking-stage callback stops the run", async () => {
     const control = new AbortController();
     await expect(tryLocalSynthesis({ ...options, signal: control.signal, onThinking: () => control.abort() })).rejects.toThrow("stopped");
     expect(ipc.localSynthesize).not.toHaveBeenCalled();
+  });
+});
+
+describe("tryLocalSynthesis app generation request provenance", () => {
+  it("records the synthesis app command without equating it to the internal generation count", async () => {
+    const native = { ...result, activity_receipt: { ...activityReceipt, extractionBatches: 2, automatedClaimReviews: 2 } };
+    vi.mocked(ipc.localSynthesize).mockResolvedValue(native);
+    const events: AskExecutionEvent[] = [];
+    await expect(tryLocalSynthesis({ ...options, activityOverview: true, origin, range: activityRange,
+      onExecution: event => events.push(event) })).resolves.toEqual(native);
+    expect(ipc.localSynthesize).toHaveBeenCalledOnce();
+    expect(events.map(event => event.state)).toEqual(["submitted", "response_received"]);
+    expect(events[1]).toMatchObject({ purpose: "answer", requested: { providerId: "builtin-local", modelId: model },
+      identity: { modelId: model, source: "local_manifest" } });
+  });
+
+  it.each(["review_rejected", "source_verification_failed", "invalid-citation"])(
+    "records a response before later %s rejection", async reason => {
+      const onExecution = vi.fn();
+      vi.mocked(ipc.localSynthesize).mockResolvedValue(reason === "invalid-citation"
+        ? { ...result, answer: "Unbound. [[wiki/not-supplied]]" }
+        : { ...result, answer: "", fallback_reason: reason });
+      await expect(tryLocalSynthesis({ ...options, onExecution,
+        onFallback: () => expect(onExecution.mock.calls.at(-1)?.[0].state).toBe("response_received") })).rejects.toThrow();
+      expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "response_received"]);
+    },
+  );
+
+  it("omits malformed local model metadata without changing existing response rejection", async () => {
+    const onExecution = vi.fn();
+    vi.mocked(ipc.localSynthesize).mockResolvedValue({ ...result, model_id: "bad\nmodel" });
+    await expect(tryLocalSynthesis({ ...options, onExecution })).rejects.toMatchObject({ code: "response_rejected" });
+    expect(onExecution.mock.calls[1][0]).toMatchObject({ state: "response_received" });
+    expect(onExecution.mock.calls[1][0]).not.toHaveProperty("identity");
+  });
+
+  it.each(["empty evidence", "status failure", "cancel before command"])("records no command after %s", async phase => {
+    const onExecution = vi.fn();
+    const controller = new AbortController();
+    if (phase === "status failure") vi.mocked(ipc.localChatStatus).mockRejectedValue(new Error("status rejected"));
+    const pending = tryLocalSynthesis({ ...options, onExecution, signal: controller.signal,
+      ...(phase === "empty evidence" ? { hits: [] } : {}),
+      ...(phase === "cancel before command" ? { onThinking: () => controller.abort() } : {}) });
+    if (phase === "empty evidence") await expect(pending).resolves.toBeNull();
+    else await expect(pending).rejects.toThrow();
+    expect(ipc.localSynthesize).not.toHaveBeenCalled();
+    expect(onExecution).not.toHaveBeenCalled();
+  });
+
+  it("records a rejected synthesis command as failed", async () => {
+    const onExecution = vi.fn();
+    vi.mocked(ipc.localSynthesize).mockRejectedValue(new Error("private command failure"));
+    await expect(tryLocalSynthesis({ ...options, onExecution })).rejects.toMatchObject({ code: "synthesis_failed" });
+    expect(onExecution.mock.calls.map(([event]) => event.state)).toEqual(["submitted", "failed"]);
   });
 });

@@ -1041,7 +1041,7 @@ select {
   background: var(--line);
 }
 /* The primary pane's page sits inside .route-fade (App.tsx's remount-key
-   wrapper for the navigation fade) instead of .pane-body — plain block boxes
+   wrapper) instead of .pane-body — plain block boxes
    by default. Without this, the flex rules below on .workspace/.workspace-wide
    have no flex parent to grow against and collapse to their content's
    shrink-to-fit height (0 for the graph, whose content is all absolutely
@@ -9808,21 +9808,12 @@ html.tray-window body {
   font-size: 14px;
 }
 
-/* One layer of motion on navigation, deliberately short. Motion that replays
-   on every click reads as latency by the third time. */
+/* Keep the whole page visible from its first paint, even when an animation's
+   timeline stalls. The keyed route wrapper still resets page-local state. */
 .route-fade {
-  animation: route-in var(--dur-enter) var(--ease-out);
-}
-@keyframes route-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  .route-fade {
-    animation: none;
-  }
+  opacity: 1;
+  transform: none;
+  animation: none;
 }
 
 /* Onboarding: the mascot takes the icon circle's slot. */

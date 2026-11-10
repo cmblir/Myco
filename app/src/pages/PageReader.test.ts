@@ -4,9 +4,33 @@ import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { readerView } from "./PageReader";
+import { readerNoteTitle, readerView } from "./PageReader";
 import { ipc } from "../lib/ipc";
 import { pendingDrafts, useVaultStore } from "../stores/vaultStore";
+
+describe("readerNoteTitle", () => {
+  it("composes a decomposed filename for the reader heading", () => {
+    const title = "설계 회의";
+    const path = `/v/wiki/${title.normalize("NFD")}.md`;
+    expect(path).not.toBe(path.normalize("NFC"));
+    expect(readerNoteTitle(path)).toBe(title);
+  });
+
+  it("composes a readable session title while retaining the existing title policy", () => {
+    const title = "설계 회의";
+    expect(
+      readerNoteTitle("/v/wiki/source-session-codex-0123456789abcdef.md", title.normalize("NFD")),
+    ).toBe(title);
+    expect(readerNoteTitle("/v/wiki/attention-mechanism.md", title)).toBe("attention-mechanism");
+  });
+
+  it.each([
+    ["/v/wiki/설계 회의.md", "설계 회의"],
+    ["C:\\vault\\wiki\\Design Review.MD", "Design Review"],
+  ])("keeps composed and ASCII headings unchanged: %s", (path, title) => {
+    expect(readerNoteTitle(path)).toBe(title);
+  });
+});
 
 describe("readerView", () => {
   const path = "/v/wiki/a.md";
@@ -90,6 +114,25 @@ describe("the reader's own read", () => {
     vi.spyOn(ipc, "recordPageOpen").mockResolvedValue(null);
     useVaultStore.setState({ activeFile: null, error: "left by an earlier save" });
     expect(await useVaultStore.getState().openFile(path)).toBeNull();
+  });
+
+  it("reads the exact decomposed path and preserves note bytes when composing its heading", async () => {
+    const title = "설계 회의";
+    const path = `/v/wiki/${title.normalize("NFD")}.md`;
+    const raw = `# ${title.normalize("NFD")}\n\nSynthetic note body.\n`;
+    const file = { path, raw, content: raw, frontmatter: null };
+    const read = vi.spyOn(ipc, "readFile").mockResolvedValueOnce(file);
+    vi.spyOn(ipc, "recordPageOpen").mockResolvedValue(null);
+    useVaultStore.setState({ activeFile: null, error: null });
+
+    expect(await useVaultStore.getState().openFile(path)).toBeNull();
+    const opened = useVaultStore.getState().activeFile!;
+    expect(readerNoteTitle(opened.path)).toBe(title);
+    expect(read).toHaveBeenCalledWith(path);
+    expect(opened.path).toBe(path);
+    expect(opened.path).not.toBe(path.normalize("NFC"));
+    expect(opened.raw).toBe(raw);
+    expect(opened.content).toBe(raw);
   });
 
   it("reports a failed reread without discarding the cached file or pending draft", async () => {

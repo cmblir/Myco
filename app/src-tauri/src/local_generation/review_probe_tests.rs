@@ -30,6 +30,7 @@ fn request(origin: &AgentVaultSession) -> Request {
         paths: None,
         max_tokens: None,
         activity_overview: false,
+        guided_question: None,
         resolution: None,
     }
 }

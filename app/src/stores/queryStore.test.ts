@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { registerModelContextBudget } from "../lib/modelContextBudget";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // persist() resolves its storage when uiStore loads, so the in-memory
 // localStorage has to exist before the stores are imported (uiStore.test.ts).
@@ -10,7 +11,7 @@ vi.hoisted(() => {
     removeItem: (k: string) => void m.delete(k),
   });
 });
-import { askCopy, reasksOf, useQueryStore, type AskOpts, type ChatTurn } from "./queryStore";
+import { recordOf, askCopy, reasksOf, useQueryStore, type AskOpts, type ChatTurn } from "./queryStore";
 import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
 import type { Captured } from "../lib/dailyNote";
@@ -20,6 +21,8 @@ import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import { queryDateRange } from "../lib/timeQuery";
 import { roleFixture, syntheticOrigin } from "../lib/modelRoles.testSupport";
 import { useSettingsStore } from "./settingsStore";
+import { ModelEvidenceAbstention } from "../lib/answerCitation";
+import { buildGuidedQuestion, guidedQuestionPrompt, type GuidedQuestionSelection } from "../lib/guidedQuestion";
 
 const copy = askCopy(STRINGS.en);
 const ask = (q: string, opts?: AskOpts) => useQueryStore.getState().ask(q, "en", copy, opts);
@@ -1488,6 +1491,7 @@ describe("queryStore history", () => {
       at: expect.any(Number),
       q: "what is attention",
       scope: "wiki",
+      execution: { version: 1, selected: { providerId: "builtin-local", modelId: "extractive-retrieval" }, answerKind: "extractive", calls: [] },
       a: "**[[wiki/attention-mechanism|attention-mechanism]]**\n\n> **Attention**\n> attention body",
       cited: ["attention-mechanism"],
     });
@@ -1533,7 +1537,7 @@ describe("queryStore history", () => {
   });
 });
 
-/** The provider path (Ollama) with no index: `chat` is the model call. */
+/** The provider path (Ollama) with verified lexical evidence: `chat` is the model call. */
 function stubProvider() {
   stubAskRole("ollama", "llama3");
   vi.spyOn(ipc, "getSettings").mockResolvedValue({
@@ -1541,16 +1545,262 @@ function stubProvider() {
     query_model: "llama3",
   } as MycoSettings);
   vi.spyOn(ipc, "getDistillConfig").mockRejectedValue(new Error("no config"));
+  vi.spyOn(ipc, "modelContextBudget").mockResolvedValue(null);
   vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
     indexed_pages: 0,
     model: "",
   } as Awaited<ReturnType<typeof ipc.embeddingsStatus>>);
   vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
-  vi.spyOn(ipc, "semanticSearch").mockResolvedValue({ hits: [], floor: 0.42, below_floor: [] });
+  vi.spyOn(ipc, "semanticSearch").mockResolvedValue({ hits: [{ page: "wiki/a.md", stem: "a", section: 0, text: "Synthetic source for provider lifecycle tests", score: 0.1, similarity: null, exact_match: true }], floor: 0.42, below_floor: [] });
   return vi.spyOn(ipc, "chatComplete");
 }
 const reply = (content: string) =>
   Promise.resolve({ provider_id: "ollama", model: "llama3", content, usage: null });
+
+describe("explicit selected-question provider integration", () => {
+  const choice: GuidedQuestionSelection = {
+    version: 1, intent: "decision", subject: "Synthetic observatory schedule", asOf: "2026-10-15",
+  };
+  // Synthetic native DTO carries original metadata; an untyped hit is no longer
+  // eligible evidence for an explicitly historical question.
+  function stubSelectedProvider() {
+    const chat = stubProvider();
+    const hit = {page:"wiki/a.md",stem:"a",section:0,text:"Synthetic source for provider lifecycle tests",score:0.1,similarity:null,exact_match:true};
+    vi.mocked(ipc.semanticSearch).mockResolvedValue({hits:[hit],floor:0.42,below_floor:[],related_context:{passages:[{
+      ...hit,source_revision:"a".repeat(64),role:"assistant",message_id:"fictional-decision",timestamp:Date.parse("2026-10-10T00:00:00Z")/1000,
+      relation:"accepted_original",anchor_page:hit.page,anchor_section:hit.section,
+    }],source_groups:{},scanned_pages:1,incomplete:false}});
+    return chat;
+  }
+  const body = "## 결정\nFictional schedule choice. [[wiki/a|a]]\n## 당시 이유\nRecorded constraints. [[wiki/a|a]]\n## 이후 변경\nUnconfirmed.\n## 근거\n[[wiki/a|a]]";
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({ currentVault: { path: "/v", name: "Synthetic vault" }, isOpeningVault: false, adjacency: null });
+    useUIStore.setState({ askScope: "sessions", isAskScopeExplicit: true });
+    useQueryStore.getState().clear();
+    useQueryStore.setState({ history: [], historyError: null, noteScope: null });
+  });
+
+  it("uses the explicit subject and output contract, preserves scope, and does not turn cutoff into one-day retrieval", async () => {
+    const chat = stubSelectedProvider().mockImplementation(() => reply(body));
+    useQueryStore.setState({turns:[{q:"An unrelated fictional gardening question",a:"Old answer"}]});
+    const q = buildGuidedQuestion(choice, "ko");
+    await useQueryStore.getState().ask(q, "ko", askCopy(STRINGS.ko), {guidedQuestion:choice});
+    expect(ipc.semanticSearch).toHaveBeenCalledOnce();
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][0]).toBe(choice.subject);
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][4]).toBeUndefined();
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][5]).toBe("sessions");
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][9]).toBe(choice.intent);
+    expect(chat.mock.calls[0][0].messages[0].content).toContain(guidedQuestionPrompt(choice));
+    expect(chat.mock.calls[0][0].messages.at(-1)).toEqual({role:"user",content:q});
+    expect(chat.mock.calls[0][0].messages).toHaveLength(2);
+    expect(JSON.stringify(chat.mock.calls[0][0].messages)).not.toContain("unrelated fictional gardening");
+    expect(JSON.stringify(chat.mock.calls[0][0].messages)).not.toContain("Old answer");
+    expect(last()).toMatchObject({q,a:body,guidedQuestion:choice,scope:"sessions"});
+    expect(last().range).toBeUndefined();
+    expect(recordOf(last(), 1).searchContext?.guidedQuestion).toEqual(choice);
+    expect(recordOf(last(), 1).searchContext?.range).toBeUndefined();
+  });
+
+  it("retains task, target, cutoff and note restriction through retry and saved-history reload", async () => {
+    const chat = stubSelectedProvider().mockRejectedValueOnce(new Error("Synthetic temporary failure")).mockImplementation(() => reply(body));
+    const saved: AskRecord[] = [];
+    vi.mocked(ipc.askHistoryAppend).mockImplementation(async (_vault, record) => {
+      saved.push(JSON.parse(JSON.stringify(record)) as AskRecord); return null;
+    });
+    vi.spyOn(ipc, "askHistoryLoad").mockImplementation(async () => JSON.parse(JSON.stringify(saved)) as AskRecord[]);
+    const note = {path:"/v/wiki/a.md",title:"Synthetic source"};
+    const q = buildGuidedQuestion(choice, "ko");
+    await useQueryStore.getState().ask(q, "ko", askCopy(STRINGS.ko), {guidedQuestion:choice,note});
+    expect(last().error).toContain("Synthetic temporary failure");
+    useUIStore.setState({askScope:"wiki"});
+    await useQueryStore.getState().retry(0,"ko",askCopy(STRINGS.ko));
+    expect(last()).toMatchObject({a:body,guidedQuestion:choice,note});
+    expect(last().error).toBeUndefined();
+    expect(vi.mocked(ipc.semanticSearch).mock.calls.map(call=>call[0])).toEqual([choice.subject,choice.subject]);
+    expect(vi.mocked(ipc.semanticSearch).mock.calls.map(call=>call[4])).toEqual([undefined,undefined]);
+    expect(vi.mocked(ipc.semanticSearch).mock.calls.at(-1)?.[7]).toEqual(["wiki/a.md"]);
+    expect(chat.mock.calls.at(-1)?.[0].messages[0].content).toContain(guidedQuestionPrompt(choice));
+    await vi.waitFor(()=>expect(saved).toHaveLength(2));
+    expect(saved[1]).toMatchObject({q,a:body,searchContext:{guidedQuestion:choice},note:{title:note.title}});
+    const generationCalls=chat.mock.calls.length;
+    useQueryStore.setState({history:[]});
+    await useQueryStore.getState().loadHistory();
+    expect(useQueryStore.getState().history[1]).toEqual(saved[1]);
+    expect(chat).toHaveBeenCalledTimes(generationCalls);
+  });
+
+  it("keeps the selected task on widening without inventing a date window", () => {
+    const widening = reasksOf({q:buildGuidedQuestion(choice),a:"",abstained:true,scope:"wiki",guidedQuestion:choice}).widen;
+    expect(widening).toMatchObject({scope:"all",guidedQuestion:choice});
+    expect(widening?.range).toBeUndefined();
+  });
+
+  it("keeps a date inside the explicitly selected subject from becoming a one-day source filter", async () => {
+    stubSelectedProvider().mockImplementation(() => reply(body));
+    const datedSubject: GuidedQuestionSelection={version:1,intent:"decision",subject:"2026년 9월 8일 가상 관측소 회의"};
+    await useQueryStore.getState().ask(buildGuidedQuestion(datedSubject),"ko",askCopy(STRINGS.ko),{guidedQuestion:datedSubject});
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][0]).toBe(datedSubject.subject);
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][4]).toBeUndefined();
+    expect(last().range).toBeUndefined();
+  });
+
+  it("still honors an intentionally supplied source-date window independently of the historical cutoff", async () => {
+    stubSelectedProvider().mockImplementation(() => reply(body));
+    const range={start:"2026-10-01",end:"2026-10-10"};
+    await useQueryStore.getState().ask(buildGuidedQuestion(choice),"ko",askCopy(STRINGS.ko),{guidedQuestion:choice,range});
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][4]).toEqual(range);
+    expect(last().range).toEqual(range);
+    expect(recordOf(last(),1).searchContext).toMatchObject({guidedQuestion:choice,range});
+  });
+
+  it("records an uncited selected factual response as failure instead of displaying it", async () => {
+    stubSelectedProvider().mockImplementation(()=>reply("A fictional task was completed without any citation."));
+    await useQueryStore.getState().ask(buildGuidedQuestion(choice),"ko",askCopy(STRINGS.ko),{guidedQuestion:choice});
+    expect(last().a).toBe("");
+    expect(last().error).toBe(askCopy(STRINGS.ko).answerReviewFailed);
+    expect(recordOf(last(),1)).toMatchObject({a:"",cited:[],error:askCopy(STRINGS.ko).answerReviewFailed});
+  });
+});
+
+describe("selected-provider date-grounded activity", () => {
+  const model = "myco-trained-kanana15-r10-1200-local";
+  const grant = roleFixture("ask", "ollama", model);
+  const source = { page: "sessions/synthetic-work.md", stem: "Synthetic work", section: 2,
+    text: "[user | 2026-10-06] Please review the prototype.\n[assistant | 2026-10-06] The prototype is still under review; it has not been deployed." };
+  const generated = "The prototype remained under review; deployment was not completed. [[sessions/synthetic-work|Synthetic work]]";
+  const koAsk = (question: string, opts?: AskOpts) => useQueryStore.getState().ask(question, "ko", askCopy(STRINGS.ko), opts);
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 7, 12));
+    useVaultStore.setState({ currentVault: { path: "/v", name: "v" }, adjacency: null, isOpeningVault: false });
+    useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: false });
+    useQueryStore.getState().clear();
+    stubProvider().mockResolvedValue({ provider_id: "ollama", model, content: generated, usage: null });
+    vi.mocked(ipc.captureModelRole).mockResolvedValue(grant);
+    vi.spyOn(ipc, "localChatStatus");
+    vi.spyOn(ipc, "localQueryPlan");
+    vi.spyOn(ipc, "localSynthesize");
+    vi.spyOn(ipc, "activityRecall").mockResolvedValue({ hits: [source], indexed_pages: 8,
+      scanned_pages: 5, matched_chunks: 1, incomplete: false });
+    vi.spyOn(ipc, "askHistoryAppend").mockResolvedValue(null);
+  });
+  afterEach(() => { useQueryStore.getState().clear(); vi.useRealTimers(); });
+
+  it("asks which period to review for the actual short Korean question without claiming missing notes", async () => {
+    useUIStore.setState({ isAskScopeExplicit: true });
+    const turn = await koAsk("최근에 한일");
+    expect(turn).toMatchObject({ scope: "wiki", needsClarification: true, activityPeriodNeeded: true,
+      activityQuestion: "최근에 한일" });
+    expect(turn?.a).toContain("어느 기간");
+    expect(turn?.a).not.toContain("찾지 못");
+    expect(ipc.activityRecall).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+    expect(ipc.localChatStatus).not.toHaveBeenCalled();
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+    expect(ipc.localSynthesize).not.toHaveBeenCalled();
+    await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
+    expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1]).toMatchObject({ q: "최근에 한일", a: turn!.a });
+  });
+
+  it("collects dated records and generates with the same selected grant instead of doing a similarity search", async () => {
+    const turn = await koAsk("2026년 10월 6일 한일", { scope: "sessions" });
+    expect(ipc.activityRecall).toHaveBeenCalledWith({ expectedVault: "/v", origin: syntheticOrigin, roleSnapshot: grant,
+      range: { start: "2026-10-06", end: "2026-10-06" }, scope: "sessions" });
+    expect(ipc.chatComplete).toHaveBeenCalledOnce();
+    const [request, origin, snapshot] = vi.mocked(ipc.chatComplete).mock.calls[0];
+    expect(request).toMatchObject({ provider_id: "ollama", model });
+    expect(origin).toEqual(syntheticOrigin);
+    expect(snapshot).toEqual(grant);
+    expect(request.messages[0].content).toContain(source.text);
+    expect(request.messages[0].content).toContain("2026-10-06..2026-10-06");
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(ipc.embeddingsStatus).not.toHaveBeenCalled();
+    expect(ipc.localChatStatus).not.toHaveBeenCalled();
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+    expect(ipc.localSynthesize).not.toHaveBeenCalled();
+    expect(turn).toMatchObject({ a: generated, scope: "sessions", activityCoverage: { scannedPages: 5, sources: 1, incomplete: false } });
+    expect(turn?.localModel).toBeUndefined();
+    expect(turn?.extractive).not.toBe(true);
+    await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
+    expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1].a).toBe(generated);
+  });
+
+  it("connects a period-only reply to the original question while retaining the default all-record recall scope", async () => {
+    await koAsk("최근에 한일");
+    const turn = await koAsk("이번 주");
+    expect(turn).toMatchObject({ q: "이번 주", activityQuestion: "최근에 한일", a: generated, scope: "all",
+      range: { start: "2026-10-05", end: "2026-10-07" } });
+    expect(ipc.activityRecall).toHaveBeenCalledWith(expect.objectContaining({
+      range: { start: "2026-10-05", end: "2026-10-07" }, scope: "all", roleSnapshot: grant }));
+    const request = vi.mocked(ipc.chatComplete).mock.calls[0][0];
+    expect(request.messages[0].content).toContain("최근에 한일");
+    expect(request.messages.at(-1)?.content).toBe("이번 주");
+    expect(useUIStore.getState().askScope).toBe("wiki");
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps an explicit wiki scope and selected-note path restriction on dated activity reads", async () => {
+    useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+    vi.mocked(ipc.activityRecall).mockResolvedValue({ hits: [], indexed_pages: 8, scanned_pages: 1,
+      matched_chunks: 0, incomplete: false });
+    await koAsk("최근에 한일");
+    await koAsk("어제");
+    expect(ipc.activityRecall).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "wiki" }));
+    useQueryStore.getState().clear();
+    await koAsk("2026년 10월 6일 한 일", { note: { path: "/v/wiki/selected.md", title: "Selected note" } });
+    expect(ipc.activityRecall).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "all", paths: ["wiki/selected.md"] }));
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+    expect(last().activityCoverage).toMatchObject({ scannedPages: 1, sources: 0 });
+  });
+
+  it("retains the captured period and original activity question when retrying a failed period reply", async () => {
+    vi.mocked(ipc.chatComplete).mockRejectedValueOnce(new Error("temporary selected-provider failure"));
+    await koAsk("최근에 한일");
+    await koAsk("이번 주");
+    expect(last().error).toContain("temporary selected-provider failure");
+    useUIStore.setState({ askScope: "sessions", isAskScopeExplicit: true });
+    vi.setSystemTime(new Date(2026, 9, 14, 12));
+    await useQueryStore.getState().retry(1, "ko", askCopy(STRINGS.ko));
+    expect(ipc.activityRecall).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "all",
+      range: { start: "2026-10-05", end: "2026-10-07" } }));
+    expect(last()).toMatchObject({ a: generated, activityQuestion: "최근에 한일" });
+    expect(ipc.localQueryPlan).not.toHaveBeenCalled();
+  });
+
+  it("keeps an incomplete native scan visible to the selected generator and in the delivered coverage", async () => {
+    vi.mocked(ipc.activityRecall).mockResolvedValue({ hits: [source], indexed_pages: 8,
+      scanned_pages: 5, matched_chunks: 1, incomplete: true });
+    await koAsk("2026년 10월 6일 한일");
+    expect(vi.mocked(ipc.chatComplete).mock.calls[0][0].messages[0].content).toContain("Not all original records could be read");
+    expect(last().activityCoverage).toMatchObject({ incomplete: true });
+  });
+
+  it("never changes a stale native read into quoted success or a different model call", async () => {
+    vi.mocked(ipc.activityRecall).mockRejectedValue(new Error("snapshot_stale: synthetic selection changed"));
+    const turn = await koAsk("2026년 10월 6일 한일");
+    expect(turn).toMatchObject({ a: "", error: STRINGS.ko.q_model_selection_changed });
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(ipc.localSynthesize).not.toHaveBeenCalled();
+  });
+
+  it("ignores dated evidence that arrives after Stop without starting provider generation", async () => {
+    let release!: (result: Awaited<ReturnType<typeof ipc.activityRecall>>) => void;
+    vi.mocked(ipc.activityRecall).mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const activity = koAsk("2026년 10월 6일 한일");
+    await vi.waitFor(() => expect(ipc.activityRecall).toHaveBeenCalledOnce());
+    useQueryStore.getState().stop();
+    await activity;
+    release({ hits: [source], indexed_pages: 8, scanned_pages: 5, matched_chunks: 1, incomplete: false });
+    await Promise.resolve();
+    expect(last()).toMatchObject({ stopped: true, a: "" });
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+  });
+});
 
 // An error turn's [다시 시도] (UX S36): the same question, the same scope, in
 // the failed turn's place.
@@ -1934,4 +2184,264 @@ describe("queryStore asynchronous ownership", () => {
       expect(chat).toHaveBeenCalledTimes(1);
     } finally { useVaultStore.setState({ isOpeningVault: false }); }
   });
+});
+
+
+describe("HTTP Ask evidence boundary", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
+    useQueryStore.getState().clear();
+  });
+  it("shows and persists model abstention without claiming search failure or a useful answer", async () => {
+    stubProvider().mockRejectedValueOnce(new ModelEvidenceAbstention());
+    const saved: AskRecord[] = [];
+    vi.mocked(ipc.askHistoryAppend).mockImplementation(async (_vault, record) => {
+      saved.push(JSON.parse(JSON.stringify(record)) as AskRecord); return null;
+    });
+    vi.spyOn(ipc, "askHistoryLoad").mockImplementation(async () => saved);
+    await ask("Explain the synthetic record");
+    expect(last()).toMatchObject({abstained: true, abstainExplanation: copy.modelEvidenceInsufficient, retrievalFailed: false});
+    expect(last().error).toBeUndefined();
+    await vi.waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0]).toMatchObject({a: "", cited: [], abstained: true, abstainReason: "model_evidence"});
+    expect(saved[0].error).toBeUndefined();
+    useQueryStore.setState({history: []});
+    await useQueryStore.getState().loadHistory();
+    expect(useQueryStore.getState().history[0]).toEqual(saved[0]);
+  });
+  it("keeps the failed turn's question as recall context but excludes its rejected answer", async () => {
+    const chat = stubProvider().mockImplementation(() => reply("A grounded answer"));
+    const topic = "Atlas 프로젝트의 저장 방식 결정 이유는?";
+    useQueryStore.setState({ turns: [{ q: topic, a: "REJECTED_PRIVATE_DRAFT", error: "citation rejected" }] });
+    await ask("직전 결정 질문에서 이야기한 발언을 다시 찾아줘.");
+    expect(vi.mocked(ipc.semanticSearch).mock.calls[0][0]).toContain(topic);
+    expect(last().followUp).toBe(true);
+    expect(chat.mock.calls[0][0].messages[0].content).toContain(topic);
+    expect(JSON.stringify(chat.mock.calls[0][0].messages)).not.toContain("REJECTED_PRIVATE_DRAFT");
+  });
+
+  it("preserves a clarification when saved history is loaded again", async () => {
+    const chat = stubProvider();
+    const saved: AskRecord[] = [];
+    vi.mocked(ipc.askHistoryAppend).mockImplementation(async (_vault, record) => {
+      saved.push(JSON.parse(JSON.stringify(record)) as AskRecord);
+      return null;
+    });
+    vi.spyOn(ipc, "askHistoryLoad").mockImplementation(async () => saved);
+    await ask("전에 이야기한 그 내용 찾아줘.");
+    await vi.waitFor(() => expect(saved).toHaveLength(1));
+    expect(saved[0].a).toBe(copy.recallTopicNeeded);
+    expect(saved[0].abstained).toBeUndefined();
+    useQueryStore.setState({ history: [] });
+    await useQueryStore.getState().loadHistory();
+    expect(useQueryStore.getState().history[0]).toEqual(saved[0]);
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(chat).not.toHaveBeenCalled();
+  });
+
+  it("asks for a missing topic without searching or generating, then accepts a concrete reply", async () => {
+    const chat = stubProvider().mockImplementation(() => reply("Grounded response"));
+    await ask("전에 이야기한 그 내용 찾아줘.");
+    expect(last()).toMatchObject({ needsClarification: true, a: copy.recallTopicNeeded });
+    expect(last().followUp).toBeUndefined();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(chat).not.toHaveBeenCalled();
+    expect(reasksOf(last())).toEqual({});
+    await ask("Atlas deployment decision");
+    expect(ipc.semanticSearch).toHaveBeenCalledTimes(1);
+    expect(chat).toHaveBeenCalledTimes(1);
+    expect(last().needsClarification).toBeUndefined();
+  });
+
+  it.each(["empty", "failed", "stale"])(
+    "does not call the generator for %s retrieval, even after a previous answer",
+    async (mode) => {
+      const chat = stubProvider().mockImplementation(() =>
+        reply("Earlier answer"),
+      );
+      await ask("initial question");
+      expect(chat).toHaveBeenCalledTimes(1);
+      chat.mockClear();
+      const near = {
+        page: "wiki/candidate.md",
+        stem: "candidate",
+        similarity: null,
+        tier: "note" as const,
+        score_final: 0.01,
+      };
+      vi.mocked(ipc.semanticSearch).mockResolvedValue({
+        hits: [],
+        below_floor: [near],
+        floor: 0.42,
+      });
+      if (mode === "failed")
+        vi.mocked(ipc.semanticSearch).mockRejectedValue(
+          new Error("PRIVATE FAILURE"),
+        );
+      if (mode === "stale")
+        vi.mocked(ipc.embeddingsStatus).mockResolvedValue({
+          indexed_pages: 3,
+          model: "builtin-local:retired",
+        });
+      await ask("follow-up question");
+      expect(chat).not.toHaveBeenCalled();
+      expect(last().abstained).toBe(true);
+      expect(last().retrievalFailed).toBe(mode === "failed");
+      expect(last().stale).toBe(mode === "stale");
+      expect(last().a).not.toContain("PRIVATE FAILURE");
+      expect(ipc.readVaultContext).not.toHaveBeenCalled();
+      if (mode !== "failed") expect(last().nearMisses).toEqual([near]);
+    },
+  );
+});
+
+
+it("persists delivered originals without changing answer text and excludes unsuccessful turns", () => {
+  const citationEvidence = {version: 1 as const, sources: [{path:"raw/record.md", revision:"a".repeat(64), spans:[{id:"s1",start:0,end:6,text:"원문",sha256:"b".repeat(64),speaker:"user",turnTime:null}]}]};
+  const turn = {q:"Question",a:"Original answer [[raw/record]]",citationEvidence};
+  const saved=recordOf(turn,100);
+  expect(saved.a).toBe(turn.a);
+  expect(saved.citationEvidence).toEqual(citationEvidence);
+  expect(saved.citationEvidence).not.toBe(citationEvidence);
+  for(const failed of [{error:"bad"},{stopped:true},{abstained:true}])
+    expect(recordOf({...turn,...failed},101).citationEvidence).toBeUndefined();
+});
+
+
+it("persists passage omissions within a cited page through the actual packing callback and history reload",async()=>{
+ vi.restoreAllMocks();useVaultStore.setState({currentVault:{path:"/v",name:"v"},isOpeningVault:false,adjacency:null});
+ useQueryStore.getState().clear();useUIStore.setState({askScope:"sessions",isAskScopeExplicit:true});
+ const answer="검토는 진행 중입니다. [[sessions/work|Work]]";
+ const chat=stubProvider().mockImplementation(()=>reply(answer));
+ const first={page:"sessions/work.md",stem:"Work",section:0,text:"Included: review is still open."};
+ const omitted={...first,section:1,text:"OMIT_WHOLE_PASSAGE: additional qualifying record."};
+ vi.spyOn(ipc,"activityRecall").mockResolvedValue({hits:[first,omitted],indexed_pages:1,scanned_pages:1,matched_chunks:2,incomplete:false});
+ const saved:AskRecord[]=[];
+ vi.mocked(ipc.askHistoryAppend).mockImplementation(async(_vault,record)=>{saved.push(JSON.parse(JSON.stringify(record)) as AskRecord);return null;});
+ vi.spyOn(ipc,"askHistoryLoad").mockImplementation(async()=>JSON.parse(JSON.stringify(saved)) as AskRecord[]);
+ const dispose=registerModelContextBudget("ollama","llama3",{contextTokens:4096,outputTokens:768,
+  countMessages:async messages=>messages.some(m=>m.content.includes("OMIT_WHOLE_PASSAGE"))?4000:1000});
+ try{
+  const turn=await useQueryStore.getState().ask("2026년 10월 6일 한 일","ko",askCopy(STRINGS.ko),{scope:"sessions"});
+  expect(turn).toMatchObject({a:answer,activityCoverage:{scannedPages:1,sources:1,incomplete:true},
+   searchContext:{packing:{selectedPassages:1,omittedPassages:1,omittedOnIncludedPages:1}}});
+  expect(chat).toHaveBeenCalledTimes(1);
+  expect(JSON.stringify(chat.mock.calls[0][0].messages)).not.toContain("OMIT_WHOLE_PASSAGE");
+  await vi.waitFor(()=>expect(saved).toHaveLength(1));
+  expect(saved[0]).toMatchObject({a:answer,scope:"sessions",searchContext:{version:1,range:{start:"2026-10-06",end:"2026-10-06"},
+   activityCoverage:{scannedPages:1,sources:1,incomplete:true},packing:{selectedPassages:1,omittedPassages:1,omittedOnIncludedPages:1}}});
+  expect(JSON.stringify(saved[0])).not.toContain("OMIT_WHOLE_PASSAGE");
+  useQueryStore.setState({history:[]});await useQueryStore.getState().loadHistory();
+  expect(useQueryStore.getState().history).toEqual(saved);
+  expect(chat).toHaveBeenCalledTimes(1);
+ }finally{dispose();useQueryStore.getState().clear();}
+});
+it("stores true-only applied period semantics, original activity question and immutable note paths outside answer text",()=>{
+ const paths=["wiki/selected.md","wiki/linked.md"];
+ const turn:ChatTurn={q:"이번 주",a:"Saved answer",scope:"all",note:{path:"/v/wiki/selected.md",title:"Selected"},
+  range:{start:"2026-10-05",end:"2026-10-07"},activityQuestion:"최근에 한 일",searchContext:{version:1,paths}};
+ const saved=recordOf(turn,100);paths.push("wiki/changed-later.md");
+ expect(saved.searchContext).toMatchObject({paths:["wiki/selected.md","wiki/linked.md"],range:turn.range,activityQuestion:"최근에 한 일"});
+ expect(saved.a).toBe(turn.a);expect(saved.searchContext?.rangeIgnored).toBeUndefined();
+ const ignored=recordOf({...turn,ignoreRange:true},101);
+ expect(ignored.searchContext?.rangeIgnored).toBe(true);expect(ignored.searchContext?.range).toBeUndefined();
+ const clarification=recordOf({q:"최근에 한 일",a:"Which period?",abstained:true,needsClarification:true,activityPeriodNeeded:true,activityQuestion:"최근에 한 일"},102);
+ expect(clarification).toMatchObject({a:"Which period?",searchContext:{periodClarification:true,activityQuestion:"최근에 한 일"}});
+ expect(clarification.abstained).toBeUndefined();
+});
+
+describe("Ask model execution survives history without changing the prompt",()=>{
+ beforeEach(()=>{
+  vi.restoreAllMocks();useQueryStore.getState().clear();
+  useVaultStore.setState({currentVault:{path:"/v",name:"v"},isOpeningVault:false,adjacency:null});
+  useUIStore.setState({askScope:"all",isAskScopeExplicit:true});
+ });
+ it("saves requested and reported identities separately, and reopens them without another call",async()=>{
+  const body="Synthetic answer [[wiki/a]]";
+  const chat=stubProvider().mockResolvedValue({provider_id:"ollama",model:"llama3",reported_model:"server-reported",content:body,usage:null});
+  const saved:AskRecord[]=[];
+  vi.mocked(ipc.askHistoryAppend).mockImplementation(async(_vault,record)=>{saved.push(JSON.parse(JSON.stringify(record)));return null;});
+  vi.spyOn(ipc,"askHistoryLoad").mockImplementation(async()=>JSON.parse(JSON.stringify(saved)));
+  await ask("synthetic factual question");
+  expect(last().a).toBe(body);
+  expect(last().execution).toMatchObject({selected:{providerId:"ollama",modelId:"llama3"},answerKind:"model_response",calls:[{
+   purpose:"answer",requested:{providerId:"ollama",modelId:"llama3"},state:"response_received",identity:{modelId:"server-reported",source:"provider_response"}}]});
+  await vi.waitFor(()=>expect(saved).toHaveLength(1));
+  expect(saved[0].a).toBe(body);expect(saved[0].execution).toEqual(last().execution);
+  useQueryStore.setState({history:[]});await useQueryStore.getState().loadHistory();
+  expect(useQueryStore.getState().history[0].execution).toEqual(saved[0].execution);
+  expect(chat).toHaveBeenCalledTimes(1);
+  await ask("another synthetic factual question");
+  const replay=JSON.stringify(chat.mock.calls[1][0].messages);
+  expect(replay).toContain(body);expect(replay).not.toContain("server-reported");expect(replay).not.toContain("provider_response");
+ });
+ it("never promotes the request echo into a reported model",async()=>{
+  stubProvider().mockImplementation(()=>reply("Answer [[wiki/a]]"));
+  await ask("synthetic factual question");
+  expect(last().execution?.calls[0]).toMatchObject({state:"response_received",requested:{modelId:"llama3"}});
+  expect(last().execution?.calls[0].identity).toBeUndefined();
+ });
+ it.each([false,true])("preserves the answer or error when optional route metadata is invalid (failure=%s)",async failure=>{
+  const chat=stubProvider();
+  vi.mocked(ipc.captureModelRole).mockResolvedValue(roleFixture("ask","ollama","legacy\nmodel"));
+  if (failure) chat.mockRejectedValue(new Error("synthetic rejection"));
+  else chat.mockResolvedValue({provider_id:"ollama",model:"legacy\nmodel",content:"Answer [[wiki/a]]",usage:null});
+  const saved:AskRecord[]=[];
+  vi.mocked(ipc.askHistoryAppend).mockImplementation(async(_vault,record)=>{saved.push(record);return null;});
+  await expect(ask("synthetic factual question")).resolves.toBeDefined();
+  expect(last().execution).toBeUndefined();
+  if (failure) expect(last().error).toContain("synthetic rejection");
+  else expect(last().a).toBe("Answer [[wiki/a]]");
+  await vi.waitFor(()=>expect(saved).toHaveLength(1));
+  expect(saved[0].execution).toBeUndefined();
+  expect(saved[0].a).toBe(last().a);expect(saved[0].error).toBe(last().error);
+  expect(useQueryStore.getState().busy).toBe(false);
+ });
+ it("records a period clarification as application text without a generation command",async()=>{
+  const chat=stubProvider();
+  await useQueryStore.getState().ask("최근에 한일","ko",askCopy(STRINGS.ko));
+  expect(last().needsClarification).toBe(true);
+  expect(last().execution).toMatchObject({answerKind:"clarification",calls:[],selected:{providerId:"ollama",modelId:"llama3"}});
+  expect(chat).not.toHaveBeenCalled();
+  expect(recordOf(last(),1).a).toBe(last().a);
+ });
+ it("records quote-only answers and pre-dispatch empty evidence without claiming generation",async()=>{
+  stubAnswer();await ask("attention mechanism");
+  expect(last().execution).toMatchObject({answerKind:"extractive",calls:[]});
+  useQueryStore.getState().clear();
+  const chat=stubProvider();vi.mocked(ipc.semanticSearch).mockResolvedValue({hits:[],floor:0.42,below_floor:[]});
+  await ask("unavailable synthetic fact");
+  expect(last().execution).toMatchObject({answerKind:"none",calls:[]});expect(chat).not.toHaveBeenCalled();
+ });
+ it("retains a received identity when citation review rejects the returned answer",async()=>{
+  stubProvider().mockResolvedValue({provider_id:"ollama",model:"llama3",reported_model:"reported",content:"Unsupported [[outside/not-supplied]]",usage:null});
+  await ask("synthetic factual question");
+  expect(last().error).toBe(copy.answerReviewFailed);
+  expect(last().execution).toMatchObject({answerKind:"none",calls:[{state:"response_received",identity:{modelId:"reported"}}]});
+ });
+ it("marks a rejected generation command failed without claiming a remote model ran",async()=>{
+  stubProvider().mockRejectedValue(new Error("synthetic native rejection"));await ask("synthetic factual question");
+  expect(last().error).toContain("synthetic native rejection");
+  expect(last().execution).toMatchObject({answerKind:"none",calls:[{state:"failed"}]});
+  expect(last().execution?.calls[0].identity).toBeUndefined();
+ });
+ it("keeps cancelled metadata immutable when an old reply arrives during the next question",async()=>{
+  const chat=stubProvider();let finish!:(value:Awaited<ReturnType<typeof ipc.chatComplete>>)=>void;
+  chat.mockImplementationOnce(()=>new Promise(resolve=>{finish=resolve;}));
+  const first=ask("first synthetic question");await vi.waitFor(()=>expect(chat).toHaveBeenCalledTimes(1));
+  useQueryStore.getState().stop();await first;
+  const stopped=recordOf(last(),1);
+  expect(stopped.execution).toMatchObject({answerKind:"none",calls:[{state:"cancelled"}]});
+  chat.mockResolvedValue({provider_id:"ollama",model:"llama3",reported_model:"second",content:"Second [[wiki/a]]",usage:null});
+  await ask("second synthetic question");
+  finish({provider_id:"ollama",model:"llama3",reported_model:"late-first",content:"Late [[wiki/a]]",usage:null});
+  await Promise.resolve();await Promise.resolve();
+  expect(stopped.execution?.calls[0].state).toBe("cancelled");
+  expect(last().execution?.calls[0].identity?.modelId).toBe("second");
+  expect(JSON.stringify(last().execution)).not.toContain("late-first");
+ });
+ it("leaves a legacy turn's execution unknown instead of using today's selection",()=>{
+  expect(recordOf({q:"legacy",a:"old answer"},1).execution).toBeUndefined();
+ });
 });

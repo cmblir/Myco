@@ -85,6 +85,7 @@ fn fixture() -> (tempfile::TempDir, Request, CheckedEvidence, Bm25Index) {
         paths: None,
         max_tokens: Some(768),
         activity_overview: true,
+        guided_question: None,
         resolution: None,
     };
     let checked = checked_evidence(dir.path(), &index, &request).unwrap();

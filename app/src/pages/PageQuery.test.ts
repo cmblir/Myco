@@ -16,7 +16,7 @@ vi.hoisted(() => {
     removeItem: (k: string) => void m.delete(k),
   });
 });
-import PageQuery, { ExtractiveAnswer, MissButton } from "./PageQuery";
+import PageQuery, { ExtractiveAnswer, GuidedQuestionPicker, MissButton } from "./PageQuery";
 import { STRINGS } from "../lib/i18n";
 import { DEFAULT_TIER_WEIGHTS } from "../lib/extractive";
 import { ipc, type AgentVaultSession, type MycoSettings, type ScoredChunk } from "../lib/ipc";
@@ -31,6 +31,36 @@ import * as uiModule from "../stores/uiStore";
 import * as settingsModule from "../stores/settingsStore";
 
 const t = STRINGS.ko;
+
+describe("guided question choices", () => {
+  const picker = (selected: boolean, disabled = false): string => renderToStaticMarkup(h(GuidedQuestionPicker, {
+    lang: "ko", intent: selected ? "decision" : null,
+    subject: "가상 항해 일지", asOf: "2026-10-15", disabled,
+    onIntent: () => undefined, onSubject: () => undefined,
+    onAsOf: () => undefined, onSubmit: () => undefined,
+  }));
+
+  it("offers four explicit task choices and a free-question escape", () => {
+    const html = picker(false);
+    for (const label of ["어디까지 했지?", "왜 이렇게 결정했지?", "남은 작업은?", "전에 이야기한 내용 찾기", "직접 질문하기"])
+      expect(html).toContain(label);
+    expect(html.match(/aria-pressed="true"/g)).toHaveLength(1);
+    expect(html).not.toContain('type="date"');
+  });
+
+  it("shows the selected task with a named subject and optional historical cutoff", () => {
+    const html = picker(true);
+    expect(html).toContain('aria-pressed="true">왜 이렇게 결정했지?');
+    expect(html).toContain("프로젝트·주제");
+    expect(html).toContain('value="가상 항해 일지"');
+    expect(html).toContain('type="date"');
+    expect(html).toContain('value="2026-10-15"');
+    expect(html).toContain("기준일 (선택)");
+    expect(html).toContain("선택한 자료 범위 안에서 찾습니다.");
+    expect(picker(true, true)).toContain('fieldset class="ask-guided" disabled=""');
+  });
+});
+
 const render = (harvested: boolean): string =>
   renderToStaticMarkup(h(MissButton, { t, harvested, onLog: () => undefined }));
 
@@ -112,6 +142,7 @@ it.each([false, true])("renders locally synthesized prose with model provenance 
     useVaultStore.setState({ currentVault: { path: "/synthetic", name: "Synthetic vault" }, adjacency: null, fileTree: [] });
     useUIStore.setState({ lang: "ko", route: "query" });
     useQueryStore.setState({ turns: [{ q: "Synthetic question", a: "SYN-GENERATED-ANSWER [[wiki/note-1|note-1]]",
+      searchContext:{version:1,packing:{selectedPassages:2,omittedPassages:1,omittedOnIncludedPages:1}},
       localModel: "qwen3.5-4b-q4_k_m", ...(activity
         ? { range: { start: "2026-09-26", end: "2026-10-04" }, activityCoverage: { scannedPages: 24, sources: 2, incomplete: true } }
         : { hits: [hit(1, "SYN-RAW-PASSAGE")] }), extractive: false, scope: "wiki" }],
@@ -139,6 +170,8 @@ it.each([false, true])("renders locally synthesized prose with model provenance 
     expect(html).not.toContain("SYN-RAW-PASSAGE");
     expect(html).not.toContain('class="ask-split"');
     expect(html).toContain(t.q_copy_answer);
+    expect(html).toContain(t.q_context_packing_limited.replace("{selected}","2").replace("{omitted}","1"));
+    expect(html).toContain(t.q_context_packing_same_page.replace("{n}","1"));
     if (activity) {
       expect(html).toContain(t.q_range_chip.replace("{s}", "2026-09-26").replace("{e}", "2026-10-04"));
       expect(html).toContain(t.q_activity_coverage.replace("{scanned}", "24").replace("{sources}", "2"));
@@ -186,6 +219,13 @@ describe("Ask retrieval failure recovery", () => {
       useUIStore.setState(previousUI);
     }
   };
+  it.each(["en", "ko", "ja"] as const)("shows topic clarification without claiming failed search (%s)", lang => {
+    const text=STRINGS[lang].q_recall_topic_needed;
+    const html=renderTurn({q:"전에 이야기한 그 내용 찾아줘.",a:text,abstained:true,needsClarification:true,followUp:true},lang);
+    expect(html).toContain(text);
+    expect(html).not.toContain(STRINGS[lang].q_abstain_title);
+    expect(html).not.toContain(STRINGS[lang].q_abstain_details);
+  });
   const textMarkup = (text: string): string => renderToStaticMarkup(h("span", null, text)).slice(6, -7);
 
   it.each([

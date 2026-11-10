@@ -92,7 +92,7 @@ fn native_ask_activity_revoked_grant_is_rejected_before_source_access() {
 }
 
 #[test]
-fn native_ask_activity_external_selection_is_rejected_by_local_source_route() {
+fn native_ask_activity_explicit_external_selection_can_read_date_grounded_sources() {
     crate::settings::test_support::with_isolated_data("ask-read-external-role", |_| {
         let (_directory, state, index, mut request) = ask_fixture();
         let mut settings = crate::role_authorization::settings_snapshot().unwrap();
@@ -109,10 +109,17 @@ fn native_ask_activity_external_selection_is_rejected_by_local_source_route() {
         })
         .unwrap();
         request.role_snapshot = Some(grant(&state, RoleId::Ask, RoleUsage::Foreground));
-        assert!(
-            activity_read(&state, &index, &request, false).is_err(),
-            "local source route accepted an external model selection"
-        );
+        let result = activity_read(&state, &index, &request, false).unwrap();
+        assert_eq!(result.hits.len(), 1);
+        assert!(result.hits[0].text.contains("SYNTHETIC_ASK_ROLE_SENTINEL"));
+        // Selection changes still revoke the original read authority.
+        crate::role_authorization::select_role(crate::role_authorization::RoleSelectionRequest {
+            role: RoleId::Ask, provider_id: "openai-api".into(),
+            model_id: "another-synthetic-model".into(), effort: "(default)".into(),
+            expected_authorization_revision: crate::role_authorization::settings_snapshot()
+                .unwrap().role_authorization_revision,
+        }).unwrap();
+        assert!(activity_read(&state, &index, &request, false).is_err());
     });
 }
 

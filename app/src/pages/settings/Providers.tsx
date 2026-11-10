@@ -5,6 +5,7 @@ import type { JSX } from "react";
 import { Icon, ProviderGlyph } from "../../lib/icons";
 import type { Strings } from "../../lib/i18n";
 import { useSettingsStore } from "../../stores/settingsStore";
+import { useUIStore } from "../../stores/uiStore";
 import { ipc } from "../../lib/ipc";
 import type { MycoSettings, OllamaStatus } from "../../lib/ipc";
 import {
@@ -58,7 +59,7 @@ export function SettingsProviders({ t }: { t: Strings }): JSX.Element {
       .ollamaStatus()
       .then((st) => {
         setOllamaStatus(st);
-        setOllamaError(null);
+        setOllamaError(st.error);
         // Keep the connection flag mirroring the live daemon, so the model
         // picker gains/loses ollama automatically.
         void syncOllama();
@@ -259,6 +260,7 @@ export function SettingsProviders({ t }: { t: Strings }): JSX.Element {
                   >
                     {providerDesc(t, p)}
                   </div>
+                  <ModelServerEndpoint refresh={refreshOllama} />
                   {ollamaError ? (
                     <div
                       role="alert"
@@ -737,4 +739,46 @@ function ConnectSwitch({
       </span>
     </button>
   );
+}
+
+/** Persist an explicit local HTTP server without requiring shell overrides. */
+function ModelServerEndpoint({ refresh }: { refresh: () => void }): JSX.Element {
+  const settings = useSettingsStore(s => s.settings);
+  const saving = useSettingsStore(s => s.saving);
+  const update = useSettingsStore(s => s.update);
+  const lang = useUIStore(s => s.lang);
+  const [value, setValue] = useState(settings?.ollama_url ?? "");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setValue(settings?.ollama_url ?? ""); }, [settings?.ollama_url]);
+  const copy = lang === "ko" ? {
+    label: "모델 서버 주소", save: "주소 저장", hint: "비워 두면 이 컴퓨터의 기본 주소를 사용해요. 저장한 주소는 앱을 다시 열어도 유지돼요.",
+  } : lang === "ja" ? {
+    label: "モデルサーバーのアドレス", save: "保存", hint: "空欄の場合はこのPCの既定アドレスを使用します。再起動後も保存されます。",
+  } : {
+    label: "Model server address", save: "Save address", hint: "Leave blank for this computer's default address. The saved address survives app restarts.",
+  };
+  return <form className="col" style={{ gap: 6 }} onSubmit={event => {
+    event.preventDefault();
+    if (saving) return;
+    setError(null);
+    const next = value.trim();
+    void update({ ollama_url: next }).then(() => {
+      const state = useSettingsStore.getState();
+      if (state.error || (state.settings?.ollama_url ?? "") !== next) {
+        setError(state.error ?? "Model server address was not saved");
+        return;
+      }
+      refresh();
+    }).catch(error => setError(String(error)));
+  }}>
+    <label htmlFor="model-server-address">{copy.label}</label>
+    <div className="row" style={{ gap: 8 }}>
+      <input id="model-server-address" type="url" placeholder="http://localhost:11434"
+        value={value} onChange={event => setValue(event.target.value)} disabled={saving}
+        style={{ flex: 1, minWidth: 0 }} spellCheck={false} />
+      <button type="submit" className="btn" disabled={saving || !settings || value.trim() === (settings.ollama_url ?? "")}>{copy.save}</button>
+    </div>
+    <div className="muted" style={{ fontSize: 12 }}>{copy.hint}</div>
+    {error && <div role="alert" style={{ color: "var(--danger)" }}>{error}</div>}
+  </form>;
 }

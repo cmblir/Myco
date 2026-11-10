@@ -24,8 +24,8 @@ pub struct OllamaStatus {
     pub error: Option<String>,
 }
 
-fn endpoint() -> String {
-    crate::env::var("MYCO_OLLAMA_URL").unwrap_or_else(|| "http://localhost:11434".to_string())
+fn endpoint() -> Result<String, String> {
+    Ok(crate::providers::ollama_endpoint(&crate::settings::read_checked()?))
 }
 
 /// Parse the body of a `GET /api/tags` 200 into the model list.
@@ -87,7 +87,14 @@ fn get_version(path: &str) -> Option<String> {
 pub async fn check() -> OllamaStatus {
     let (installed, path) = locate_binary();
     let version = path.as_deref().and_then(get_version);
-    let url = endpoint();
+    let url = match endpoint() {
+        Ok(url) => url,
+        Err(error) => return OllamaStatus {
+            binary_installed: installed, binary_path: path, version,
+            daemon_running: false, endpoint: String::new(), models: Vec::new(),
+            error: Some(format!("model server settings unavailable: {error}")),
+        },
+    };
     let client = match reqwest::Client::builder()
         .timeout(Duration::from_millis(900))
         .build()
@@ -155,24 +162,29 @@ mod tests {
         assert!(url.contains("ollama.com"));
     }
 
-    #[test]
-    // serial: cargo runs tests in parallel threads, and this test races
-    // endpoint_respects_env_override over the same process-wide env var —
-    // first observed as a Windows CI failure reading the other test's value.
-    #[serial_test::serial(myco_ollama_url)]
-    fn endpoint_defaults_to_localhost() {
-        // Snapshot then restore so we don't pollute env for other tests.
-        let prev = std::env::var("MYCO_OLLAMA_URL").ok();
-        unsafe {
-            std::env::remove_var("MYCO_OLLAMA_URL");
-        }
-        let url = endpoint();
-        assert_eq!(url, "http://localhost:11434");
-        if let Some(v) = prev {
-            unsafe {
-                std::env::set_var("MYCO_OLLAMA_URL", v);
+    struct EndpointEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
+    impl Drop for EndpointEnvironment {
+        fn drop(&mut self) {
+            for (key, value) in &self.0 {
+                match value { Some(value) => std::env::set_var(key, value), None => std::env::remove_var(key) }
             }
         }
+    }
+    fn clean_endpoint_environment() -> EndpointEnvironment {
+        let values = ["MYCO_OLLAMA_URL", "MEMEX_OLLAMA_URL"].into_iter()
+            .map(|key| (key, std::env::var_os(key))).collect();
+        let guard = EndpointEnvironment(values);
+        std::env::remove_var("MYCO_OLLAMA_URL");
+        std::env::remove_var("MEMEX_OLLAMA_URL");
+        guard
+    }
+    #[test]
+    #[serial_test::serial(myco_ollama_url)]
+    fn endpoint_defaults_to_localhost() {
+        crate::settings::test_support::with_isolated_data("ollama-endpoint-default", |_| {
+            let _environment = clean_endpoint_environment();
+            assert_eq!(endpoint().unwrap(), "http://localhost:11434");
+        });
     }
 
     #[test]
@@ -210,23 +222,21 @@ mod tests {
     }
 
     #[test]
-    // serial: see endpoint_defaults_to_localhost — same env var, same race.
     #[serial_test::serial(myco_ollama_url)]
-    fn endpoint_respects_env_override() {
-        let prev = std::env::var("MYCO_OLLAMA_URL").ok();
-        unsafe {
-            std::env::set_var("MYCO_OLLAMA_URL", "http://example.test:1234");
-        }
-        let url = endpoint();
-        assert_eq!(url, "http://example.test:1234");
-        if let Some(v) = prev {
-            unsafe {
-                std::env::set_var("MYCO_OLLAMA_URL", v);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("MYCO_OLLAMA_URL");
-            }
-        }
+    fn endpoint_respects_safe_env_override() {
+        crate::settings::test_support::with_isolated_data("ollama-endpoint-override", |_| {
+            let _environment = clean_endpoint_environment();
+            std::env::set_var("MYCO_OLLAMA_URL", "http://127.0.0.1:1234");
+            assert_eq!(endpoint().unwrap(), "http://127.0.0.1:1234");
+        });
     }
+    #[test]
+    fn endpoint_does_not_hide_corrupt_settings_as_default_server() {
+        crate::settings::test_support::with_isolated_data("ollama-endpoint-corrupt", |directory| {
+            let _environment = clean_endpoint_environment();
+            std::fs::write(directory.join("settings.json"), "not valid JSON").unwrap();
+            assert!(endpoint().is_err());
+        });
+    }
+
 }

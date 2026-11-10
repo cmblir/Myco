@@ -1,4 +1,4 @@
-//! Background actor that keeps the vector index up to date as wiki pages
+//! Background actor that keeps the lexical/vector indexes current as wiki pages
 //! change, without making a write wait on re-embedding.
 //!
 //! A write calls `mark_dirty(root, rel)` — a non-blocking channel send, safe from
@@ -7,9 +7,11 @@
 //! either re-embeds just those pages or, when the on-disk index predates the
 //! current embed model (first index, or a model migration), does a full
 //! rebuild — the same policy `reindex_embeddings` uses, just triggered
-//! automatically instead of by a button.
+//! automatically instead of by a button. Automatic embeddings honor the
+//! persisted opt-in; opting out still synchronizes lexical content/deletions
+//! and invalidates outdated vectors, without loading an embedding model.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
@@ -18,10 +20,7 @@ use crate::commands::AgentVaultSession;
 use tauri::Manager as _;
 
 use crate::commands::LocalLlmState;
-use crate::retrieval::Bm25Cache;
-#[cfg(test)]
-use crate::retrieval::Bm25Index;
-#[cfg(test)]
+use crate::retrieval::{Bm25Cache, Bm25Index};
 use crate::vector_index::VectorStore;
 use crate::vector_index::{is_cold, VectorCache};
 
@@ -50,6 +49,90 @@ fn is_bound(binding: &Mutex<Option<AgentVaultSession>>, origin: &AgentVaultSessi
     })
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IndexMode {
+    Manual,
+    AutomaticDense,
+    AutomaticLexical,
+}
+
+impl IndexMode {
+    fn dense(self) -> bool {
+        self != Self::AutomaticLexical
+    }
+
+    fn check_policy(self) -> Result<(), String> {
+        if self != Self::Manual {
+            let enabled = automatic_dense_enabled()?;
+            if self == Self::AutomaticDense && !enabled {
+                return Err("automatic embedding disabled; dense work remains pending".into());
+            }
+        }
+        Ok(())
+    }
+}
+
+fn automatic_dense_enabled() -> Result<bool, String> {
+    crate::settings::read_checked().map(|settings| settings.auto_reindex_enabled)
+}
+
+/// Lexical freshness continues while automatic embeddings are opted out. Keep
+/// the unembedded paths separately so enabling the setting can resume without
+/// another filesystem write (including a deferred startup/model migration).
+#[derive(Default)]
+struct PendingWork {
+    dirty: HashSet<String>,
+    dense: HashSet<String>,
+}
+
+impl PendingWork {
+    fn clear(&mut self) {
+        self.dirty.clear();
+        self.dense.clear();
+    }
+
+    fn batch(&self, mode: IndexMode) -> Vec<String> {
+        if mode.dense() {
+            self.dirty.union(&self.dense).cloned().collect()
+        } else {
+            self.dirty.iter().cloned().collect()
+        }
+    }
+
+    fn completed(&mut self, batch: &[String], mode: IndexMode) {
+        for path in batch {
+            self.dirty.remove(path);
+            if mode.dense() {
+                self.dense.remove(path);
+            } else {
+                self.dense.insert(path.clone());
+            }
+        }
+    }
+}
+
+/// A full rebind publishes lexical coverage before any opted-in dense rebuild.
+/// Checked settings still gate dispatch, and only successful publication
+/// acknowledges queued work. Corrupt settings dispatch neither.
+async fn dispatch_pending<F, Fut>(pending: &mut PendingWork, build: F) -> Result<(), String>
+where
+    F: FnOnce(Vec<String>, IndexMode) -> Fut,
+    Fut: std::future::Future<Output = Result<(), String>>,
+{
+    let dense_enabled = automatic_dense_enabled()?;
+    let mode = if pending.dirty.contains("*") || !dense_enabled {
+        IndexMode::AutomaticLexical
+    } else {
+        IndexMode::AutomaticDense
+    };
+    let batch = pending.batch(mode);
+    if !batch.is_empty() {
+        build(batch.clone(), mode).await?;
+        pending.completed(&batch, mode);
+    }
+    Ok(())
+}
+
 /// Every queued path carries the root and opening that produced it.
 #[derive(Clone)]
 pub struct IndexUpdater {
@@ -71,15 +154,19 @@ impl IndexUpdater {
             // Defer launch catch-up while rendering and initial model work settle.
             const REBIND_CATCHUP_DELAY: std::time::Duration = std::time::Duration::from_secs(180);
             let mut origin: Option<AgentVaultSession> = None;
-            let mut dirty: HashSet<String> = Default::default();
+            let mut pending = PendingWork::default();
             let mut consecutive_errors: u32 = 0;
             loop {
                 let timer = async {
-                    if dirty.is_empty() {
+                    if pending.dirty.is_empty() && pending.dense.is_empty() {
                         std::future::pending::<()>().await
+                    } else if pending.dirty.is_empty() {
+                        // No lexical work remains. Poll only the policy, without
+                        // loading an embed model, until automatic dense resumes.
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await
                     } else {
                         tokio::time::sleep(batch_delay(
-                            &dirty,
+                            &pending.dirty,
                             origin.as_ref().map(|origin| Path::new(&origin.vault_path)),
                             DEBOUNCE,
                             REBIND_CATCHUP_DELAY,
@@ -95,51 +182,55 @@ impl IndexUpdater {
                                 && origin.as_ref().is_some_and(|current| same_origin(current, &message_origin))
                                 && should_index(&rel)
                             {
-                                dirty.insert(rel);
+                                pending.dirty.insert(rel);
                             }
                         }
                         Some(UpdateMsg::Rebind(new_origin)) => {
                             if !is_bound(&actor_binding, &new_origin) { continue; }
                             let next = start_watcher(&new_origin, watcher_tx.clone(), actor_binding.clone());
                             if let Ok(mut watcher) = actor_watcher.lock() { *watcher = next; }
-                            dirty.clear();
+                            pending.clear();
                             origin = Some(new_origin);
-                            dirty.insert("*".into());
+                            pending.dirty.insert("*".into());
                             consecutive_errors = 0;
                         }
                         Some(UpdateMsg::Unbind) => {
                             if actor_binding.lock().is_ok_and(|binding| binding.is_none()) {
                                 origin = None;
-                                dirty.clear();
+                                pending.clear();
                                 consecutive_errors = 0;
                             }
                         }
                         Some(UpdateMsg::Reconciled(message_origin)) => {
                             if is_bound(&actor_binding, &message_origin)
                                 && origin.as_ref().is_some_and(|current| same_origin(current, &message_origin))
-                            { dirty.remove("*"); }
+                            { pending.dirty.remove("*"); pending.dense.remove("*"); }
                         }
                         #[cfg(feature = "native-index-probe")]
-                        Some(UpdateMsg::Probe(reply)) => { let _ = reply.send((origin.clone(), dirty.clone())); }
+                        Some(UpdateMsg::Probe(reply)) => {
+                            let _ = reply.send((origin.clone(), pending.batch(IndexMode::AutomaticDense).into_iter().collect()));
+                        }
                     },
                     _ = timer => {
-                        let Some(current) = origin.as_ref() else { dirty.clear(); continue; };
-                        if !is_bound(&actor_binding, current) { dirty.clear(); continue; }
+                        let Some(current) = origin.as_ref() else { pending.clear(); continue; };
+                        if !is_bound(&actor_binding, current) { pending.clear(); continue; }
                         if crate::local_generation::busy() {
                             tokio::time::sleep(std::time::Duration::from_millis(500)).await;
                             continue;
                         }
                         if tauri::async_runtime::spawn_blocking(memory_pressured).await.unwrap_or(false) {
-                            eprintln!("[index_updater] memory pressure — deferring {} dirty path(s)", dirty.len());
+                            eprintln!("[index_updater] memory pressure — deferring {} dirty path(s)", pending.dirty.len());
                             tokio::time::sleep(std::time::Duration::from_secs(120)).await;
                             continue;
                         }
-                        let batch: Vec<String> = dirty.iter().cloned().collect();
-                        match process_batch(&app, current, batch.clone()).await {
-                            Ok(_) => {
-                                for path in &batch { dirty.remove(path); }
-                                consecutive_errors = 0;
-                            }
+                        let builder_app = &app;
+                        match dispatch_pending(&mut pending, |batch, mode| async move {
+                            build_index(
+                                builder_app, current, batch, "builtin-local",
+                                crate::local_llm::BUILTIN_EMBED_MODEL, mode,
+                            ).await.map(|_| ())
+                        }).await {
+                            Ok(()) => { consecutive_errors = 0; }
                             Err(error) => {
                                 consecutive_errors = (consecutive_errors + 1).min(6);
                                 eprintln!("[index_updater] batch failed (will retry): {error}");
@@ -171,6 +262,13 @@ impl IndexUpdater {
     }
 
     pub fn rebind(&self, origin: AgentVaultSession) {
+        if cfg!(debug_assertions)
+            && std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() == Ok("1")
+            && std::env::var("MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER").as_deref() == Ok("1")
+        {
+            self.unbind();
+            return;
+        }
         if let Ok(mut binding) = self.binding.lock() {
             *binding = Some(origin.clone());
         }
@@ -502,18 +600,24 @@ fn start_watcher(
 /// changed, so a rebind onto an already-current index costs a walk plus a
 /// hash check per page but never forces a save or resets the
 /// semantic-edge cache.
+#[cfg(feature = "native-index-probe")]
 pub(crate) async fn process_batch(
     app: &tauri::AppHandle,
     origin: &AgentVaultSession,
     batch: Vec<String>,
 ) -> Result<usize, String> {
+    let mode = if automatic_dense_enabled()? {
+        IndexMode::AutomaticDense
+    } else {
+        IndexMode::AutomaticLexical
+    };
     build_index(
         app,
         origin,
         batch,
         "builtin-local",
         crate::local_llm::BUILTIN_EMBED_MODEL,
-        false,
+        mode,
     )
     .await
 }
@@ -524,7 +628,79 @@ pub(crate) async fn reindex(
     provider: &str,
     model: &str,
 ) -> Result<usize, String> {
-    build_index(app, origin, vec!["*".into()], provider, model, true).await
+    build_index(
+        app,
+        origin,
+        vec!["*".into()],
+        provider,
+        model,
+        IndexMode::Manual,
+    )
+    .await
+}
+
+/// Use the same chunker/hashes as dense indexing, but never create vectors or
+/// claim a new embedding identity. Unchanged vectors remain reusable; changed
+/// chunks disappear immediately, and surviving chunks follow their new section
+/// positions rather than pointing at unrelated text after an insertion.
+fn sync_lexical_page(
+    store: &mut VectorStore,
+    lexical: &mut Bm25Index,
+    rel: &str,
+    stem: &str,
+    content: Option<&str>,
+    existing: &HashMap<String, Vec<(usize, u64)>>,
+) -> Result<bool, String> {
+    let chunks = content
+        .map(crate::embeddings::chunk_page)
+        .unwrap_or_default();
+    let hashes: Vec<_> = chunks
+        .iter()
+        .map(|text| crate::embeddings::content_hash(text))
+        .collect();
+    let lexical_current = lexical
+        .page_hashes(rel)
+        .map_or(chunks.is_empty(), |old| old == hashes);
+    if !lexical_current {
+        lexical.upsert_page(rel, stem, &chunks);
+    }
+    let old_sections = existing.get(rel).map(Vec::as_slice).unwrap_or_default();
+    if old_sections
+        .iter()
+        .copied()
+        .eq(hashes.iter().copied().enumerate())
+    {
+        return Ok(!lexical_current);
+    }
+    let reusable = store.page_vectors(rel);
+    let sections: Vec<_> = hashes
+        .iter()
+        .enumerate()
+        .filter_map(|(section, hash)| {
+            reusable
+                .get(hash)
+                .map(|vector| (section, *hash, vector.clone()))
+        })
+        .collect();
+    let dense_current = old_sections
+        .iter()
+        .copied()
+        .eq(sections.iter().map(|(section, hash, _)| (*section, *hash)));
+    if !dense_current {
+        store.upsert_page_sections(rel, stem, sections)?;
+    }
+    Ok(!lexical_current || !dense_current)
+}
+
+fn dense_sections(store: &VectorStore) -> HashMap<String, Vec<(usize, u64)>> {
+    let mut pages: HashMap<String, Vec<(usize, u64)>> = HashMap::new();
+    for record in &store.records {
+        pages
+            .entry(record.page.clone())
+            .or_default()
+            .push((record.section, record.hash));
+    }
+    pages
 }
 
 async fn build_index(
@@ -533,9 +709,13 @@ async fn build_index(
     batch: Vec<String>,
     provider: &str,
     model: &str,
-    progress: bool,
+    mode: IndexMode,
 ) -> Result<usize, String> {
     let _publisher = crate::index_publication::PUBLISHER.lock().await;
+    // Check after acquiring the publisher too: settings can change while a
+    // manual writer holds the lock. Lexical-only never resolves a model path.
+    mode.check_policy()?;
+    let progress = mode == IndexMode::Manual;
     let vault = app.state::<crate::commands::VaultRoot>();
     vault.with_origin(origin, |_| Ok(()))?;
     let root = PathBuf::from(&origin.vault_path);
@@ -544,24 +724,34 @@ async fn build_index(
         tauri::async_runtime::spawn_blocking(move || crate::index_publication::load(&load_root))
             .await
             .map_err(|error| format!("index load join: {error}"))??;
-    let signature = crate::commands::embedding_index_signature(app, provider, model).await?;
-    let model_id = crate::commands::embedding_model_id(provider, model)?;
-    let stale_model =
-        if provider == "builtin-local" && model == crate::local_llm::BUILTIN_EMBED_MODEL {
-            index_is_stale(&pair.store.model)
-        } else {
-            pair.store.model != model_id
-        };
-    let stale = stale_model || pair.store.signature != signature;
+    let signature = if mode.dense() {
+        mode.check_policy()?;
+        Some(crate::commands::embedding_index_signature(app, provider, model).await?)
+    } else {
+        None
+    };
+    let stale = if let Some(signature) = signature.as_ref() {
+        let model_id = crate::commands::embedding_model_id(provider, model)?;
+        let stale_model =
+            if provider == "builtin-local" && model == crate::local_llm::BUILTIN_EMBED_MODEL {
+                index_is_stale(&pair.store.model)
+            } else {
+                pair.store.model != model_id
+            };
+        let stale = stale_model || pair.store.signature != *signature;
+        if stale {
+            pair.store.ensure_signature(&model_id, signature);
+        }
+        stale
+    } else {
+        false
+    };
     let bm25_pages = pair.lexical.pages();
     let reconcile = reconcile_requested(
         &batch,
         stale,
         bm25_is_incomplete(pair.store.indexed_pages(), bm25_pages.len()),
     );
-    if stale {
-        pair.store.ensure_signature(&model_id, &signature);
-    }
     let pages = if reconcile {
         crate::commands::collect_wiki_pages_checked(&root)?
             .into_iter()
@@ -583,28 +773,61 @@ async fn build_index(
     #[cfg(feature = "native-index-probe")]
     crate::index_publication::probe_hooks::after_scan(&root).await;
     let existing = pair.store.hashes_by_page();
+    let existing_sections = if mode == IndexMode::AutomaticLexical {
+        dense_sections(&pair.store)
+    } else {
+        HashMap::new()
+    };
     let mut changed = stale || pair.generation == 0;
     let mut embedded = 0;
     let started = std::time::Instant::now();
     for (position, (rel, stem, content)) in pages.iter().enumerate() {
         vault.with_origin(origin, |_| Ok(()))?;
         emit_progress(app, progress, position, pages.len(), rel, false);
-        if let Some(content) = content {
-            let outcome = crate::commands::embed_one_page(
-                app,
-                &app.state::<LocalLlmState>(),
-                provider,
-                model,
-                rel,
-                stem,
-                content,
-                &existing,
+        if mode == IndexMode::AutomaticLexical {
+            changed |= sync_lexical_page(
                 &mut pair.store,
                 &mut pair.lexical,
-                &bm25_pages,
-                origin,
-            )
-            .await?;
+                rel,
+                stem,
+                content.as_deref(),
+                &existing_sections,
+            )?;
+        } else if let Some(content) = content {
+            mode.check_policy()?;
+            let outcome = if mode == IndexMode::AutomaticDense {
+                crate::commands::embed_one_page_automatic(
+                    app,
+                    &app.state::<LocalLlmState>(),
+                    provider,
+                    model,
+                    rel,
+                    stem,
+                    content,
+                    &existing,
+                    &mut pair.store,
+                    &mut pair.lexical,
+                    &bm25_pages,
+                    origin,
+                )
+                .await?
+            } else {
+                crate::commands::embed_one_page(
+                    app,
+                    &app.state::<LocalLlmState>(),
+                    provider,
+                    model,
+                    rel,
+                    stem,
+                    content,
+                    &existing,
+                    &mut pair.store,
+                    &mut pair.lexical,
+                    &bm25_pages,
+                    origin,
+                )
+                .await?
+            };
             changed |= outcome.changed;
             embedded += usize::from(outcome.embedded);
             emit_progress(
@@ -630,8 +853,11 @@ async fn build_index(
         changed |= pair.lexical.prune(&present) > 0;
     }
     let indexed = pair.store.indexed_pages();
-    if crate::commands::embedding_index_signature(app, provider, model).await? != signature {
-        return Err("embedding representation changed before index publication".into());
+    mode.check_policy()?;
+    if let Some(signature) = signature.as_ref() {
+        if crate::commands::embedding_index_signature(app, provider, model).await? != *signature {
+            return Err("embedding representation changed before index publication".into());
+        }
     }
     if changed {
         pair.generation = pair
@@ -645,13 +871,18 @@ async fn build_index(
         })
         .await
         .map_err(|error| format!("index stage join: {error}"))??;
-        if crate::commands::embedding_index_signature(app, provider, model).await? != signature {
-            return Err("embedding representation changed while staging index publication".into());
+        mode.check_policy()?;
+        if let Some(signature) = signature.as_ref() {
+            if crate::commands::embedding_index_signature(app, provider, model).await? != *signature
+            {
+                return Err(
+                    "embedding representation changed while staging index publication".into(),
+                );
+            }
         }
-        let path = vault.with_origin(origin, |_| {
-            validate_snapshot(&root, &pages, reconcile, &batch)?;
-            prepared.commit()
-        })?;
+        let path = commit_snapshot(
+            &vault, origin, &root, &pages, reconcile, &batch, mode, prepared,
+        )?;
         app.state::<VectorCache>().put(&path, pair.store)?;
         app.state::<Bm25Cache>().put_checked(&path, pair.lexical)?;
     } else {
@@ -668,12 +899,33 @@ async fn build_index(
             ("indexed_pages", indexed as f64),
         ],
     );
-    if reconcile {
+    // Manual full reindex also acknowledges a pending startup sentinel. The
+    // actor acknowledges its own batch after success, retaining lexical-only
+    // work in the dense queue instead of accidentally dropping that sentinel.
+    if reconcile && mode == IndexMode::Manual {
         if let Some(updater) = crate::INDEX_UPDATER.get() {
             let _ = updater.tx.send(UpdateMsg::Reconciled(origin.clone()));
         }
     }
     Ok(indexed)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn commit_snapshot(
+    vault: &crate::commands::VaultRoot,
+    origin: &AgentVaultSession,
+    root: &Path,
+    pages: &[(String, String, Option<String>)],
+    reconcile: bool,
+    batch: &[String],
+    mode: IndexMode,
+    prepared: crate::index_publication::PreparedPair,
+) -> Result<PathBuf, String> {
+    vault.with_origin(origin, |_| {
+        mode.check_policy()?;
+        validate_snapshot(root, pages, reconcile, batch)?;
+        prepared.commit()
+    })
 }
 
 fn validate_snapshot(
@@ -691,12 +943,18 @@ fn validate_snapshot(
         read_dirty_pages(root, batch.to_vec())?
     };
     current.sort_by(|first, second| first.0.cmp(&second.0));
+    // Compare borrowed originals: publication still checks a fresh read, but
+    // does not need a third owned copy of every captured source body.
     let mut captured = pages
         .iter()
-        .map(|(rel, _, content)| (rel.clone(), content.clone()))
+        .map(|(rel, _, content)| (rel.as_str(), content.as_deref()))
         .collect::<Vec<_>>();
-    captured.sort_by(|first, second| first.0.cmp(&second.0));
-    if current != captured {
+    captured.sort_by(|first, second| first.0.cmp(second.0));
+    if !current
+        .iter()
+        .map(|(rel, content)| (rel.as_str(), content.as_deref()))
+        .eq(captured)
+    {
         return Err("indexed sources changed during the build; retry required".into());
     }
     Ok(())
@@ -725,6 +983,10 @@ fn emit_progress(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "index_updater_auto_policy_tests.rs"]
+mod auto_policy_tests;
 
 #[cfg(test)]
 mod tests {

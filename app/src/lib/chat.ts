@@ -1,3 +1,6 @@
+import type { CitationEvidence } from "./citationEvidence";
+import type { GuidedQuestionIntent, GuidedQuestionSelection } from "./guidedQuestion";
+import { withVaultContext } from "./askPrompt";
 // Unified chat entry-point. Reads the selected provider/model from settings
 // and dispatches to either the Claude CLI (anthropic-cli) or the HTTP
 // provider stack. Returns the assistant's text content.
@@ -17,6 +20,7 @@ import {
   type NearMiss,
   type ScoredChunk,
   type SemanticSearchResult,
+  type RelatedContext,
   type TierWeights,
 } from "./ipc";
 import { hitTier, sourceTier } from "./extractive";
@@ -25,7 +29,18 @@ import { effectiveRole, type RoleId, type RoleSnapshot, type RoleUsage } from ".
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 import { log } from "./log";
 import { loadProfile, injectionText } from "./profile";
+import { verifyAnswerCitations } from "./answerCitation";
 import { buildRetrievalContext } from "./retrievalContext";
+import { modelContextBudget, runtimeModelContextBudget, ModelContextError, evidenceCandidates, packModelContext, type ModelContextBudget, type ContextPackingAudit, type HistoricalEvidenceExclusion, renderEvidence } from "./modelContextBudget";
+import type { AskExecutionEvent } from "./askExecution";
+import { traceGenerationRequest } from "./generationRequest";
+
+export class MissingQueryEvidence extends Error {
+  constructor(public readonly retrieval: RetrievedChunks) {
+    super("No verified source passages were retrieved; generation was not started.");
+    this.name = "MissingQueryEvidence";
+  }
+}
 
 export interface SimpleMessage {
   role: "system" | "user" | "assistant";
@@ -79,6 +94,10 @@ export interface CompleteArgs {
   /// don't) opt out of both the stage reports and the CLI retrieval injection
   /// below. Stage reporting never grants a CLI access to filesystem tools.
   onStage?: (stage: AskStage) => void;
+  /** UI-only provenance, emitted only after the answer passes source validation. */
+  onCitationEvidence?: (evidence: CitationEvidence) => void;
+  /** App generation-command attempts, separate from selected or reported identity. */
+  onExecution?: (event: AskExecutionEvent) => void;
   /// Ask scope and tier priors for the retrieval block — interactive Ask's
   /// segment and sliders; the other task:"query" callers leave the backend
   /// defaults (wiki, DEFAULT_TIER_WEIGHTS).
@@ -90,6 +109,13 @@ export interface CompleteArgs {
   /** The same date window and retrieval question apply to every provider. */
   range?: { start: string; end: string };
   retrievalQuery?: string;
+  guidedQuestion?: GuidedQuestionSelection;
+  /** Native activity recall can supply already verified evidence without a second search. */
+  retrievedEvidence?: RetrievedChunks;
+  /** Full selected/omitted passages for this run; persisted native audits store metadata only. */
+  onContextPacking?: (audit: ContextPackingAudit) => void;
+  /** Eligibility exclusions are observed even when no exact tokenizer adapter exists. */
+  onHistoricalExclusions?: (exclusions: HistoricalEvidenceExclusion[]) => void;
   /// Ask's ■ (UX S36). Checked once retrieval is done, before the model is
   /// called: a stopped question never reaches a provider. Optional external
   /// runners currently fail before spawn; HTTP calls cannot be recalled and
@@ -188,7 +214,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
     args.task === "query"
       ? await ipc.getDistillConfig(args.cwd).catch(() => null)
       : null;
-  const profile = profileCfg?.profile_injection
+  const profile = profileCfg?.profile_injection && !args.guidedQuestion?.asOf
     ? await loadProfile(args.cwd)
     : null;
   const profileSuffix = profile
@@ -196,6 +222,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
     : "";
 
   if (isCli) {
+    if (args.guidedQuestion?.asOf) throw new ModelContextError("tokenizer_contract", "Historical Ask requires source-bound supplied evidence; this CLI route cannot confine file reads to eligible original turns.");
     if (!execution) throw new Error("missing native CLI execution scope");
     // CLIs accept a single prompt; flatten system+user turns.
     const system = args.messages.find((m) => m.role === "system");
@@ -209,9 +236,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
     // Interactive Ask supplies retrieved evidence. Generators already supply
     // their context and output schema; they must not gain filesystem tools.
     let retrievalBlock = "";
-    if (args.task === "query" && args.onStage) {
+    let suppliedPaths: string[] = [];
+    if (args.task === "query" && (args.onStage || args.retrievedEvidence)) {
       const question = args.retrievalQuery ?? lastUserContent(args.messages);
-      const { ctx, stems, stale, retrievalFailed } = question
+      const { ctx, stems, stale, retrievalFailed } = args.retrievedEvidence
+        ? {...buildRetrievalContext(args.retrievedEvidence.hits,VAULT_CONTEXT_BUDGET,args.retrievedEvidence.relatedContext),
+            stale:args.retrievedEvidence.stale,retrievalFailed:args.retrievedEvidence.retrievalFailed}
+        : question
         ? await semanticContext(
             question,
             VAULT_CONTEXT_BUDGET,
@@ -220,8 +251,15 @@ export async function complete(args: CompleteArgs): Promise<string> {
             args.tierWeights,
             args.paths,
             args.range,
+            args.guidedQuestion?.asOf,
+            args.guidedQuestion?.intent,
           )
         : { ctx: "", stems: [], stale: false, retrievalFailed: false };
+      if (args.retrievedEvidence) {
+        if (!ctx.trim()) throw new MissingQueryEvidence(args.retrievedEvidence);
+        suppliedPaths = [...args.retrievedEvidence.hits,...(args.retrievedEvidence.relatedContext?.passages ?? [])]
+          .filter(hit=>ctx.includes(`source_path: ${hit.page}\nsection: ${hit.section}\n`)).map(hit=>hit.page);
+      }
       if (ctx.trim()) {
         retrievalBlock =
           `## Relevant wiki context (local semantic search; answer from this supplied evidence)\n\n${ctx}\n\n`;
@@ -244,15 +282,17 @@ export async function complete(args: CompleteArgs): Promise<string> {
     const prompt = system
       ? `${system.content}\n\n${retrievalBlock}${profileBlock}${userTurns}`
       : `${retrievalBlock}${profileBlock}${userTurns}`;
-    const res =
+    const res = await traceGenerationRequest({ requested: { providerId: provider, modelId: model },
+      purpose: "answer", signal: args.signal, onExecution: args.onExecution }, () =>
       provider !== "anthropic-cli"
-        ? await ipc.agentRun(provider, model, prompt, args.cwd, effort, execution)
+        ? ipc.agentRun(provider, model, prompt, args.cwd, effort, execution!)
         : args.signal
-          ? await killableClaudeRun(prompt, args.cwd, model, effort, args.signal, execution)
-          : await ipc.claudeRun(prompt, args.cwd, model || undefined, effort, execution);
+          ? killableClaudeRun(prompt, args.cwd, model, effort, args.signal, execution!)
+          : ipc.claudeRun(prompt, args.cwd, model || undefined, effort, execution!));
     if (res.status !== 0) {
       throw new Error(res.stderr.trim() || `${provider} exit ${res.status}`);
     }
+    if (args.retrievedEvidence || args.guidedQuestion) verifyAnswerCitations(res.stdout,suppliedPaths, Boolean(args.guidedQuestion));
     return res.stdout.trim();
   }
 
@@ -290,6 +330,14 @@ export async function complete(args: CompleteArgs): Promise<string> {
     if (status.state !== "ready") throw new Error(status.reason ?? "local_model_preparation_required: install the selected model explicitly in Settings");
   }
   let messages = args.messages;
+  let sourcePaths: string[] = [];
+  let packedMessages: SimpleMessage[] | undefined;
+  let contextAdapter = !isBuiltin && args.task === "query" ? modelContextBudget(provider, model) : undefined;
+  if (!contextAdapter && args.task === "query" && featureRole === "ask" && usage === "foreground") {
+    contextAdapter = await runtimeModelContextBudget({provider,model,origin,roleSnapshot:snapshot});
+    stopIfAborted(args.signal);
+  }
+  let structuredInput: Awaited<ReturnType<NonNullable<ModelContextBudget["prepareInput"]>>> | undefined;
   // Pages retrieval chose, carried to the `thinking` stage: the model call is
   // the long wait, and "these are the notes it is answering from" is what a
   // user wants to see during it.
@@ -316,7 +364,12 @@ export async function complete(args: CompleteArgs): Promise<string> {
       // embedding index exists. The compatibility fallback is restricted to
       // unscoped queries without a date range and an unavailable index.
       const question = args.retrievalQuery ?? lastUserContent(args.messages);
-      const retrieved = question
+      const retrieved = args.retrievedEvidence
+        ? {retrieval:args.retrievedEvidence,
+            ...buildRetrievalContext(args.retrievedEvidence.hits,budget,args.retrievedEvidence.relatedContext),
+            stale:args.retrievedEvidence.stale,retrievalFailed:args.retrievedEvidence.retrievalFailed,
+            indexedPages:args.retrievedEvidence.indexedPages}
+        : question
         ? await semanticContext(
             question,
             budget,
@@ -325,6 +378,8 @@ export async function complete(args: CompleteArgs): Promise<string> {
             args.tierWeights,
             args.paths,
             args.range,
+            args.guidedQuestion?.asOf,
+            args.guidedQuestion?.intent,
           )
         : {
             ctx: "",
@@ -332,7 +387,63 @@ export async function complete(args: CompleteArgs): Promise<string> {
             stale: false,
             retrievalFailed: false,
             indexedPages: null,
+            retrieval: undefined,
           };
+      const historicalExclusions: HistoricalEvidenceExclusion[] = [];
+      const candidates = retrieved.retrieval ? evidenceCandidates(
+        retrieved.retrieval.hits, retrieved.retrieval.relatedContext, question,
+        args.guidedQuestion?.intent, args.guidedQuestion?.asOf, exclusion => historicalExclusions.push(exclusion),
+      ) : [];
+      if (args.guidedQuestion?.asOf) args.onHistoricalExclusions?.(historicalExclusions);
+      if (args.guidedQuestion?.asOf && contextAdapter?.prepareInput) {
+        // A contract that expands selected chunks back to whole source files
+        // needs its own verified historical closure before it may be used.
+        throw new ModelContextError("tokenizer_contract", "Structured source expansion does not establish historical source bounds.");
+      }
+      if (contextAdapter?.prepareInput && retrieved.retrieval) {
+        structuredInput = await contextAdapter.prepareInput(
+          { ...args, origin, roleSnapshot: snapshot },
+          candidates,
+          profileSuffix,
+        );
+        sourcePaths = structuredInput.paths;
+        retrieved.stems = structuredInput.stems;
+        retrieved.ctx = structuredInput.paths.length ? "Native verified structured source packet" : "";
+      } else if (contextAdapter && retrieved.retrieval) {
+        const packed = await packModelContext(
+          candidates,
+          contextAdapter,
+          ctx => {
+            const merged = withVaultContext(args.messages, ctx);
+            return profileSuffix ? appendSystemSuffix(merged, profileSuffix) : merged;
+          },
+          args.signal,
+          retrieved.retrieval.relatedContext?.source_groups,
+          historicalExclusions,
+          // Scores only: the audit can then separate a retrieval miss from a
+          // packing omission without replaying the index.
+          {
+            denseSkipped: retrieved.retrieval.denseSkipped,
+            hits: retrieved.retrieval.hits.map(h => ({ page: h.page, section: h.section, scoreRrf: h.score_rrf,
+              scoreFinal: h.score_final ?? h.score, similarity: h.similarity, exactMatch: h.exact_match })),
+          },
+        );
+        packedMessages = packed.messages;
+        args.onContextPacking?.(packed.audit);
+        retrieved.ctx = packed.ctx;
+        retrieved.stems = packed.stems;
+        sourcePaths = packed.paths;
+      } else if (args.guidedQuestion?.asOf && retrieved.retrieval) {
+        // Generic providers without a tokenizer capability still receive only
+        // eligible complete originals, never the unfiltered fallback context.
+        const historical = boundedEvidenceContext(candidates, budget);
+        retrieved.ctx = historical.ctx; retrieved.stems = historical.stems;
+        sourcePaths = historical.paths;
+      }
+      if (args.task === "query" && !retrieved.ctx.trim()) {
+        throw new MissingQueryEvidence(retrieved.retrieval ?? { hits: [], nearMisses: [], floor: RELEVANCE_FLOOR, indexedPages: null, stale: false, retrievalFailed: false });
+      }
+      if (!contextAdapter) sourcePaths = [...(retrieved.retrieval?.hits ?? []), ...(retrieved.retrieval?.relatedContext?.passages ?? [])].filter(hit => retrieved.ctx.includes(`source_path: ${hit.page}\nsection:`)).map(hit => hit.page);
       stems = retrieved.stems;
       stale = retrieved.stale;
       retrievalFailed = retrieved.retrievalFailed;
@@ -342,6 +453,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
         !ctx.trim() &&
         !args.paths &&
         !args.range &&
+        !args.guidedQuestion?.asOf &&
         args.scope !== "sessions" &&
         (retrieved.stale ||
           retrieved.retrievalFailed ||
@@ -356,6 +468,8 @@ export async function complete(args: CompleteArgs): Promise<string> {
           : "No matching source passages were retrieved for this question and scope.",
       );
     } catch (err) {
+      if (err instanceof MissingQueryEvidence || err instanceof ModelContextError) throw err;
+      if (args.task === "query") throw new MissingQueryEvidence({ hits: [], nearMisses: [], floor: RELEVANCE_FLOOR, indexedPages: null, stale: false, retrievalFailed: true });
       log.warn("complete.vault_context_failed", { error: String(err) });
       retrievalFailed = true;
       messages = withVaultContext(
@@ -371,6 +485,8 @@ export async function complete(args: CompleteArgs): Promise<string> {
   if (profileSuffix) {
     messages = appendSystemSuffix(messages, profileSuffix);
   }
+  if (packedMessages) messages = packedMessages;
+  if (structuredInput) messages = structuredInput.messages;
   // Retrieval is done; everything after this is the model. On the builtin path
   // that means a possible one-time weight load (11.7 s cold) and then prefill,
   // which is the bulk of the wait — so this is the stage a user actually sits
@@ -399,9 +515,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
     let out: string;
     try {
       stopIfAborted(args.signal);
-      out = await ipc.localQuery(system ? `${system}\n\n${user}` : user, 320, origin, snapshot, requestId);
+      // A string reply supplies no separately reported model identifier.
+      out = await traceGenerationRequest({ requested: { providerId: provider, modelId: model },
+        purpose: "answer", signal: args.signal, onExecution: args.onExecution }, () =>
+        ipc.localQuery(system ? `${system}\n\n${user}` : user, 320, origin, snapshot, requestId));
       stopIfAborted(args.signal);
     } finally { args.signal?.removeEventListener("abort", cancel); }
+    if (args.task === "query") verifyAnswerCitations(out, sourcePaths, Boolean(args.guidedQuestion));
     return out.trim();
   }
 
@@ -415,17 +535,27 @@ export async function complete(args: CompleteArgs): Promise<string> {
         `running more paid requests.`,
     );
   }
-  const res = await ipc.chatComplete({
+  const res = await traceGenerationRequest({ requested: { providerId: provider, modelId: model },
+    purpose: "answer", signal: args.signal, onExecution: args.onExecution,
+    // `model` is the historical request echo; only reported_model is response provenance.
+    reportedIdentity: reply => ({ modelId: reply.reported_model, source: "provider_response" }),
+  }, () => ipc.chatComplete({
     provider_id: provider,
     model,
     messages,
-  }, origin, snapshot);
+    ...(contextAdapter ? {max_tokens:contextAdapter.outputTokens} : {}),
+  }, origin, snapshot));
   // Thread the token usage into the cumulative tracker (null for providers that
   // don't report it, e.g. ollama).
   if (res.usage) {
     recordUsage(model, res.usage.input_tokens, res.usage.output_tokens);
   }
-  return res.content.trim();
+  const answer = structuredInput ? await structuredInput.renderAnswer(res.content) : res.content;
+  if (args.task === "query") verifyAnswerCitations(answer, sourcePaths, Boolean(args.guidedQuestion));
+  stopIfAborted(args.signal);
+  const citationEvidence = structuredInput?.citationEvidence?.();
+  if (args.task === "query" && citationEvidence) args.onCitationEvidence?.(citationEvidence);
+  return answer.trim();
 }
 
 /** Last user message text — the retrieval query. */
@@ -463,6 +593,9 @@ export function isIndexStale(
  * `retrievalFailed` means an IPC call rejected, never a healthy empty result.
  * `onRetrieving` fires immediately before the actual hybrid search IPC. */
 export interface RetrievedChunks {
+  relatedContext?: RelatedContext;
+  /** The backend's reason for a lexical-only ranking, when it reported one. */
+  denseSkipped?: string | null;
   /** Hits at or above `floor` (lexical-only hits included — see isRelevant). */
   hits: ScoredChunk[];
   /** Hits that fell under `floor`, best first — the abstention card's
@@ -487,6 +620,10 @@ export async function retrieveChunks(
   tierWeights?: TierWeights,
   /** "Ask this note": only these vault-relative pages (semantic_search's `paths`). */
   paths?: string[],
+  /** Historical upper bound; native filters verified event dates before top-K. */
+  asOf?: string,
+  /** Explicit selected-question type, forwarded to native related-source selection. */
+  intent?: GuidedQuestionIntent,
 ): Promise<RetrievedChunks> {
   const none: RetrievedChunks = {
     hits: [],
@@ -505,18 +642,11 @@ export async function retrieveChunks(
   const denseUnavailable = status.indexed_pages === 0 || staleDense;
   onRetrieving?.();
   let searchRejected = false;
-  const res = await ipc
-    .semanticSearch(
-      question,
-      k,
-      "builtin-local",
-      BUILTIN_EMBED_MODEL,
-      range,
-      scope,
-      tierWeights,
-      paths,
-    )
-    .catch(() => {
+  // Trailing arguments appear only when set, so untyped calls keep their arity.
+  const guided: [] | [string] | [string | undefined, GuidedQuestionIntent] =
+    intent ? [asOf, intent] : asOf ? [asOf] : [];
+  const search = ipc.semanticSearch(question, k, "builtin-local", BUILTIN_EMBED_MODEL, range, scope, tierWeights, paths, ...guided);
+  const res = await search.catch(() => {
       log.warn("retrieve_chunks.semantic_search_failed", { code: "semantic_search_failed" });
       searchRejected = true;
       return null;
@@ -533,8 +663,10 @@ export async function retrieveChunks(
   // The native hybrid path independently skips incompatible dense vectors.
   // Require exact source verification here too when the status says they
   // cannot support an answer, including replies from an older backend.
+  const freshCandidates = found.candidate_embedding?.model === CURRENT_BUILTIN_INDEX_ID
+    && !!found.candidate_embedding.signature && found.candidate_embedding.dim > 0;
   const relevant = (hit: ScoredChunk): boolean =>
-    isRelevant(hit, floor) && (!denseUnavailable || hit.exact_match === true);
+    isRelevant(hit, floor) && (!denseUnavailable || hit.exact_match === true || freshCandidates);
   const hits = found.hits.filter(relevant);
   const rejected: NearMiss[] = found.hits
     .filter((h) => !relevant(h))
@@ -544,8 +676,15 @@ export async function retrieveChunks(
       score_final: h.score_final ?? h.score,
       similarity: h.similarity,
     }));
+  const acceptedAnchors = new Set(hits.map(hit => `${hit.page}#${hit.section}`));
+  const relatedContext = found.related_context ? {
+    ...found.related_context,
+    passages: found.related_context.passages.filter(p => acceptedAnchors.has(`${p.anchor_page}#${p.anchor_section}`)),
+  } : undefined;
   return {
     hits,
+    relatedContext,
+    ...(found.dense_skipped !== undefined ? { denseSkipped: found.dense_skipped } : {}),
     nearMisses: [...found.below_floor, ...rejected],
     floor,
     indexedPages: status.indexed_pages,
@@ -613,7 +752,9 @@ async function semanticContext(
   tierWeights?: TierWeights,
   paths?: string[],
   range?: { start: string; end: string },
-): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean; indexedPages: number | null }> {
+  asOf?: string,
+  intent?: GuidedQuestionIntent,
+): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean; indexedPages: number | null; retrieval: RetrievedChunks }> {
   const r = await retrieveChunks(
     question,
     12,
@@ -622,36 +763,23 @@ async function semanticContext(
     scope,
     tierWeights,
     paths,
+    asOf,
+    intent,
   );
   if (r.stale || r.retrievalFailed || r.hits.length === 0) {
-    return { ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed, indexedPages: r.indexedPages };
+    return { retrieval: r, ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed, indexedPages: r.indexedPages };
   }
-  return { ...buildRetrievalContext(r.hits, budget), stale: false, retrievalFailed: false, indexedPages: r.indexedPages };
+  const context = asOf ? boundedEvidenceContext(evidenceCandidates(r.hits, r.relatedContext, question, undefined, asOf), budget)
+    : buildRetrievalContext(r.hits, budget, r.relatedContext);
+  return { retrieval: r, ...context, stale: false, retrievalFailed: false, indexedPages: r.indexedPages };
 }
 
-// Merge the vault content into the single system message (providers like
-// Anthropic and Google only honour the first system message, so we must not
-// add a second one). If there is no system message, prepend one.
-function withVaultContext(
-  messages: SimpleMessage[],
-  ctx: string,
-): SimpleMessage[] {
-  const block =
-    `Below is the current content of the user's myco vault (markdown files). ` +
-    `Answer the question using ONLY the content below. Do NOT use outside ` +
-    `knowledge, and do NOT invent pages, files, facts, or events. If the answer ` +
-    `is not present in the content below, reply that you could not find it in ` +
-    `the wiki (in the user's language) — do not guess. Cite pages you use as ` +
-    `[[vault-relative/path|page-stem]], preserving the source_path shown below. ` +
-    `A dated statement is evidence for that date, not proof of the current state. ` +
-    `If sources disagree, state the dates and disagreement instead of silently choosing.\n\n${ctx}`;
-  const sysIdx = messages.findIndex((m) => m.role === "system");
-  if (sysIdx >= 0) {
-    return messages.map((m, i) =>
-      i === sysIdx ? { ...m, content: `${m.content}\n\n${block}` } : m,
-    );
-  }
-  return [{ role: "system", content: block }, ...messages];
+/** Complete source-bound originals only; this is a character ceiling, not an
+ * invented exact token count for providers without tokenizer capability. */
+function boundedEvidenceContext(candidates: ReturnType<typeof evidenceCandidates>, budget: number): {ctx: string; stems: string[]; paths: string[]} {
+  const selected: ReturnType<typeof evidenceCandidates> = [];
+  for (const passage of candidates) if (renderEvidence([...selected, passage]).length <= budget) selected.push(passage);
+  return {ctx:renderEvidence(selected),stems:[...new Set(selected.map(p=>p.stem))],paths:[...new Set(selected.map(p=>p.page))]};
 }
 
 // Appends `suffix` to the existing system message (or creates one, if none

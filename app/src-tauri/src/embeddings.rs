@@ -183,7 +183,19 @@ pub(crate) fn is_transcript_turn_header(line: &str) -> bool {
 /// coherent. Frontmatter is excluded; spoken turns remain separate retrieval sections.
 ///
 /// Every emitted chunk is at most ~`CHUNK_TOKENS` estimated tokens; see `push_bounded`.
+#[cfg(debug_assertions)]
+#[path = "diagnostic_chunk_cache.rs"]
+mod diagnostic_chunk_cache;
+
 pub fn chunk_page(text: &str) -> Vec<String> {
+    #[cfg(debug_assertions)]
+    if std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() == Ok("1") {
+        return diagnostic_chunk_cache::get(text, chunk_page_uncached);
+    }
+    chunk_page_uncached(text)
+}
+
+fn chunk_page_uncached(text: &str) -> Vec<String> {
     // NFC before anything else. Indexing hashes/embeds these chunks and
     // `chunk_text_at` re-derives them from the file at query time — both go
     // through here, so normalizing at this one point keeps section indices,

@@ -1,3 +1,4 @@
+import type { CitationSource, CitationSpan } from "./citationEvidence";
 // The Ask → note loop (UX slice D1): what a quoted passage looks like on the
 // Ask page and what leaves the page with it. Pure text over the retrieved
 // chunks — no CodeMirror (the Ask chunk must not load the editor, see
@@ -72,24 +73,62 @@ export function passageSection(
   return hit ? chunkSection(hit.text) : null;
 }
 
-/** Where a quoted passage sits in the note: the 1-based document line range
- *  from its first line to its last, matched by trimmed text (a line the
- *  quote cut matches by prefix). Null when the first line is gone — the note
- *  moved on since the index saw it, so there is nothing honest to light. */
+/** Locate a complete passage, allowing only explicit ellipses to skip text.
+ * Blank-line/indent differences are harmless; changed words and duplicate
+ * complete matches are not. Never highlight a guessed first/last-line range. */
 export function matchLines(
   doc: string,
   quote: string,
+  literalOriginal = false,
 ): { from: number; to: number } | null {
-  const wanted = quoteLines(quote);
-  if (wanted.length === 0) return null;
-  const lines = doc.split("\n").map((l) => l.trim());
-  const at = (text: string, start: number): number =>
-    lines.findIndex((l, i) => i >= start && (l === text || l.startsWith(text)));
-  const from = at(wanted[0], 0);
-  if (from < 0) return null;
-  const last = wanted[wanted.length - 1];
-  const to = wanted.length > 1 ? at(last, from + 1) : from;
-  return { from: from + 1, to: (to < 0 ? from : to) + 1 };
+  // Original spans are not extractive display quotes: their literal ellipsis
+  // and whitespace must never become an instruction to skip changed text.
+  if (literalOriginal) {
+    const text = quote.trim();
+    if (!text) return null;
+    const start = doc.indexOf(text);
+    if (start < 0 || doc.indexOf(text, start + 1) >= 0) return null;
+    const from = doc.slice(0, start).split("\n").length;
+    return { from, to: from + text.split("\n").length - 1 };
+  }
+  const wanted = quote.split("\n").map(line => line.trim()).filter(Boolean);
+  while (wanted[0] === "…") wanted.shift();
+  while (wanted.at(-1) === "…") wanted.pop();
+  if (!wanted.length) return null;
+  const lines = doc.split("\n").map((text, i) => ({ text: text.trim(), line: i + 1 }))
+    .filter(row => row.text.length > 0);
+  const matches = (text: string, part: string): boolean =>
+    text === part || (part.endsWith("…") && part.length > 1 && text.startsWith(part.slice(0, -1).trimEnd()));
+  // Each state needs only two distinct endings: either already makes the
+  // final location ambiguous. Memoization avoids repeatedly scanning gaps.
+  const memo = new Map<string, number[]>();
+  const ends = (part: number, at: number): number[] => {
+    if (part === wanted.length) return [at - 1];
+    const key = `${part}:${at}`;
+    const known = memo.get(key);
+    if (known) return known;
+    let found: number[] = [];
+    if (wanted[part] === "…") {
+      for (let next = at; next < lines.length && found.length < 2; next++) {
+        for (const end of ends(part + 1, next)) {
+          if (!found.includes(end)) found.push(end);
+          if (found.length === 2) break;
+        }
+      }
+    } else if (at < lines.length && matches(lines[at].text, wanted[part])) {
+      found = ends(part + 1, at + 1);
+    }
+    memo.set(key, found);
+    return found;
+  };
+  let result: { from: number; to: number } | null = null;
+  for (let start = 0; start < lines.length; start++) {
+    for (const end of ends(0, start)) {
+      if (result) return null;
+      result = { from: lines[start].line, to: lines[end].line };
+    }
+  }
+  return result;
 }
 
 /** Which rendered blocks a passage spans in Preview, given each block's first
@@ -112,13 +151,18 @@ export function blocksInRange(starts: readonly number[], from: number, to: numbe
  *  the note's end, or show a quoted passage — scrolled to and flashed. */
 export type ReaderIntent =
   | { kind: "append"; block: string }
-  | { kind: "show"; section: string | null; quote: string };
+  | { kind: "show"; section: string | null; quote: string; original?: {source: CitationSource; span: CitationSpan; vaultPath: string; vaultToken: string} };
 
 // One slot, like pendingAnchor: consumed by the reader that opens `path`, or
 // by whichever note opens next when no note was named (the user is picking
 // one) — for a minute, so a cancelled pick never lands the block in a note
 // opened for another reason days later.
 const INTENT_TTL_MS = 60_000;
+const intentListeners = new Set<() => void>();
+export function subscribeReaderIntent(listener: () => void): () => void {
+  intentListeners.add(listener);
+  return () => { intentListeners.delete(listener); };
+}
 let pending: { path: string | null; intent: ReaderIntent; at: number } | null = null;
 
 export function setReaderIntent(
@@ -127,6 +171,7 @@ export function setReaderIntent(
   now = Date.now(),
 ): void {
   pending = { path, intent, at: now };
+  for (const listener of intentListeners) listener();
 }
 
 /** The user closed the note picker without opening a note: an intent waiting
@@ -175,11 +220,22 @@ const KO_JA_LEADS = [
 ];
 const SHORT_MAX = 8;
 
+/** A recall request with a demonstrative but no named subject. It needs
+ * a previous user topic or an explicitly selected note before retrieval. */
+export function isTopicOnlyRecall(q: string): boolean {
+  const text = q.trim();
+  return /^(?:(?:전에|아까|이전에|지난번에)\s*)?(?:(?:이야기|얘기|말씀|말)한\s*)?(?:그\s*(?:내용|이야기|결정)|그거|그것)(?:을|를)?\s*(?:다시\s*)?(?:찾아\s*줘|찾아주세요|보여\s*줘|알려\s*줘)[.!?]*$/.test(text)
+    || /^(?:please\s+)?(?:find|show)(?:\s+me)?\s+(?:that|what we (?:discussed|talked about))(?:\s+(?:again|earlier|before))?[.!?]*$/i.test(text)
+    || /^(?:前に|さっき)(?:話した)(?:内容|こと)を(?:もう一度)?(?:探して|見せて)[。！？?]*$/.test(text);
+}
+
 /** True when `q` reads as a follow-up to the previous question (UX audit
  *  A2): pronoun- or connective-led, or a short question mark. */
 export function isFollowUp(q: string): boolean {
   const text = q.trim();
   if (!text) return false;
+  if (isTopicOnlyRecall(text)) return true;
+  if (/^(?:(?:직전|앞선|바로 전)\s.{0,40}(?:질문|답변)|전에\s+(?:이야기|얘기|말씀|말)한\s+그|그\s+(?:내용|결정|이야기))/.test(text)) return true;
   const words = text.toLowerCase().split(/\s+/);
   const head = words[0].replace(/[^\p{L}']/gu, "");
   if (EN_LEADS.has(head)) return true;
@@ -200,6 +256,8 @@ export function followUpContext(
 ): string | null {
   if (!isFollowUp(q)) return null;
   // Not findLast: ES2023, past Safari on macOS 10.15 (decision Q5).
-  const topic = [...turns].reverse().find((t) => !t.followUp && !t.error);
+  // A rejected answer does not invalidate the user’s topic. Only the question
+  // is reused here; failed assistant text must stay out of answer history.
+  const topic = [...turns].reverse().find((t) => !t.followUp && t.q.trim());
   return topic ? clean(topic.q) || topic.q : null;
 }

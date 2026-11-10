@@ -12,6 +12,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 pub struct Settings {
     #[serde(default)]
     pub providers: ProviderFlags,
+    /// Explicit HTTP-compatible local model endpoint, retained across app starts.
+    #[serde(default)]
+    pub ollama_url: String,
     /// Independent feature selections; legacy fields remain migration/display data.
     #[serde(default)]
     pub model_roles: crate::role_authorization::ModelRoleSettings,
@@ -137,6 +140,7 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             providers: ProviderFlags::default(),
+            ollama_url: String::new(),
             model_roles: crate::role_authorization::ModelRoleSettings::default(),
             role_authorization_revision: String::new(),
             query_provider: default_query_provider(),
@@ -351,6 +355,71 @@ fn resolve_env_data_dir(
     data_dir_on(os, home, appdata, &DIR_NAMES)
 }
 
+/// An explicitly isolated debug replay must not migrate the user's global
+/// state or compete for their MCP port/global shortcuts. Normal launches,
+/// including every release build, retain the existing startup behavior.
+/// Validate without creating or migrating any directory; a requested but
+/// invalid isolation fails startup instead of falling back to global effects.
+pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
+    if !cfg!(debug_assertions)
+        || std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1")
+        || std::env::var("MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER").as_deref() != Ok("1")
+    {
+        return Ok(false);
+    }
+    let data = std::env::var_os("MYCO_DATA_DIR")
+        .map(PathBuf::from)
+        .ok_or("isolated diagnostic startup requires explicit MYCO_DATA_DIR")?;
+    if !data.is_absolute() || !data.is_dir() {
+        return Err("diagnostic data directory must be absolute and already exist".into());
+    }
+    let canonical = data.canonicalize().map_err(|e| e.to_string())?;
+    if canonical != data {
+        return Err("diagnostic data directory must use its canonical path".into());
+    }
+    let home = std::env::var_os("HOME");
+    let appdata = std::env::var_os("APPDATA");
+    for names in [&DIR_NAMES, &LEGACY_DIR_NAMES] {
+        let production = data_dir_on(
+            std::env::consts::OS,
+            home.as_deref(),
+            appdata.as_deref(),
+            names,
+        )?;
+        let production = canonical_data_location(&production)?;
+        if canonical.starts_with(&production) || production.starts_with(&canonical) {
+            return Err("diagnostic data directory must be separate from production app data".into());
+        }
+    }
+    Ok(true)
+}
+
+/// Resolve an existing ancestor plus an absent suffix without mkdir/migration.
+/// This also catches aliases when the production directory does not exist yet.
+fn canonical_data_location(path: &Path) -> Result<PathBuf, String> {
+    if !path.is_absolute() {
+        return Err("production data directory must be absolute".into());
+    }
+    let mut ancestor = path.to_path_buf();
+    let mut suffix = Vec::new();
+    loop {
+        match ancestor.canonicalize() {
+            Ok(mut resolved) => {
+                for name in suffix.into_iter().rev() {
+                    resolved.push(name);
+                }
+                return Ok(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                let name = ancestor.file_name().ok_or("data directory has no existing ancestor")?;
+                suffix.push(name.to_os_string());
+                ancestor.pop();
+            }
+            Err(error) => return Err(error.to_string()),
+        }
+    }
+}
+
 /// Files that prove a data dir holds real user state (rather than being an empty
 /// container something created in passing). Kept small on purpose: these two are
 /// what every install writes on first run.
@@ -516,6 +585,7 @@ pub(crate) fn read_checked() -> Result<Settings, String> {
         settings.model_roles = crate::role_authorization::ModelRoleSettings::migrate(&settings);
     }
     settings.model_roles.validate()?;
+    crate::providers::validate_ollama_url(&settings.ollama_url)?;
     SEARCH_ARCHIVED_SESSIONS.store(settings.search_archived_sessions, Ordering::Relaxed);
     Ok(settings)
 }
@@ -587,6 +657,7 @@ pub fn save(settings: &Settings) -> Result<(), String> {
 
 /// Only native authorization transactions may bypass the common guard.
 pub(crate) fn save_unlocked(settings: &Settings) -> Result<(), String> {
+    crate::providers::validate_ollama_url(&settings.ollama_url)?;
     let path = settings_dir()?.join("settings.json");
     let mut persisted = settings.clone();
     persisted.role_authorization_revision.clear();
@@ -830,6 +901,21 @@ mod tests {
             let s = load();
             assert_eq!(s.query_model, "extractive-retrieval");
             assert_eq!(s.ingest_model, "gemma-3-1b"); // non-builtin: untouched
+        });
+    }
+
+    #[test]
+    fn model_server_endpoint_survives_reload_and_rejects_unsafe_urls() {
+        with_isolated_data("model-server-endpoint", |_| {
+            let mut settings = Settings::default();
+            settings.ollama_url = "http://127.0.0.1:11436".into();
+            save(&settings).unwrap();
+            assert_eq!(read_checked().unwrap().ollama_url, settings.ollama_url);
+            for value in ["file:///etc/passwd", "http://remote.example:11436", "https://user:secret@example.org", "https://example.org/?token=secret"] {
+                settings.ollama_url = value.into();
+                assert!(save(&settings).is_err(), "accepted {value}");
+            }
+            assert_eq!(read_checked().unwrap().ollama_url, "http://127.0.0.1:11436");
         });
     }
 

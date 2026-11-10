@@ -2,6 +2,33 @@ use super::*;
 use crate::local_synthesis::{prepare, Evidence};
 use crate::wiki_claim_review::tests::fixture;
 
+#[test]
+fn diagnostic_export_matches_actual_flat_review_input_without_approval() {
+    let (packet, _, context) = fixture();
+    let prompt = prompt(&packet);
+    let draft = super::super::answer_draft::validate_answer_draft(
+        r#"{"answer":"The user requested the export; completion is not established.","sources":["S1"]}"#,
+        &prompt, "en",
+    ).unwrap();
+    let exported = diagnostic_input(&context, &packet, &prompt, &draft).unwrap();
+    for flag in ["tokenFitVerified", "modelExecuted", "semanticAccepted", "productionAccepted"] {
+        assert_eq!(exported[flag], false);
+    }
+    let mut called = false;
+    run(&context, &packet, &prompt, &draft, |_, _| Ok(1000), |system, user, output_tokens, window| {
+        called = true;
+        assert_eq!(exported["system"], system);
+        assert_eq!(exported["user"], user);
+        assert_eq!(exported["outputTokens"], output_tokens);
+        assert_eq!(exported["contextTokens"], window);
+        Ok(output().to_string())
+    }).unwrap();
+    assert!(called);
+    let mut changed = prompt;
+    changed.question.push_str(" changed");
+    assert!(diagnostic_input(&context, &packet, &changed, &draft).is_err());
+}
+
 #[cfg(feature = "native-index-probe")]
 #[path = "answer_review_dedup_tests.rs"]
 mod dedup;
@@ -548,3 +575,9 @@ fn focus_final_review_keeps_full_input_budget_rejection_and_visible_cancellation
 
 #[path = "answer_review_factoring_tests.rs"]
 mod factoring;
+
+#[path = "answer_review_interface_parity_tests.rs"]
+mod interface_parity;
+
+#[path = "answer_review_packet_draft_tests.rs"]
+mod packet_draft_comparison;

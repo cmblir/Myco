@@ -68,24 +68,24 @@ export function ladderOf(
   return rows;
 }
 
-/** What the retrieval stepper can say truthfully from one response. Numbers
- * the client cannot see (the BM25 arm's full list, the pre-cap fusion size)
- * are not invented — each field names exactly what it counts. */
+/** Response statistics, not counts of each retrieval stage. The response does
+ * not expose full candidate, BM25, dense-arm or rejected totals. */
 export interface RetrievalTrace {
-  /** Pages in the index (`embeddings_status`) — the candidate pool; null when
-   *  the status call did not answer. */
+  /** Pages in the dense index (`embeddings_status`), not the candidate pool
+   * or lexical coverage. Null when the status call did not answer. */
   indexedPages: number | null;
-  /** Returned hits (kept or rejected) the lexical arm alone surfaced — no
-   *  cosine. */
-  lexicalOnly: number;
-  /** Returned hits (kept or rejected) carrying a dense cosine. */
-  dense: number;
-  /** Everything fusion returned, kept or rejected. */
-  fused: number;
+  /** Returned chunks explicitly carrying no cosine. Null when any chunk's
+   * similarity is unreported. This is not the full BM25 arm's count. */
+  returnedWithoutSimilarity: number | null;
+  /** Returned chunks with a measured cosine, including lexical candidates
+   * scored on demand. Null when similarity coverage is unreported. */
+  returnedWithSimilarity: number | null;
+  /** Kept chunks plus the bounded near-miss examples in this response. */
+  returnedChunks: number;
   /** The per-query cap asked for (`k`). */
   cap: number;
-  /** Hits that fell under the relevance floor. */
-  rejected: number;
+  /** Rejected examples returned to the client, not all rejected chunks. */
+  rejectedExamples: number;
   floor: number;
 }
 
@@ -95,14 +95,22 @@ export function traceOf(
   cap: number,
 ): RetrievalTrace {
   const all = [...r.hits, ...r.nearMisses];
-  const dense = all.filter((h) => typeof h.similarity === "number").length;
+  const similarityReported = all.every(
+    (h) =>
+      h.similarity === null ||
+      (typeof h.similarity === "number" && Number.isFinite(h.similarity)),
+  );
   return {
     indexedPages,
-    lexicalOnly: all.filter((h) => h.similarity === null).length,
-    dense,
-    fused: all.length,
+    returnedWithoutSimilarity: similarityReported
+      ? all.filter((h) => h.similarity === null).length
+      : null,
+    returnedWithSimilarity: similarityReported
+      ? all.filter((h) => typeof h.similarity === "number").length
+      : null,
+    returnedChunks: all.length,
     cap,
-    rejected: r.nearMisses.length,
+    rejectedExamples: r.nearMisses.length,
     floor: r.floor,
   };
 }

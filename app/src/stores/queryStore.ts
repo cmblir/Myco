@@ -1,16 +1,20 @@
+import { readCitationEvidence, type CitationEvidence } from "../lib/citationEvidence";
 // Ask chat state, lifted out of PageQuery so an in-flight answer survives
 // navigating to other pages (same pattern as lintStore/ingestStore). The
 // Topbar shows a chip while an answer runs and after it finishes until the
 // user revisits the Query page.
 
 import { create } from "zustand";
-import { complete, retrieveChunks, type AskStage } from "../lib/chat";
+import { ModelEvidenceAbstention, UnverifiedQueryCitation } from "../lib/answerCitation";
+import { MissingQueryEvidence, complete, retrieveChunks, type AskStage, type RetrievedChunks } from "../lib/chat";
 import { formatExtractiveAnswer, groupByPage, quoteBody } from "../lib/extractive";
 import { chunkCitation } from "../lib/retrievalContext";
 import { nearMissesOf, shouldAbstain } from "../lib/abstention";
 import { traceOf, type RetrievalTrace } from "../lib/ladder";
 import { ipc, type ActivitySynthesisReceipt, type AgentVaultSession, type AskRecord, type AskScope, type NearMiss, type ScoredChunk } from "../lib/ipc";
 import { extractWikilinks } from "../lib/askHistory";
+import { packingCoverageOf, readAskSearchContext, type AskSearchContext, type AskPackingCoverage, type AskActivityCoverage } from "../lib/askSearchContext";
+import { applyAskExecutionEvent, finishAskExecution, readAskExecution, type AskAnswerKind, type AskExecution, type AskExecutionEvent } from "../lib/askExecution";
 import {
   formatActivityAnswer,
   formatRecentFilesAnswer,
@@ -21,7 +25,7 @@ import {
 import { isBuiltinChatModel, BUILTIN_EMBED_MODEL, BUILTIN_MODEL } from "../lib/providers";
 import { log } from "../lib/log";
 import { parseTimeQuery, type DateRange } from "../lib/timeQuery";
-import { followUpContext, plainPassage } from "../lib/askLoop";
+import { followUpContext, isTopicOnlyRecall, plainPassage } from "../lib/askLoop";
 import type { Captured } from "../lib/dailyNote";
 import { noteScopePaths, type NoteScope } from "../lib/noteScope";
 
@@ -30,12 +34,14 @@ const VAULT_FILES_INTENT = "vault-files";
 import type { Lang, Strings } from "../lib/i18n";
 import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
-import HEADS from "../lib/mycoPromptHeads.json";
+import { askPreamble } from "../lib/askPrompt";
+export { SYSTEM_PREAMBLE } from "../lib/askPrompt";
+import { readGuidedQuestion, type GuidedQuestionSelection } from "../lib/guidedQuestion";
 import { isActivityOverviewQuery, isMemoryQuestion, recallPolicy } from "../lib/recallPolicy";
 import { formatTemporalRecall } from "../lib/queryTemporal";
 import { connectionOverview, connectionScopeNotice, isConnectionOverviewQuery } from "../lib/queryConnections";
 import { ActivitySynthesisError, LocalSynthesisError, LocalSynthesisSourceError, isSynthesisReviewFailure, tryLocalSynthesis, type ActivitySynthesisFailure, type LocalSynthesisFallbackReason } from "../lib/querySynthesis";
-import { isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "../lib/queryActivity";
+import { ActivityPeriodRequired, activityPeriodClarification, isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "../lib/queryActivity";
 import { activityResolution } from "../lib/queryResolution";
 import { checkedAskRole, isQueryAuthorizationError, QueryAuthorizationError } from "../lib/queryRole";
 import type { RoleSnapshot } from "../lib/modelRoles";
@@ -49,6 +55,12 @@ export const QUOTED_PAGES = 5;
 const HISTORY_CAP = 500;
 
 export interface ChatTurn {
+  guidedQuestion?: GuidedQuestionSelection;
+  /** App generation-command provenance; never part of the replayed answer. */
+  execution?: AskExecution;
+  /** Applied source limits and measured passage omissions; never replayed as answer text. */
+  searchContext?: AskSearchContext;
+  citationEvidence?: CitationEvidence;
   q: string;
   a: string;
   error?: string;
@@ -65,8 +77,8 @@ export interface ChatTurn {
   extractive?: boolean;
   /** Selected local artifact used for synthesis; not a semantic quality claim. */
   localModel?: string;
-  /** Coverage of date-grounded activity evidence, kept out of answer history. */
-  activityCoverage?: { scannedPages: number; sources: number; incomplete: boolean };
+  /** Coverage of date-grounded activity evidence, saved separately from answer text. */
+  activityCoverage?: AskActivityCoverage;
   activityReceipt?: ActivitySynthesisReceipt;
   activityFailure?: ActivitySynthesisFailure;
   /** Static reason the selected local generator could not produce a verified answer. */
@@ -91,6 +103,7 @@ export interface ChatTurn {
   /// No hit cleared the floor: the page renders the abstention card, never
   /// a quoted passage. `nearMisses` are the closest rejects (≤4).
   abstained?: boolean;
+  abstainReason?: "model_evidence";
   nearMisses?: NearMiss[];
   /** A capability or scope limit, distinct from a claim of missing notes. */
   abstainExplanation?: string;
@@ -123,15 +136,11 @@ export interface ChatTurn {
   /// previous turn's question prepended — shown as a chip, and an abstention
   /// on it is not offered as a harvest target (the gap is the pronoun's).
   followUp?: boolean;
+  needsClarification?: boolean;
+  /** Keep a period-only reply tied to the user's original activity question. */
+  activityPeriodNeeded?: boolean;
+  activityQuestion?: string;
 }
-
-export const SYSTEM_PREAMBLE = `${HEADS.ask}
-The current working directory is the vault root. Use Read/Grep/Glob tools to
-look up answers from the wiki (\`wiki/\` if it exists) before reaching for
-\`raw/\` sources. Answer in the user's language. When you state a fact that
-comes from a vault file, cite it inline as [[vault-relative/path|page-stem]].
-Keep the source date with historical claims. Report conflicting evidence;
-an old decision or a proposed change does not establish the current state.`;
 
 /** Localized copy ask() bakes into turns. Passed per call from the page's `t`
  * so the store itself stays i18n-free (stores outlive language switches). */
@@ -145,11 +154,14 @@ export interface AskCopy {
   activitySummaryFailed: string;
   activityIncomplete: string;
   answerReviewFailed: string;
+  modelEvidenceInsufficient: string;
   activityInsufficientEvidence: string;
   /// Extractive empty copy while a date range is active — "nothing in that
   /// period's record" is a different fact than "nothing relevant anywhere".
   rangeEmpty: string;
   emptyResponse: string;
+  recallTopicNeeded: string;
+  guidedCutoffUnsupported: string;
 }
 
 /** The AskCopy every caller of `ask()` passes, in one place — the Ask page and
@@ -171,14 +183,18 @@ export function askCopy(t: Strings): AskCopy {
     activitySummaryFailed: t.q_activity_summary_failed,
     activityIncomplete: t.q_activity_incomplete,
     answerReviewFailed: t.q_answer_review_failed,
+    modelEvidenceInsufficient: t.q_model_evidence_insufficient,
     activityInsufficientEvidence: t.q_activity_insufficient_evidence,
     rangeEmpty:
       t.q_range_empty ?? "No answer found in the records for that period.",
     emptyResponse: t.q_empty_response ?? "(empty response)",
+    recallTopicNeeded: t.q_recall_topic_needed,
+    guidedCutoffUnsupported: t.q_guided_cutoff_unsupported,
   };
 }
 
 export interface AskOpts {
+  guidedQuestion?: GuidedQuestionSelection;
   scope?: AskScope;
   /** Captured period for retry or scope widening; ignoreRange still takes precedence. */
   range?: DateRange;
@@ -189,6 +205,8 @@ export interface AskOpts {
    *  Only the Ask page's composer passes it — a question asked elsewhere
    *  (Spotlight, Home) is never narrowed by a scope the page shows. */
   note?: NoteScope;
+  /** Original activity question when retrying a period-only clarification reply. */
+  activityQuestion?: string;
 }
 
 /** The abstain card's two re-asks of `turn`, each absent where there is
@@ -198,15 +216,34 @@ export interface AskOpts {
  *  week", so without the flag ask() would parse the window straight back.
  *  `dropRange` searches the turn's own scope without its period. */
 export function reasksOf(turn: ChatTurn): { widen?: AskOpts; dropRange?: AskOpts } {
+  if (turn.needsClarification) return {};
   // A note's turn widens out of the note into every scope.
   return {
     widen:
       turn.scope === "all" && !turn.note ? undefined : { scope: "all", ignoreRange: !turn.range,
+        ...(turn.activityQuestion ? { activityQuestion: turn.activityQuestion } : {}),
+        ...(turn.guidedQuestion ? { guidedQuestion: turn.guidedQuestion } : {}),
         ...(turn.range ? { range: turn.range } : {}) },
     dropRange: turn.range
-      ? { scope: turn.scope, ignoreRange: true, ...(turn.note ? { note: turn.note } : {}) }
+      ? { scope: turn.scope, ignoreRange: true, ...(turn.activityQuestion ? { activityQuestion: turn.activityQuestion } : {}),
+        ...(turn.guidedQuestion ? { guidedQuestion: turn.guidedQuestion } : {}),
+        ...(turn.note ? { note: turn.note } : {}) }
       : undefined,
   };
+}
+
+/** One metadata representation for the live answer and saved history. */
+export function searchContextOf(turn: ChatTurn): AskSearchContext | undefined {
+  const context: AskSearchContext = readAskSearchContext(turn.searchContext) ?? {version:1};
+  if (turn.guidedQuestion) context.guidedQuestion = turn.guidedQuestion;
+  if (turn.ignoreRange) {
+    context.rangeIgnored = true; delete context.range;
+  } else if (turn.range) context.range = {...turn.range};
+  if (turn.activityCoverage) context.activityCoverage = {...turn.activityCoverage,
+    incomplete:turn.activityCoverage.incomplete || Boolean(context.packing?.omittedPassages)};
+  if (turn.activityQuestion) context.activityQuestion = turn.activityQuestion;
+  if (turn.needsClarification && turn.activityPeriodNeeded) context.periodClarification = true;
+  return Object.keys(context).length > 1 ? readAskSearchContext(context) : undefined;
 }
 
 /** `turn` as the history log keeps it: what the page showed, not the hits
@@ -223,9 +260,15 @@ export function recordOf(turn: ChatTurn, at: number): AskRecord {
         })
         .join("\n\n")
     : turn.a;
+  // Clarification displays its text; it is not a failed evidence search.
+  const abstained = turn.abstained && !turn.needsClarification;
+  const searchContext = searchContextOf(turn);
+  const execution = readAskExecution(turn.execution);
   return {
     at,
     q: turn.q,
+    ...(execution ? {execution} : {}),
+    ...(searchContext ? {searchContext} : {}),
     // A note's turn ran over the note, not over its "all" scope.
     ...(turn.note
       ? { note: { title: turn.note.title } }
@@ -233,9 +276,11 @@ export function recordOf(turn: ChatTurn, at: number): AskRecord {
         ? { scope: turn.scope }
         : {}),
     // An abstained turn shows the card, never its fallback text.
-    a: turn.abstained ? "" : a,
+    a: abstained ? "" : a,
     cited: quoted ? quoted.map((g) => g.stem) : extractWikilinks(turn.a),
-    ...(turn.abstained ? { abstained: true } : {}),
+    ...(!abstained && !turn.stopped && !turn.error && turn.citationEvidence
+      ? { citationEvidence: readCitationEvidence(turn.citationEvidence) } : {}),
+    ...(abstained ? { abstained: true, ...(turn.abstainReason ? { abstainReason: turn.abstainReason } : {}) } : {}),
     ...(turn.stopped ? { stopped: true } : {}),
     ...(turn.error ? { error: turn.error } : {}),
   };
@@ -401,22 +446,35 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     let roleSnapshot: RoleSnapshot | undefined;
     let authorityRevoked = false;
     let unsubscribeSettings: (() => void) | undefined;
+    let execution: AskExecution | undefined = {version:1,answerKind:"none",calls:[]};
     const ownsState = (): boolean => revision === conversationRevision &&
       useVaultStore.getState().currentVault?.path === vault.path &&
       useVaultStore.getState().vaultToken === snapshot.vaultToken && !useVaultStore.getState().isOpeningVault;
     // What ask() resolves with: this question's turn as it ended.
     let outcome: ChatTurn | undefined;
-    const end = (patch: Partial<ChatTurn>, rest: Partial<QueryState>): void => {
+    const end = (patch: Partial<ChatTurn>, rest: Partial<QueryState>, answerKind?: AskAnswerKind): void => {
       if (!ownsState()) return;
-      set((s) => ({ turns: patchLast(s.turns, patch), ...rest }));
+      const kind = patch.stopped || patch.error ? "none" : patch.needsClarification ? "clarification" :
+        patch.abstained || patch.extractiveEmpty || patch.activityFailure || !patch.a?.trim() ? "none" :
+        answerKind ?? (patch.localModel ? "model_response" : patch.extractive ? "extractive" : "application");
+      if (execution) {
+        try { execution=finishAskExecution(execution,kind,patch.stopped ? "cancelled" : patch.error ? "failed" : undefined); }
+        catch { execution=undefined; log.warn("query.execution_metadata_invalid"); }
+      }
+      set((s) => ({ turns: patchLast(s.turns, {...patch,execution}), ...rest }));
       outcome = get().turns.at(-1);
       if (outcome) remember(vault.path, outcome, sourceVaultRevision);
     };
     // Once stopped, this run writes nothing: its late outcome would land on
     // the next question's turn, and its `finally` would free that one's busy.
     const live = (): boolean => ownsState() && !ctrl.signal.aborted;
-    const finishTurn = (patch: Partial<ChatTurn>): void => {
-      if (live()) end(patch, { seen: false });
+    const onExecution = (event: AskExecutionEvent): void => {
+      if (!live() || !execution) return;
+      execution=applyAskExecutionEvent(execution,event);
+      set(s=>({turns:patchLast(s.turns,{execution})}));
+    };
+    const finishTurn = (patch: Partial<ChatTurn>, answerKind?: AskAnswerKind): void => {
+      if (live()) end(patch, { seen: false }, answerKind);
     };
     // ■ (stop()): the turn becomes 멈춤 at once and the composer is free.
     ctrl.signal.addEventListener(
@@ -434,19 +492,27 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     // The Ask page's scope segment and 고급 sliders, persisted per device.
     const { askScope, askTierWeights, isAskScopeExplicit } = useUIStore.getState();
     // Resolve at question time so routing and shortcuts use the same period.
+    const guidedQuestion = readGuidedQuestion(opts?.guidedQuestion);
     const tp = parseTimeQuery(question, queryTime, lang);
+    // A selected historical cutoff includes earlier records, not just that day.
+    if (guidedQuestion) { tp.range = null; tp.cleaned = question; }
     if (opts?.range) tp.range = opts.range;
+    const previous = get().turns.at(-1);
+    const periodReply = !opts?.ignoreRange && tp.range && /^[\s?？!.。,，]*$/.test(tp.cleaned) &&
+      previous?.activityPeriodNeeded && previous.activityQuestion;
+    const activityQuestion = opts?.activityQuestion ?? (periodReply ? previous.activityQuestion! : question);
     const text = tp.range ? tp.cleaned : question;
-    const isDatedActivityOverview = Boolean(tp.range && isActivityOverviewQuery(text));
+    const isDatedActivityOverview = Boolean(tp.range && (isActivityOverviewQuery(text) ||
+      (activityQuestion !== question && (isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion)))));
     if (opts?.ignoreRange) tp.range = null;
     const note = opts?.note;
     // Over one note the path set decides, so no tier is cut out of it.
     const explicitScope = opts?.scope ?? (isAskScopeExplicit ? askScope : undefined);
-    const { scope, tierWeights } = recallPolicy(question, askScope, askTierWeights, note ? "all" : explicitScope, isDatedActivityOverview);
+    const { scope, tierWeights } = recallPolicy(activityQuestion, askScope, askTierWeights, note ? "all" : explicitScope, isDatedActivityOverview);
     const paths = note ? noteScopePaths(note.path, vault.path, useVaultStore.getState().adjacency) : undefined;
     // The question this one may lean on (UX audit A2): "그건 왜 중요해?"
     // alone retrieves nothing its pronoun points at.
-    const context = followUpContext(
+    const context = guidedQuestion ? null : activityQuestion !== question ? activityQuestion : followUpContext(
       get().turns,
       question,
       (q) => parseTimeQuery(q, queryTime, lang).cleaned,
@@ -457,16 +523,27 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         ...s.turns,
         {
           q: question,
+          ...(guidedQuestion ? {guidedQuestion} : {}),
           a: "",
+          execution:readAskExecution(execution),
           scope,
+          ...(paths ? {searchContext:{version:1 as const,paths:[...paths]}} : {}),
           ...(note ? { note } : {}),
           ...(opts?.ignoreRange ? { ignoreRange: true } : {}),
+          ...(activityQuestion !== question ? { activityQuestion } : {}),
         },
       ],
       busy: true,
       startedAt,
       seen: true,
     }));
+
+    if (!context && !note && isTopicOnlyRecall(question)) {
+      finishTurn({ a: copy.recallTopicNeeded, abstained: true,
+        needsClarification: true, abstainExplanation: copy.recallTopicNeeded });
+      settle();
+      return outcome;
+    }
 
     // The unrestricted recent git log cannot answer a date-restricted request,
     // a transcript-only scope, or a question over one note.
@@ -511,6 +588,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         throw new QueryAuthorizationError();
       provider = roleSnapshot.routeSignature.providerId;
       queryModel = roleSnapshot.routeSignature.modelId;
+      // Optional provenance must not prevent saving an answer or an error if
+      // a legacy/native route cannot be represented by the history schema.
+      execution=readAskExecution({...execution,selected:{providerId:provider,modelId:queryModel}});
+      if (live()) set(s=>({turns:patchLast(s.turns,{execution:readAskExecution(execution)})}));
     } catch (error) {
       finishTurn({ a: "", error: isQueryAuthorizationError(error) ? copy.modelSelectionChanged : String(error) });
       settle();
@@ -523,14 +604,15 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     if (provider === "builtin-local") {
       let localFallback: LocalSynthesisFallbackReason | undefined;
       let activityFailureCopy = copy.activityFailed;
-      const isActivityRecall = isBuiltinChatModel(queryModel) && !opts?.ignoreRange &&
-        (isDatedActivityOverview || isUndatedActivityOverview(question, lang, queryTime) || isNextWorkOverview(question));
+      const isActivityRecall = !guidedQuestion && isBuiltinChatModel(queryModel) && !opts?.ignoreRange &&
+        (isDatedActivityOverview || isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion));
       try {
         if (queryModel !== BUILTIN_MODEL && !isBuiltinChatModel(queryModel))
           throw new LocalSynthesisError("model_unavailable");
         if (isActivityRecall) {
           const activity = await retrieveActivity({
-            question, lang, modelId: queryModel, expectedVault: vault.path, origin, roleSnapshot, queryTime, scope,
+            onExecution,
+            question: activityQuestion, lang, modelId: queryModel, expectedVault: vault.path, origin, roleSnapshot, queryTime, scope,
             range: tp.range ?? undefined, paths, signal: ctrl.signal,
             onThinking: () => { if (live()) set({ stage: { kind: "thinking", stems: [] } }); },
             onRangeSelected: (range) => {
@@ -552,9 +634,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           }
           activityFailureCopy = copy.activitySummaryFailed;
           const synthesis = await Promise.race([stopped(ctrl.signal), tryLocalSynthesis({
-            question, lang, hits: activity.hits, expectedVault: vault.path, origin, roleSnapshot, scope, modelId: queryModel,
+            onExecution,
+            question: activityQuestion, lang, hits: activity.hits, expectedVault: vault.path, origin, roleSnapshot, scope, modelId: queryModel,
             range: activity.range, paths, signal: ctrl.signal, activityOverview: true,
-            resolution: activityResolution(activity.range, queryTime, isNextWorkOverview(question) ? "current_state" : "historical_as_of"),
+            resolution: activityResolution(activity.range, queryTime, isNextWorkOverview(activityQuestion) ? "current_state" : "historical_as_of"),
             onThinking: (stems) => { if (live()) set({ stage: { kind: "thinking", stems } }); },
             onFallback: (reason) => { if (live()) localFallback = reason; },
           })]);
@@ -597,7 +680,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         // The callback fires just before the actual hybrid search IPC.
         // Missing dense vectors still allow the independent lexical search.
         const r = await Promise.race([stopped(ctrl.signal), retrieveChunks(
-          context ? `${context} ${text}` : text,
+          guidedQuestion?.subject ?? (context ? `${context} ${text}` : text),
           RETRIEVE_K,
           () => {
             if (live()) set({ stage: { kind: "retrieving" } });
@@ -606,6 +689,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           scope,
           tierWeights,
           paths,
+          guidedQuestion?.asOf,
+          guidedQuestion?.intent,
         )]);
         const ran = !r.stale && !r.retrievalFailed;
         if (!ran && isBuiltinChatModel(queryModel))
@@ -616,7 +701,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         if (md && ran && isBuiltinChatModel(queryModel)) {
           if (live()) set({ stage: null });
           const synthesis = await Promise.race([stopped(ctrl.signal), tryLocalSynthesis({
-            question, lang, hits: r.hits, expectedVault: vault.path, origin, roleSnapshot, scope, modelId: queryModel,
+            onExecution,
+            question, lang, ...(guidedQuestion ? {guidedQuestion} : {}), hits: r.hits, expectedVault: vault.path, origin, roleSnapshot, scope, modelId: queryModel,
             previousQuestion: context ?? undefined,
             range: tp.range ?? undefined, paths, signal: ctrl.signal,
             onThinking: (stems) => {
@@ -676,6 +762,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             err instanceof LocalSynthesisSourceError ? copy.sourceChanged :
             err instanceof LocalSynthesisError && err.code === "index_stale" ? copy.extractiveStale :
             err instanceof LocalSynthesisError && err.code === "retrieval_failed" ? copy.extractiveFailed :
+            err instanceof LocalSynthesisError && err.code === "historical_cutoff_unsupported" ? copy.guidedCutoffUnsupported :
             err instanceof LocalSynthesisError ? copy.answerReviewFailed :
             err instanceof ActivitySynthesisError && isSynthesisReviewFailure(err.code) ? copy.answerReviewFailed :
             err instanceof ActivitySynthesisError && err.code === "activity_insufficient_evidence" ? copy.activityInsufficientEvidence :
@@ -691,12 +778,46 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     // `finally` clears the live stage.
     let stale = false;
     let retrievalFailed = false;
+    let citationEvidence: CitationEvidence | undefined;
+    let activityEvidence: RetrievedChunks | undefined;
+    let activityCoverage: ChatTurn["activityCoverage"];
+    let packingCoverage: AskPackingCoverage | undefined;
+    const isProviderActivity = !guidedQuestion && !opts?.ignoreRange &&
+      (isDatedActivityOverview || isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion));
+    let activityFailureCopy = copy.activityFailed;
     try {
+      if (isProviderActivity) {
+        const activity = await Promise.race([stopped(ctrl.signal), retrieveActivity({
+          onExecution,
+          question: activityQuestion, lang, modelId: queryModel, expectedVault: vault.path, origin, roleSnapshot, queryTime, scope,
+          range: tp.range ?? undefined, paths, signal: ctrl.signal,
+          onRangeSelected: (range) => {
+            if (!live()) return;
+            tp.range = range;
+            set((s) => ({ turns: patchLast(s.turns, { range }) }));
+          },
+          onRetrieving: () => { if (live()) set({ stage: { kind: "retrieving" } }); },
+        })]);
+        if (!live()) return outcome;
+        activityCoverage = { scannedPages: activity.scanned_pages, sources: 0, incomplete: activity.incomplete };
+        if (!activity.hits.length) {
+          finishTurn({ a: activity.incomplete ? "" : copy.rangeEmpty,
+            ...(activity.incomplete ? { error: copy.activityIncomplete } : {}),
+            range: activity.range, activityCoverage, activityFailure: "activity_insufficient_evidence" });
+          return outcome;
+        }
+        // Date-grounded native passages have no measured lexical/dense score.
+        // The normal provider context budget and citation checks still apply.
+        activityEvidence = { hits: activity.hits.map(hit => ({ ...hit, score: 0, similarity: null })),
+          nearMisses: [], floor: 0, indexedPages: null, stale: false, retrievalFailed: false };
+        activityFailureCopy = copy.activitySummaryFailed;
+      }
       // Raced against ■, so a stopped ask settles now, not when the call it
       // no longer wants comes back (minutes, for a slow model).
       const content = await Promise.race([
         stopped(ctrl.signal),
         complete({
+          onExecution,
           task: "query",
           origin, roleSnapshot, featureRole: "ask", usage: "foreground",
           cwd: vault.path,
@@ -704,8 +825,27 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           tierWeights,
           paths,
           range: tp.range ?? undefined,
-          retrievalQuery: context ? `${context} ${text}` : text,
+          retrievalQuery: guidedQuestion?.subject ?? (context ? `${context} ${text}` : text),
+          ...(guidedQuestion ? {guidedQuestion} : {}),
+          ...(activityEvidence ? { retrievedEvidence: activityEvidence } : {}),
           signal: ctrl.signal,
+          onCitationEvidence: (evidence) => {
+            if (live()) citationEvidence = readCitationEvidence(evidence);
+          },
+          onHistoricalExclusions: (excluded) => {
+            if (!live() || !guidedQuestion?.asOf) return;
+            const historical = {asOf:guidedQuestion.asOf,
+              afterCutoff:excluded.filter(item=>item.reason === "after_historical_cutoff").length,
+              dateUnverified:excluded.filter(item=>item.reason === "historical_date_unverified").length};
+            set(s=>({turns:patchLast(s.turns,{searchContext:{...(s.turns.at(-1)?.searchContext ?? {version:1}),historical}})}));
+          },
+          onContextPacking: (audit) => {
+            if (!live()) return;
+            packingCoverage = packingCoverageOf(audit);
+            set(s=>({turns:patchLast(s.turns,{searchContext:{
+              ...(s.turns.at(-1)?.searchContext ?? {version:1}),packing:packingCoverage,
+            }})}));
+          },
           onStage: (s) => {
             if (!live()) return;
             set({ stage: s });
@@ -716,10 +856,13 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             {
               role: "system",
               content:
-                SYSTEM_PREAMBLE +
+                askPreamble(guidedQuestion) +
+                (context ? `\nThis follow-up refers to the previous user question: ${JSON.stringify(context)}. Use it only to resolve the topic, not as factual evidence.` : "") +
                 (tp.range
                   ? `\nFocus on sources dated ${tp.range.start}..${tp.range.end}.`
                   : "") +
+                (activityEvidence ? "\nSummarize the user's work from these date-grounded records. Preserve speakers and recorded dates. Distinguish requests, plans and reported completion; a report is not independent verification. State partial coverage when evidence is omitted. Cite the supplied original sources for factual claims." : "") +
+                (activityCoverage?.incomplete ? "\nNot all original records could be read. Say explicitly that this is a partial account." : "") +
                 // A tool-using CLI can still open other files; say where to stay.
                 (paths ? `\nAnswer only from these vault files: ${paths.join(", ")}.` : ""),
             },
@@ -727,8 +870,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             // assistant message makes providers (e.g. Anthropic) reject the
             // request with a 400 on the next question.
             ...get()
-              .turns.slice(0, -1)
-              .filter((p) => p.a && !p.error)
+              .turns.slice(0, guidedQuestion ? 0 : -1)
+              .filter((p) => p.a && !p.error && !p.abstained && !p.needsClarification)
               .flatMap((p) => [
                 { role: "user" as const, content: p.q },
                 { role: "assistant" as const, content: p.a },
@@ -737,9 +880,36 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           ],
         }),
       ]);
-      finishTurn({ a: content || copy.emptyResponse, stale, retrievalFailed, range: tp.range ?? undefined, followUp: followUp || undefined });
+      if (activityCoverage && activityEvidence) {
+        const cited = new Set(extractWikilinks(content).map(path => path.replace(/\.md$/i, "").normalize("NFC")));
+        const supplied = new Set(activityEvidence.hits.map(hit => hit.page.replace(/\.md$/i, "").normalize("NFC")));
+        const sources = [...supplied].filter(path => cited.has(path)).length;
+        activityCoverage = { ...activityCoverage, sources, incomplete: activityCoverage.incomplete || sources < supplied.size || Boolean(packingCoverage?.omittedPassages) };
+      }
+      finishTurn({ a: content || copy.emptyResponse, ...(citationEvidence ? {citationEvidence} : {}), stale, retrievalFailed,
+        ...(activityCoverage ? { activityCoverage } : {}), range: tp.range ?? undefined, followUp: followUp || undefined },
+        content.trim() ? "model_response" : "none");
     } catch (err) {
-      finishTurn({ a: "", error: isQueryAuthorizationError(err) ? copy.modelSelectionChanged : String(err) });
+      if (err instanceof ActivityPeriodRequired) {
+        const clarification = activityPeriodClarification(lang);
+        finishTurn({ a: clarification, abstained: true, needsClarification: true,
+          activityPeriodNeeded: true, activityQuestion, abstainExplanation: clarification });
+      } else if (err instanceof ModelEvidenceAbstention) {
+        finishTurn({ a: copy.modelEvidenceInsufficient, abstained: true, abstainReason: "model_evidence",
+          abstainExplanation: copy.modelEvidenceInsufficient,
+          ...(activityCoverage ? { activityCoverage } : {}),
+          retrievalFailed: false, range: tp.range ?? undefined });
+      } else if (err instanceof MissingQueryEvidence) {
+        const r = err.retrieval;
+        const explanation = r.retrievalFailed ? copy.extractiveFailed : r.stale ? copy.extractiveStale : tp.range ? copy.rangeEmpty : copy.extractiveEmpty;
+        finishTurn({ a: explanation, abstained: true, abstainExplanation: explanation,
+          hits: [], nearMisses: r.nearMisses, trace: traceOf(r, r.indexedPages, RETRIEVE_K), floor: r.floor,
+          stale: r.stale, retrievalFailed: r.retrievalFailed, range: tp.range ?? undefined });
+      } else {
+        finishTurn({ a: "", ...(tp.range ? { range: tp.range } : {}), ...(activityCoverage ? { activityCoverage } : {}),
+          error: err instanceof UnverifiedQueryCitation ? copy.answerReviewFailed : isQueryAuthorizationError(err) ? copy.modelSelectionChanged :
+            isProviderActivity && !activityEvidence ? activityFailureCopy : String(err) });
+      }
     } finally {
       // A finished run must not leave its label or its pages behind for the
       // next one.
@@ -759,6 +929,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       ignoreRange: turn.ignoreRange,
       note: turn.note,
       range: turn.range,
+      activityQuestion: turn.activityQuestion,
+      guidedQuestion: turn.guidedQuestion,
     });
   },
 

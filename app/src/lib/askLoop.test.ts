@@ -6,11 +6,13 @@ import {
   cancelPickIntent,
   followUpContext,
   isFollowUp,
+  isTopicOnlyRecall,
   matchLines,
   passageSection,
   plainPassage,
   plainText,
   setReaderIntent,
+  subscribeReaderIntent,
   settlePick,
   takeReaderIntent,
 } from "./askLoop";
@@ -158,6 +160,29 @@ describe("matchLines", () => {
     });
   });
 
+  it("does not attach a later user's quote to an earlier speaker heading", () => {
+    const transcript = "**User:**\nFirst request.\n\n**Assistant:**\nA reply.\n\n**User:**\nFind this later request.";
+    expect(matchLines(transcript, "**User:**\nFind this later request.")).toEqual({ from: 7, to: 8 });
+  });
+
+  it("rejects changed middle or missing final lines instead of lighting an unrelated range", () => {
+    expect(matchLines("Start.\nChanged fact.\nEnd.", "Start.\nOriginal fact.\nEnd.")).toBeNull();
+    expect(matchLines("Start.\nChanged ending.", "Start.\nOriginal ending.")).toBeNull();
+    expect(matchLines("Done later.", "Done")).toBeNull();
+  });
+
+  it("does not choose arbitrarily between repeated complete passages", () => {
+    expect(matchLines("Same words.\n\nSame words.", "Same words.")).toBeNull();
+  });
+
+  it("treats original ellipses and inner whitespace literally", () => {
+    expect(matchLines("Start.\nChanged fact.\nEnd.", "Start.\n…\nEnd.", true)).toBeNull();
+    expect(matchLines("Done later.", "Done…", true)).toBeNull();
+    expect(matchLines("Start.\n…\nEnd.", "\nStart.\n…\nEnd.\n", true)).toEqual({ from: 1, to: 3 });
+    expect(matchLines("A  B", "A B", true)).toBeNull();
+    expect(matchLines("같은 말.\n같은 말.", "같은 말.", true)).toBeNull();
+  });
+
   it("is null when the note no longer holds the passage", () => {
     expect(matchLines(doc, "Something else entirely.")).toBeNull();
     expect(matchLines(doc, "")).toBeNull();
@@ -229,11 +254,19 @@ describe("followUpContext", () => {
     expect(followUpContext(turns, "why?")).toBe("attention");
   });
 
-  it("skips a turn that failed", () => {
+  it("preserves the user topic after generation failed", () => {
     expect(followUpContext([{ q: "attention" }, { q: "bpe", error: "x" }], "why?")).toBe(
-      "attention",
+      "bpe",
     );
-    expect(followUpContext([{ q: "bpe", error: "x" }], "why?")).toBeNull();
+    expect(followUpContext([{ q: "bpe", error: "x" }], "why?")).toBe("bpe");
+  });
+
+  it("recognizes explicit recall of a previous question without reusing its failed answer", () => {
+    const turns = [{ q: "Atlas 프로젝트에서 저장 방식을 바꾼 이유는?", error: "citation rejected" }];
+    for (const question of ["직전 결정 질문에서 이야기한 발언을 찾아줘.", "전에 이야기한 그 내용 찾아줘.", "그 결정의 근거는 뭐야?"]) {
+      expect(followUpContext(turns, question)).toBe(turns[0].q);
+    }
+    expect(followUpContext(turns, "이전 프로젝트의 저장 방식은? ")).toBeNull();
   });
 
   it("drops the topic's own time phrase, keeping the question when nothing is left", () => {
@@ -274,4 +307,29 @@ describe("blocksInRange", () => {
   it("lists the blocks in document order, so the first one is the one to scroll to", () => {
     expect(blocksInRange([0, 2, 8, 4], 3, 9)).toEqual([1, 3, 2]);
   });
+});
+
+
+describe("topic-only recall", () => {
+  it.each(["전에 이야기한 그 내용 찾아줘.", "아까 말한 그거 다시 찾아줘", "그 결정 알려줘", "Find what we discussed before", "前に話した内容を見せて"])("recognizes missing subject: %s", q => {
+    expect(isTopicOnlyRecall(q)).toBe(true);
+    expect(isFollowUp(q)).toBe(true);
+  });
+  it.each(["Atlas 저장 방식에 대해 전에 이야기한 내용 찾아줘", "지난주 결정한 내용 찾아줘", "Find the Atlas deployment notes", "그 결정에서 Atlas의 설정을 알려줘"])("keeps named subjects searchable: %s", q => {
+    expect(isTopicOnlyRecall(q)).toBe(false);
+  });
+});
+
+it("notifies a mounted reader on same-page selections and unsubscribes cleanly", () => {
+ let calls=0;
+ const unsubscribe=subscribeReaderIntent(()=>{calls++;});
+ setReaderIntent("/v/a.md",{kind:"show",section:null,quote:"first"});
+ expect(takeReaderIntent("/v/a.md")?.kind).toBe("show");
+ setReaderIntent("/v/a.md",{kind:"show",section:null,quote:"second"});
+ expect(calls).toBe(2);
+ expect(takeReaderIntent("/v/a.md")).toEqual({kind:"show",section:null,quote:"second"});
+ unsubscribe();
+ setReaderIntent("/v/a.md",{kind:"show",section:null,quote:"third"});
+ expect(calls).toBe(2);
+ takeReaderIntent("/v/a.md");
 });

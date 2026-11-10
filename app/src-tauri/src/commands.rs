@@ -270,6 +270,54 @@ pub fn cancel_local_synthesis(request_id: String) -> bool {
     crate::local_generation::cancel(&request_id)
 }
 
+/// Debug-only bridge for an explicitly isolated saved-model diagnostic.
+#[tauri::command]
+pub async fn diagnostic_ask_packet(
+    vault: tauri::State<'_, VaultRoot>,
+    bm25_cache: tauri::State<'_, crate::retrieval::Bm25Cache>,
+    request: crate::local_generation::Request,
+    raw_answer: Option<String>,
+    expected_revision: Option<String>,
+    fresh_index: Option<bool>,
+    export_review: Option<bool>,
+) -> Result<serde_json::Value, String> {
+    #[cfg(not(debug_assertions))]
+    { let _ = (vault, bm25_cache, request, raw_answer, expected_revision, fresh_index, export_review);
+      return Err("diagnostic bridge unavailable".into()); }
+    #[cfg(debug_assertions)]
+    {
+        if std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1") {
+            return Err("diagnostic bridge requires isolated diagnostic mode".into());
+        }
+        let origin = request.origin.as_ref().ok_or("diagnostic opening missing")?;
+        let snapshot = request.role_snapshot.as_ref().ok_or("diagnostic role missing")?;
+        let root = authorized_role(&vault, origin, snapshot, crate::role_authorization::RoleId::Ask,
+            |root| { check_expected_vault(root, Some(&request.expected_vault))?; Ok(root.to_path_buf()) })?;
+        let force_fresh = fresh_index.unwrap_or(false) || raw_answer.is_some();
+        if force_fresh { crate::local_generation::diagnostic_ask::forget_index(&request); }
+        let index = match crate::local_generation::diagnostic_ask::packed_index(&request) {
+            Some(index) => index,
+            None => bm25_cache.get_async(crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?).await?,
+        };
+        authorized_role(&vault, origin, snapshot, crate::role_authorization::RoleId::Ask, |current| {
+            if current != root { return Err("diagnostic opening changed".into()); }
+            crate::local_generation::diagnostic_ask::remember_index(&request, index.clone());
+            let result = if export_review.unwrap_or(false) {
+                match raw_answer.as_deref() {
+                    Some(raw) => crate::local_generation::diagnostic_ask::review_input(current, &index,
+                        &request, raw, expected_revision.as_deref()),
+                    None => Err("diagnostic review requires a raw answer".into()),
+                }
+            } else {
+                crate::local_generation::diagnostic_ask::exchange(current, &index, &request,
+                    raw_answer.as_deref(), expected_revision.as_deref())
+            };
+            if raw_answer.is_some() { crate::local_generation::diagnostic_ask::forget_index(&request); }
+            result
+        })
+    }
+}
+
 /// Revalidate retrieved source chunks before optional local synthesis.
 #[tauri::command]
 pub async fn local_synthesize(
@@ -5928,6 +5976,62 @@ pub(crate) async fn embed_one_page(
     bm25_pages: &std::collections::HashSet<String>,
     origin: &AgentVaultSession,
 ) -> Result<EmbedOutcome, String> {
+    embed_one_page_with_policy(app, llm, provider, model, rel, stem, content, existing, store, bm25, bm25_pages, origin, false).await
+}
+
+/// Automatic actor entry; manual reindex keeps the existing policy.
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn embed_one_page_automatic(
+    app: &tauri::AppHandle,
+    llm: &tauri::State<'_, LocalLlmState>,
+    provider: &str,
+    model: &str,
+    rel: &str,
+    stem: &str,
+    content: &str,
+    existing: &std::collections::HashMap<String, Vec<u64>>,
+    store: &mut VectorStore,
+    bm25: &mut crate::retrieval::Bm25Index,
+    bm25_pages: &std::collections::HashSet<String>,
+    origin: &AgentVaultSession,
+) -> Result<EmbedOutcome, String> {
+    embed_one_page_with_policy(app, llm, provider, model, rel, stem, content, existing, store, bm25, bm25_pages, origin, true).await
+}
+
+/// Automatic work rechecks opt-in at every bounded GPU batch, including
+/// completion. A disabled/corrupt policy never polls the embedding future.
+async fn checked_automatic_embedding_batch<T>(
+    automatic: bool,
+    operation: impl std::future::Future<Output = Result<T, String>>,
+) -> Result<T, String> {
+    let check = || -> Result<(), String> {
+        if automatic && !crate::settings::read_checked()?.auto_reindex_enabled {
+            return Err("automatic_reindex_disabled".into());
+        }
+        Ok(())
+    };
+    check()?;
+    let result = operation.await?;
+    check()?;
+    Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn embed_one_page_with_policy(
+    app: &tauri::AppHandle,
+    llm: &tauri::State<'_, LocalLlmState>,
+    provider: &str,
+    model: &str,
+    rel: &str,
+    stem: &str,
+    content: &str,
+    existing: &std::collections::HashMap<String, Vec<u64>>,
+    store: &mut VectorStore,
+    bm25: &mut crate::retrieval::Bm25Index,
+    bm25_pages: &std::collections::HashSet<String>,
+    origin: &AgentVaultSession,
+    automatic: bool,
+) -> Result<EmbedOutcome, String> {
     let Some(sync) = sync_bm25_for_page(content, rel, stem, existing, bm25, bm25_pages) else {
         return Ok(EmbedOutcome {
             embedded: false,
@@ -5957,15 +6061,14 @@ pub(crate) async fn embed_one_page(
     for batch in todo.chunks(DENSE_BATCH_CHUNKS) {
         app.state::<VaultRoot>().with_origin(origin, |_| Ok(()))?;
         let texts = batch.iter().map(|&i| chunks[i].clone()).collect();
-        let embedded = embed_texts_checked(
+        let embedded = checked_automatic_embedding_batch(automatic, embed_texts_checked(
             app.clone(),
             (*llm).clone(),
             provider,
             model,
             crate::local_llm::EmbedRole::Document,
             texts,
-        )
-        .await?;
+        )).await?;
         if embedded.space.model != store.model || embedded.space.signature != store.signature {
             return Err("index embedding batch representation changed".into());
         }
@@ -6084,16 +6187,33 @@ pub struct NearMiss {
 /// in final order, plus the floor itself and up to four near-misses below it.
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct AskSearch {
+    pub related_context: crate::retrieval_context::RelatedContext,
+    /// Fresh query/document vectors measured together, independent of the saved index.
+    /// Absence preserves the exact-only rule for missing or retired dense indexes.
+    pub candidate_embedding: Option<embeddings::EmbeddingSpace>,
     pub hits: Vec<ScoredChunk>,
     /// `retrieval::RELEVANCE_FLOOR` — the cosine each hit had to clear.
     pub floor: f32,
     /// Rejected hits, best cosine first (lexical-only hits are never here:
     /// with no cosine they pass the floor, as `chat.ts::isRelevant` does).
     pub below_floor: Vec<NearMiss>,
+    /// Why the dense arm did not run, so the saved audit shows a lexical-only
+    /// ranking instead of leaving it to be inferred from missing cosines.
+    pub dense_skipped: Option<&'static str>,
 }
 
 /// How many near-misses the abstention state shows.
 const NEAR_MISSES: usize = 4;
+/// Page-capped candidates ranked beyond `k` so a hit the relevance floor
+/// rejects does not consume one of the `k` answer slots.
+const FLOOR_REFILL: usize = 8;
+
+/// `ask_response`, then keep the first `k` hits that cleared the floor.
+pub(crate) fn floor_first_hits(hits: Vec<HybridHit>, k: usize) -> AskSearch {
+    let mut out = ask_response(hits);
+    out.hits.truncate(k.max(1));
+    out
+}
 
 /// Split ranked hits at the relevance floor into the Ask response. Pure, so
 /// the shape is unit-testable without a Tauri runtime.
@@ -6284,6 +6404,15 @@ fn timestamp_in_date_range(timestamp: i64, range: &DateRange) -> bool {
 }
 
 pub(crate) fn chunk_in_date_range(
+    page: &str, content: &str, chunks: &[String], section: usize, range: &DateRange,
+) -> bool {
+    chunk_date_mask(page, content, chunks, range).get(section).copied().unwrap_or(false)
+}
+
+/// Compute attribution once per page and date window, not once per candidate.
+/// Prefix counts allow chunks crossing turn boundaries to retain any matching turn.
+#[cfg(test)]
+fn legacy_chunk_in_date_range(
     page: &str,
     content: &str,
     chunks: &[String],
@@ -6346,6 +6475,62 @@ pub(crate) fn chunk_in_date_range(
         return false;
     }
     page_in_date_range(page, range)
+}
+
+
+fn chunk_date_mask(page: &str, content: &str, chunks: &[String], range: &DateRange) -> Vec<bool> {
+    #[derive(serde::Deserialize, Default)]
+    struct TurnDate { timestamp: Option<String> }
+    let metadata = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse::<serde_json::Value>(content).ok().and_then(|p| p.data);
+    let Some(value) = metadata.as_ref().and_then(|m| m.get("turn_metadata")) else {
+        return crate::retrieval_dates::rollup_mask(page, chunks, range)
+            .unwrap_or_else(|| vec![page_in_date_range(page, range); chunks.len()]);
+    };
+    let Ok(dates) = serde_json::from_value::<Vec<TurnDate>>(value.clone()) else {
+        return vec![false; chunks.len()];
+    };
+    if content.lines().filter(|line| embeddings::is_transcript_turn_header(line)).count() != dates.len() {
+        return vec![false; chunks.len()];
+    }
+    let mut prefix = vec![0usize];
+    let mut ordinal = 0;
+    let mut active = false;
+    for line in content.lines() {
+        if embeddings::is_transcript_turn_header(line) {
+            active = dates.get(ordinal).and_then(|t| t.timestamp.as_deref())
+                .and_then(crate::importers::parse_iso8601)
+                .is_some_and(|ts| timestamp_in_date_range(ts, range));
+            ordinal += 1;
+        }
+        prefix.push(prefix.last().copied().unwrap_or(0) + usize::from(active));
+    }
+    let normalized = crate::norm::nfc(content);
+    let mut cursor = 0;
+    let mut positions = Vec::with_capacity(chunks.len());
+    let mut previous = 0;
+    let mut line = 1;
+    for text in chunks {
+        let found = normalized[cursor..].find(text).map(|at| cursor + at).or_else(|| {
+            let first = text.lines().find(|line| !line.trim().is_empty())?;
+            normalized[cursor..].find(first).map(|at| cursor + at)
+        });
+        if let Some(start) = found {
+            line += normalized[previous..start].bytes().filter(|b| *b == b'\n').count();
+            positions.push(line);
+            previous = start;
+            cursor = (start + text.len()).min(normalized.len());
+            while cursor < normalized.len() && !normalized.is_char_boundary(cursor) { cursor += 1; }
+        } else {
+            // Keep the legacy fallback, including its treatment of repeated text.
+            positions.push(chunk_line(&normalized, text));
+        }
+    }
+    positions.iter().enumerate().map(|(i, start)| {
+        let start = start.saturating_sub(1).min(prefix.len() - 1);
+        let end = positions.get(i + 1).map_or(prefix.len() - 1, |n| n.saturating_sub(1).min(prefix.len() - 1));
+        end > start && prefix[end] > prefix[start]
+    }).collect()
 }
 
 /// The sortable date string a dated-tier page derives its recency from:
@@ -6486,6 +6671,27 @@ pub(crate) async fn hybrid_search(
     paths: Option<&[String]>,
     tier_weights: &crate::retrieval::TierWeights,
 ) -> Result<HybridSearch, String> {
+    hybrid_search_as_of(app, llm, cache, bm25_cache, root, query, k, provider, model,
+        range, scope, paths, tier_weights, None).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn hybrid_search_as_of(
+    app: &tauri::AppHandle,
+    llm: &tauri::State<'_, LocalLlmState>,
+    cache: &VectorCache,
+    bm25_cache: &crate::retrieval::Bm25Cache,
+    root: &std::path::Path,
+    query: &str,
+    k: usize,
+    provider: &str,
+    model: &str,
+    range: Option<&DateRange>,
+    scope: crate::retrieval::Scope,
+    paths: Option<&[String]>,
+    tier_weights: &crate::retrieval::TierWeights,
+    as_of_end: Option<i64>,
+) -> Result<HybridSearch, String> {
     let t0 = std::time::Instant::now();
     let pair = crate::index_publication::snapshot(root.to_path_buf()).await?;
     let store = pair.store.clone();
@@ -6532,7 +6738,7 @@ pub(crate) async fn hybrid_search(
     let paths = paths.map(<[String]>::to_vec);
     let tier_weights = *tier_weights;
     let hits = tauri::async_runtime::spawn_blocking(move || {
-        rank_hybrid(
+        rank_hybrid_as_of(
             &root,
             &store,
             query_vec.as_deref(),
@@ -6543,6 +6749,7 @@ pub(crate) async fn hybrid_search(
             scope,
             paths.as_deref(),
             &tier_weights,
+            as_of_end,
         )
     })
     .await
@@ -6609,13 +6816,12 @@ fn source_duplicate_chunks(
     if bm25.page_hashes(&identity.raw_path).as_ref() != Some(&hashes) {
         return Default::default();
     }
+    let dated = range.map(|r| chunk_date_mask(&identity.raw_path, &source, &chunks, r));
     hashes
         .into_iter()
         .enumerate()
         .filter(|(section, _)| {
-            range.map_or(true, |r| {
-                chunk_in_date_range(&identity.raw_path, &source, &chunks, *section, r)
-            })
+            dated.as_ref().map_or(true, |mask| mask[*section])
         })
         .map(|(_, hash)| hash)
         .collect()
@@ -6633,6 +6839,24 @@ pub(crate) fn rank_hybrid(
     scope: crate::retrieval::Scope,
     paths: Option<&[String]>,
     tier_weights: &crate::retrieval::TierWeights,
+) -> Result<Vec<HybridHit>, String> {
+    rank_hybrid_as_of(root, store, query_vec, bm25, query, k, range, scope, paths, tier_weights, None)
+}
+
+/// Historical eligibility is checked by both candidate arms before pool/page cuts.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rank_hybrid_as_of(
+    root: &std::path::Path,
+    store: &VectorStore,
+    query_vec: Option<&[f32]>,
+    bm25: &crate::retrieval::Bm25Index,
+    query: &str,
+    k: usize,
+    range: Option<&DateRange>,
+    scope: crate::retrieval::Scope,
+    paths: Option<&[String]>,
+    tier_weights: &crate::retrieval::TierWeights,
+    as_of_end: Option<i64>,
 ) -> Result<Vec<HybridHit>, String> {
     let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
     let root = canonical_root.as_path();
@@ -6657,6 +6881,10 @@ pub(crate) fn rank_hybrid(
         std::collections::HashMap::<String, std::collections::HashSet<u64>>::new();
     let mut snapshots: std::collections::HashMap<String, Option<(String, Vec<String>)>> =
         std::collections::HashMap::new();
+    let mut revision_keys = std::collections::HashMap::<String, Vec<Option<String>>>::new();
+    let mut candidate_keys = std::collections::HashMap::<(String, usize), String>::new();
+    let mut date_masks = std::collections::HashMap::<String, Vec<bool>>::new();
+    let mut historical = std::collections::HashMap::<String, crate::retrieval_dates::HistoricalOriginals>::new();
     let records: std::collections::HashMap<(&str, usize), &crate::vector_index::Record> = store
         .records
         .iter()
@@ -6664,7 +6892,7 @@ pub(crate) fn rank_hybrid(
         .collect();
     let mut current = |page: &str, section: usize, hash: Option<u64>| {
         if !keeps(page) {
-            return false;
+            return None;
         }
         let snapshot = snapshots.entry(page.to_string()).or_insert_with(|| {
             let path = vault::confine_path(root, &root.join(page).to_string_lossy()).ok()?;
@@ -6673,12 +6901,19 @@ pub(crate) fn rank_hybrid(
             Some((content, chunks))
         });
         let Some((content, chunks)) = snapshot else {
-            return false;
+            return None;
         };
         let Some(text) = chunks.get(section) else {
-            return false;
+            return None;
         };
-        hash.is_some_and(|hash| {
+        if let Some(end) = as_of_end {
+            let original = historical.entry(page.to_string()).or_insert_with(|| {
+                let hashes = bm25.page_hashes(page);
+                crate::retrieval_dates::historical_originals(page, content, chunks, hashes.as_deref(), end)
+            });
+            if !original.eligible.get(section).copied().unwrap_or(false) { return None; }
+        }
+        let valid = hash.is_some_and(|hash| {
             hash == embeddings::content_hash(text)
                 && !(collapse_sources
                     && page.starts_with("sessions/")
@@ -6689,11 +6924,25 @@ pub(crate) fn rank_hybrid(
         }) && !text.trim().is_empty()
             && crate::retrieval::text_matches_phrases(text, &phrases)
             && range.map_or(true, |r| {
-                chunk_in_date_range(page, content, chunks, section, r)
-            })
+                date_masks.entry(page.to_string()).or_insert_with(|| chunk_date_mask(page, content, chunks, r))
+                    .get(section).copied().unwrap_or(false)
+            });
+        if !valid { return None; }
+        let key = if paths.is_none() {
+            if as_of_end.is_some() {
+                historical.get(page).and_then(|original| original.keys.get(section)).cloned().flatten()
+            } else {
+                revision_keys.entry(page.to_string()).or_insert_with(||
+                    crate::retrieval_revisions::chunk_keys(page, content, chunks)
+                ).get(section).cloned().flatten()
+            }
+        } else { None }.unwrap_or_else(|| format!("page:{page}#{section}"));
+        candidate_keys.insert((page.to_string(), section), key.clone());
+        Some(key)
     };
     // Validate before pool cuts. A missing/edited/phrase-filtered top result
     // cannot consume a slot that a current lower-ranked candidate can fill.
+    let mut dense_seen = std::collections::HashSet::new();
     let mut dense_pages = std::collections::HashMap::<String, usize>::new();
     let dense_hits: Vec<VecHit> = match query_vec {
         Some(qv) => store
@@ -6703,13 +6952,12 @@ pub(crate) fn rank_hybrid(
                 if dense_pages.get(&h.page).is_some_and(|n| *n >= PAGE_CAP) {
                     return false;
                 }
-                if !current(
+                let Some(key) = current(
                     &h.page,
                     h.section,
                     records.get(&(h.page.as_str(), h.section)).map(|r| r.hash),
-                ) {
-                    return false;
-                }
+                ) else { return false; };
+                if !dense_seen.insert(key) { return false; }
                 let n = dense_pages.entry(h.page.clone()).or_default();
                 *n += 1;
                 *n <= PAGE_CAP
@@ -6718,6 +6966,7 @@ pub(crate) fn rank_hybrid(
             .collect(),
         None => Vec::new(),
     };
+    let mut lexical_seen = std::collections::HashSet::new();
     let mut lexical_pages = std::collections::HashMap::<String, usize>::new();
     let lexical_hits: Vec<crate::retrieval::Bm25Hit> = bm25
         .search(&clean_query, bm25.len())
@@ -6726,9 +6975,8 @@ pub(crate) fn rank_hybrid(
             if lexical_pages.get(&h.page).is_some_and(|n| *n >= PAGE_CAP) {
                 return false;
             }
-            if !current(&h.page, h.section, bm25.chunk_hash(&h.page, h.section)) {
-                return false;
-            }
+            let Some(key) = current(&h.page, h.section, bm25.chunk_hash(&h.page, h.section)) else { return false; };
+            if !lexical_seen.insert(key) { return false; }
             let n = lexical_pages.entry(h.page.clone()).or_default();
             *n += 1;
             *n <= PAGE_CAP
@@ -6743,8 +6991,13 @@ pub(crate) fn rank_hybrid(
     if range.is_some() {
         recency_tie_break(&mut fused);
     }
+    let deduplicate = |hits: Vec<VecHit>| {
+        let mut seen = std::collections::HashSet::new();
+        hits.into_iter().filter(|h| seen.insert(candidate_keys.get(&(h.page.clone(), h.section)).cloned()
+            .unwrap_or_else(|| format!("page:{}#{}", h.page, h.section)))).collect::<Vec<_>>()
+    };
     let baseline: std::collections::HashMap<(String, usize), usize> =
-        crate::retrieval::cap_per_page(fused.clone(), PAGE_CAP, fused.len())
+        crate::retrieval::cap_per_page(deduplicate(fused.clone()), PAGE_CAP, fused.len())
             .into_iter()
             .enumerate()
             .map(|(i, h)| ((h.page, h.section), i))
@@ -6754,7 +7007,7 @@ pub(crate) fn rank_hybrid(
         .map(|h| ((h.page.clone(), h.section), h.score))
         .collect();
     crate::retrieval::apply_tier_prior(&mut fused, tier_weights);
-    let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
+    let hits = crate::retrieval::cap_per_page(deduplicate(fused), PAGE_CAP, k);
     let mut out = Vec::with_capacity(hits.len());
     for (pos, h) in hits.into_iter().enumerate() {
         let Some(Some((content, chunks))) = snapshots.get(&h.page) else {
@@ -6838,8 +7091,21 @@ pub async fn semantic_search(
     paths: Option<Vec<String>>,
     // Per-tier prior; omitted = `TierWeights::default()`, all 1.0 = off.
     tier_weights: Option<crate::retrieval::TierWeights>,
+    // One viewer-local calendar day whose exclusive end is a historical cutoff.
+    as_of: Option<DateRange>,
+    // The user's explicit selected-question type; related-source selection
+    // orders latest state first for progress/remaining. Never a source filter.
+    guided_intent: Option<crate::local_synthesis::guided_question::GuidedIntent>,
 ) -> Result<AskSearch, String> {
-    let root = require_root(&vault)?;
+    let diagnostic_trace = |stage: &str| {
+        if cfg!(debug_assertions) && std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() == Ok("1") {
+            eprintln!("myco diagnostic semantic_search: {stage}");
+        }
+    };
+    diagnostic_trace("entered");
+    let as_of_end = as_of.as_ref().map(crate::retrieval_dates::historical_end).transpose()?;
+    let origin = vault.snapshot()?;
+    let root = std::path::PathBuf::from(&origin.vault_path);
     let scope = scope.unwrap_or_default();
     let weights = tier_weights.unwrap_or_else(|| {
         if matches!(
@@ -6851,24 +7117,103 @@ pub async fn semantic_search(
             crate::retrieval::TierWeights::default()
         }
     });
-    let found = hybrid_search(
+    // A recall subject names its speaker ("…하자는 사용자의 발언"); those words
+    // describe who said it, so they rank restatements above the original turn.
+    let retrieval_query = match guided_intent {
+        Some(crate::local_synthesis::guided_question::GuidedIntent::Recall) => {
+            crate::retrieval::strip_speaker_meta(&query)
+        }
+        _ => query.clone(),
+    };
+    let k = k.clamp(1, 50);
+    let mut found = hybrid_search_as_of(
         &app,
         &llm,
         &cache,
         &bm25_cache,
         &root,
-        &query,
-        k,
+        &retrieval_query,
+        k + FLOOR_REFILL,
         &provider,
         &model,
         range.as_ref(),
         scope,
         paths.as_deref(),
         &weights,
+        as_of_end,
     )
     .await?;
-    // Verified lexical evidence remains available while dense vectors rebuild.
-    Ok(ask_response(found.hits))
+    diagnostic_trace("hybrid complete");
+    let dense_skipped = found.dense_skipped;
+    let mut fresh_space = None;
+    if found.dense_skipped.is_some() && !found.hits.is_empty()
+        && found.hits.iter().any(|hit| !hit.exact_match)
+        && matches!(provider.as_str(), "" | "builtin-local")
+    {
+        // A partial/missing dense index must not turn every natural-language
+        // query into exact-token-only search. Measure the bounded lexical
+        // candidates with the installed local encoder; never lower the floor
+        // or treat BM25 rank as cosine. No persistent index or remote call.
+        let (_, cleaned) = crate::retrieval::parse_phrases(&retrieval_query);
+        let query_batch = embed_texts_checked(app.clone(), llm.clone(), &provider, &model,
+            crate::local_llm::EmbedRole::Query, vec![cleaned]).await?;
+        diagnostic_trace("query embedding complete");
+        for candidates in found.hits.chunks_mut(4) {
+            let documents = embed_texts_checked(app.clone(), llm.clone(), &provider, &model,
+                crate::local_llm::EmbedRole::Document,
+                candidates.iter().map(|hit| hit.text.clone()).collect()).await?;
+            diagnostic_trace("candidate embedding batch complete");
+            measure_candidate_cosines(candidates, &query_batch, &documents)?;
+        }
+        if embedding_index_signature(&app, &provider, &model).await? != query_batch.space.signature {
+            return Err("embedding model changed during candidate scoring".into());
+        }
+        // Recheck the current source and date after model work, before any
+        // result is allowed to become answer context.
+        let historical_index = if as_of_end.is_some() {
+            Some(crate::index_publication::snapshot(root.clone()).await?.lexical.clone())
+        } else { None };
+        found.hits.retain(|hit| {
+            let Ok(path) = vault::confine_path(&root, &root.join(&hit.page).to_string_lossy()) else { return false; };
+            let Ok(content) = std::fs::read_to_string(path) else { return false; };
+            let chunks = embeddings::chunk_page(&content);
+            chunks.get(hit.section) == Some(&hit.text)
+                && range.as_ref().map_or(true, |r| chunk_in_date_range(&hit.page, &content, &chunks, hit.section, r))
+                && as_of_end.map_or(true, |end| {
+                    let hashes = historical_index.as_ref().and_then(|index| index.page_hashes(&hit.page));
+                    crate::retrieval_dates::historical_originals(&hit.page, &content, &chunks, hashes.as_deref(), end)
+                        .eligible.get(hit.section).copied().unwrap_or(false)
+                })
+        });
+        fresh_space = Some(query_batch.space);
+    }
+    let mut response = floor_first_hits(found.hits, k);
+    response.candidate_embedding = fresh_space;
+    response.dense_skipped = dense_skipped;
+    if !response.hits.is_empty() {
+        diagnostic_trace("related snapshot start");
+        let pair = crate::index_publication::snapshot(root.clone()).await?;
+        diagnostic_trace("related snapshot complete");
+        let index = pair.lexical.clone();
+        let anchors = response.hits.clone();
+        response.related_context = tauri::async_runtime::spawn_blocking(move || {
+            crate::retrieval_context::retrieve_with_cutoff(&root, &index, &anchors, range.as_ref(), scope, paths.as_deref(), &query, as_of_end, guided_intent.as_ref())
+        }).await.map_err(|e| format!("related context failed: {e}"))?;
+    }
+    diagnostic_trace("returning result");
+    vault.with_origin(&origin, |_| Ok(response))
+}
+
+/// Validate the actual producer identity before comparing query and document vectors.
+fn measure_candidate_cosines(
+    hits: &mut [HybridHit], query: &embeddings::EmbeddedBatch, documents: &embeddings::EmbeddedBatch,
+) -> Result<(), String> {
+    query.validate(&query.space, 1)?;
+    documents.validate(&query.space, hits.len())?;
+    let scores = documents.vectors.iter().map(|vector| embeddings::checked_cosine(&query.vectors[0], vector))
+        .collect::<Result<Vec<_>, _>>()?;
+    for (hit, score) in hits.iter_mut().zip(scores) { hit.similarity = Some(score); }
+    Ok(())
 }
 
 /// Read bounded original transcript events for topic-free, dated recall.
@@ -6925,29 +7270,36 @@ fn activity_root(
     })
 }
 
+/// A source read follows the captured foreground Ask grant independently of
+/// the selected generator. Native-only model preparation is not needed for IO.
+fn with_activity_ask<T>(
+    vault: &VaultRoot,
+    request: &ActivityRecallRequest,
+    dispatch: impl FnOnce(&std::path::Path) -> Result<T, String>,
+) -> Result<T, String> {
+    let snapshot = request.role_snapshot.as_ref()
+        .ok_or("activity recall requires a native foreground Ask snapshot")?;
+    vault.with_origin(&request.origin, |root| {
+        crate::role_authorization::with_current_role_at(
+            &request.origin, snapshot, crate::role_authorization::RoleId::Ask,
+            crate::role_authorization::RoleUsage::Foreground, || {
+                check_expected_vault(root, Some(&request.expected_vault))?;
+                dispatch(root)
+            },
+        ).map_err(|error| error.to_string())
+    })
+}
+
 fn activity_read(
     vault: &VaultRoot,
     index: &crate::retrieval::Bm25Index,
     request: &ActivityRecallRequest,
     include_archived: bool,
 ) -> Result<crate::activity_recall::Recall, String> {
-    crate::local_generation::with_ask_role(
-        vault,
-        &request.origin,
-        request.role_snapshot.as_ref(),
-        None,
-        |root, _| {
-            check_expected_vault(root, Some(&request.expected_vault))?;
-            crate::activity_recall::recall(
-                root,
-                index,
-                &request.range,
-                request.scope,
-                request.paths.as_deref(),
-                include_archived,
-            )
-        },
-    )
+    with_activity_ask(vault, request, |root| {
+        crate::activity_recall::recall(root, index, &request.range, request.scope,
+            request.paths.as_deref(), include_archived)
+    })
 }
 
 /// Collect date-grounded passages under the same foreground Ask selection.
@@ -6963,25 +7315,14 @@ pub async fn activity_recall(
         .role_snapshot
         .clone()
         .ok_or("activity recall requires a native foreground Ask snapshot")?;
-    let root = crate::local_generation::with_ask_role(
-        &vault,
-        &origin,
-        Some(&snapshot),
-        None,
-        |root, _| {
-            check_expected_vault(root, Some(&request.expected_vault))?;
-            Ok(root.to_path_buf())
-        },
-    )?;
+    let root = with_activity_ask(&vault, &request, |root| Ok(root.to_path_buf()))?;
     let future = async {
         let index = bm25_cache
             .get_async(crate::retrieval::Bm25Index::path_for(
                 &root.to_string_lossy(),
             )?)
             .await?;
-        crate::local_generation::with_ask_role(&vault, &origin, Some(&snapshot), None, |_, _| {
-            Ok(())
-        })?;
+        with_activity_ask(&vault, &request, |_| Ok(()))?;
         let include_archived = crate::settings::search_archived_sessions();
         tauri::async_runtime::spawn_blocking(move || {
             activity_read(
@@ -8148,6 +8489,85 @@ mod tests {
     }
 
     #[test]
+    fn revision_duplicates_refill_both_search_arms_and_keep_explicit_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = crate::vector_index::VectorStore::default();
+        let mut bm25 = Bm25Index::new();
+        let body = "---\nsource: fixture\nconversation_id: one\nturn_metadata: [{message_id: first, timestamp: '2026-10-01T00:00:00Z', original_role: user}]\n---\n**User:**\n\nDECISION_TOKEN selected A.";
+        let mut paths = Vec::new();
+        for i in 0..70 {
+            let path = format!("raw/conversations/fixture/{i:03}.md");
+            indexed_page(dir.path(), &mut store, &mut bm25, &path, body, vec![1.0, 0.0]);
+            paths.push(path);
+        }
+        indexed_page(dir.path(), &mut store, &mut bm25, "raw/conversations/fixture/unique.md", &body.replace("selected A", "selected B"), vec![0.9, 0.1]);
+        for vector in [None, Some(&[1.0_f32, 0.0][..])] {
+            let hits = super::rank_hybrid(dir.path(), &store, vector, &bm25, "DECISION_TOKEN", 5, None,
+                crate::retrieval::Scope::All, None, &crate::retrieval::TierWeights::FLAT).unwrap();
+            assert_eq!(hits.len(), 2);
+            assert!(hits.iter().any(|h| h.text.contains("selected B")));
+            let explicit = super::rank_hybrid(dir.path(), &store, vector, &bm25, "DECISION_TOKEN", 5, None,
+                crate::retrieval::Scope::All, Some(&paths[..2]), &crate::retrieval::TierWeights::FLAT).unwrap();
+            assert_eq!(explicit.len(), 2);
+        }
+    }
+
+    /// Opt-in read-only probe of an explicitly supplied index and frozen queries.
+    #[test]
+    #[ignore]
+    fn diagnostic_revision_retrieval_probe() {
+        let root = std::path::PathBuf::from(std::env::var("MYCO_PROBE_VAULT").unwrap());
+        let index = Bm25Index::load_checked(std::path::Path::new(&std::env::var("MYCO_PROBE_INDEX").unwrap())).unwrap();
+        let cases: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(std::env::var("MYCO_PROBE_QUERIES").unwrap()).unwrap()).unwrap();
+        let mut results = Vec::new();
+        for case in cases.as_array().unwrap() {
+            let range: Option<DateRange> = serde_json::from_value(case["range"].clone()).unwrap();
+            let start = std::time::Instant::now();
+            let hits = super::rank_hybrid(&root, &crate::vector_index::VectorStore::default(), None, &index,
+                case["query"].as_str().unwrap(), 12, range.as_ref(), crate::retrieval::Scope::All, None,
+                &crate::retrieval::TierWeights::FLAT).unwrap();
+            let mut context_windows = Vec::new();
+            if std::env::var("MYCO_PROBE_CONTEXT").as_deref() == Ok("1") {
+                // Diagnostic only: candidates have not passed fresh cosine scoring.
+                // Observe source-adjacent evidence; never call it accepted context.
+                for hit in &hits {
+                    let path = crate::vault::confine_path(&root, &root.join(&hit.page).to_string_lossy()).unwrap();
+                    let content = std::fs::read_to_string(path).unwrap();
+                    let chunks = crate::embeddings::chunk_page(&content);
+                    let Some(events) = crate::retrieval_revisions::transcript_chunks(&hit.page, &content, &chunks) else { continue; };
+                    let eligible = range.as_ref().map(|r| super::chunk_date_mask(&hit.page, &content, &chunks, r))
+                        .unwrap_or_else(|| vec![true; chunks.len()]);
+                    let Some(anchor) = events.iter().find(|event| event.section == hit.section) else { continue; };
+                    let mut latest: Vec<_> = events.iter().filter(|event| eligible[event.section])
+                        .map(|event| (event.timestamp, event.turn)).collect();
+                    latest.sort_unstable(); latest.dedup();
+                    let last_turns: HashSet<_> = latest.iter().rev().take(4).map(|(_, turn)| *turn).collect();
+                    let adjacent: Vec<_> = events.iter().filter(|event| eligible[event.section] &&
+                        (event.turn.abs_diff(anchor.turn) <= 2 || last_turns.contains(&event.turn))).collect();
+                    context_windows.push(serde_json::json!({"page":hit.page,"anchor_section":hit.section,
+                        "kind":"unscored same-page candidate neighbors plus last four eligible turns; diagnostic only",
+                        "passages":adjacent.iter().map(|event| serde_json::json!({"identity":event,
+                            "relation":if event.turn.abs_diff(anchor.turn) <= 2 {"adjacent"} else {"last_turns_in_range"},
+                            "text":chunks[event.section]})).collect::<Vec<_>>()}));
+                }
+            }
+            let diagnostic_anchors: Vec<_> = hits.iter().map(|h| super::ScoredChunk {
+                page:h.page.clone(),stem:h.stem.clone(),section:h.section,text:h.text.clone(),score:h.score,
+                score_rrf:h.score_rrf,score_final:h.score,tier:h.tier,prior:h.prior,rank_change:h.rank_change,
+                similarity:h.similarity,exact_match:h.exact_match,
+            }).collect();
+            let bounded_context = crate::retrieval_context::retrieve(&root, &index, &diagnostic_anchors,
+                range.as_ref(), crate::retrieval::Scope::All, None, case["query"].as_str().unwrap());
+            results.push(serde_json::json!({"case":case,"elapsed_seconds":start.elapsed().as_secs_f64(),
+                "bounded_context_diagnostic_only":bounded_context,
+                "context_windows":context_windows,
+                "hits":hits.iter().map(|h| serde_json::json!({"page":h.page,"section":h.section,"line":h.line,"text":h.text,"score":h.score})).collect::<Vec<_>>()}));
+        }
+        let output = std::fs::OpenOptions::new().write(true).create_new(true).open(std::env::var("MYCO_PROBE_OUTPUT").unwrap()).unwrap();
+        serde_json::to_writer_pretty(output, &serde_json::json!({"kind":"retrieval-only; no model generation or app qualification", "results":results})).unwrap();
+    }
+
+    #[test]
     fn stale_same_section_cannot_quote_replacement_text() {
         let dir = tempfile::tempdir().unwrap();
         let mut store = crate::vector_index::VectorStore::default();
@@ -8163,6 +8583,55 @@ mod tests {
         std::fs::write(dir.path().join("wiki/a.md"), "# A\nunrelated replacement").unwrap();
         assert!(ranked(dir.path(), &store, &bm25, "decision", 5, None).is_empty());
     }
+    #[test]
+    fn date_mask_matches_legacy_attribution() {
+        let body = format!("---\nturn_metadata:\n- timestamp: '2026-10-01T15:30:00Z'\n- timestamp: null\n- timestamp: '2026-10-03T15:30:00Z'\n---\n# Synthetic\n\n**User:**\n{}\n\n**Assistant:**\n{}\n\n**User:**\n{}", "반복 quote é\n".repeat(80), "unknown\n".repeat(60), "반복 quote é\n".repeat(80));
+        for content in [&body, &body.replace("timestamp: null", "timestamp: 'invalid'"), &body.replace("unknown", "**Tool:**"), &body.replace("turn_metadata:", "other:")] {
+            let chunks = crate::embeddings::chunk_page(content);
+            for (start, end) in [("2026-10-01", "2026-10-01"), ("2026-10-02", "2026-10-02"), ("2026-10-01", "2026-10-04")] {
+                let mut range = dr(start, end);
+                for local in [false, true] {
+                    if local {
+                        range.start_epoch = crate::importers::parse_iso8601(&format!("{start}T00:00:00+09:00"));
+                        range.end_epoch = crate::importers::parse_iso8601(&format!("{end}T23:59:59+09:00"));
+                    }
+                    let got = super::chunk_date_mask("sessions/2026-10/test.md", content, &chunks, &range);
+                    let expected: Vec<bool> = (0..chunks.len()).map(|i| super::legacy_chunk_in_date_range("sessions/2026-10/test.md", content, &chunks, i, &range)).collect();
+                    assert_eq!(got, expected);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn historical_eligibility_refills_both_arms_before_top_k() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = crate::vector_index::VectorStore::default();
+        let mut bm25 = Bm25Index::new();
+        let original = |conversation: &str, time: &str, text: &str| format!(
+            "---\nsource: fixture\nconversation_id: {conversation}\nturn_metadata: [{{\"message_id\":\"one\",\"original_role\":\"user\",\"timestamp\":\"{time}\"}}]\n---\n# Original\n\n**User:**\n\n{text}\n");
+        for i in 0..40 {
+            indexed_page(dir.path(), &mut store, &mut bm25, &format!("raw/conversations/future-{i}.md"),
+                &original(&format!("future-{i}"), "2026-10-30T00:00:00Z", "CALENDAR_RECEIPT decision CALENDAR_RECEIPT"), vec![1.0,0.0]);
+            indexed_page(dir.path(), &mut store, &mut bm25, &format!("wiki/unknown-{i}.md"),
+                "# CALENDAR_RECEIPT\n2026-10-01 quoted decision CALENDAR_RECEIPT", vec![1.0,0.0]);
+        }
+        let page="raw/conversations/earlier-original.md";
+        indexed_page(dir.path(), &mut store, &mut bm25, page,
+            &original("earlier", "2026-09-01T00:00:00Z", "CALENDAR_RECEIPT earlier decision"), vec![0.8,0.6]);
+        let cutoff=crate::importers::parse_iso8601("2026-10-09T00:00:00Z").unwrap();
+        for (vector,query) in [(None,"CALENDAR_RECEIPT"),(Some(&[1.0f32,0.0][..]),"unmatched_dense_only_query")] {
+            let found=super::rank_hybrid_as_of(dir.path(),&store,vector,&bm25,query,1,None,
+                crate::retrieval::Scope::All,None,&crate::retrieval::TierWeights::FLAT,Some(cutoff)).unwrap();
+            assert_eq!(found.len(),1);assert_eq!(found[0].page,page);
+            assert!(found[0].text.contains("earlier decision"));
+        }
+        // Free queries retain their earlier eligibility/ranking surface.
+        let free=super::rank_hybrid(dir.path(),&store,Some(&[1.0,0.0]),&bm25,"CALENDAR_RECEIPT",1,None,
+            crate::retrieval::Scope::All,None,&crate::retrieval::TierWeights::FLAT).unwrap();
+        assert!(!free.is_empty());assert_ne!(free[0].page,page);
+    }
+
     #[test]
     fn date_and_phrase_filters_refill_beyond_the_old_pool() {
         let dir = tempfile::tempdir().unwrap();
@@ -9091,6 +9560,38 @@ mod tests {
     }
 
     #[test]
+    fn automatic_embedding_boundary_never_polls_when_disabled_and_rechecks_mid_batch() {
+        crate::settings::test_support::with_isolated_data("automatic-embedding-batch", |directory| {
+            let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+            let calls = std::cell::Cell::new(0);
+            let mut settings = crate::settings::Settings::default();
+            crate::settings::save(&settings).unwrap();
+            let operation = || async { calls.set(calls.get()+1); Ok::<_,String>(42) };
+            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).is_err());
+            assert_eq!(calls.get(),0);
+            settings.auto_reindex_enabled=true;
+            crate::settings::save(&settings).unwrap();
+            assert_eq!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).unwrap(),42);
+            assert_eq!(calls.get(),1);
+            let changing_operation = async {
+                calls.set(calls.get()+1);
+                settings.auto_reindex_enabled=false;
+                crate::settings::save(&settings).unwrap();
+                Ok::<_,String>(42)
+            };
+            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,changing_operation)).is_err());
+            assert_eq!(calls.get(),2);
+            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).is_err());
+            assert_eq!(calls.get(),2);
+            // The automatic toggle does not disable explicitly requested reindex.
+            assert_eq!(runtime.block_on(super::checked_automatic_embedding_batch(false,operation())).unwrap(),42);
+            std::fs::write(directory.join("settings.json"),"corrupt synthetic settings").unwrap();
+            assert!(runtime.block_on(super::checked_automatic_embedding_batch(true,operation())).is_err());
+            assert_eq!(calls.get(),3);
+        });
+    }
+
+    #[test]
     fn appending_to_a_page_embeds_only_the_new_chunks() {
         // The bug: an ingest agent appends one entry to an 831-chunk session
         // mirror and the old code re-embedded all 831 (8–40 s of local
@@ -9502,6 +10003,27 @@ mod tests {
         );
     }
 
+    #[test]
+    fn candidate_cosines_require_current_shared_encoder_and_valid_vectors() {
+        let space = crate::embeddings::EmbeddingSpace { model: "synthetic".into(), signature: "encoder-1".into(), dim: 2 };
+        let query = crate::embeddings::EmbeddedBatch { space: space.clone(), vectors: vec![vec![1., 0.]] };
+        let mut docs = crate::embeddings::EmbeddedBatch { space: space.clone(), vectors: vec![vec![0., 1.], vec![1., 0.]] };
+        let mut hits = vec![hybrid_hit("wiki/noise.md", 0.9, None), hybrid_hit("wiki/relevant.md", 0.1, None)];
+        for hit in &mut hits { hit.exact_match = false; }
+        super::measure_candidate_cosines(&mut hits, &query, &docs).unwrap();
+        assert_eq!(hits[0].similarity, Some(0.));
+        assert_eq!(hits[1].similarity, Some(1.));
+        assert_eq!(super::ask_response(hits).hits.len(), 1);
+        docs.space.signature = "other-encoder".into();
+        let mut hits = vec![hybrid_hit("wiki/a.md", 1., None), hybrid_hit("wiki/b.md", 0.1, None)];
+        assert!(super::measure_candidate_cosines(&mut hits, &query, &docs).is_err());
+        assert!(hits.iter().all(|hit| hit.similarity.is_none()));
+        docs.space = space;
+        docs.vectors[1][0] = f32::NAN;
+        assert!(super::measure_candidate_cosines(&mut hits, &query, &docs).is_err());
+        assert!(hits.iter().all(|hit| hit.similarity.is_none()));
+    }
+
     fn hybrid_hit(page: &str, score: f32, similarity: Option<f32>) -> HybridHit {
         HybridHit {
             page: page.into(),
@@ -9570,6 +10092,28 @@ mod tests {
         assert_eq!(empty.floor, floor);
     }
 
+    // A candidate the floor rejects used to occupy one of the k answer slots
+    // (the split ran after the k-cut). Ranking k + FLOOR_REFILL and cutting
+    // after the split gives the slot to the next candidate that clears it.
+    #[test]
+    fn floor_first_hits_does_not_let_a_floored_hit_consume_a_slot() {
+        let floor = crate::retrieval::RELEVANCE_FLOOR;
+        let hits = vec![
+            hybrid_hit("raw/conversations/a.md", 0.0328, Some(0.61)),
+            hybrid_hit("raw/conversations/b.md", 0.0320, Some(floor - 0.05)),
+            hybrid_hit("raw/conversations/c.md", 0.0190, None),
+            hybrid_hit("raw/conversations/d.md", 0.0180, Some(floor)),
+        ];
+        let out = super::floor_first_hits(hits, 2);
+        assert_eq!(
+            out.hits.iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
+            vec!["raw/conversations/a.md", "raw/conversations/c.md"]
+        );
+        assert_eq!(out.below_floor.len(), 1);
+        assert!(serde_json::to_value(&out).unwrap()["dense_skipped"].is_null());
+        assert_eq!(super::FLOOR_REFILL, 8);
+    }
+
     // The per-page cap must not cost a distinct-page result its slot: with one
     // hit per page there is nothing to cap, and the whole list has to survive.
     // Guards against a future cap that counts slots instead of pages.
@@ -9602,6 +10146,15 @@ mod tests {
             start_epoch: None,
             end_epoch: None,
         }
+    }
+
+    #[test]
+    fn rollup_day_range_keeps_matching_source_and_excludes_other_days() {
+        let text="# 2026-09\n\n### Source evidence\n\n#### 2026-W37 · daily/2026-09-08.md\n\nTARGET_DAY decision.\n\nSource: [[daily/2026-09-08.md]]\n\n#### 2026-W37 · daily/2026-09-11.md\n\nOTHER_DAY decision.\n\nSource: [[daily/2026-09-11.md]]\n";
+        let chunks=crate::embeddings::chunk_page(text);
+        let mask=super::chunk_date_mask("monthly/2026-09.md",text,&chunks,&dr("2026-09-08","2026-09-08"));
+        assert!(chunks.iter().zip(&mask).any(|(c,keep)|*keep && c.contains("TARGET_DAY")));
+        assert!(!chunks.iter().zip(&mask).any(|(c,keep)|*keep && c.contains("OTHER_DAY")), "month overlap must not admit another day's source section");
     }
 
     #[test]
@@ -10331,6 +10884,116 @@ mod tests {
         assert!(out[0].snippet.starts_with('밤'));
         assert!((out[0].score - 1.0).abs() < 1e-6);
     }
+
+    /// Read-only dense re-rank probe on an APFS clone of the live index (ignored; run explicitly with
+    /// MYCO_DATA_DIR=<clone> MYCO_POOL_PROBE=<spec.json>). For each case it takes the app's own lexical,
+    /// as-of-eligible, deduplicated, page-capped top-50 (the live vault has no dense vectors), then for each
+    /// embedding model measures where the expected original chunks land when the pool is re-ranked by cosine
+    /// or by RRF(BM25 rank, cosine rank), page cap 2 like the app. A second, optimistic estimate adds every
+    /// eligible chunk of the expected pages to the candidate set (what a full dense arm could add beyond BM25).
+    /// Spec: {vault, out, models:[{id, path}], cases:[{id, intent, subject, as_of_end_epoch, expected:[{page, section}]}]}.
+    #[test]
+    #[ignore]
+    fn real_vault_dense_pool_rerank_probe() {
+        use crate::local_llm::{embed_spec_by_id, EmbedRole, LocalLlm};
+        use std::collections::BTreeSet;
+        let Ok(spec_path) = std::env::var("MYCO_POOL_PROBE") else { return; };
+        let spec: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(spec_path).unwrap()).unwrap();
+        let root = std::path::PathBuf::from(spec["vault"].as_str().unwrap());
+        let pair = tauri::async_runtime::block_on(crate::index_publication::snapshot(root.clone())).unwrap();
+        let bm25 = &pair.lexical;
+        let empty = crate::vector_index::VectorStore::default();
+        struct Pool { id: String, intent: String, query: String, hits: Vec<HybridHit>, expected: HashSet<(String, usize)>, extra: Vec<(String, usize, String)> }
+        let mut pools = Vec::new();
+        for case in spec["cases"].as_array().unwrap() {
+            let intent = case["intent"].as_str().unwrap().to_string();
+            let subject = case["subject"].as_str().unwrap();
+            // Exactly what semantic_search sends for a guided question (subject only; recall strips speaker words).
+            let query = if intent == "recall" { crate::retrieval::strip_speaker_meta(subject) } else { subject.to_string() };
+            let end = case["as_of_end_epoch"].as_i64().unwrap();
+            let hits = super::rank_hybrid_as_of(&root, &empty, None, bm25, &query, 50, None, crate::retrieval::Scope::All, None,
+                &crate::retrieval::TierWeights::FLAT, Some(end)).unwrap();
+            let expected: HashSet<(String, usize)> = case["expected"].as_array().unwrap().iter()
+                .map(|e| (e["page"].as_str().unwrap().to_string(), e["section"].as_u64().unwrap() as usize)).collect();
+            let in_pool: HashSet<(String, usize)> = hits.iter().map(|h| (h.page.clone(), h.section)).collect();
+            let mut extra = Vec::new();
+            for page in expected.iter().map(|(p, _)| p.clone()).collect::<BTreeSet<_>>() {
+                let content = std::fs::read_to_string(root.join(&page)).unwrap();
+                let chunks = crate::embeddings::chunk_page(&content);
+                let original = crate::retrieval_dates::historical_originals(&page, &content, &chunks, bm25.page_hashes(&page).as_deref(), end);
+                for (section, text) in chunks.iter().enumerate() {
+                    if original.eligible.get(section).copied().unwrap_or(false) && !in_pool.contains(&(page.clone(), section)) {
+                        extra.push((page.clone(), section, text.clone()));
+                    }
+                }
+            }
+            pools.push(Pool { id: case["id"].as_str().unwrap().into(), intent, query, hits, expected, extra });
+        }
+        // Rank of the best expected chunk after a per-page cap of 2 (the app's PAGE_CAP), 1-based.
+        fn capped_best(order: &[(String, usize)], expected: &HashSet<(String, usize)>) -> Option<usize> {
+            let mut per_page = HashMap::<&str, usize>::new();
+            let mut rank = 0;
+            for (page, section) in order {
+                let n = per_page.entry(page.as_str()).or_default();
+                if *n >= 2 { continue; }
+                *n += 1; rank += 1;
+                if expected.contains(&(page.clone(), *section)) { return Some(rank); }
+            }
+            None
+        }
+        let rrf = |a: Option<usize>, b: Option<usize>| a.map_or(0.0, |r| 1.0 / (60.0 + r as f64)) + b.map_or(0.0, |r| 1.0 / (60.0 + r as f64));
+        let mut report = serde_json::json!({"cases": {}, "models": []});
+        for pool in &pools {
+            let order: Vec<(String, usize)> = pool.hits.iter().map(|h| (h.page.clone(), h.section)).collect();
+            report["cases"][&pool.id] = serde_json::json!({"intent": pool.intent, "query": pool.query, "pool": pool.hits.len(),
+                "expected": pool.expected.len(), "expected_in_pool": order.iter().filter(|k| pool.expected.contains(*k)).count(),
+                "extra_chunks": pool.extra.len(), "bm25_best_capped_rank": capped_best(&order, &pool.expected)});
+        }
+        for model in spec["models"].as_array().unwrap() {
+            let id = model["id"].as_str().unwrap();
+            let espec = embed_spec_by_id(id).unwrap();
+            let mut llm = LocalLlm::load_embed_host().unwrap();
+            let started = std::time::Instant::now();
+            llm.load_embed_model(std::path::Path::new(model["path"].as_str().unwrap())).unwrap();
+            let mut rows = Vec::new();
+            let mut embedded = 0usize;
+            for pool in &pools {
+                let (_, clean) = crate::retrieval::parse_phrases(&pool.query);
+                let q = llm.embed_spec(espec, EmbedRole::Query, &[clean]).unwrap().remove(0);
+                let mut docs: Vec<(String, usize, String, Option<usize>)> = pool.hits.iter().enumerate()
+                    .map(|(i, h)| (h.page.clone(), h.section, h.text.clone(), Some(i + 1))).collect();
+                let pool_len = docs.len();
+                docs.extend(pool.extra.iter().map(|(p, s, t)| (p.clone(), *s, t.clone(), None)));
+                let mut cos = Vec::with_capacity(docs.len());
+                for batch in docs.chunks(16) {
+                    let texts: Vec<String> = batch.iter().map(|d| d.2.clone()).collect();
+                    for v in llm.embed_spec(espec, EmbedRole::Document, &texts).unwrap() { cos.push(crate::embeddings::checked_cosine(&q, &v).unwrap()); }
+                }
+                embedded += docs.len() + 1;
+                let ranked = |idx: &[usize]| { let mut v = idx.to_vec(); v.sort_by(|a, b| cos[*b].total_cmp(&cos[*a])); v };
+                let dense_pool = ranked(&(0..pool_len).collect::<Vec<_>>());
+                let dense_ext = ranked(&(0..docs.len()).collect::<Vec<_>>());
+                let dense_rank = |order: &[usize]| { let mut r = vec![None; docs.len()]; for (i, d) in order.iter().enumerate() { r[*d] = Some(i + 1); } r };
+                let (rank_pool, rank_ext) = (dense_rank(&dense_pool), dense_rank(&dense_ext));
+                let fuse = |n: usize, dense: &[Option<usize>]| { let mut v: Vec<usize> = (0..n).collect();
+                    v.sort_by(|a, b| rrf(docs[*b].3, dense[*b]).total_cmp(&rrf(docs[*a].3, dense[*a]))); v };
+                let keys = |order: &[usize]| order.iter().map(|i| (docs[*i].0.clone(), docs[*i].1)).collect::<Vec<_>>();
+                let best_expected_cos = docs.iter().enumerate().filter(|(_, d)| pool.expected.contains(&(d.0.clone(), d.1))).map(|(i, _)| cos[i]).fold(f32::MIN, f32::max);
+                rows.push(serde_json::json!({"case": pool.id, "intent": pool.intent,
+                    "dense_pool_best_capped_rank": capped_best(&keys(&dense_pool), &pool.expected),
+                    "rrf_pool_best_capped_rank": capped_best(&keys(&fuse(pool_len, &rank_pool)), &pool.expected),
+                    "dense_extended_best_capped_rank": capped_best(&keys(&dense_ext), &pool.expected),
+                    "rrf_extended_best_capped_rank": capped_best(&keys(&fuse(docs.len(), &rank_ext)), &pool.expected),
+                    "best_expected_cosine": if best_expected_cos == f32::MIN { None } else { Some(best_expected_cos) },
+                    "top_pool_cosine": dense_pool.first().map(|i| cos[*i])}));
+            }
+            report["models"].as_array_mut().unwrap().push(serde_json::json!({"id": id, "path": model["path"], "chunks_embedded": embedded,
+                "seconds": started.elapsed().as_secs_f64(), "rows": rows}));
+            println!("POOL_PROBE model {id} done in {:.1}s ({embedded} texts)", started.elapsed().as_secs_f64());
+        }
+        std::fs::write(spec["out"].as_str().unwrap(), serde_json::to_string_pretty(&report).unwrap()).unwrap();
+        println!("POOL_PROBE wrote {}", spec["out"].as_str().unwrap());
+    }
 }
 
 #[cfg(test)]
@@ -10794,4 +11457,36 @@ pub fn record_noop(
 ) -> Result<(), String> {
     let root = require_root(&vault)?;
     crate::judge::record_noop_at(&root, &rel, &reason)
+}
+
+// Explicit isolated diagnostic index preparation; normal application flows cannot call this.
+#[tauri::command]
+pub async fn diagnostic_reindex_lexical(vault: tauri::State<'_, VaultRoot>) -> Result<serde_json::Value, String> {
+    // The isolated vault and app-data folders come from the environment of the
+    // diagnostic run, never from the source: both must be named, and the app
+    // must already run on that app-data folder.
+    let env = |name: &str| std::env::var(name).ok().filter(|value| !value.is_empty());
+    let (Some(root), Some(data)) = (env("MYCO_REAL_DIAGNOSTIC_VAULT"), env("MYCO_REAL_DIAGNOSTIC_DATA")) else {
+        return Err("isolated diagnostic environment required".into());
+    };
+    if std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1") || std::env::var("MYCO_DATA_DIR").as_deref() != Ok(data.as_str()) {
+        return Err("isolated diagnostic environment required".into());
+    }
+    let origin = vault.snapshot()?;
+    if origin.vault_path != root { return Err("isolated diagnostic vault required".into()); }
+    let root = root.as_str();
+    let _publisher = crate::index_publication::PUBLISHER.lock().await;
+    if crate::index_publication::path_for(root)?.exists() { return Err("published index already exists; refusing replacement".into()); }
+    let target = crate::index_publication::legacy_path_for(root, "mxb")?;
+    if target.exists() { return Err("lexical index already exists; refusing overwrite".into()); }
+    let pages = collect_wiki_pages_checked(std::path::Path::new(root))?;
+    let mut index = crate::retrieval::Bm25Index::new();
+    let mut chunks_count = 0;
+    for (rel, stem, content) in &pages {
+        let chunks = crate::embeddings::chunk_page(content);
+        chunks_count += chunks.len();
+        index.upsert_page(rel, stem, &chunks);
+    }
+    vault.with_origin(&origin, |_| index.save(&target))?;
+    Ok(serde_json::json!({"pages": pages.len(), "chunks": chunks_count, "index": target, "dense_index_prepared": false, "selection": "all native indexable pages; no gold filtering"}))
 }

@@ -1,3 +1,5 @@
+import { verifyCitationNavigation } from "../lib/citationEvidence";
+import { subscribeReaderIntent } from "../lib/askLoop";
 // PageReader: opens a vault file via real IPC. A note opens in the one Live
 // editor; the markdown source view lives in More (⋯). A raw/ file renders
 // read-only through Viewer. The
@@ -557,15 +559,23 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   }, [activeFile, path]);
 
   // `[[Note#Heading]]`: once this note's draft is seeded, scroll to the anchor
-  // the link recorded. Keyed on seedGen (not draft) so typing never re-scrolls;
+  // the link recorded. Subscribe once ready: a fresh file snapshot must not
+  // cancel an in-flight verification before it can report a changed source.
   // take() consumes the anchor, so later re-seeds find nothing.
+  const readerIntentReady = seedGen > 0;
   useEffect(() => {
-    if (seedGen === 0) return;
+    if (!readerIntentReady || isOpeningVault) return;
     // Both are consumed after effects settle, as the editor's own writing
     // request is: StrictMode's first pass destroys the view this ran against
     // (the anchor was spent on it and Live opened at the top), and the
     // cleanup cancels the frame without losing either.
-    const frame = requestAnimationFrame(() => {
+    let alive = true;
+    let navigation = 0;
+    let frame = 0;
+    const schedule = () => {
+      const version = ++navigation;
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => {
       const anchor = takePendingAnchor(path);
       if (anchor) scrollToAnchor(anchor);
       // Ask's "Quote in note" with no note beside it: the block goes to this
@@ -578,11 +588,18 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
         if (v) scrollEditorToLine(v, v.state.doc.lines);
         else previewRef.current?.lastElementChild?.scrollIntoView({ block: "end" });
       }
-      if (intent?.kind === "show") showPassage(intent);
-    });
-    return () => cancelAnimationFrame(frame);
+      if (intent?.kind === "show") void showPassage(intent, () => {
+        const vault = useVaultStore.getState();
+        return alive && version === navigation && !vault.isOpeningVault &&
+          vault.vaultToken === vaultToken && vault.currentVault?.path === currentVaultPath;
+      });
+      });
+    };
+    const unsubscribe = subscribeReaderIntent(schedule);
+    schedule();
+    return () => { alive = false; unsubscribe(); cancelAnimationFrame(frame); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, seedGen]);
+  }, [path, readerIntentReady, vaultToken, currentVaultPath, isOpeningVault]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -902,9 +919,27 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   // into view and flash — Live's lines, Preview's blocks (each carries its
   // body line, Viewer sourceLines). A passage the note no longer holds
   // falls back to its section's heading.
-  function showPassage({ section, quote }: Extract<ReaderIntent, { kind: "show" }>): void {
+  async function showPassage({ section, quote, original }: Extract<ReaderIntent, { kind: "show" }>, isCurrent = () => true): Promise<void> {
+    const vault = useVaultStore.getState();
+    if (original && (vault.isOpeningVault || vault.currentVault?.path !== original.vaultPath ||
+        vault.vaultToken !== original.vaultToken)) return;
+    const raw = draftRef.current;
+    let lines;
+    if (original) {
+      const checked = await verifyCitationNavigation({
+        source: original.source, span: original.span,
+        readCurrent: async () => (await ipc.readFile(path)).raw,
+        draft: () => draftRef.current, isCurrent,
+      });
+      // The await boundary itself can yield to a vault switch or draft edit.
+      // Recheck at the caller before any scroll/flash side effect.
+      if (!isCurrent() || checked.status === "cancelled") return;
+      if (raw !== draftRef.current || checked.status === "changed") { notice.warn(t.q_citation_unavailable); return; }
+      lines = checked.lines;
+    } else {
+      lines = matchLines(raw, quote);
+    }
     const v = editorViewRef.current;
-    const lines = matchLines(draftRef.current, quote);
     if (v && lines) {
       scrollEditorToLine(v, lines.from);
       flashLines(v, lines.from, lines.to);
@@ -928,8 +963,10 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       root.querySelectorAll("details").forEach((d) => {
         if (lit.some((el) => d.contains(el))) d.open = true;
       });
-      lit[0]?.scrollIntoView({ block: "start" });
+      // Keep the selected passage below the sticky app header.
+      lit[0]?.scrollIntoView({ block: "center" });
     }
+    if (original && !lit.length) { notice.warn(t.q_citation_unavailable); return; }
     if (!lit.length && section) {
       const h = scrollToAnchor(section);
       const head = h && root?.querySelector<HTMLElement>(`[data-line="${h.line}"]:not(.md-embed-body *)`);
@@ -1168,8 +1205,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     );
   }
 
-  const fileName = path.split(/[\\/]/).pop() ?? path;
-  const noteTitle = listedName(fileName.replace(/\.md$/i, ""), fmString(fm, "title"));
+  const noteTitle = readerNoteTitle(path, fmString(fm, "title"));
   const noteType = fmString(fm, "type");
   const dailyDay = currentVaultPath ? dailyDayOf(path, currentVaultPath) : null;
   const badge = authorship
@@ -1725,6 +1761,13 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/** Compose display text so decomposed macOS filenames render as syllables in
+ *  the reader's serif heading. Keep the original path as the file identity. */
+export function readerNoteTitle(path: string, title?: string | null): string {
+  const fileName = path.split(/[\\/]/).pop() ?? path;
+  return listedName(fileName.replace(/\.md$/i, ""), title).normalize("NFC");
 }
 
 /** What the reader shows for `path`: its current read's failure takes priority

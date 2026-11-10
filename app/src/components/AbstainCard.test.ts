@@ -177,3 +177,11 @@ describe("AbstainCard in plain words (S30)", () => {
     expect(render({ onNote: undefined })).not.toContain(t.q_abstain_note);
   });
 });
+
+it("does not label model abstention as absent notes or failed relevance filtering", () => {
+ const html = renderToStaticMarkup(h(AbstainCard, {t, id: "model", indexedPages: null, floor: 0.42, misses: [], harvested: false, noted: false, modelEvidence: true, explanation: t.q_model_evidence_insufficient, range: {start:"2026-10-08",end:"2026-10-08"}}));
+ expect(html).toContain(t.q_model_evidence_title);
+ expect(html).toContain(t.q_model_evidence_insufficient);
+ expect(html).not.toContain(t.q_range_empty);
+ expect(html).not.toContain("ask-absdetails");
+});

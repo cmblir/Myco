@@ -341,3 +341,14 @@ describe("parseTimeQuery — no time phrase", () => {
     });
   });
 });
+
+
+describe("Korean calendar dates", () => {
+  it("keeps an explicit year and day instead of widening to a named month", () => {
+    expect(parseTimeQuery("기록 2026년 10월 8일 기준", now, "ko")).toEqual({ range: { start: "2026-10-08", end: "2026-10-08" }, cleaned: "기록 기준" });
+    expect(parseTimeQuery("2025년 10월 기록", now, "ko").range).toEqual({ start: "2025-10-01", end: "2025-10-31" });
+  });
+  it("does not turn an impossible day or quoted literal into a month", () => {
+    for (const q of ["2026년 2월 30일 기록", '"2026년 10월 8일" 문자열']) expect(parseTimeQuery(q, now, "ko")).toEqual({ range: null, cleaned: q });
+  });
+});

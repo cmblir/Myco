@@ -35,6 +35,7 @@ export default function AbstainCard({
   onDropRange,
   range,
   explanation,
+  modelEvidence = false,
 }: {
   t: Strings;
   id: string;
@@ -63,6 +64,7 @@ export default function AbstainCard({
   range?: { start: string; end: string };
   /** A known capability/scope limit instead of inferred note absence. */
   explanation?: string;
+  modelEvidence?: boolean;
 }): JSX.Element {
   const floorText = floor.toFixed(2);
   const tick = `${Math.round((floor / GAUGE_MAX) * 100)}%`;
@@ -85,7 +87,7 @@ export default function AbstainCard({
           <MascotClip {...SURFACE_CLIPS.abstain} />
         </span>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <h2 id={`${id}-h`}>{range ? t.q_range_empty : t.q_abstain_title}</h2>
+          <h2 id={`${id}-h`}>{modelEvidence ? t.q_model_evidence_title : range ? t.q_range_empty : t.q_abstain_title}</h2>
           <p className="ask-abssub">{sub}</p>
         </div>
       </div>
@@ -128,7 +130,7 @@ export default function AbstainCard({
           <span>{t.q_abstain_receipt}</span>
         </div>
       ) : null}
-      <details className="intake-disclosure ask-absdetails">
+      {!modelEvidence && <details className="intake-disclosure ask-absdetails">
         <summary>{t.q_abstain_details}</summary>
         <p className="ask-absnums">{numbers}</p>
         <div className="ask-misses">
@@ -177,7 +179,7 @@ export default function AbstainCard({
             {t.q_abstain_gauge_note.replace("{floor}", floorText)}
           </p>
         </div>
-      </details>
+      </details>}
     </section>
   );
 }

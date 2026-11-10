@@ -131,6 +131,10 @@ pub(super) fn original_prompt(
     prompt.user = serde_json::to_string(&payload)
         .map_err(|error| failure("review_invalid", error.to_string()))?;
     prompt.system.push_str(ORIGINAL_POLICY);
+    if let Some(guided) = &request.guided_question {
+        guided.apply(&mut prompt, &request.lang)
+            .map_err(|code| failure(code, "selected-question metadata is invalid or unsupported"))?;
+    }
     Ok(prompt)
 }
 

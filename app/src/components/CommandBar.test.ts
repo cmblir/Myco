@@ -7,6 +7,7 @@ import {
   folderPaths,
   footCount,
   HitText,
+  matchingCommandEntries,
   missQuery,
   pageNote,
   rowAt,
@@ -14,6 +15,45 @@ import {
 } from "./CommandBar";
 import type { FileNode } from "../lib/ipc";
 import { STRINGS } from "../lib/i18n";
+
+describe("matchingCommandEntries", () => {
+  it("finds a decomposed filename from composed Korean input and keeps the real route", () => {
+    const stem = "설계 회의".normalize("NFD");
+    const entry = { type: "page" as const, label: stem, stem, to: `page:/v/wiki/${stem}.md` as const };
+    const found = matchingCommandEntries([entry], "설계 회의");
+
+    expect(found).toEqual([entry]);
+    expect(found[0]).toBe(entry);
+    expect("to" in found[0] && found[0].to).toBe(`page:/v/wiki/${stem}.md`);
+    expect(found[0].label).toBe(stem);
+    expect(entry.to).not.toBe(entry.to.normalize("NFC"));
+  });
+
+  it("also finds a composed filename from decomposed Korean input", () => {
+    const entry = { type: "page" as const, label: "설계 회의", stem: "설계 회의", to: "page:/v/wiki/설계 회의.md" as const };
+    expect(matchingCommandEntries([entry], "설계".normalize("NFD"))).toEqual([entry]);
+    expect(matchingCommandEntries([entry], "설계".normalize("NFD"))[0]).toBe(entry);
+  });
+
+  it("matches both the shown label and a different underlying filename", () => {
+    const entry = { type: "page" as const, label: "회의 기록".normalize("NFD"), stem: "설계 초안".normalize("NFD"), to: "page:/v/wiki/note.md" as const };
+    expect(matchingCommandEntries([entry], "회의")).toEqual([entry]);
+    expect(matchingCommandEntries([entry], "설계")).toEqual([entry]);
+    expect(matchingCommandEntries([entry], "없는 제목")).toEqual([]);
+  });
+
+  it("keeps ASCII case-insensitive matching, query trimming, and result order", () => {
+    const entries = [
+      { type: "nav" as const, label: "Home", to: "overview" as const },
+      { type: "page" as const, label: "Plan", stem: "PLAN", to: "page:/v/wiki/PLAN.md" as const },
+      { type: "page" as const, label: "Planning notes", stem: "planning", to: "page:/v/wiki/planning.md" as const },
+    ];
+    expect(matchingCommandEntries(entries, "  pLaN  ")).toEqual(entries.slice(1));
+    expect(matchingCommandEntries(entries, "HOME")).toEqual([entries[0]]);
+    expect(matchingCommandEntries(entries, "missing")).toEqual([]);
+    expect(matchingCommandEntries(entries, "")).toEqual(entries);
+  });
+});
 
 describe("folderOf", () => {
   it("is the vault-relative folder of a note, empty at the root", () => {

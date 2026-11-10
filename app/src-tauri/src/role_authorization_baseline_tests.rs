@@ -92,3 +92,87 @@ fn native_role_unselected_route_is_rejected_before_synthetic_http() {
         });
     });
 }
+
+#[test]
+fn native_role_legacy_endpoint_change_revokes_the_existing_foreground_grant() {
+    use crate::role_authorization::{self, RoleId, RoleUsage};
+    use crate::vault_session::VaultRoot;
+
+    // The resolver accepts both spellings. Restore every touched variable on
+    // unwind too, without printing an inherited endpoint or data directory.
+    let _lock = crate::settings::test_support::ENV_LOCK
+        .lock()
+        .unwrap_or_else(|error| error.into_inner());
+    struct RestoreEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
+    impl Drop for RestoreEnvironment {
+        fn drop(&mut self) {
+            for (name, value) in &self.0 {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+    }
+    let data = tempfile::tempdir().unwrap();
+    let directory = tempfile::tempdir().unwrap();
+    let _restore = RestoreEnvironment(
+        [
+            "MYCO_DATA_DIR",
+            "MEMEX_DATA_DIR",
+            "MYCO_OLLAMA_URL",
+            "MEMEX_OLLAMA_URL",
+        ]
+        .into_iter()
+        .map(|name| (name, std::env::var_os(name)))
+        .collect(),
+    );
+    std::env::set_var("MYCO_DATA_DIR", data.path());
+    std::env::remove_var("MEMEX_DATA_DIR");
+    std::env::remove_var("MYCO_OLLAMA_URL");
+    std::env::set_var("MEMEX_OLLAMA_URL", "http://127.0.0.1:11431");
+
+    let mut settings = Settings::default();
+    settings.providers.ollama = true;
+    crate::settings::save(&settings).unwrap();
+    role_authorization::select_role(role_authorization::RoleSelectionRequest {
+        role: RoleId::Ask,
+        provider_id: "ollama".into(),
+        model_id: "synthetic-legacy-endpoint-model".into(),
+        effort: "(default)".into(),
+        expected_authorization_revision: role_authorization::settings_snapshot()
+            .unwrap()
+            .role_authorization_revision,
+    })
+    .unwrap();
+
+    let vault = VaultRoot::default();
+    let generation = vault.begin_open().unwrap();
+    vault
+        .finish_open(generation, directory.path().canonicalize().unwrap(), || ())
+        .unwrap();
+    let origin = vault.snapshot().unwrap();
+    let snapshot = vault
+        .with_origin(&origin, |_| {
+            role_authorization::capture_role_at(&origin, RoleId::Ask, RoleUsage::Foreground)
+                .map_err(|error| error.to_string())
+        })
+        .unwrap();
+    crate::commands::authorized_role(&vault, &origin, &snapshot, RoleId::Ask, |_| Ok(()))
+        .unwrap();
+
+    std::env::set_var("MEMEX_OLLAMA_URL", "http://127.0.0.1:11432");
+    let dispatched = std::cell::Cell::new(false);
+    let result = crate::commands::authorized_role(
+        &vault,
+        &origin,
+        &snapshot,
+        RoleId::Ask,
+        |_| {
+            dispatched.set(true);
+            Ok(())
+        },
+    );
+    assert!(result.unwrap_err().contains("snapshot_stale"));
+    assert!(!dispatched.get(), "a changed endpoint reached source/transport dispatch");
+}

@@ -314,6 +314,21 @@ struct PreparedInput {
     wire_format: Option<QaWireFormat>,
 }
 
+/// Export the production Flat review input for an isolated diagnostic.
+/// No inference, acceptance receipt, or correction is performed here.
+pub(crate) fn diagnostic_input(
+    context: &AskReviewContext,
+    packet: &SourceSet,
+    prompt: &Prompt,
+    draft: &ValidatedAnswerDraft,
+) -> Result<serde_json::Value, ReviewFailure> {
+    let input = prepare_base(context, packet, prompt, draft)?;
+    Ok(json!({"system":input.system,"user":input.user,
+        "contextTokens":4096,"outputTokens":768,"reservedTokens":8,
+        "tokenFitVerified":false,"modelExecuted":false,
+        "semanticAccepted":false,"productionAccepted":false}))
+}
+
 fn prepare_base(
     context: &AskReviewContext,
     packet: &SourceSet,

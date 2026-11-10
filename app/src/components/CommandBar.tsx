@@ -45,6 +45,17 @@ type CmdEntry =
   // An operator value (S23): picking it writes `q` into the box, still open.
   | { type: "fill"; label: string; q: string };
 
+/** Match canonically equivalent names without changing file paths or labels.
+ * macOS vaults can carry decomposed filenames while users type composed text. */
+export function matchingCommandEntries(entries: readonly CmdEntry[], query: string): CmdEntry[] {
+  const key = (text: string): string => text.normalize("NFC").toLowerCase();
+  const needle = key(query.trim());
+  return entries.filter((entry) =>
+    key(entry.label).includes(needle) ||
+    (entry.type === "page" && entry.stem !== undefined && key(entry.stem).includes(needle)),
+  );
+}
+
 // The chips under the box (S23): an operator to type a value for, then the
 // No sources lens.
 const CHIPS = [
@@ -435,13 +446,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
           {
             label: null,
             rows: needle
-              ? base
-                  .filter(
-                    (x) =>
-                      x.label.toLowerCase().includes(needle) ||
-                      (x.type === "page" && x.stem?.toLowerCase().includes(needle)),
-                  )
-                  .slice(0, 50)
+              ? matchingCommandEntries(base, needle).slice(0, 50)
               : base.slice(0, 50),
           },
         ]

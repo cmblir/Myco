@@ -86,6 +86,14 @@ const explicitDay = (y: number, mo: number, d: number): DateRange | null => {
 // Explicit tokens beat relative words, so they sit ahead of every lang table.
 const EXPLICIT: Rule[] = [
   {
+    re: /(\d{4})년\s*(\d{1,2})월\s*(\d{1,2})일(?:에는|엔|에)?/,
+    build: (_n, m) => explicitDay(+m[1], +m[2], +m[3]),
+  },
+  {
+    re: /(\d{4})년\s*(\d{1,2})월(?!\s*\d{1,2}일)/,
+    build: (_n, m) => +m[2] >= 1 && +m[2] <= 12 ? monthRange(+m[1], +m[2]) : null,
+  },
+  {
     re: /(?:\bfrom\s+|\bbetween\s+)?(\d{4})-(\d{2})-(\d{2})\s*(?:부터|から|to\b|through\b|until\b|and\b|\.\.|~|–|—)\s*(\d{4})-(\d{2})-(\d{2})(?:까지|まで)?/i,
     build: (_n, m) => {
       const start = explicitDay(+m[1], +m[2], +m[3]);
@@ -122,7 +130,7 @@ const KO: Rule[] = [
     build: (n) => span(new Date(n.getFullYear(), n.getMonth(), 1), startOfDay(n)),
   },
   { re: new RegExp(`지난\\s*달${KO_P}`), build: prevMonth },
-  { re: new RegExp(`(\\d{1,2})월${KO_P}`), build: (n, m) => namedMonth(n, +m[1]) },
+  { re: new RegExp(`(?<!\\d)(\\d{1,2})월(?!\\s*\\d{1,2}일)${KO_P}`), build: (n, m) => namedMonth(n, +m[1]) },
   { re: new RegExp(`올해${KO_P}`), build: (n) => span(new Date(n.getFullYear(), 0, 1), startOfDay(n)) },
 ];
 

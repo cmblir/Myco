@@ -97,6 +97,7 @@ fn actual_writer_policy_is_bound_before_draft_and_mandatory_review_cannot_replay
         paths: None,
         max_tokens: Some(768),
         activity_overview: true,
+        guided_question: None,
         resolution: None,
     };
     let control = original_prompt(&request, &evidence, &packet, &context).unwrap();

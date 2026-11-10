@@ -783,6 +783,7 @@ export interface Strings extends EverydayStrings {
   s_vault_path: string;
   s_change: string;
   q_empty_response: string;
+  q_recall_topic_needed: string;
   eb_title: string; // "{area}" is substituted with eb_area_*
   eb_reload: string;
   eb_retry: string;
@@ -1874,17 +1875,51 @@ export interface Strings extends EverydayStrings {
   q_extractive_stale: string;
   q_extractive_failed: string;
   q_source_changed: string;
+  q_citation_unavailable: string;
   q_model_selection_changed: string;
   q_activity_failed: string;
   q_activity_incomplete: string;
   q_activity_summary_failed: string;
   q_answer_review_failed: string;
+  q_model_evidence_insufficient: string;
+  q_model_evidence_title: string;
   q_activity_insufficient_evidence: string;
   q_activity_coverage: string; // {scanned} {sources}
   q_activity_limited: string;
+  q_execution_details: string;
+  q_execution_unknown: string;
+  q_execution_selected: string;
+  q_execution_unspecified: string;
+  q_execution_kind: string;
+  q_execution_kind_none: string;
+  q_execution_kind_clarification: string;
+  q_execution_kind_extractive: string;
+  q_execution_kind_application: string;
+  q_execution_kind_model_response: string;
+  q_execution_pending: string;
+  q_execution_no_calls: string;
+  q_execution_call_answer: string;
+  q_execution_call_period: string;
+  q_execution_state_submitted: string;
+  q_execution_state_response_received: string;
+  q_execution_state_failed: string;
+  q_execution_state_cancelled: string;
+  q_execution_provider_identity: string;
+  q_execution_local_identity: string;
+  q_execution_identity_unknown: string;
+  q_execution_boundary: string;
+  q_context_packing_badge: string;
+  q_context_packing_limited: string; // {selected} {omitted}
+  q_context_packing_same_page: string; // {n}
+  q_history_period_needed: string;
+  q_history_original_question: string; // {question}
+  q_history_searched_paths: string; // {n}
+  q_range_unrestricted: string;
   q_local_fallback_timeout: string;
   q_local_fallback_unavailable: string;
   q_local_fallback_prompt: string;
+  q_guided_cutoff_unsupported: string;
+  q_historical_exclusions: string;
   q_local_fallback_rejected: string;
   q_local_fallback_incomplete: string;
   q_local_fallback_failed: string;
@@ -3345,6 +3380,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_vault_path: "Notes folder",
     s_change: "Change…",
     q_empty_response: "(empty response)",
+    q_recall_topic_needed: "Which topic, project, or time period do you mean? There is no earlier topic in this conversation yet.",
     eb_title: "Something went wrong in {area}.",
     eb_reload: "Reload myco",
     eb_retry: "Try again",
@@ -4460,6 +4496,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "The semantic index predates a model update, and keyword search found no verified passages. Run “Reindex now” under Model settings, then ask again.",
     q_extractive_failed:
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    q_citation_unavailable: "The original passage changed or could not be verified, so it was not highlighted. Check the current note.",
     q_source_changed:
       "The source passages changed or could not be verified. Retry to search the current notes.",
     q_model_selection_changed: "The selected model or its permission changed, so this answer was stopped. Check the model selection and retry.",
@@ -4467,13 +4504,46 @@ export const STRINGS: Record<Lang, Strings> = {
     q_activity_incomplete: "Some records could not be checked for the selected period. Retry with the same scope and period.",
     q_activity_summary_failed: "Records were found for the selected period, but the activity summary could not be completed. Retry with the same period.",
     q_answer_review_failed: "The answer could not pass review against the original records. Retry or narrow the question.",
+    q_model_evidence_title: "Could not confirm an answer",
+    q_model_evidence_insufficient: "Records were found, but the model could not support an answer from them. Try a more specific question or a different scope.",
     q_activity_insufficient_evidence: "Records were found, but they did not provide enough supported activity for this question. Check the scope and period, or retry.",
     q_activity_coverage: "Scanned {scanned} pages · {sources} citation pages",
     q_activity_limited: "This summary covers selected records, so some activities may be missing.",
+    q_execution_details: "Model request details",
+    q_execution_unknown: "Execution details were not recorded for this answer.",
+    q_execution_selected: "Requested model",
+    q_execution_unspecified: "Unspecified model ID",
+    q_execution_kind: "Answer origin",
+    q_execution_kind_none: "No answer",
+    q_execution_kind_clarification: "Clarification",
+    q_execution_kind_extractive: "Source quotations",
+    q_execution_kind_application: "App-generated summary",
+    q_execution_kind_model_response: "Model response",
+    q_execution_pending: "Request in progress",
+    q_execution_no_calls: "No generation commands are recorded.",
+    q_execution_call_answer: "Answer command",
+    q_execution_call_period: "Period-planning command",
+    q_execution_state_submitted: "Attempt submitted",
+    q_execution_state_response_received: "Response received",
+    q_execution_state_failed: "Failed",
+    q_execution_state_cancelled: "Stopped waiting",
+    q_execution_provider_identity: "Model reported by server",
+    q_execution_local_identity: "Model ID from local manifest",
+    q_execution_identity_unknown: "The response did not report a model ID.",
+    q_execution_boundary: "These are app commands and returned identifiers. One command may contain several generations; reported names alone do not verify weights or answer quality.",
+    q_context_packing_badge: "Partial evidence",
+    q_context_packing_limited: "Partial evidence: {selected} passages included · {omitted} omitted. Missing records may change the conclusion.",
+    q_context_packing_same_page: "{n} passages were omitted within pages that were included.",
+    q_history_period_needed: "Period needed",
+    q_history_original_question: "Original question: {question}",
+    q_history_searched_paths: "Search scope: {n} files",
+    q_range_unrestricted: "No period restriction",
     q_local_fallback_timeout:
       "The local answer was not ready in time. The retrieved source passages are quoted below.",
     q_local_fallback_unavailable:
       "The selected local model could not be used to write an answer. The retrieved source passages are quoted below.",
+    q_historical_exclusions: "While preparing evidence for {date}, excluded {after} passages after the cutoff and {undated} without a verified date.",
+    q_guided_cutoff_unsupported: "This local model route does not support a historical cutoff yet. Clear the date or choose a supported model.",
     q_local_fallback_prompt:
       "The retrieved passages could not be prepared for a local answer. The retrieved source passages are quoted below.",
     q_local_fallback_rejected:
@@ -4530,27 +4600,26 @@ export const STRINGS: Record<Lang, Strings> = {
     q_note_scope_chip: "This note · {note}",
     q_note_scope_hint: "Searches only this note and the notes it links to or from",
     q_note_scope_clear: "Stop asking only this note",
-    q_trace_title: "Retrieval path",
-    q_trace_toggle: "Step by step",
-    q_trace_candidates: "candidates",
-    q_trace_candidates_sub: "pages in the index",
-    q_trace_bm25: "BM25",
-    q_trace_bm25_sub: "keyword-only hits (no cosine)",
-    q_trace_dense: "vector",
-    q_trace_dense_sub: "hits with a cosine",
-    q_trace_rrf: "RRF",
-    q_trace_rrf_sub: "k=60 rank fusion — not a confidence",
-    q_trace_cap: "cap",
-    q_trace_cap_sub: "at most {k} chunks, 2 per page",
-    q_trace_floor: "floor",
-    q_trace_floor_sub: "cosine below {floor}",
-    q_trace_cold: "archived",
-    q_trace_cold_on: "in",
-    q_trace_cold_off: "out",
-    q_trace_cold_on_sub: "sessions/archive/ is searched in the session scope",
-    q_trace_cold_off_sub: "sessions/archive/ stays out (Settings › Semantic search)",
-    q_trace_params:
-      "BM25 k1=1.2 · b=0.75 · RRF k=60 · floor {floor} — retrieval.rs as it runs. The RRF score orders hits; it is not a confidence.",
+    q_trace_title: "Search details",
+    q_trace_toggle: "Show statistics",
+    q_trace_candidates: "Vector-index pages",
+    q_trace_candidates_sub: "Pages with stored vectors, not all search candidates or keyword-index coverage.",
+    q_trace_bm25: "Without similarity",
+    q_trace_bm25_sub: "Returned chunks explicitly without a cosine value. Not the full BM25 result count.",
+    q_trace_dense: "With similarity",
+    q_trace_dense_sub: "Returned chunks with a measured cosine, including keyword results scored on demand. Not the vector retrieval total.",
+    q_trace_rrf: "Returned chunks",
+    q_trace_rrf_sub: "Kept chunks plus returned rejection examples. Not the full candidate or pre-limit fusion count.",
+    q_trace_cap: "Requested limit",
+    q_trace_cap_sub: "The request asks for at most {k} chunks; this is a limit, not an observed result count.",
+    q_trace_floor: "Rejection examples",
+    q_trace_floor_sub: "Returned examples that did not meet the relevance rule ({floor}). The total rejected count is not reported.",
+    q_trace_cold: "Archive setting",
+    q_trace_cold_on: "eligible",
+    q_trace_cold_off: "excluded",
+    q_trace_cold_on_sub: "Archived sessions may be searched when the selected scope includes them. This setting does not show that they were searched.",
+    q_trace_cold_off_sub: "Archived sessions are excluded by the search setting.",
+    q_trace_params: "Unavailable counts appear as —. Full candidate, BM25, vector retrieval and rejection totals are not reported. Relevance threshold: {floor}.",
     q_cite_aria: "Citation {n} — {stem}, relevance {sim}, {tier}",
     q_cite_sim_none: "keywords only",
     q_ladder_title: "Source ladder",
@@ -5903,6 +5972,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_vault_path: "볼트 폴더",
     s_change: "변경…",
     q_empty_response: "(응답 없음)",
+    q_recall_topic_needed: "어떤 주제·프로젝트·시기의 내용을 찾을까요? 이 대화에는 아직 앞선 주제 정보가 없어요.",
     eb_title: "{area}에서 문제가 발생했습니다.",
     eb_reload: "myco 다시 불러오기",
     eb_retry: "다시 시도",
@@ -7011,6 +7081,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "의미 검색 인덱스가 모델 업데이트 이전에 만들어졌고, 키워드 검색에서도 확인된 구절을 찾지 못했습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
     q_extractive_failed:
       "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
+    q_citation_unavailable: "원문이 바뀌었거나 확인할 수 없어 해당 구절을 강조하지 않았어요. 현재 노트를 확인해 주세요.",
     q_source_changed:
       "원문이 바뀌었거나 확인할 수 없어 답변을 중단했어요. 다시 시도하여 현재 노트를 검색해 주세요.",
     q_model_selection_changed: "선택한 모델이나 실행 권한이 바뀌어 답변을 중단했어요. 모델 선택을 확인하고 다시 시도해 주세요.",
@@ -7018,13 +7089,46 @@ export const STRINGS: Record<Lang, Strings> = {
     q_activity_incomplete: "선택한 기간의 기록을 모두 확인하지 못했어요. 같은 범위와 기간으로 다시 시도해 주세요.",
     q_activity_summary_failed: "선택한 기간의 기록을 찾았지만 활동 정리를 끝내지 못했어요. 같은 기간으로 다시 시도해 주세요.",
     q_answer_review_failed: "답변을 원문과 대조해 통과시키지 못했어요. 다시 시도하거나 질문 범위를 좁혀 주세요.",
+    q_model_evidence_title: "근거로 답을 확인하지 못했어요",
+    q_model_evidence_insufficient: "기록은 찾았지만 모델이 그 근거로 답을 확인하지 못했어요. 질문을 더 구체적으로 하거나 범위를 바꿔 보세요.",
     q_activity_insufficient_evidence: "기록은 찾았지만 질문을 뒷받침할 활동을 충분히 확인하지 못했어요. 범위와 기간을 확인하거나 다시 시도해 주세요.",
     q_activity_coverage: "검색한 페이지 {scanned}개 · 인용 페이지 {sources}개",
     q_activity_limited: "선택된 기록을 정리한 답변이라 일부 활동이 빠질 수 있어요.",
+    q_execution_details: "모델 요청 정보",
+    q_execution_unknown: "당시 실행 정보가 기록되지 않았습니다.",
+    q_execution_selected: "요청한 모델",
+    q_execution_unspecified: "모델 ID 미지정",
+    q_execution_kind: "답변 경로",
+    q_execution_kind_none: "답변 없음",
+    q_execution_kind_clarification: "확인 질문",
+    q_execution_kind_extractive: "원문 발췌",
+    q_execution_kind_application: "앱에서 구성",
+    q_execution_kind_model_response: "모델 응답",
+    q_execution_pending: "요청 진행 중",
+    q_execution_no_calls: "기록된 생성 명령이 없습니다.",
+    q_execution_call_answer: "답변 명령",
+    q_execution_call_period: "기간 선택 명령",
+    q_execution_state_submitted: "전달 시도",
+    q_execution_state_response_received: "응답 받음",
+    q_execution_state_failed: "실패",
+    q_execution_state_cancelled: "응답 대기 중단",
+    q_execution_provider_identity: "서버 응답에 기록된 모델",
+    q_execution_local_identity: "로컬 등록 정보의 모델 ID",
+    q_execution_identity_unknown: "응답에서 모델 ID를 보고하지 않았습니다.",
+    q_execution_boundary: "앱 명령과 응답의 식별자를 기록합니다. 한 명령에 여러 생성이 포함될 수 있으며, 응답의 이름만으로 가중치나 답변 품질이 확인되지는 않습니다.",
+    q_context_packing_badge: "부분 근거",
+    q_context_packing_limited: "부분 근거: {selected}구간 포함 · {omitted}구간 제외. 빠진 기록이 결론을 바꿀 수 있어요.",
+    q_context_packing_same_page: "포함한 페이지 안에서도 {n}구간을 제외했어요.",
+    q_history_period_needed: "기간 확인 필요",
+    q_history_original_question: "원래 질문: {question}",
+    q_history_searched_paths: "검색 범위: 파일 {n}개",
+    q_range_unrestricted: "기간 제한 없음",
     q_local_fallback_timeout:
       "로컬 답변이 시간 안에 준비되지 않았어요. 아래에는 검색된 원문을 그대로 인용했습니다.",
     q_local_fallback_unavailable:
       "선택한 로컬 모델을 사용할 수 없어 답변을 작성하지 못했어요. 아래에는 검색된 원문을 그대로 인용했습니다.",
+    q_historical_exclusions: "근거 준비 중 제외: 기준일({date}) 이후 {after}구간, 날짜 미확인 {undated}구간.",
+    q_guided_cutoff_unsupported: "선택한 로컬 모델 경로는 기준일 제한을 아직 지원하지 않아요. 기준일을 비우거나 지원하는 모델을 선택해 주세요.",
     q_local_fallback_prompt:
       "찾은 원문으로 로컬 답변을 준비하지 못했어요. 아래에는 검색된 원문을 그대로 인용했습니다.",
     q_local_fallback_rejected:
@@ -7081,27 +7185,26 @@ export const STRINGS: Record<Lang, Strings> = {
     q_note_scope_chip: "이 노트 · {note}",
     q_note_scope_hint: "이 노트와 바로 이어진 노트에서만 찾아요",
     q_note_scope_clear: "이 노트에만 묻기 그만두기",
-    q_trace_title: "검색 경로",
-    q_trace_toggle: "단계별 보기",
-    q_trace_candidates: "후보",
-    q_trace_candidates_sub: "색인된 페이지",
-    q_trace_bm25: "BM25",
-    q_trace_bm25_sub: "어휘 전용 히트 (코사인 없음)",
-    q_trace_dense: "벡터",
-    q_trace_dense_sub: "코사인이 있는 히트",
-    q_trace_rrf: "RRF",
-    q_trace_rrf_sub: "k=60 순위 융합 — 신뢰도가 아님",
-    q_trace_cap: "상한",
-    q_trace_cap_sub: "최대 {k}청크 · 페이지당 2",
-    q_trace_floor: "바닥선",
-    q_trace_floor_sub: "코사인 {floor} 미만",
-    q_trace_cold: "냉동",
-    q_trace_cold_on: "포함",
+    q_trace_title: "검색 세부정보",
+    q_trace_toggle: "통계 보기",
+    q_trace_candidates: "벡터 색인 페이지",
+    q_trace_candidates_sub: "벡터가 저장된 페이지 수입니다. 전체 검색 후보나 키워드 색인 범위가 아닙니다.",
+    q_trace_bm25: "유사도 없음",
+    q_trace_bm25_sub: "응답에서 코사인 값이 없다고 명시된 구간 수입니다. 전체 BM25 검색 결과 수가 아닙니다.",
+    q_trace_dense: "유사도 있음",
+    q_trace_dense_sub: "코사인 값을 측정한 응답 구간 수입니다. 검색 후 측정한 키워드 결과도 포함하므로 벡터 검색 전체 수가 아닙니다.",
+    q_trace_rrf: "반환 구간",
+    q_trace_rrf_sub: "통과한 구간과 반환된 제외 예시의 합계입니다. 전체 후보나 상한 적용 전 융합 결과 수가 아닙니다.",
+    q_trace_cap: "요청 상한",
+    q_trace_cap_sub: "요청한 검색 결과 상한은 {k}구간입니다. 실제 결과 수를 나타내지 않습니다.",
+    q_trace_floor: "제외 예시",
+    q_trace_floor_sub: "관련도 기준({floor})을 통과하지 못해 반환된 일부 구간 수입니다. 전체 제외 수는 제공되지 않습니다.",
+    q_trace_cold: "보관 대화 설정",
+    q_trace_cold_on: "포함 가능",
     q_trace_cold_off: "제외",
-    q_trace_cold_on_sub: "세션 범위에서 sessions/archive/까지 검색",
-    q_trace_cold_off_sub: "sessions/archive/는 제외 (설정 › 시맨틱 검색)",
-    q_trace_params:
-      "BM25 k1=1.2 · b=0.75 · RRF k=60 · 바닥선 {floor} — retrieval.rs 그대로. RRF 점수는 순위 값이라 신뢰도가 아닙니다.",
+    q_trace_cold_on_sub: "질문 범위에 따라 보관된 세션도 검색할 수 있는 설정입니다. 실제 검색 여부를 나타내지 않습니다.",
+    q_trace_cold_off_sub: "검색 설정에서 보관된 세션을 제외합니다.",
+    q_trace_params: "확인할 수 없는 값은 —로 표시합니다. 전체 후보, BM25·벡터별 검색 전체 수, 전체 제외 수는 제공되지 않습니다. 관련도 기준: {floor}.",
     q_cite_aria: "인용 {n} — {stem}, 관련도 {sim}, {tier}",
     q_cite_sim_none: "키워드만",
     q_ladder_title: "출처 사다리",
@@ -8253,6 +8356,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_vault_path: "ノートの保存先",
     s_change: "変更…",
     q_empty_response: "(応答なし)",
+    q_recall_topic_needed: "どの話題・プロジェクト・時期の内容ですか？ この会話にはまだ前の話題がありません。",
     eb_title: "{area}で問題が発生しました。",
     eb_reload: "myco を再読み込み",
     eb_retry: "再試行",
@@ -9357,6 +9461,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "意味検索の索引がモデル更新前のもので、キーワード検索でも確認済みの抜粋が見つかりませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
     q_extractive_failed:
       "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
+    q_citation_unavailable: "原文が変わったか確認できなかったため、該当箇所を強調表示しませんでした。現在のノートを確認してください。",
     q_source_changed:
       "原文が変わったか確認できなかったため、回答を停止しました。再試行して現在のノートを検索してください。",
     q_model_selection_changed: "選択したモデルまたは実行権限が変わったため回答を停止しました。モデルの選択を確認して再試行してください。",
@@ -9364,13 +9469,46 @@ export const STRINGS: Record<Lang, Strings> = {
     q_activity_incomplete: "選択した期間の記録をすべて確認できませんでした。同じ範囲と期間で再試行してください。",
     q_activity_summary_failed: "選択した期間の記録は見つかりましたが、活動の要約を完成できませんでした。同じ期間で再試行してください。",
     q_answer_review_failed: "回答を元の記録と照合して確認できませんでした。再試行するか質問の範囲を絞ってください。",
+    q_model_evidence_title: "根拠から回答を確認できませんでした",
+    q_model_evidence_insufficient: "記録は見つかりましたが、モデルはその根拠から回答を確認できませんでした。質問を具体的にするか、範囲を変えてください。",
     q_activity_insufficient_evidence: "記録は見つかりましたが、この質問を裏付ける活動を十分に確認できませんでした。範囲と期間を確認するか、再試行してください。",
     q_activity_coverage: "{scanned}ページを検索 · 引用元{sources}ページ",
     q_activity_limited: "選択した記録の要約のため、一部の活動が含まれない場合があります。",
+    q_execution_details: "モデル要求情報",
+    q_execution_unknown: "当時の実行情報は記録されていません。",
+    q_execution_selected: "要求したモデル",
+    q_execution_unspecified: "モデルID未指定",
+    q_execution_kind: "回答の由来",
+    q_execution_kind_none: "回答なし",
+    q_execution_kind_clarification: "確認の質問",
+    q_execution_kind_extractive: "原文の引用",
+    q_execution_kind_application: "アプリによる構成",
+    q_execution_kind_model_response: "モデル応答",
+    q_execution_pending: "要求を処理中",
+    q_execution_no_calls: "生成コマンドの記録はありません。",
+    q_execution_call_answer: "回答コマンド",
+    q_execution_call_period: "期間選択コマンド",
+    q_execution_state_submitted: "送信を試行",
+    q_execution_state_response_received: "応答を受信",
+    q_execution_state_failed: "失敗",
+    q_execution_state_cancelled: "応答待機を停止",
+    q_execution_provider_identity: "サーバー応答に記録されたモデル",
+    q_execution_local_identity: "ローカル登録情報のモデルID",
+    q_execution_identity_unknown: "応答にモデルIDが報告されていません。",
+    q_execution_boundary: "アプリのコマンドと応答の識別子を記録します。1つのコマンドに複数の生成を含む場合があり、報告された名前だけでは重みや回答品質は確認できません。",
+    q_context_packing_badge: "一部の根拠",
+    q_context_packing_limited: "一部の根拠: {selected}区間を含む · {omitted}区間を除外。未収録の記録で結論が変わる場合があります。",
+    q_context_packing_same_page: "含まれたページの中でも{n}区間を除外しました。",
+    q_history_period_needed: "期間の確認が必要",
+    q_history_original_question: "元の質問: {question}",
+    q_history_searched_paths: "検索範囲: {n}ファイル",
+    q_range_unrestricted: "期間の制限なし",
     q_local_fallback_timeout:
       "ローカル回答が時間内に準備できませんでした。以下に検索した原文をそのまま引用しています。",
     q_local_fallback_unavailable:
       "選択したローカルモデルを使用できず、回答を作成できませんでした。以下に検索した原文をそのまま引用しています。",
+    q_historical_exclusions: "根拠の準備時に除外：基準日（{date}）より後の{after}区間、日付未確認の{undated}区間。",
+    q_guided_cutoff_unsupported: "選択したローカルモデル経路は基準日の制限にまだ対応していません。日付を空欄にするか、対応モデルを選んでください。",
     q_local_fallback_prompt:
       "検索した原文をローカル回答のために準備できませんでした。以下に検索した原文をそのまま引用しています。",
     q_local_fallback_rejected:
@@ -9427,27 +9565,26 @@ export const STRINGS: Record<Lang, Strings> = {
     q_note_scope_chip: "このノート · {note}",
     q_note_scope_hint: "このノートと直接つながったノートだけから探します",
     q_note_scope_clear: "このノートだけに質問するのをやめる",
-    q_trace_title: "検索経路",
-    q_trace_toggle: "ステップ表示",
-    q_trace_candidates: "候補",
-    q_trace_candidates_sub: "インデックス内のページ",
-    q_trace_bm25: "BM25",
-    q_trace_bm25_sub: "語彙のみのヒット（コサインなし）",
-    q_trace_dense: "ベクトル",
-    q_trace_dense_sub: "コサインのあるヒット",
-    q_trace_rrf: "RRF",
-    q_trace_rrf_sub: "k=60 順位融合 — 信頼度ではない",
-    q_trace_cap: "上限",
-    q_trace_cap_sub: "最大 {k} チャンク · ページあたり 2",
-    q_trace_floor: "下限",
-    q_trace_floor_sub: "コサイン {floor} 未満",
-    q_trace_cold: "アーカイブ",
-    q_trace_cold_on: "含む",
+    q_trace_title: "検索の詳細",
+    q_trace_toggle: "統計を表示",
+    q_trace_candidates: "ベクトル索引ページ",
+    q_trace_candidates_sub: "ベクトルを保存したページ数です。全検索候補やキーワード索引の範囲ではありません。",
+    q_trace_bm25: "類似度なし",
+    q_trace_bm25_sub: "応答でコサイン値なしと明示された箇所数です。BM25の全検索結果数ではありません。",
+    q_trace_dense: "類似度あり",
+    q_trace_dense_sub: "コサイン値を測定した応答箇所数です。検索後に測定したキーワード結果も含むため、ベクトル検索の総数ではありません。",
+    q_trace_rrf: "返された箇所",
+    q_trace_rrf_sub: "採用箇所と返された除外例の合計です。全候補や上限適用前の融合結果数ではありません。",
+    q_trace_cap: "要求上限",
+    q_trace_cap_sub: "要求した検索結果の上限は{k}箇所です。実際の結果数ではありません。",
+    q_trace_floor: "除外例",
+    q_trace_floor_sub: "関連度の基準（{floor}）を満たさず返された一部の箇所数です。除外の総数は提供されません。",
+    q_trace_cold: "保管会話の設定",
+    q_trace_cold_on: "対象可",
     q_trace_cold_off: "除外",
-    q_trace_cold_on_sub: "セッション範囲で sessions/archive/ も検索",
-    q_trace_cold_off_sub: "sessions/archive/ は除外（設定 › セマンティック検索）",
-    q_trace_params:
-      "BM25 k1=1.2 · b=0.75 · RRF k=60 · 下限 {floor} — retrieval.rs そのまま。RRF スコアは順位値であり信頼度ではありません。",
+    q_trace_cold_on_sub: "質問の範囲によって保管したセッションも検索できる設定です。実際に検索したかどうかは示しません。",
+    q_trace_cold_off_sub: "検索設定で保管したセッションを除外します。",
+    q_trace_params: "確認できない値は—で表示します。全候補、BM25・ベクトル検索の総数、除外の総数は提供されません。関連度の基準：{floor}。",
     q_cite_aria: "引用 {n} — {stem}、関連度 {sim}、{tier}",
     q_cite_sim_none: "キーワードのみ",
     q_ladder_title: "出典ラダー",

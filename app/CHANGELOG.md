@@ -8,13 +8,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Add an explicit permanent-deletion policy for manual deletion and automatic cleanup, with approval/raw-original guards, manifest-proven internal trash cleanup, and automatic-run irreversible-deletion audit records.
+- Add four handless MYCO video composites: inspecting, idea, greeting, and organizing, with transparent exports and a portable gallery.
+- Add a guarded local macOS signing command that rejects missing, ambiguous, expired, or ad-hoc identities before building.
+- Add Contour terrain, Folded ribbon, and Block city graph looks with distinct spatial layouts and solid note primitives, preserving the vault's actual links and note interactions.
+
 - **Quarantined items are reviewable.** When the distillation gate judges new
   inflow off-topic it holds the file in `_inbox/quarantine/` — until now the app
   only showed a count, so those items sat unseen. Feedback gained a Quarantine
   tab listing each one with its verdict in plain language ("off-topic:
-  similarity 0.31 vs threshold 0.38"), the days left before it is trashed, and a
-  preview of the text, plus three actions: restore it to the vault, delete it to
-  the system trash, or keep it 30 more days. The menu bar's "N awaiting review"
+  similarity 0.31 vs threshold 0.38"), the days left before eligible cleanup, and a
+  preview of the text, plus three actions: restore it to the vault, delete it using
+  the selected deletion method, or keep it 30 more days. The menu bar's "N awaiting review"
   row opens it directly. Available in English, 한국어 and 日本語.
 - **myco can now update itself.** Settings → About gained a "Check for updates"
   button, and the app checks once per launch on its own. A new version is
@@ -22,8 +27,49 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   myco — nothing ever restarts the app for you, and the banner announcing it has
   a dismiss button. Available in English, 한국어 and 日本語.
 
+### Fixed
+
+- Refresh original record and saved turn dates when new evidence is appended to an organized session, keeping later revisions discoverable without treating organization time as activity.
+- Use Korean instructions for Korean next-work recommendations, retaining the selected 4B model and its original sampling settings.
+- Retrieve dated work and follow-up evidence for topic-free next-work questions while preserving conditional advice, selected scope, source rechecks and manual Stop.
+- Keep explicit MCP session imports and updates in a bounded automatic organization queue; reuse a stable summary page across immutable revisions and retain human annotations and earlier source citations.
+- Retain title-only session updates as immutable source revisions, reject ambiguous summary identities, and guard MCP page updates with an optional expected SHA-256 revision.
+- Group recent-work evidence into concrete work themes and distinguish failed period planning from failed summary generation.
+- Route topic-free recent-work questions through a local model-selected period and date-grounded activity summary; retain selected scope, distinguish record dates and reported outcomes, and show partial evidence coverage instead of unrelated similarity facts.
+- Remove automatic local Ask cutoffs during model verification and synthesis, show elapsed time during generation, and retain manual cancellation, token bounds and source checks.
+- Prevent literal angle-bracket markup during bounded local JSON generation instead of producing a reply the answer validator must reject; retain parsed-output and source guards.
+- Recover mascot edge colour before alpha cleanup and premultiply RGB for native macOS HEVC alpha playback, reducing bright fringes in the shared poses and app clips.
+- Normalize local Ask body wikilinks only when their targets resolve to declared, verified sources; retain unknown-source, ambiguity, markup and language guards.
+- Preserve section order when checking persisted BM25 page hashes, preventing unchanged sources from being rejected after index reload.
+- Explain local Ask generation fallbacks above source quotations, provide a same-question retry, and use readable session names in citation lists while retaining verified source identities.
+- Route explicit next-work questions to conditional, source-grounded local advice without changing the factual/status policy; render declared body source IDs as verified links and opaque-source labels as readable names.
+- Recognize recent-week activity questions and show a bounded, attributed status overview with the built-in provider instead of long conversation excerpts; recognized requests and plans are not promoted to completed work.
+- Discard superseded note reads after navigation, deletion, and moving; show current missing/unreadable recovery before cached content while preserving drafts.
+- Reject deletion when its confirmation policy differs from the native persisted policy, retaining one policy snapshot throughout the operation.
+- Keep selected graph note headings and close controls above mobile graph tools.
+- Reject stale local Ask evidence when another section of the same note changes, and compare full file revisions before and after generation.
+- Preserve the complete enclosing list when inserting recalled text after a delayed editor parse; keep the note and caret unchanged and show a retry message if parsing is still incomplete.
+- Restore the main window when a running macOS app is reopened from the Dock or Finder, even if the resident notch window remains visible.
+- Restore the selected vault without probing Documents on every launch. Preserve an unavailable folder for explicit retry and show recovery actions above the page.
+- Serialize settings saves, including notch changes, so a failed earlier save cannot undo later choices or persist a failed notch state.
+- Fall back to the built-in offline provider when disconnecting a selected AI connection.
+- Apply Cosmic web link visibility to its density layer and remove residual decorative stars from void and grid backgrounds.
+- Prevent macOS from aborting when the notch is disabled by retaining and hiding its promoted window. Re-enabling reuses the window; failed changes restore the prior state and show an inline error.
+- Stop hidden notch recording and reset its transient state, including delayed microphone permission responses.
+- Keep graph settings keyboard input inside the drawer, avoiding accidental flight-mode shortcuts, and show only controls supported by each renderer.
+
 ### Changed
 
+- Home is one centred column: the right rail's "since you were away", suspect-page and contradiction panels became one notices bell in the title row, whose popover names each page problem in plain words (en/ko/ja) instead of the raw lint line. The sidebar's Home badge now shows the bell's count instead of the harvest session count, which stays on Home's Review & organize toggle.
+- Reflect, under Home's Review & organize, now finishes: the idle button no longer looks like a spinner, a run shows a spinner and "Running…", a finished one a check with its time and count ("Done · 9:42 PM · 8 found"), and a failed one says so. A new run replaces the old list. Each row leaves the list once you open it, create the missing note or dismiss it, and an emptied list says "All tidied up". Dismissals are kept per vault until the finding stops holding. Only your own notes are judged (not work/, audio/, maps or welcome.md), and rows name the note in plain words (en/ko/ja) instead of a path.
+- Review suggestions: the whole card head opens a suggestion, and Approve only shows once it is open, with a line saying what it does ("Moves 2 source file(s) to the archive folder."). The page title matches the menu name in en/ko/ja.
+- An empty note shows start chips under its "Type '/' for blocks" hint: up to three of your `slash:` templates, or on a daily note "Today's tasks / Meeting notes / Thinking it through". A click inserts it and the first keystroke hides them.
+- Small fixes: Ask answer links use the note link colour in the light theme; the activity bars' weekday letters and a source's import date follow the app language; history runs read as kind and date instead of "digest-1755740000"; page eyebrows name the sidebar group; the human-only pill has a tooltip and also thins Favorites and Recently edited; the ko slash menu hides the English keyword and the look-alike pairs get a hint line; Home's contradiction rows say the notes disagree instead of "Resolve: active"; and with a vault open Home drops the "Ask your notes" card in favour of its ask box.
+- Prioritize selected-neighborhood names across graph looks, preserve Mycelium selection after hover, and make terrain/ribbon/city relationships readable above quieter surfaces with clearer note colors.
+
+- Rework Terrain, Ribbon, and City with stronger relief and folds, physically lit surfaces, cutaway strata, streets, and architectural facades. Keep dense relationships translucent and reveal the selected note's incident links. Reuse unchanged link geometry during selection and search to avoid terrain interaction stalls.
+- Refine Spiral galaxy's arms and initial view, remove nebula haze from Spiral galaxy and Planetarium, and tune Neural, Cosmic web, and Mycelium defaults.
+- Show settings save progress and failures, and enlarge the resident-mode switch target with keyboard focus and reduced-motion support.
 - The version is 0.4.0 in all three manifests that declare it, and a test now
   fails if a future bump lands in only some of them. Every build up to here
   reported 0.3.1, so About could not tell two installs apart.

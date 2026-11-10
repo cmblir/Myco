@@ -166,7 +166,7 @@ export default function OllamaSetup({
   }
 
   // ── State 1: binary not on PATH ───────────────────────────────────────
-  if (!status.binary_installed) {
+  if (!status.binary_installed && !status.daemon_running) {
     return (
       <div
         className="card-flat"

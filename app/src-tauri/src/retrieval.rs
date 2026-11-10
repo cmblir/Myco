@@ -176,6 +176,33 @@ pub fn strip_ko_particles(query: &str) -> String {
         .join(" ")
 }
 
+/// A recall subject often says who said it ("…하자는 사용자의 발언", "what the
+/// user said about …"). Those words describe the speaker, not the utterance;
+/// the user's own first-person turn never contains them, so as BM25 terms
+/// they reward later restatements that talk about the user. Remove one such
+/// attribution at the end (Korean) or start (English); keep the query when
+/// nothing meaningful would remain.
+pub fn strip_speaker_meta(query: &str) -> String {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let re = RE.get_or_init(|| {
+        regex::Regex::new(concat!(
+            r"(?i)(?:",
+            r"\s*(?:라고|라는|다는)?\s*(?:사용자|유저|내|제|나)(?:의|가)?\s*",
+            r"(?:발언|말(?:한|했던|씀)?|요청|언급|질문|제안)(?:한|했던|인)?\s*(?:내용|것|거|부분)?\s*$",
+            r"|^\s*(?:what\s+)?(?:the\s+)?(?:user|i)\s+(?:said|asked|requested|mentioned|wrote)\s+(?:that\s+|about\s+)?",
+            r")"
+        ))
+        .expect("speaker attribution pattern")
+    });
+    let stripped = re.replace_all(query, " ");
+    let stripped = stripped.split_whitespace().collect::<Vec<_>>().join(" ");
+    if stripped.chars().count() < 2 {
+        query.split_whitespace().collect::<Vec<_>>().join(" ")
+    } else {
+        stripped
+    }
+}
+
 /// Split `"quoted phrases"` out of a query. Returns (lowercased phrases,
 /// query with the quote characters removed). An unclosed quote is treated
 /// as plain text, not a phrase.
@@ -1513,6 +1540,19 @@ mod tests {
         // NFC the jamo run bigrams to garbage that never matches typed text.
         let nfd = "\u{110C}\u{1165}\u{11BC}\u{110E}\u{1162}\u{11A8}";
         assert_eq!(tokenize(nfd), tokenize("정책"));
+    }
+    #[test]
+    fn strip_speaker_meta_removes_attribution_but_keeps_the_utterance() {
+        assert_eq!(
+            strip_speaker_meta("캔버스 내보내기 세션을 주제별로 묶자는 사용자의 발언"),
+            "캔버스 내보내기 세션을 주제별로 묶자는"
+        );
+        assert_eq!(strip_speaker_meta("배포를 미루자고 내가 말한 내용"), "배포를 미루자고");
+        assert_eq!(strip_speaker_meta("what the user said about grouping sessions"), "grouping sessions");
+        assert_eq!(strip_speaker_meta("I asked that exports keep dates"), "exports keep dates");
+        // No attribution, or nothing but the attribution: the query is kept.
+        assert_eq!(strip_speaker_meta("캔버스 내보내기  세션 정리"), "캔버스 내보내기 세션 정리");
+        assert_eq!(strip_speaker_meta("사용자의 발언"), "사용자의 발언");
     }
     #[test]
     fn parse_phrases_extracts_quoted_and_keeps_remainder() {

@@ -1,3 +1,8 @@
+import type { AskSearchContext } from "./askSearchContext";
+import type { GuidedQuestionIntent } from "./guidedQuestion";
+import type { AskExecution } from "./askExecution";
+import type { CitationEvidence } from "./citationEvidence";
+import type { ContextPackingRecord } from "./modelContextBudget";
 // Type-safe wrappers around Tauri invoke calls. Keep this file thin: it must
 // reflect the Rust command signatures in src-tauri/src/commands.rs.
 
@@ -335,6 +340,12 @@ export type TierWeights = Record<HitTier, number>;
 /** One finished Ask turn as the page showed it, from this device's
  *  per-vault history log (UX S36). Mirrors `ask_history::AskTurn`. */
 export interface AskRecord {
+  /** Request/response provenance, separate from model text and source evidence. */
+  execution?: AskExecution;
+  /** Applied search limits and measured passage omissions, separate from the answer. */
+  searchContext?: AskSearchContext;
+  /** Optional delivered original spans, not a semantic correctness verdict. */
+  citationEvidence?: CitationEvidence;
   /** Unix ms the turn finished. */
   at: number;
   q: string;
@@ -345,6 +356,7 @@ export interface AskRecord {
   /** Stems of the notes the answer cited. */
   cited: string[];
   abstained?: boolean;
+  abstainReason?: "model_evidence";
   stopped?: boolean;
   error?: string;
   /** "Ask this note" (UX S37): the turn ran over this note and its one-hop
@@ -361,7 +373,21 @@ export interface NearMiss {
 
 /** What `semantic_search` returns: the hits that cleared the dense-cosine
  *  relevance `floor`, plus up to four that did not. */
+export interface RelatedPassage {
+  page: string; stem: string; section: number; text: string;
+  source_revision: string; role: string; timestamp: number; message_id: string;
+  relation: string; anchor_page: string; anchor_section: number;
+}
+export interface RelatedContext {
+  passages: RelatedPassage[]; incomplete: boolean; scanned_pages: number;
+  source_groups?: Record<string, string>;
+}
+
 export interface SemanticSearchResult {
+  related_context?: RelatedContext;
+  candidate_embedding?: { model: string; signature: string; dim: number } | null;
+  /** Why the dense arm did not run (hits are lexical-only); absent on older backends. */
+  dense_skipped?: string | null;
   hits: ScoredChunk[];
   floor: number;
   below_floor: NearMiss[];
@@ -441,6 +467,7 @@ export interface LocalSynthesisRequest {
   requestId: string;
   expectedVault: string;
   question: string;
+  guidedQuestion?: import("./guidedQuestion").GuidedQuestionSelection;
   /** A follow-up's question-only topic; previous generated prose is excluded. */
   previousQuestion?: string;
   lang: "en" | "ko" | "ja";
@@ -715,7 +742,22 @@ export interface BackfillPromotion {
   remaining: number;
 }
 
+export interface RuntimeContextCapability {
+  model: string;
+  contextTokens: number;
+  outputTokens: number;
+  tokenizerRevision: string;
+}
+export interface RuntimeContextBinding {
+  provider: string;
+  model: string;
+  origin: AgentVaultSession;
+  roleSnapshot: RoleSnapshot;
+}
+
 export interface MycoSettings {
+  /** Saved HTTP-compatible model server endpoint; blank uses localhost:11434. */
+  ollama_url?: string;
   model_roles?: ModelRoleSettings;
   role_authorization_revision?: string;
   /** Absent in legacy payloads; false keeps recoverable deletion. */
@@ -1255,7 +1297,10 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   provider_id: string;
+  /** Requested identifier echoed by the adapter; never a reported model ID. */
   model: string;
+  /** Identifier supplied by the provider response, when present and valid. */
+  reported_model?: string;
   content: string;
   usage: { input_tokens: number; output_tokens: number } | null;
 }
@@ -1397,6 +1442,12 @@ export const ipc = {
     /** Vault-relative pages to rank against, with `scope` (Rust `paths`) —
      *  "Ask this note". Omitted = no path filter; [] matches nothing. */
     paths?: string[],
+    /** Historical end-of-day cutoff; includes verified earlier original turns. */
+    asOf?: string,
+    /** The user's explicit question type; native related-source selection
+     *  orders latest state first for progress/remaining instead of guessing
+     *  from the subject-only retrieval query. */
+    guidedIntent?: GuidedQuestionIntent,
   ) =>
     invoke<SemanticSearchResult>("semantic_search", {
       query,
@@ -1407,10 +1458,18 @@ export const ipc = {
       scope,
       tierWeights,
       paths,
+      ...(asOf ? { asOf: queryDateRange({ start: asOf, end: asOf }) } : {}),
+      ...(guidedIntent ? { guidedIntent } : {}),
     }),
   /** Read original turn dates for topic-free personal activity questions. */
   temporalRecall: (range: { start: string; end: string }, scope: AskScope, paths?: string[]) =>
     invoke<TemporalRecallResult>("temporal_recall", { range: queryDateRange(range), scope, paths }),
+  modelContextBudget: (request: RuntimeContextBinding) =>
+    invoke<RuntimeContextCapability | null>("model_context_budget", { request }),
+  countModelContext: (request: RuntimeContextBinding & { messages: { role: string; content: string }[]; tokenizerRevision: string }) =>
+    invoke<RuntimeContextCapability & { promptTokens: number }>("count_model_context", { request }),
+  recordContextPacking: (request: RuntimeContextBinding & { audit: ContextPackingRecord }) =>
+    invoke<void>("record_context_packing", { request }),
   activityRecall: (request: { expectedVault: string; origin: AgentVaultSession; roleSnapshot?: RoleSnapshot; range: { start: string; end: string }; scope: AskScope; paths?: string[] }) =>
     invoke<ActivityRecallResult>("activity_recall", { request: { ...request, range: queryDateRange(request.range) } }),
   /** 2D semantic-map coordinates (PCA over page embeddings) for every indexed page. */
