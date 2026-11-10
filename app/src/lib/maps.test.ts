@@ -94,6 +94,31 @@ beforeEach(() => {
 });
 
 describe("draftMap", () => {
+  it.each([["first", "second"], ["second", "first"]])(
+    "preserves ambiguous matching maps regardless of directory order (%s, %s)",
+    async (first, second) => {
+      listFiles.mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+        { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [first, second].map(name => ({
+          kind: "file", name: `${name}.md`, path: `/v/wiki/maps/${name}.md`,
+        })) },
+      ] }]);
+      readFile.mockResolvedValue({
+        raw: "<!-- myco:map-generated:v1 -->\nSynthetic existing map.\nHuman note.",
+        frontmatter: { cluster: "synthetic-ambiguous" },
+      });
+      complete.mockResolvedValue("Synthetic proposed relationship.");
+      await expect(draftMap("/v", "synthetic-ambiguous", ["wiki/member.md"], undefined,
+        undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined }))
+        .rejects.toMatchObject({ status: "pending", code: "validation_rejected", message: expect.stringContaining("Multiple existing maps") });
+      expect(complete).not.toHaveBeenCalled();
+      expect(captureSources).not.toHaveBeenCalled();
+      expect(previewMapRefresh).not.toHaveBeenCalled();
+      expect(applyMapRefresh).not.toHaveBeenCalled();
+      expect(publishDistillNote).not.toHaveBeenCalled();
+      expect(writeFile).not.toHaveBeenCalled();
+    },
+  );
+
   it("refreshes an already-approved automatic map in place under its captured automatic role", async () => {
     complete.mockResolvedValue("Synthetic old relationship.");
     await draftMap("/v", "synthetic-auto", ["wiki/x.md"], "llm-100", undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined });

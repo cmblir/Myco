@@ -74,6 +74,7 @@ function mapFileNodes(tree: FileNode[]): Extract<FileNode, { kind: "file" }>[] {
  *  drafted for an OLD medoid must still be found even after the label has
  *  since drifted to a different (but still current) member. Checked before
  *  drafting so a legacy map is preserved rather than duplicated after a crash.
+ *  Multiple matching pages require review instead of selecting by listing order.
  *  A matching file alone cannot complete the proposal or authorize undo;
  *  native capability recovery remains required. `ipc.readFile`'s `frontmatter`
  *  is already-parsed YAML (Rust's `vault::read_file`), so no hand-rolled
@@ -86,19 +87,25 @@ async function findExistingMapPath(
 ): Promise<string | null> {
   const tree = await ipc.listFiles(vaultPath);
   assertCurrent();
+  const matches: { path: string; hasBoundary: boolean }[] = [];
   for (const f of mapFileNodes(tree)) {
     const file = await ipc.readFile(f.path);
     assertCurrent();
     const fm = file?.frontmatter as { cluster?: unknown } | null | undefined;
     if (typeof fm?.cluster !== "string") continue;
     if (fm.cluster === cluster || memberStems.has(fm.cluster.toLowerCase())) {
-      if (typeof file.raw !== "string" || !file.raw.includes("<!-- myco:map-generated:v1 -->\n")) {
-        throw new WorkflowOperationError("pending", "unavailable", `Existing map ${f.path} has no generated-section boundary; manual recovery required`);
-      }
-      return f.path.startsWith(`${vaultPath}/`) ? f.path.slice(vaultPath.length + 1) : f.path;
+      matches.push({ path: f.path, hasBoundary: typeof file.raw === "string" && file.raw.includes("<!-- myco:map-generated:v1 -->\n") });
     }
   }
-  return null;
+  if (matches.length > 1) {
+    throw new WorkflowOperationError("pending", "validation_rejected", "Multiple existing maps match this topic; review the maps before retrying. No map was changed.");
+  }
+  const match = matches[0];
+  if (!match) return null;
+  if (!match.hasBoundary) {
+    throw new WorkflowOperationError("pending", "unavailable", `Existing map ${match.path} has no generated-section boundary; manual recovery required`);
+  }
+  return match.path.startsWith(`${vaultPath}/`) ? match.path.slice(vaultPath.length + 1) : match.path;
 }
 
 /** Canonicalize path citations and strip targets outside the selected sources.

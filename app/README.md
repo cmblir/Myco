@@ -218,6 +218,10 @@ read. Corrupt-record repair and restoring deleted maps remain incomplete.
 Refresh issues no creation/undo receipt. Manual map proposals show the native
 merged diff before applying an existing-map update. Cancelling or switching vaults
 stops the update; sources and the target revision are rechecked after approval.
+If multiple existing maps match the topic or its member-based label history,
+drafting stops before generation or publication and asks for map review. It does
+not pick a target by directory order or change either map, even for an approved
+automatic proposal.
 History offers a map selector with the latest saved before/after snapshots,
 a notice for edits since that update, and explicit empty/error/reload states.
 Snapshots stack on narrow screens and appear side by side on wide screens.

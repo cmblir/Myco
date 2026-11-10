@@ -18,6 +18,26 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: ambiguous map targets require review
+
+Existing-map discovery returned the first topic/member-label match in directory
+order. Two matching maps could therefore send an approved automatic refresh to
+one arbitrary target. Native custody remains necessary, but custody alone does
+not establish which of two otherwise valid maps the user intended to refresh.
+
+Discovery now scans the matching candidates before selecting a target. Multiple
+matches return `pending` / `validation_rejected` with a request to review the
+maps; no source packet, model request, refresh preview or publication is started.
+The single-match boundary/ownership flow is unchanged. Two reversed-directory
+regressions failed before the fix and passed afterward; the combined map,
+refresh, recovery and history suites passed 60 tests. These use synthetic mocked
+IPC and establish frontend routing only, not native custody or model semantics.
+The app README explains the ambiguity behavior for manual/automatic proposals.
+The full frontend suite passed 6,496 tests in 405 files, with type/build passing
+and lint reporting zero errors plus the two existing hook warnings. Logs:
+`/tmp/myco-map-ambiguity-{full,build,lint}.log`. Native code was unchanged and
+native/model acceptance was not rerun for this frontend routing repair.
+
 ## November 11: label bounds and opaque text backing
 
 The previous native replay showed long neighbor names clipped at the canvas
