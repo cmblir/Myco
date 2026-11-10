@@ -58,6 +58,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
+      # tauri-build refuses to compile without every externalBin for the host
+      # triple, and bin/whisper-cli is only checked in for the two macOS
+      # triples. Lint and tests never run it, so an empty stand-in will do.
+      - name: stand-in whisper-cli sidecar
+        run: |
+          touch "bin/whisper-cli-$(rustc -vV | sed -n 's/^host: //p')"
       - name: format check
         run: cargo fmt --all --check
       - name: clippy
@@ -109,6 +115,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
+      # Same stand-in as the rust job; Windows sidecars carry .exe.
+      - name: stand-in whisper-cli sidecar
+        shell: bash
+        run: |
+          touch "bin/whisper-cli-$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r').exe"
       - name: tests
         run: cargo test
 
