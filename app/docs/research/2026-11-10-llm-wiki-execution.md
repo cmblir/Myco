@@ -18,6 +18,45 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: distinguish Windows directory, replacement and expiry failures
+
+The 27 baseline access-denied failures comprise ten archive tests, three distill,
+one import ledger, two index publication, four retrieval and seven vector-index
+tests. They must not be fixed as one generic permission error. The archive
+directory capture uses `File::open`, followed by `same_identity`, which explicitly
+returns unsupported on non-Unix. Microsoft documents that obtaining a Windows
+directory handle requires `FILE_FLAG_BACKUP_SEMANTICS`
+([Directory Handles](https://learn.microsoft.com/en-us/windows/win32/fileio/obtaining-a-handle-to-a-directory)).
+Changing that open alone would merely expose the next unsupported identity check.
+
+The ledger failure occurs during replacement while a reader retains the previous
+file. The installed tempfile 3.27.0 Windows implementation uses `MoveFileExW`
+with `MOVEFILE_REPLACE_EXISTING`; it is not the directory-open path. Windows
+replacement/sharing semantics require native reproduction before choosing an
+adapter ([Moving and Replacing Files](https://learn.microsoft.com/en-us/windows/win32/fileio/moving-and-replacing-files)).
+The old reader must keep its complete bytes, the new name must publish the new
+complete bytes, and failed writes must retain the original. No delete-first,
+in-place rewrite, permission bypass or test skip was introduced.
+
+The four previously labelled `clock_expiry` failures were only expiry/seam
+assertions, not measured clock drift. `observe_expired_pair` captures native
+identity before the preparation hook; non-Unix `same_observation` explicitly
+refuses this. A failure before that hook leaves the original expired verdict,
+and a failure before commit leaves no Keep worker. The inventory now uses
+`expiry_seam_or_extension_assertion`, retaining all 340 original test names.
+Three test files now include the original expiry result in those failure messages
+instead of hiding it behind a future-time assertion or absent worker. Assertions,
+timeouts, concurrency checks and runtime behavior are unchanged.
+All four affected `actual_keep` tests passed on macOS with the acceptance feature;
+strict all-target Clippy, formatting and diff whitespace checks passed. Logs:
+`/tmp/myco-windows-keep-diagnostics-tests.log` and
+`/tmp/myco-windows-keep-diagnostics-clippy.log`. The full suite and Windows were
+not rerun for these diagnostic-only assertion changes.
+
+This narrows investigation; it does not establish Windows support or repair the
+underlying native adapters. README is unchanged because only test diagnostics and
+research records changed. No GUI, model, user vault or production marker was used.
+
 ## November 11: Windows failure inventory and pinned-template checkout fix
 
 Fetched baseline CI run 42773670030, job 129687133365 (`rust-windows`), and
@@ -34,7 +73,7 @@ large fixture payloads or runner paths.
 | Poisoned lock | 42 | Secondary failures: 29 session compiler, four settings and nine workstreams tests. Do not treat each as an independent platform defect or weaken lock errors. |
 | Access denied | 27 | Includes directory opens and ledger replacement; Windows handle/share/ACL behavior needs native investigation. |
 | Missing path/file | 6 | May be secondary to failed preparation; not established as independent missing-file defects. |
-| Expiry timing | 4 | Test seam/clock assumptions need an isolated Windows rerun. |
+| Expiry seam/extension assertion | 4 | Early identity refusal can prevent the hook; this is not evidence of clock drift. |
 | Pinned Qwen3 template | 5 | Checkout conversion reproduced and fixed below. |
 | Other assertions/unresolved | 103 | First cause not yet established. |
 

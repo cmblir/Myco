@@ -13,12 +13,12 @@
   "counts": {
     "access_denied": 27,
     "assertion_or_other_unresolved": 103,
-    "clock_expiry": 4,
     "missing_path_or_file": 6,
     "path_or_scope": 82,
     "pinned_template_checkout": 5,
     "poisoned_lock": 42,
-    "unsupported_identity_or_custody": 71
+    "unsupported_identity_or_custody": 71,
+    "expiry_seam_or_extension_assertion": 4
   },
   "entries": [
     {
@@ -558,17 +558,17 @@
     },
     {
       "test": "distill::ttl::keep_revision_tests::actual_keep_completed_before_permanent_commit_retains_the_complete_pair",
-      "group": "clock_expiry",
+      "group": "expiry_seam_or_extension_assertion",
       "panicLocation": "src/distill_keep_revision_tests.rs:265:9"
     },
     {
       "test": "distill::ttl::keep_writer_tests::actual_keep_waits_for_permanent_expiry_and_refuses_the_deleted_pair",
-      "group": "clock_expiry",
+      "group": "expiry_seam_or_extension_assertion",
       "panicLocation": "src/distill_keep_writer_tests.rs:251:14"
     },
     {
       "test": "distill::ttl::keep_writer_tests::actual_keep_waits_for_recoverable_expiry_and_refuses_the_moved_pair",
-      "group": "clock_expiry",
+      "group": "expiry_seam_or_extension_assertion",
       "panicLocation": "src/distill_keep_writer_tests.rs:251:14"
     },
     {
@@ -588,7 +588,7 @@
     },
     {
       "test": "distill::ttl::recoverable_tests::actual_keep_command_after_preparation_preserves_the_extended_pair",
-      "group": "clock_expiry",
+      "group": "expiry_seam_or_extension_assertion",
       "panicLocation": "src/distill_ttl_recoverable_tests.rs:145:9"
     },
     {
@@ -1721,5 +1721,9 @@
       "group": "poisoned_lock",
       "panicLocation": "src/workstreams.rs:3443:9"
     }
-  ]
+  ],
+  "groupNotes": {
+    "expiry_seam_or_extension_assertion": "Not evidence of clock drift. Both expiry paths capture native identity before the Keep hook; non-Unix identity refusal can prevent extension or reaching the seam. Current tests now retain the underlying run result in assertion diagnostics.",
+    "access_denied": "Directory-open failures and replacement of an existing open ledger are distinct operations. Opening directory handles alone would not implement the currently unsupported non-Unix identity checks."
+  }
 }

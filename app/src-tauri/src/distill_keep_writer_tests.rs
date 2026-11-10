@@ -248,7 +248,7 @@ fn concurrent_keep_at_expiry(permanent: bool) {
         let worker = pending
             .borrow_mut()
             .take()
-            .expect("actual expiry reached the seam");
+            .unwrap_or_else(|| panic!("expiry did not reach the Keep seam: {run_result:?}"));
         let keep_result = worker.thread.join().unwrap();
         if worker.completed_while_locked.is_none() {
             assert_eq!(worker.completion.recv().unwrap(), keep_result);

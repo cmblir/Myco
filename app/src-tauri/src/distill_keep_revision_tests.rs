@@ -258,11 +258,15 @@ fn actual_keep_completed_before_permanent_commit_retains_the_complete_pair() {
             }))
         });
         let result = run_without_embeddings(fixture.directory.path(), &DistillConfig::default());
-        assert!(result.unwrap_err().contains("retained"));
+        let error = result.unwrap_err();
+        assert!(error.contains("retained"), "{error}");
         assert_eq!(std::fs::read_to_string(&fixture.content).unwrap(), CONTENT);
         let current: serde_json::Value =
             serde_json::from_slice(&std::fs::read(&fixture.sidecar).unwrap()).unwrap();
-        assert!(current["expires"].as_i64().unwrap() > now_secs());
+        assert!(
+            current["expires"].as_i64().unwrap() > now_secs(),
+            "Keep did not extend the verdict; expiry result: {error}"
+        );
         assert_eq!(current["source_sha256"], expired["source_sha256"]);
         for entry in std::fs::read_dir(fixture.directory.path().join(".myco/distill-runs")).unwrap()
         {
