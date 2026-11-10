@@ -1,0 +1,69 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-11",
+  "revision": "54d60c5e396de615510cfb45fbc5f552219a6496",
+  "level": "bundled macOS native app with actual local inference",
+  "case": "Q2 preparation and selected-note positive probe; full Q2 not completed",
+  "status": "failed-positive-answer",
+  "binarySha256": "1d23a221384bb3ae00de4dc3f15f5e29ab964fb429d230b0975770fddba1f8c4",
+  "sandboxProfileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+  "modelId": "qwen3.5-4b-q4_k_m",
+  "network": "deny network* in unchanged native.sb",
+  "question": "Which two notes does Synthetic Graph Center link to? Answer only from the selected note and cite it.",
+  "expected": [
+    "synthetic-graph-east",
+    "synthetic-graph-west",
+    "citation to the selected source"
+  ],
+  "observations": [
+    {
+      "attempt": 1,
+      "indexedPages": 0,
+      "outcome": "explicit no-evidence result",
+      "generationRecorded": false
+    },
+    {
+      "preparation": "Settings > AI > Reindex now",
+      "indexedPages": 8,
+      "outcome": "8 pages indexed successfully"
+    },
+    {
+      "attempt": 2,
+      "scopeLabel": "이 노트 · synthetic-graph-center",
+      "scopeExplanation": "이 노트와 바로 이어진 노트에서만 찾아요",
+      "outcome": "answer rejected; retry displayed",
+      "uiMessage": "답변을 원문과 대조해 통과시키지 못했어요. 다시 시도하거나 질문 범위를 좁혀 주세요.",
+      "generationRecorded": true,
+      "telemetry": "answer command response received; local registered model qwen3.5-4b-q4_k_m",
+      "nativeFailureCode": "review_rejected",
+      "rejectedDraftCaptured": false,
+      "reviewPayloadCaptured": false,
+      "elapsedAtPostFailureInspectionMs": 119334
+    }
+  ],
+  "memory": {
+    "samples": 60,
+    "sampleIntervalSeconds": 2,
+    "maximumSampledRssKiB": 3154640,
+    "limit": "process RSS sampled after question submission, not exact peak or model-only allocation"
+  },
+  "integrity": {
+    "syntheticMarkdownFilesChecked": 14,
+    "changedFiles": [],
+    "productionActiveVaultMetadataUnchanged": true,
+    "productionMarkerRestored": false
+  },
+  "shutdown": {
+    "normalQuit": true,
+    "nativeProcessAbsent": true,
+    "samplingProcessStopped": true
+  },
+  "limits": [
+    "No successful generated answer or citation acceptance",
+    "No unrelated conflicting session fixture in this probe",
+    "No follow-up, date filtering or three-repeat acceptance",
+    "Review rejection alone does not establish whether draft or reviewer was wrong",
+    "Prior production active-vault incident remains unresolved; metadata check is relative to that existing state"
+  ],
+  "nextAction": "Replay the same original/question through native Ask diagnostic capture to retain draft and review payload; preserve the rejection gate."
+}

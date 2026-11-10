@@ -18,6 +18,44 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label repair verified in one dark viewport | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. Other widths/themes and full accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: native selected-note Ask reaches inference but fails review
+
+Rebuilt the isolated macOS acceptance app from `54d60c5e` with
+`native-app-acceptance`, offline/locked dependencies and the existing distinct
+bundle identifier. Restored its checksum-bound sandbox launcher before launch;
+the bare binary still refused startup without diagnostic isolation. The network
+and protected-directory deny rules were unchanged.
+
+The Reader's “Ask this note” action opened Ask with the selected synthetic graph
+center and the disclosed selected-note/direct-neighbor scope. The first question
+returned explicit absence because this isolated vault had zero indexed pages;
+the UI recorded no generation. Settings → AI → Reindex now then successfully
+indexed all eight synthetic wiki pages using the real local embedder.
+
+Repeating “Which two notes does Synthetic Graph Center link to? Answer only from
+the selected note and cite it.” reached the actual 4B answer command. The UI
+recorded a returned response for `qwen3.5-4b-q4_k_m`, but displayed a review failure
+and Retry rather than an answer. Native stderr recorded `review_rejected`.
+Inspection 119,334 ms after submission observed the failed state; this is an
+observation bound, not precise generation latency. Sixty two-second process-RSS
+samples peaked at 3,154,640 KiB; sampling began after submission and is not an
+exact process peak or model-only allocation.
+
+This positive probe failed. Neither the hidden draft nor review payload was
+captured, so the failure cannot yet be attributed to the generator versus the
+reviewer. Keep the acceptance gate: next replay these exact source/question
+bytes through native Ask diagnostic capture. This supplemental probe did not
+include the frozen Q2 conflicting-session fixture, follow-up, date scenarios or
+three repeated successes and does not close G2/G7.
+
+[Native receipt](2026-11-11-native-ask-selected-note.json) records the build hash,
+two outcomes, scope labels, limits and shutdown. Normal quit completed; the native
+and sampling processes are stopped. All 14 existing synthetic Markdown files
+retain their SHA-256 bytes. Production active-vault marker metadata was unchanged
+relative to the existing unresolved incident, not restored. Build log:
+`/tmp/myco-native-ask-v6-build.log`. No production code or README changed in this
+acceptance-only slice; no additional unit-suite pass is claimed.
+
 ## November 11: preserve malformed working-folder evidence during grouping
 
 At `532301d1`, a non-string `cwd` made typed sidecar decoding drop the entire
