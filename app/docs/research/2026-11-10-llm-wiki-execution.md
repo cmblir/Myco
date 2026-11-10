@@ -18,6 +18,28 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Main changes verified in synthetic browser | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Full accessibility/state/translation review remains. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retain wiki scope before follow-up project discovery
+
+G2 regression tests reproduced a second scope bypass: after a wiki-only question,
+the Korean follow-ups `어디까지 했어?` and `그거 어디까지 했어?` read
+`.myco/workstreams.json` and entered session-derived project discovery. The
+project route only checked a new explicit scope, ignoring the inherited one.
+Both tests failed against `db3cf502`; the explicit `all` override control passed.
+Baseline: `/tmp/myco-workstream-inherited-scope-baseline.log`.
+
+The route now checks `explicitScope ?? inheritedScope` before discovery, matching
+the source selection contract. The regressions assert no project facts read,
+wiki-scoped retrieval, and preservation of an explicit switch to `all`. All 236
+Ask store tests passed. README documents the follow-up behavior. These synthetic
+IPC tests do not establish native/model acceptance.
+
+Validation: all 6,485 frontend tests in 404 files passed; lint had zero errors
+and the two existing `notchDriver.ts` hook warnings; `npm run build` passed
+TypeScript and Vite (22.21 seconds). Logs are
+`/tmp/myco-workstream-inherited-scope-{tests,full,lint,build}.log`.
+No native code changed and no installed application or actual-model scenario
+was run for this slice.
+
 ## November 11: keep explicit wiki scope out of unrestricted Git history
 
 G2 inspection found a remaining scope bypass in the frontend's repository-history

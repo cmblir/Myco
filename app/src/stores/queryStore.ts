@@ -591,7 +591,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       { kind: projectGuidance.intent, name: projectGuidance.subject.trim() } : null;
     const projectQuestion = projectContext ?? activityQuestion;
     const classified = classifyWorkstreamQuestion(projectContext ?? (tp.range ? tp.cleaned : projectQuestion), lang, queryTime);
-    const workstreamQuestion: WorkstreamQuestion | null = note || explicitScope === "wiki" ? null :
+    const workstreamQuestion: WorkstreamQuestion | null = note || (explicitScope ?? inheritedScope) === "wiki" ? null :
       projectGuidance ? guidedProject : classified;
     let projectSources: WorkstreamSources | null = null;
     let projectSnapshots: { facts: string; ledger: string } | undefined;

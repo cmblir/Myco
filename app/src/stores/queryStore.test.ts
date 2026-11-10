@@ -2780,6 +2780,31 @@ describe("queryStore.ask workstream facts", () => {
     },
   );
 
+  it.each(["어디까지 했어?", "그거 어디까지 했어?"])(
+    "keeps inherited wiki scope out of project discovery for %s", async question => {
+      const search = stubExtractive();
+      const read = factsFile(JSON.stringify(facts));
+      await ask("synthetic page topic", { scope: "wiki" });
+      search.mockClear();
+      read.mockClear();
+      const turn = await koAsk(question);
+      expect(read).not.toHaveBeenCalled();
+      expect(search).toHaveBeenCalled();
+      expect(search.mock.calls.at(-1)?.[5]).toBe("wiki");
+      expect(turn?.scope).toBe("wiki");
+    },
+  );
+
+  it("lets an explicit all scope override inherited wiki scope for project discovery", async () => {
+    stubExtractive();
+    const read = factsFile(JSON.stringify(facts));
+    await ask("synthetic page topic", { scope: "wiki" });
+    read.mockClear();
+    const turn = await useQueryStore.getState().ask("그거 어디까지 했어?", "ko", askCopy(STRINGS.ko), { scope: "all" });
+    expect(read).toHaveBeenCalledWith("/v/.myco/workstreams.json");
+    expect(turn).toMatchObject({ scope: "all", needsClarification: true });
+  });
+
   it("keeps the explicitly selected all scope in the answer and saved history", async () => {
     factsFile(JSON.stringify(facts));
     useUIStore.setState({ askScope: "all", isAskScopeExplicit: true });
