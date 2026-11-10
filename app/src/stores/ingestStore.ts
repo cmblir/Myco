@@ -8,6 +8,7 @@
 // — they fall back to the blocking chat path and the UI shows stage + elapsed
 // time only.
 
+import { ingestPageChanges, type IngestReviewResult } from "../lib/ingestReview";
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "../lib/ipc";
@@ -326,6 +327,7 @@ interface IngestState {
    * that list is the model's streamed tool input (claude.rs cuts it at 160
    * chars) and stays empty for providers that stream no events. */
   changedPages: string[];
+  review: IngestReviewResult | null;
   /** Unquoted source chunks still waiting for the next bounded local pass. */
   sourceChunksPending: number;
   readCount: number;
@@ -412,6 +414,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   events: [],
   touched: [],
   changedPages: [],
+  review: null,
   sourceChunksPending: 0,
   readCount: 0,
   writeCount: 0,
@@ -491,6 +494,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       events: [],
       touched: [],
       changedPages: [],
+      review: null,
       reportPath: null,
       model: null,
       candidates: [],
@@ -561,6 +565,8 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         sourceChunksPending: result.eligibleWindows - result.nextPacket,
         seen: false,
         changedPages: completed ? [context.summaryPath] : [],
+        review: completed ? { vaultToken: options.expectedVaultToken, sourcePath: context.source.rawPath,
+          pages: ingestPageChanges([context.summaryPath], snapshot.origin.vaultPath) } : null,
         reportPath: null,
         log:
           t()
@@ -582,6 +588,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           finishedAt: Date.now(),
           seen: false,
           changedPages: [],
+          review: null,
           reportPath: null,
           log: String(error),
         });
@@ -659,6 +666,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       events: [],
       touched: [],
       changedPages: [],
+      review: null,
       sourceChunksPending: 0,
       readCount: 0,
       writeCount: 0,
@@ -1185,6 +1193,8 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       set((st) => ({
         reportPath: report ? report[0] : null,
         changedPages: changed,
+        review: { vaultToken: origin.vaultToken, sourcePath: rawRel,
+          pages: ingestPageChanges(changed, vault.path, wikiBefore, afterMtimes) },
         finishedAt: Date.now(),
         stage: "done",
         workflowStatus: st.sourceChunksPending > 0 ? "partial" : "success",
@@ -1275,6 +1285,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       events: [],
       touched: [],
       changedPages: [],
+      review: null,
       readCount: 0,
       writeCount: 0,
       model: null,

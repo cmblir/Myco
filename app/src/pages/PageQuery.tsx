@@ -499,7 +499,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         }} /> : null}
 
       {/* Turns, then the composer under them (UX S32); a fresh page has the
-          composer first and its examples below, as before. The container is
+          composer first with its examples alongside it. The container is
           what the narrow rules measure: a split pane is narrow too. */}
       <div className="ask-flow">
         {turns.length ? (
@@ -839,6 +839,30 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
               <AskScopePicker t={t} scope={projectScope ?? askScope} disabled={busy || isOpeningVault} onChange={setAskScope} />
             )}
           </div>
+        {mode === "ask" && turns.length === 0 && !busy ? (
+          <div className="ask-composer__suggestions">
+            <MascotClip {...SURFACE_CLIPS.askEmpty} size={48} />
+            <div className="ask-examples" aria-label={copy.askExamples}>
+              <span className="ask-examples__label">{copy.askExamples}</span>
+              {copy.examples.map((example) => (
+                <button
+                  key={example}
+                  type="button"
+                  className="btn"
+                  disabled={!currentVault || isOpeningVault}
+                  onClick={() => {
+                    setGuidedIntent(null);
+                    setQ(example);
+                    questionRef.current?.focus();
+                  }}
+                >
+                  {example}
+                  <Icon name="arrowR" size={14} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
         </div>
         {mode === "ask" ? (
           <details
@@ -945,36 +969,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           </details>
         ) : null}
 
-        {mode === "ask" && turns.length === 0 && !busy ? (
-          // Empty chat — MYCO keeps the blank space company (idle surface, so
-          // the mascot is welcome here; it never interrupts a running chat).
-          <div className="query-empty" style={{ marginTop: 24 }}>
-            <MascotClip {...SURFACE_CLIPS.askEmpty} />
-            <p className="muted">
-              {t.q_empty ??
-                "Ask the wiki anything — answers cite your own pages."}
-            </p>
-            <div className="ask-examples" aria-label={copy.askExamples}>
-              <span className="ask-examples__label">{copy.askExamples}</span>
-              {copy.examples.map((example) => (
-                <button
-                  key={example}
-                  type="button"
-                  className="btn"
-                  disabled={!currentVault}
-                  onClick={() => {
-                    setGuidedIntent(null);
-                    setQ(example);
-                    questionRef.current?.focus();
-                  }}
-                >
-                  {example}
-                  <Icon name="arrowR" size={14} />
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : null}
+
       </div>
 
       <AudioOverviewPanel t={t} />

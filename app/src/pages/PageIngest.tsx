@@ -38,6 +38,8 @@ import type {
   JudgedEntry,
 } from "../stores/ingestStore";
 import IngestProgress from "../components/IngestProgress";
+import IngestReviewList from "../components/IngestReviewList";
+import { ingestPageChanges } from "../lib/ingestReview";
 import MycoMotion from "../components/MycoMotion";
 import type { MycoMotionVariant } from "../components/MycoMotion";
 import MascotClip from "../components/MascotClip";
@@ -152,6 +154,10 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
   const gated = useIngestStore((s) => s.gated);
   const runId = useIngestStore((s) => s.runId);
   const written = useIngestStore((s) => s.changedPages);
+  const review = useIngestStore((s) => s.review);
+  const vaultToken = useVaultStore((s) => s.vaultToken);
+  const isOpeningVault = useVaultStore((s) => s.isOpeningVault);
+  const pageMeta = useVaultStore((s) => s.adjacency?.meta);
   const startIngest = useIngestStore((s) => s.startIngest);
   const resetIngest = useIngestStore((s) => s.reset);
 
@@ -469,7 +475,9 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
   }, [judged]);
   const refusedTotal = tally.drop + tally.log;
 
-  const runRoot = runLinkRoot(storedVaultPath, currentVault?.path);
+  const runRoot = !isOpeningVault && (!review || review.vaultToken === vaultToken)
+    ? runLinkRoot(storedVaultPath, currentVault?.path) : null;
+  const reviewPages = review?.pages ?? ingestPageChanges(written, storedVaultPath ?? "");
 
   const todayIntake = (inflow?.inboxToday ?? 0) + (inflow?.sessionsToday ?? 0);
   const rail = railSteps(stage, plan.length, cancelledAt, t, workflowStatus);
@@ -1129,7 +1137,7 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
 
         {stage === "done" && startedAt && finishedAt ? (
           <div
-            className="card"
+            className="card intake-success"
             style={{
               marginTop: 16,
               padding: 18,
@@ -1169,6 +1177,11 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {runRoot && reviewPages.length > 0 ? <button type="button"
+                className={`btn${completed ? " btn-primary" : ""}`}
+                onClick={() => setRoute(`page:${runRoot}/${reviewPages[0].path}`)}>
+                {copy.reviewNotes}
+              </button> : null}
               <button
                 className="btn"
                 onClick={() => {
@@ -1186,29 +1199,13 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
                   {t.ing_open_report}
                 </button>
               ) : null}
-              <button className="btn btn-primary" onClick={completed ? resetForAnother : resetForRetry}>
+              <button className={`btn${!completed || !runRoot || reviewPages.length === 0 ? " btn-primary" : ""}`} onClick={completed ? resetForAnother : resetForRetry}>
                 {completed ? t.ing_run_again : t.workflow_review_retry}
               </button>
             </div>
-            {runRoot && written.length > 0 ? (
-              <div style={{ flexBasis: "100%" }} data-testid="ingest-touched">
-                <div className="muted" style={{ fontSize: 13, marginBottom: 6 }}>
-                  {t.ing_touched_n.replace("{n}", String(written.length))}
-                </div>
-                <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
-                  {written.map((path) => (
-                    <button
-                      key={path}
-                      type="button"
-                      className="btn btn-ghost"
-                      style={{ fontSize: 12.5 }}
-                      onClick={() => setRoute(`page:${runRoot}/${path}`)}
-                    >
-                      <Icon name="page" size={12} /> {path}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {runRoot && reviewPages.length > 0 ? (
+              <IngestReviewList pages={reviewPages} root={runRoot} sourcePath={review?.sourcePath}
+                meta={pageMeta} lang={lang} onOpen={path => setRoute(`page:${path}`)} />
             ) : null}
           </div>
         ) : null}

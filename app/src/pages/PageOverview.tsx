@@ -198,7 +198,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
           <HomeAsk t={t} />
         </div>
       ) : null}
-      <EverydayHome t={t} hasVault={Boolean(currentVault)} />
+      <EverydayHome t={t} hasVault={Boolean(currentVault)} compact={(visitedAt ?? 0) > 0} />
       <HomeGuide t={t} />
       {currentVault && !isManagementVisible ? recentContent : null}
       {currentVault ? (

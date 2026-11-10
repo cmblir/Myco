@@ -25,6 +25,12 @@ interface IntakeCopy {
   examples: readonly [string, string, string];
   searchDetails: string;
   sourcesTitle: string;
+  reviewNotes: string;
+  changedNotes: string;
+  sourceOriginal: string;
+  created: string;
+  updated: string;
+  changed: string;
 }
 
 export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
@@ -57,6 +63,12 @@ export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
     ],
     searchDetails: "Search details",
     sourcesTitle: "Sources for this answer",
+    reviewNotes: "Review notes",
+    changedNotes: "Notes to review",
+    sourceOriginal: "View original source",
+    created: "Created",
+    updated: "Updated",
+    changed: "Changed",
   },
   ko: {
     addTitle: "자료를 넣으면, 쓸 수 있는 노트로",
@@ -87,6 +99,12 @@ export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
     ],
     searchDetails: "검색 세부정보",
     sourcesTitle: "답변의 출처",
+    reviewNotes: "노트 검토하기",
+    changedNotes: "검토할 노트",
+    sourceOriginal: "원본 자료 보기",
+    created: "새로 작성됨",
+    updated: "갱신됨",
+    changed: "변경됨",
   },
   ja: {
     addTitle: "資料を、役立つノートに",
@@ -117,5 +135,11 @@ export const INTAKE_COPY: Record<Lang, IntakeCopy> = {
     ],
     searchDetails: "検索の詳細",
     sourcesTitle: "回答の出典",
+    reviewNotes: "ノートを確認する",
+    changedNotes: "確認するノート",
+    sourceOriginal: "元の資料を表示",
+    created: "作成済み",
+    updated: "更新済み",
+    changed: "変更あり",
   },
 };

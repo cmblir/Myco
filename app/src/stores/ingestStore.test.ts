@@ -135,6 +135,10 @@ describe("native-bound inbox compilation action", () => {
       reportPath: null });
     expect(useIngestStore.getState().changedPages).not.toContain(context.indexPath);
     expect(useIngestStore.getState().changedPages).not.toContain(context.logPath);
+    expect(useIngestStore.getState().review).toEqual({
+      vaultToken: options.expectedVaultToken, sourcePath: context.source.rawPath,
+      pages: [{ path: context.summaryPath, change: "changed" }],
+    });
     expect(write).not.toHaveBeenCalled(); expect(mtimes).not.toHaveBeenCalled(); expect(recapture).not.toHaveBeenCalled();
   });
 
@@ -1395,6 +1399,10 @@ describe("builtin-local offline ingest", () => {
       "wiki/log.md",
       "wiki/source-my-source.md",
     ]);
+    expect(useIngestStore.getState().review).toMatchObject({
+      vaultToken: "synthetic-ui-opening", sourcePath: "raw/my-source.md",
+      pages: expect.arrayContaining([{ path: "wiki/source-my-source.md", change: "created" }]),
+    });
   });
 
   it("links a transcript candidate through the summary the vault has", async () => {

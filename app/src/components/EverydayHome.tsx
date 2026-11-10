@@ -11,12 +11,27 @@ import "../styles/everyday.css";
 export default function EverydayHome({
   t,
   hasVault,
+  compact = false,
 }: {
   t: Strings;
   hasVault: boolean;
+  compact?: boolean;
 }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const setSettingsTab = useUIStore((s) => s.setSettingsTab);
+  if (compact && hasVault) return (
+    <section className="everyday-home everyday-home--compact" aria-label={t.nav_overview}>
+      <MycoMotion variant="idle" size={56} />
+      <div className="everyday-quick-actions">
+        <Button variant="primary" onClick={() => setRoute("ingest")}>
+          <Icon name="plus" size={18} />{t.home_add}
+        </Button>
+        <Button onClick={() => void promptNewNote(t)}>
+          <Icon name="edit" size={18} />{t.home_write}
+        </Button>
+      </div>
+    </section>
+  );
   return (
     <section className="everyday-home" aria-label={t.nav_overview}>
       <div className="everyday-hero">
