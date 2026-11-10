@@ -5100,6 +5100,7 @@ pub(crate) fn publish_distill_note_dispatch(
                 }
                 let source_id = map_source_snapshot_id
                     .ok_or("map publication requires its native source snapshot")?;
+                crate::map_content::validate_new_draft(content)?;
                 crate::map_sources::with_checked_publication(
                     root,
                     map_sources,

@@ -40,6 +40,7 @@ pub(crate) mod local_query_plan;
 pub mod local_synthesis;
 pub mod local_transform;
 pub mod machine_session;
+mod map_content;
 mod map_source_io;
 pub(crate) mod map_sources;
 pub mod mcp_native;

@@ -143,6 +143,9 @@ text outside that block remain separate from the generated section. These public
 descriptors are not ownership credentials and do not enable existing-map refresh.
 Empty output or output containing reserved section markers stays pending for retry
 without publishing a map. Durable native refresh authority is still required.
+The native publication command independently checks the versioned boundary and
+exact generated-body hash before writing. A matching descriptor proves content
+consistency only, not source entailment or ownership of an existing map.
 
 New topic-map drafts use at most twelve selected member pages, bounded body
 excerpts, full relative-path citations and source revisions. Maps do not add

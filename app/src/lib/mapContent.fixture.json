@@ -1,0 +1,16 @@
+{
+  "cluster": "Synthetic topic",
+  "body": "Synthetic relationship [[wiki/synthetic.md]].\n",
+  "evidence": [
+    {
+      "path": "wiki/synthetic.md",
+      "link": "[[wiki/synthetic.md]]",
+      "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "excerpt": "Synthetic source.",
+      "sourceChars": 17,
+      "truncated": false
+    }
+  ],
+  "created": "2026-11-10",
+  "content": "---\ntitle: \"Map: Synthetic topic\"\ntype: map\ncluster: \"Synthetic topic\"\ncreated: 2026-11-10\nconfidence: medium\nstatus: draft\nmap_evidence: {\"version\":1,\"members\":[{\"path\":\"wiki/synthetic.md\",\"revision\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\",\"sourceChars\":17,\"excerptChars\":17,\"truncated\":false}]}\nmap_generated: {\"version\":1,\"bodyRevision\":\"b02e8546480178fbb0dc1cc8ee30df1ef1aa730b1dcfad7d750189bab21d5452\"}\ntags: [map]\n---\n\n<!-- myco:map-generated:v1 -->\nSynthetic relationship [[wiki/synthetic.md]].\n<!-- /myco:map-generated -->\n"
+}

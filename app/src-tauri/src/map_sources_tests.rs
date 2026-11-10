@@ -176,6 +176,33 @@ fn map_sources_publication_command_requires_exact_grant_and_preserves_update_bou
         let map = ManagedArtifact::Map {
             key: "synthetic".into(),
         };
+        let map_body = "Synthetic map.\n";
+        let content = format!(
+            "---\nmap_generated: {{\"version\":1,\"bodyRevision\":\"{}\"}}\n---\n\n<!-- myco:map-generated:v1 -->\n{map_body}<!-- /myco:map-generated -->\n",
+            crate::importers::wikify::source_revision(map_body)
+        );
+        for invalid in [
+            "Synthetic map without generated boundaries.".to_string(),
+            content.replace("Synthetic map.", "Edited without updating the hash."),
+            format!("{content}Unmarked prose."),
+        ] {
+            let malformed = publish_distill_note_dispatch(
+                &vault,
+                &publications,
+                &sources,
+                &origin,
+                "llm-invalid-map-section",
+                &map,
+                &invalid,
+                None,
+                Some(&role),
+                Some(&captured.snapshot_id),
+            );
+            assert!(malformed
+                .unwrap_err()
+                .contains("map generated section is invalid"));
+            assert!(!root.join("wiki/maps/synthetic.md").exists());
+        }
         let publish = |artifact: &ManagedArtifact, expected: Option<&str>, id: Option<&str>| {
             publish_distill_note_dispatch(
                 &vault,
@@ -184,7 +211,7 @@ fn map_sources_publication_command_requires_exact_grant_and_preserves_update_bou
                 &origin,
                 "llm-map-source",
                 artifact,
-                "Synthetic map.",
+                &content,
                 expected,
                 Some(&role),
                 id,
@@ -207,13 +234,13 @@ fn map_sources_publication_command_requires_exact_grant_and_preserves_update_bou
         assert_eq!(receipt.path, "wiki/maps/synthetic.md");
         assert_eq!(
             std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
-            "Synthetic map."
+            content
         );
         release(&sources, &origin, &captured.snapshot_id).unwrap();
         assert!(publish(&map, None, Some(&captured.snapshot_id)).is_err());
         assert_eq!(
             std::fs::read_to_string(root.join(&receipt.path)).unwrap(),
-            "Synthetic map."
+            content
         );
     });
 }
