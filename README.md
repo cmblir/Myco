@@ -210,6 +210,8 @@ reads pages, traverses links, and answers with citations; optional write tools
 are confirmed per call and never touch `raw/`. Audio overview renders an
 answer's cited pages as a two-host spoken deep-dive, offline.
 
+When Graph opens with the system’s reduced-motion setting enabled, direction arrows remain visible without travelling along links.
+
 **Graph** — the whole vault as a 3D cosmic web (three.js + d3-force-3d).
 Louvain communities get hues and auto-named cluster labels, hubs bloom, orphans
 and ghost links show like Obsidian. Drag stars (the sim re-heats), isolate

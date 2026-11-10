@@ -2646,7 +2646,7 @@ export class GraphScene {
     const m = new THREE.Matrix4();
     const ZERO = new THREE.Vector3(0, 0, 0);
     for (let i = 0; i < this.edgePairs.length; i++) {
-      let p = this.arrowPhase[i] + this.arrowSpeed[i] * dt;
+      let p = this.arrowPhase[i] + this.arrowSpeed[i] * (this.reducedMotion ? 0 : dt);
       p -= Math.floor(p); // wrap to [0,1): reaches target, respawns at source
       this.arrowPhase[i] = p;
       const [s, t] = this.edgePairs[i];
@@ -5286,7 +5286,8 @@ export class GraphScene {
         }
       }
       // Flying arrows: the fleet streams source→target whenever arrows are on
-      // (an explicit toggle, so it runs even with ambient motion off).
+      // (an explicit toggle, so it runs even with ambient motion off). Reduced
+      // motion keeps each arrow's phase fixed while its geometry follows layout.
       if (this.arrows.visible && !this.interacting) this.animateArrows(dt);
       // Trace comet animates regardless of the ambient-motion toggle — it's an
       // explicit interaction, not idle ambience. No-ops when no trace is active.

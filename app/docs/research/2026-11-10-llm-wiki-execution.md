@@ -442,6 +442,17 @@ successful check was inferred from that rejected invocation. Logs are under
 
 ## Next executable slices
 
+G6 reduced-motion inspection reproduced direction arrows advancing despite the
+scene's reduced-motion flag: the regression expected phase 0.25 after two ticks
+but observed 0.75 (`graphScene.motion.test.ts:24`). The arrow renderer now keeps
+phase fixed while recomputing visible geometry for layout changes. Normal arrow
+travel remains covered. Five related Graph files passed 31 tests; the complete
+frontend suite passed 396 files / 6,409 tests in 63.76s. Full lint, TypeScript and
+production build passed (Vite 11.28s; existing hook/import warnings remain).
+README descriptions were updated. This is code/render-math evidence, not visual
+or installed accessibility acceptance. Live OS preference changes still need
+Graph reopening, and other motion/state/screen-reader gates remain incomplete.
+
 The [decoder/input audit](2026-11-10-request-decoder-audit.json) then verified
 all fourteen recorded input texts, speakers and payload hashes against the
 frozen controls. The existing opt-in vocabulary-masking matrix ran offline with

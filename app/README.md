@@ -149,6 +149,8 @@ Existing maps are preserved: durable ownership and automatic refresh of app-owne
 sections are still incomplete. Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
+When Graph opens with system reduced motion enabled, direction arrows retain their visible geometry without advancing along links. Live changes to the system preference still require reopening Graph.
+
 ### Writing
 
 | | |
