@@ -268,6 +268,9 @@ path as published-but-pending without counting the proposal as done.
 Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
+Ingest exposes one primary page heading and a subordinate intake heading for
+screen-reader heading navigation.
+
 Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight or orbit retarget completes at its destination immediately. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.
 
 ### Writing

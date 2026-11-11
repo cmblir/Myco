@@ -49,6 +49,13 @@ describe("completed ingest review links", () => {
 
   const render = (): string => renderToStaticMarkup(createElement(PageIngest, { t: STRINGS.en }));
 
+  it("keeps one page heading and a subordinate intake heading", () => {
+    fixture.ingest = { stage: "idle", vaultPath: "/synthetic/vault" };
+    const html = render();
+    expect(html.match(/<h1\b/g)).toHaveLength(1);
+    expect(html).toContain('<h2 class="u-hero__title" id="sv-judge-title">');
+  });
+
   it("keeps report, note and source links for their originating opening", () => {
     const html = render();
     expect(html).toContain(STRINGS.en.ing_open_report);

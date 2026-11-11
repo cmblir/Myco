@@ -591,6 +591,7 @@ function IngestForm({ t }: { t: Strings }): JSX.Element {
         {/* ── 2 · Judgement — the hero ─────────────────────────────────── */}
         <Hero
           titleId="sv-judge-title"
+          headingLevel={2}
           asset={
             heroClip ? (
               // The three ingest clips share this one slot, so one box size.
