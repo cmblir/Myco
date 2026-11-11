@@ -92,6 +92,11 @@ tauri-plugin-process = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.186"
 
+# Exercise native Windows handle identity before enabling publication there.
+# This exact Microsoft binding version is already present transitively.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 # macOS notch surface (src/notch.rs): NSScreen safe-area/auxiliary-area
 # geometry, and promoting a Tauri window to a status-level non-activating
 # NSPanel. Both crates are already in the lockfile as tao/wry dependencies, so

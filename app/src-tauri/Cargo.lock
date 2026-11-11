@@ -3011,6 +3011,7 @@ dependencies = [
  "unicode-normalization",
  "url",
  "window-vibrancy",
+ "windows-sys 0.61.2",
  "wiremock",
  "zip",
 ]
