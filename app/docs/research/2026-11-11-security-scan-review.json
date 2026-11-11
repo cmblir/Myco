@@ -1,0 +1,140 @@
+{
+  "reviewedHead": "8c0fc807c5979587c5f7f31072b20f6514e0eb91",
+  "checkRunId": 130334731502,
+  "reportedConclusion": "failure",
+  "reportedLocations": 17,
+  "locations": [
+    {
+      "commit": "d51e7c8e6da22e8f8aefaaa2326b1008beec049e",
+      "file": "app/docs/research/2026-11-10-native-compiler-v9.json",
+      "line": 72,
+      "field": "authorizationRevision",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "d51e7c8e6da22e8f8aefaaa2326b1008beec049e",
+      "file": "app/docs/research/2026-11-10-native-compiler-v9.json",
+      "line": 771,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "72785222e4619705c17b7c4440bffc90c0cc4987",
+      "file": "app/docs/research/2026-11-10-native-compiler-baseline.json",
+      "line": 66,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "72785222e4619705c17b7c4440bffc90c0cc4987",
+      "file": "app/docs/research/2026-11-10-native-compiler-baseline.json",
+      "line": 578,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "d51e7c8e6da22e8f8aefaaa2326b1008beec049e",
+      "file": "app/docs/research/2026-11-10-native-compiler-v9.json",
+      "line": 67,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "72785222e4619705c17b7c4440bffc90c0cc4987",
+      "file": "app/docs/research/2026-11-10-native-compiler-baseline.json",
+      "line": 64,
+      "field": "authorizationRevision",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "72785222e4619705c17b7c4440bffc90c0cc4987",
+      "file": "app/docs/research/2026-11-10-native-compiler-baseline.json",
+      "line": 685,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "72785222e4619705c17b7c4440bffc90c0cc4987",
+      "file": "app/docs/research/2026-11-10-native-compiler-baseline.json",
+      "line": 59,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "d51e7c8e6da22e8f8aefaaa2326b1008beec049e",
+      "file": "app/docs/research/2026-11-10-native-compiler-v9.json",
+      "line": 74,
+      "field": "openingToken",
+      "classification": "synthetic runtime identifiers in terminated native test"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 675,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 655,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 670,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 625,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 750,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 660,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 740,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    },
+    {
+      "commit": "ef8b33eb6494271a73a4a4b52f9ff7f089e779b8",
+      "file": "app/docs/research/2026-11-11-windows-role-first-causes.json",
+      "line": 630,
+      "field": "panicExcerpt",
+      "classification": "synthetic Windows test failure with runtime identifiers and content digests"
+    }
+  ],
+  "evidence": {
+    "openingToken": "vault_session.rs::process_identity generates a 16-byte process-local nonce; opening_token adds the generation counter.",
+    "authorizationRevision": "role_authorization.rs::random_id generates a 32-byte native revision; recorded values belong to terminated synthetic compiler tests.",
+    "macosReceipts": "Both recorded commands invoke cached_model_runs_native_source_bound_compilation with network denied and terminal exit code 101.",
+    "windowsReceipts": "Reported panic excerpts name synthetic temporary vaults and native compiler test functions; the errors explicitly report unsupported platform custody."
+  },
+  "assessment": "Reported locations contain ephemeral synthetic test identifiers and content digests, not external-service credentials. No raw identifier values are copied into this review.",
+  "externalCheckResolved": false,
+  "actionsNotTaken": [
+    "No GitGuardian dismissal or bypass.",
+    "No history rewrite, force push or release."
+  ],
+  "remaining": "External scanner classification remains unresolved; the check is still failed."
+}
