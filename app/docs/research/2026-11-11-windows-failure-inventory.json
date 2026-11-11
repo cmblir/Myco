@@ -9,16 +9,16 @@
     "failed": 340,
     "ignored": 29
   },
-  "classification": "Diagnostic grouping, not proof that every assertion has an identified root cause. The first matching group wins; child-process diagnostics remain attached to their parent test. Two activity recall assertions were subsequently reclassified through code inspection; causeEvidence records that limit.",
+  "classification": "Diagnostic grouping, not proof that every assertion has an identified root cause. The first matching group wins; child-process diagnostics remain attached to their parent test. Two activity recall and eleven temporal recall assertions were subsequently reclassified through baseline/current code and historical log inspection; causeEvidence records that limit.",
   "counts": {
     "access_denied": 27,
-    "assertion_or_other_unresolved": 101,
+    "assertion_or_other_unresolved": 90,
+    "expiry_seam_or_extension_assertion": 4,
     "missing_path_or_file": 6,
-    "path_or_scope": 84,
+    "path_or_scope": 95,
     "pinned_template_checkout": 5,
     "poisoned_lock": 42,
-    "unsupported_identity_or_custody": 71,
-    "expiry_seam_or_extension_assertion": 4
+    "unsupported_identity_or_custody": 71
   },
   "entries": [
     {
@@ -1576,58 +1576,69 @@
     },
     {
       "test": "temporal_recall::tests::altered_projection_dates_and_unindexed_raw_never_prove_a_duplicate",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:1024:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:1024:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::candidate_page_and_byte_budgets_count_excluded_reads",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:790:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:790:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::archive_opt_in_scope_and_explicit_paths_are_preserved",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:695:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:695:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::complete_dated_sources_outside_range_are_honestly_empty",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:730:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:730:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::exact_raw_revision_projection_dedup_preserves_revisions_occurrences_and_scope",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:973:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:973:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::long_turn_and_nested_headings_keep_the_original_role_date_and_section",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:930:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:930:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::missing_invalid_and_legacy_dates_never_borrow_file_dates",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:587:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:587:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::output_and_excerpt_budgets_keep_newest_originals_and_mark_incomplete",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:882:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:882:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::per_page_evidence_is_bounded_and_reports_truncation",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:757:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:757:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::resumed_old_session_uses_original_timestamps_and_all_roles",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:504:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:504:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "temporal_recall::tests::viewer_local_bounds_are_inclusive_then_exclusive",
-      "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/temporal_recall.rs:556:9"
+      "group": "path_or_scope",
+      "panicLocation": "src/temporal_recall.rs:556:9",
+      "causeEvidence": "Baseline 121c0fa2 temporal_recall::recall converts a confined native relative path with Path::to_str and then requires slash prefixes in is_original. Windows session/raw paths therefore fail before metadata/read, producing the recorded zero counts or incomplete result. Current b240b774 normalization uses vault_path::relative_key. This is source-inspected first-cause attribution, not a Windows rerun or proof that no later failure remains."
     },
     {
       "test": "validator::tests::legacy_flat_citation_resolves_one_unique_archived_source",

@@ -17,7 +17,10 @@ Status: implementation and Windows execution remain incomplete.
 
 The [baseline failure inventory](2026-11-11-windows-failure-inventory.json)
 remains historical evidence, not a test result for the current revision. Its
-101 unresolved assertion/other cases still need first-cause investigation.
+90 unresolved assertion/other cases still need first-cause investigation.
+Eleven temporal-recall assertions were reclassified by inspecting the baseline
+native-path conversion, slash-only source filter and recorded zero/incomplete
+results. The current portable-key repair is not a Windows runtime pass.
 
 ## Current dependency chain
 

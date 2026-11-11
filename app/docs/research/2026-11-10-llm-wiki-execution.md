@@ -18,6 +18,19 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: temporal Windows failure first-cause audit
+
+The historical Windows log reports eleven temporal-recall assertions with zero
+results or unexpected incomplete coverage. At baseline `121c0fa2`, the shared
+read path converts a confined relative native path using `Path::to_str`, then
+requires `sessions/` or `raw/conversations/` in `is_original`. Windows backslash
+paths are rejected before metadata or source reads. Current `b240b774` already
+uses `vault_path::relative_key`; no further production change was needed.
+These eleven entries are now classified as path/scope with explicit
+source-inspection evidence, reducing unresolved assertions from 101 to 90.
+Historical pass/fail totals are unchanged. Windows rerun and possible later
+failures remain unverified, and the owner has no available Windows PC/VM.
+
 ## November 11: organization inventory uses portable source keys
 
 The Windows failure audit found a remaining native-string inventory boundary in
