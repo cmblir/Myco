@@ -12,11 +12,38 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | 88551297 passed 2,219 Windows tests with 190 failures and 31 ignored. All 14 handle diagnostics pass, including absolute-path replacement and read-lease invalidation. Timestamp-only mutation tests fluctuate without a production fix. Production index read-lease integration awaits hosted validation; model cache and publication custody remain incomplete. |
+| G3 Windows | Partial; current hosted run failed | 8c0fc807 passed 2,222 Windows tests with 191 failures and 31 ignored. All 17 handle diagnostics and production index read-lease regressions pass. The timestamp-only model cache still fails. Model lease integration and parent-handle rename probes await hosted validation; publication custody remains incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Bundled macOS editor-save/restart and two changed-source refreshes preserve the human paragraph and one map. Actual model output falsely claims partial member coverage; semantic acceptance fails. Remaining native/UI failure cases are open; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: hosted index invalidation passes; model cache failure reproduced
+
+[Windows run 42963329351](2026-11-11-windows-index-lease-runtime-review.json)
+at `8c0fc807` finished with 2,222 passed, 191 failed and 31 ignored. All 17 native
+handle diagnostics passed. The production index reader rejects the existing
+same-stamp mutation and 16 writes from one retained writer. Existing writable
+mappings prevent a lease, creating a writable mapping invalidates one, and opening
+a different object is rejected even with matching bytes. These results validate
+the bounded-read slice, not publication custody or installed acceptance.
+
+The sole additional top-level failure against `88551297` is
+`local_model::tests::same_size_modified_time_preserved_edit_still_rehashes`:
+`src\local_model.rs:1258:9` failed the assertion that `resolve_with_cache(...).is_err()`.
+The model lease fix in `b647b8d1` is not part of this failing run. A nested child
+process failure is excluded from the top-level failure delta. Frontend, Linux,
+both macOS architectures and audit passed.
+
+The next native experiment uses `NtSetInformationFile(FileRenameInformationEx)`
+with a retained parent handle and a single relative leaf. It tests parent-path
+replacement, unchanged unrelated destination bytes, no-replace collision and
+replacement while preserving an old reader. The official
+[rename structure](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information)
+and [user-mode entry point](https://learn.microsoft.com/en-us/windows-hardware/drivers/ddi/ntifs/nf-ntifs-ntsetinformationfile)
+provide the contract, and the pinned `windows-sys 0.61.2` already exposes it.
+Only test bindings are enabled; no production rename path changes. Strict GNU
+Windows-target probe Clippy and formatting passed; hosted execution is pending.
 
 ## November 11: model verification retains invalidation through cache and loading
 

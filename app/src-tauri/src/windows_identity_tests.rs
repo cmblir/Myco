@@ -187,3 +187,6 @@ mod rename;
 
 #[path = "windows_oplock_tests.rs"]
 mod oplock;
+
+#[path = "windows_relative_rename_tests.rs"]
+mod relative_rename;

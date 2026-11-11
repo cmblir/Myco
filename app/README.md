@@ -724,10 +724,10 @@ timestamp-only cache allowed stale readiness after same-size overwrites.
 Windows index reads also check retained file identity, change time and link count
 before returning a byte-bound snapshot. They now require an advisory native read
 lease throughout the bounded read and reject an invalidated or unsupported lease.
-This closes the timestamp-only observation gap in the implementation; hosted
-validation of the production integration is still pending.
+Hosted Windows tests pass the production read integration, including repeated
+same-size/restored-time writes and existing/new writable memory mappings.
 These Windows cache/read guards are not accepted as complete; see the
-[latest hosted runtime receipt](docs/research/2026-11-11-windows-oplock-runtime-review.json).
+[latest hosted runtime receipt](docs/research/2026-11-11-windows-index-lease-runtime-review.json).
 The [local role comparison](docs/research/2026-10-05-local-model-routing.md)
 records separate Ask/import model selection, organization drafts and remaining
 retrieval and generation quality limits. Local Ask checks every chunk of each
