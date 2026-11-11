@@ -18,6 +18,29 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: selected-document recall catalog path repair
+
+The previous goal turn made implementation and verified model progress. Run
+42947471200 at `83eaf754` is live; its Windows handle diagnostic is still running.
+No pass is inferred from a normalized workflow step conclusion.
+
+The previous Windows raw log also reproduces a separate date-planner failure:
+`planner_catalog_keeps_scope_paths_dates_and_excludes_private_passages_from_prompt`
+fails with `no dated records available for recall planning`. The catalog checks
+an already-confined native `Path::to_str` value against portable selected-page
+keys. On Windows, separators differ and the selected page is silently excluded
+from this bounded catalog. The repair uses existing `vault_path::relative_key`
+before the unchanged scope, archive and exact-path filters. Confinement, read
+budgets, revision checks and cancellation remain in place.
+
+The existing scope/privacy regression now selects a nested Unicode/space page
+and retains its assertions that unrelated dates, paths and private body text
+do not reach the planner prompt. All 12 local query-plan tests pass; strict
+feature-enabled all-target Clippy and formatting pass. Logs:
+`/tmp/myco-query-plan-path-tests.log`, `/tmp/myco-query-plan-path-clippy.log`.
+README describes the portable date-catalog boundary. Windows verification of
+this follow-up remains pending; it does not close native identity/custody gates.
+
 ## November 11: Windows closure rerun and map cutoff reproduction
 
 Run 42942676290 at `b8f38eeb` completed with every non-Windows job passing.
