@@ -247,6 +247,9 @@ role. Source checks and new-map publication share the cooperating-writer lock;
 external edits are checked before and after writing, not atomically excluded.
 Oversized, missing or changed sources leave the proposal pending. A failure after
 writing retains the output for manual recovery without publication/undo authority.
+A verified existing-map refresh receipt also retains its original-vault output
+path if the vault opening changes before frontend finalization; an invalid
+receipt does not establish that output was saved.
 Existing maps without native custody remain pending for manual recovery. Automatic
 organization can refresh existing maps only from already-approved proposals,
 within its shared model budget and original organization-role authorization.

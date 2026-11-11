@@ -114,3 +114,32 @@ it("checks the vault opening again after the final asynchronous approval check",
   expect(approvalChecks).toBe(2);
   expect(invoke.mock.calls.some(([command]) => command === "apply_map_refresh")).toBe(false);
 });
+
+
+it("retains verified native output when the vault opening changes during apply", async () => {
+  let isCurrent = true;
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (...args) => {
+    const result = await original(...args);
+    if (args[0] === "apply_map_refresh") isCurrent = false;
+    return result;
+  });
+  await expect(run(async () => true, () => {
+    if (!isCurrent) throw new Error("Vault opening changed");
+  })).rejects.toMatchObject({ status: "pending", writtenPath: path });
+});
+
+it("does not claim retained output from an invalid receipt after a vault switch", async () => {
+  let isCurrent = true;
+  const original = invoke.getMockImplementation()!;
+  invoke.mockImplementation(async (...args) => {
+    if (args[0] !== "apply_map_refresh") return original(...args);
+    isCurrent = false;
+    return { path, revision: "0".repeat(64), changed: true };
+  });
+  const failure = await run(async () => true, () => {
+    if (!isCurrent) throw new Error("Vault opening changed");
+  }).catch(error => error);
+  expect(failure).toMatchObject({ status: "pending", code: "validation_rejected" });
+  expect(failure).not.toHaveProperty("writtenPath");
+});

@@ -18,6 +18,30 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retain verified map refresh output after a vault switch
+
+The frontend previously checked the active vault immediately after native apply,
+before validating its receipt. A vault change during the apply response therefore
+raised a plain error and lost the original map path from the automatic runner's
+`publishedPending` result. Two new synthetic IPC regressions failed on the
+unchanged code (10 passed, 2 failed): both received `Error: Vault opening changed`
+instead of the expected structured outcome.
+
+Validate the returned path, content revision and changed flag first. A valid
+receipt followed by a stale view now produces `MapRefreshRetainedError` with the
+original relative path; an invalid receipt remains a validation rejection without
+a retained-write claim. No second write, proposal completion or new-vault UI
+update is introduced. Existing manual-store session guards still suppress stale
+view updates, and the automatic runner already collects retained-output errors.
+README now describes this distinction.
+
+The 133 focused map/refresh/evidence/distill tests and all 6,502 frontend tests
+in 405 files passed. Typecheck/build passed; lint reported zero errors and the
+same two existing notchDriver hook warnings. Logs are retained at
+`/tmp/myco-map-retained-{before,focused,lint,build,tests}.log`. This is synthetic IPC
+coverage of frontend receipt handling, not a native write-race or actual-model
+acceptance receipt. G5 recovery and the overall goal remain incomplete.
+
 ## November 11: recheck automatic map approval after source validation
 
 Existing-map refresh checked an approved proposal before awaiting source

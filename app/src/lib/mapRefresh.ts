@@ -55,10 +55,15 @@ export async function refreshExistingMap(
     }
     throw new WorkflowOperationError("pending", "ipc_failed", detail);
   });
-  assertCurrent();
   if (result?.path !== path || result.revision !== expectedResult || typeof result.changed !== "boolean" ||
       result.changed !== (expectedResult !== preview.currentRevision)) {
     throw reject("Map refresh result is unverified; output may be retained for review");
+  }
+  // A verified receipt belongs to the original vault even if its view has closed.
+  try { assertCurrent(); }
+  catch (error) {
+    throw new MapRefreshRetainedError(path,
+      `Map refresh verified in the original vault, but finalization stopped: ${error instanceof Error ? error.message : String(error)}`);
   }
   return path;
 }
