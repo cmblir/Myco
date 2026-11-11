@@ -38,6 +38,7 @@ import {
   formatRunOutcome,
   lastResurfaceOutcome,
   lastWorkflowReceipt,
+  lastMapDraftOutcome,
   WorkflowRunError,
   lastRunLabel,
   lastStopPoint,
@@ -625,6 +626,21 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     expect(lastWorkflowReceipt.get("/vmap")?.issues[0]).toMatchObject({ status: "pending", code: "unavailable" });
   });
 
+  it("retains a completed map when proposal finalization loses its revision race", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ path: "/vmap/work/feedback/p.md", raw: proposal("approved"), content: "", frontmatter: {} });
+    const write = vi.spyOn(ipc, "writeFileIfUnchanged").mockRejectedValue(new Error("Synthetic proposal revision changed"));
+    draftMap.mockResolvedValue("wiki/maps/attention.md");
+    await expect(runDistillGuarded("/vmap")).rejects.toMatchObject({ receipt: { status: "partial" } });
+    expect(write).toHaveBeenCalledOnce();
+    expect(lastMapDraftOutcome.get("/vmap")).toMatchObject({
+      drafted: 0, pending: 1, publishedPending: ["wiki/maps/attention.md"], status: "partial",
+    });
+  });
+
   it("does not finalize an approved map proposal after the vault opening changes", async () => {
     vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
     vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
@@ -638,6 +654,9 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     });
     await expect(runDistillGuarded("/vmap", "automatic")).rejects.toMatchObject({ receipt: { status: "stopped" } });
     expect(write).not.toHaveBeenCalled();
+    expect(lastMapDraftOutcome.get("/vmap")).toMatchObject({
+      drafted: 0, pending: 1, publishedPending: ["wiki/maps/attention.md"], status: "stopped",
+    });
     expect(draftMap.mock.calls[0][5]).toBe("automatic");
     expect(draftMap.mock.calls[0][6].usage).toBe("automatic");
     expect(draftMap.mock.calls[0][7]).toMatchObject({ kind: "approved-proposal" });

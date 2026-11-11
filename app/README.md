@@ -259,7 +259,10 @@ immediately before native apply. A changed or withdrawn approval observed by tha
 check stays pending. This does not atomically lock external edits to the proposal.
 Manual map work remains pending during review,
 so cancellation cannot leave an automatic approval behind. Proposal completion
-uses a revision-checked write. Native map identity remains unavailable on Windows.
+uses a revision-checked write. If a completed map cannot finalize its proposal
+because that write fails or the vault opening changes, the run retains the map
+path as published-but-pending without counting the proposal as done.
+Native map identity remains unavailable on Windows.
 Generated explanations require review; link validation is not semantic validation.
 
 Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight or orbit retarget completes at its destination immediately. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.

@@ -18,6 +18,26 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: preserve completed maps when proposal finalization fails
+
+The approved-map runner discarded the successful `draftMap` return value. A
+subsequent proposal revision conflict or changed vault opening therefore left
+`publishedPending` empty despite a completed map. The synthetic finalization
+regressions failed before the fix: the conflict case reported failed rather
+than partial, and the opening-change case omitted the saved map path (58 passed,
+2 failed). Keep the completed path through the separate proposal-finalization
+step and collect it if that step fails. The proposal remains incomplete; an
+opening change still stops the run and prevents its completion write.
+
+The 134 focused map/refresh/evidence/distill tests and all 6,503 frontend tests
+in 405 files passed. Typecheck/build passed; lint had zero errors and the same
+two existing notchDriver hook warnings. Logs:
+`/tmp/myco-map-finalization-{before,focused,lint,build,tests}.log`. These are mocked map
+and IPC outcomes, not native race or actual-model acceptance. Source-grant
+cleanup after a successful map remains a separate recovery path to audit.
+README documents the resulting published-but-pending behavior. G5 and the full
+goal remain incomplete.
+
 ## November 11: retain verified map refresh output after a vault switch
 
 The frontend previously checked the active vault immediately after native apply,

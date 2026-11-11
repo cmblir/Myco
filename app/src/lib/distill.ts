@@ -426,6 +426,7 @@ async function applyApprovedDraftMaps(
   // verified completion separately and never enter that deletion manifest.
   const manifestId = newMapRunId();
   for (const p of approved.slice(0, budget)) {
+    let writtenPath: string | null = null;
     try {
       const recheckApproval = async () => {
         const current = await ipc.agentVaultSession();
@@ -436,7 +437,7 @@ async function applyApprovedDraftMaps(
           throw new WorkflowOperationError("pending", "validation_rejected", "Map proposal approval changed; review required");
         }
       };
-      await draftMap(vaultPath, p.cluster, p.members, manifestId, undefined, usage, roleSnapshot,
+      writtenPath = await draftMap(vaultPath, p.cluster, p.members, manifestId, undefined, usage, roleSnapshot,
         { kind: "approved-proposal", recheck: recheckApproval });
       const proposalRevision = await sha256(p.raw);
       const current = await ipc.agentVaultSession();
@@ -447,7 +448,9 @@ async function applyApprovedDraftMaps(
       drafted++;
     } catch (e) {
       console.error(`[distill] auto draft-map apply failed for ${p.path}:`, e);
-      if (e instanceof WorkflowOperationError && "writtenPath" in e && typeof e.writtenPath === "string") publishedPending.push(e.writtenPath);
+      // Publication can succeed before the proposal's separate CAS fails.
+      if (writtenPath) publishedPending.push(writtenPath);
+      else if (e instanceof WorkflowOperationError && "writtenPath" in e && typeof e.writtenPath === "string") publishedPending.push(e.writtenPath);
       issues.push(workflowIssue("maps", e, p.path));
       if (issues.at(-1)?.status === "stopped") break;
     }
