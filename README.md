@@ -162,6 +162,34 @@ provider), audio/video (built-in speech recognition), YouTube URLs. A bundled
 offline embedding index (e5-small-ko, in-process llama.cpp) powers semantic search
 and per-page Related notes.
 
+Unsubmitted Ingest titles and text are saved on this device separately for each
+vault, including across navigation and restart. Storage failures keep the input
+in memory and offer Retry. Failed or partial imports keep the draft; a successful
+import clears only the submitted version, preserving anything typed afterward.
+After a successful import, **Review notes** opens the changed content first.
+The result lists readable note titles, observed creation/update status and the
+original source link. Partial imports keep Retry as the main action.
+Local imports exclude unrelated edits made at the same time from that list.
+
+**Project questions** — imported conversations can be grouped into workstreams
+for project progress and remaining-work questions. Guided project questions show
+their conversation scope before submission; explicit wiki/session/all choices and
+selected-note limits remain authoritative. The workstream recent overview uses
+seven local calendar days including today and displays that period. If it is
+empty, older records are not silently substituted. Recognized progress questions
+and guided remaining-work questions use the selected built-in local chat model to review project-bound
+original evidence, including historical cutoffs and later task changes. Missing
+records remain visible as incomplete coverage. The model is never changed
+automatically; these answers still do not independently verify completion.
+Project grouping distinguishes recorded absolute working folders, including
+folders with the same name. Ambiguous folders remain unassigned. This does not
+yet identify different machines using the same path or unify verified subfolders
+or worktrees of one repository. Existing project
+page text is preserved, with a refresh-pending notice when newer facts differ.
+
+Returning-device Home keeps a compact introduction so recent notes are easier
+to reach. Ask examples sit beside the composer and fill the draft without sending it.
+
 **Harvest queue** — the Overview opens on the sessions that deserve to become
 wiki pages: archived transcripts sieved for duplicates and boilerplate,
 clustered against the wiki, each with an estimated citation yield. Tick the
@@ -181,6 +209,8 @@ mode turns a tool-capable provider into an autonomous researcher: it searches,
 reads pages, traverses links, and answers with citations; optional write tools
 are confirmed per call and never touch `raw/`. Audio overview renders an
 answer's cited pages as a two-host spoken deep-dive, offline.
+
+Graph follows live changes to the system’s reduced-motion setting: direction arrows remain visible without travelling, idle rotation stops, and active camera flights finish immediately.
 
 **Graph** — the whole vault as a 3D cosmic web (three.js + d3-force-3d).
 Louvain communities get hues and auto-named cluster labels, hubs bloom, orphans
@@ -219,7 +249,7 @@ sweeps, topic trackers. Each run writes a cited markdown note into `digests/`.
 **Distillation** — an idle-time housekeeping pass scores new raw/session
 inflow against the wiki's topic clusters: junk is filtered before it costs an
 embedding, near-duplicate or off-topic items are quarantined then trashed, and
-raw sources already folded into the wiki move to a dated archive. Review its
+original raw sources stay unchanged while eligible derived notes can be archived. Review its
 proposals on the Feedback page; tune intensity, gate strictness, and schedule
 from Settings. It also compresses in three layers — a day's session logs into
 `daily/`, a settled week's daily digests into `weekly/`, and a settled month's
@@ -227,6 +257,13 @@ weekly rollups into `monthly/`, each layer's source moving to a cold archive
 once summarised — drafts topic maps for its
 clusters, and, with an optional profile, personalises Ask and ingest toward
 your stated role and interests.
+
+New topic-map drafts use bounded excerpts from the selected member pages with
+full-path citations and source revisions. They require review: citations do not
+verify every explanation. Native source checks reject detected changes before
+publication; changes detected after writing retain the output for manual recovery
+without confirming publication. Existing maps are preserved pending a safe refresh;
+automatic updates that preserve human annotations are not yet available.
 
 **Run log & undo** — distill and ingest runs are listed newest-first with what
 each one moved, created and trashed. Open one for per-file rows and, once vault

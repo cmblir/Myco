@@ -150,6 +150,7 @@ describe("queryStore.ask scope", () => {
 
   it.each([
     ["git commit history yesterday", "wiki"],
+    ["git commit history", "wiki"],
     ["git commit history", "sessions"],
   ] as const)("does not answer %s in %s from an unrestricted git log or file mtimes", async (question, scope) => {
     const search = stubExtractive();
@@ -161,6 +162,32 @@ describe("queryStore.ask scope", () => {
     expect(mtimes).not.toHaveBeenCalled();
     expect(search.mock.calls[0][5]).toBe(scope);
     if (question.includes("yesterday")) expect(last().range).toBeDefined();
+  });
+
+  it.each(["saved", "inherited"])("keeps %s wiki scope out of unrestricted Git history", async (mode) => {
+    const search = stubExtractive();
+    const git = vi.spyOn(ipc, "gitLog").mockResolvedValue([]);
+    if (mode === "saved") {
+      useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+    } else {
+      await ask("synthetic page topic", { scope: "wiki" });
+      search.mockClear();
+    }
+    await ask("And git commit history?");
+    expect(git).not.toHaveBeenCalled();
+    expect(search.mock.calls[0][5]).toBe("wiki");
+    expect(last().scope).toBe("wiki");
+  });
+
+  it("allows an explicit all-scope history request to override an inherited wiki scope", async () => {
+    const search = stubExtractive();
+    const git = vi.spyOn(ipc, "gitLog").mockResolvedValue([]);
+    await ask("synthetic page topic", { scope: "wiki" });
+    search.mockClear();
+    await ask("And git commit history?", { scope: "all" });
+    expect(git).toHaveBeenCalledWith("/v", 20);
+    expect(search).not.toHaveBeenCalled();
+    expect(last().scope).toBe("all");
   });
 
   it("filters explicit file activity by the requested day and scope with exact citations", async () => {
@@ -496,18 +523,45 @@ describe("queryStore local synthesis", () => {
 
   it("preserves a follow-up's original question while supplying its cleaned question-only topic to synthesis", async () => {
     await ask("Explain attention yesterday");
+    const period = last().range;
     await ask("그건 왜?");
     const request = vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0];
     expect(request).toMatchObject({ question: "그건 왜?", previousQuestion: "Explain attention", scope: "wiki" });
-    expect(request.range).toBeUndefined();
+    expect(request.range).toEqual(period);
     expect(JSON.stringify(request)).not.toContain("Synthetic synthesis.");
     expect(vi.mocked(ipc.semanticSearch).mock.calls.at(-1)![0]).toBe("Explain attention 그건 왜?");
-    expect(last()).toMatchObject({ q: "그건 왜?", followUp: true, localModel: model });
+    expect(last()).toMatchObject({ q: "그건 왜?", followUp: true, localModel: model, range: period });
     expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)![1].q).toBe("그건 왜?");
     await ask("그래서?");
     expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0]).toMatchObject({ question: "그래서?", previousQuestion: "Explain attention" });
     await ask("Explain a different synthetic topic");
     expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0].previousQuestion).toBeUndefined();
+  });
+
+  it("uses a new explicit period on a follow-up without reusing the old one", async () => {
+    await ask("Explain attention yesterday");
+    await useQueryStore.getState().ask("그건 오늘은 어때?", "ko", askCopy(STRINGS.ko));
+    expect(last().range).not.toEqual(useQueryStore.getState().turns[0].range);
+    expect(last().range?.end).toBe(last().range?.start);
+    expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0].range).toEqual(last().range);
+  });
+
+  it("does not carry the old question or period after an explicit scope change", async () => {
+    await ask("Explain attention yesterday");
+    useUIStore.setState({ askScope: "sessions", isAskScopeExplicit: true });
+    await ask("그건 왜?");
+    expect(last().scope).toBe("sessions");
+    expect(last().range).toBeUndefined();
+    expect(last().followUp).toBeUndefined();
+    expect(vi.mocked(ipc.localSynthesize).mock.calls.at(-1)![0].previousQuestion).toBeUndefined();
+  });
+
+  it("does not carry question context or dates between different selected notes", async () => {
+    await ask("Explain attention yesterday", { note: { path: "/v/wiki/attention-mechanism.md", title: "First" } });
+    await ask("그건 왜?", { note: { path: "/v/wiki/other.md", title: "Other" } });
+    expect(last().followUp).toBeUndefined();
+    expect(last().range).toBeUndefined();
+    expect(vi.mocked(ipc.semanticSearch).mock.calls.at(-1)![7]).toEqual(["wiki/other.md"]);
   });
 
   it("routes dated original conversations through activity claims with the selected generator", async () => {
@@ -2193,6 +2247,30 @@ describe("HTTP Ask evidence boundary", () => {
     useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
     useQueryStore.getState().clear();
   });
+  it("does not replay another scope's answer into a constrained provider request", async () => {
+    const chat = stubProvider().mockImplementation(() => reply("Grounded response"));
+    useUIStore.setState({ askScope: "sessions", isAskScopeExplicit: true });
+    useQueryStore.setState({ turns: [
+      { q: "Prior wiki question", a: "OUTSIDE_SCOPE_PRIOR_ANSWER", scope: "wiki" },
+      { q: "Legacy unknown scope", a: "UNKNOWN_SCOPE_PRIOR_ANSWER" },
+    ] });
+    await ask("Explain the synthetic session");
+    const prompt = JSON.stringify(chat.mock.calls[0][0].messages);
+    expect(prompt).not.toContain("OUTSIDE_SCOPE_PRIOR_ANSWER");
+    expect(prompt).not.toContain("UNKNOWN_SCOPE_PRIOR_ANSWER");
+    expect(prompt).not.toContain("Prior wiki question");
+    expect(last().scope).toBe("sessions");
+  });
+
+  it("does not replay an outside-period answer into an explicitly dated request", async () => {
+    const chat = stubProvider().mockImplementation(() => reply("Grounded response"));
+    useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+    useQueryStore.setState({ turns: [{ q: "Old topic", a: "OUTSIDE_PERIOD_PRIOR_ANSWER", scope: "wiki",
+      range: { start: "2026-09-01", end: "2026-09-01" } }] });
+    await ask("Explain the synthetic session on 2026-10-01");
+    expect(JSON.stringify(chat.mock.calls[0][0].messages)).not.toContain("OUTSIDE_PERIOD_PRIOR_ANSWER");
+    expect(last().range).toEqual({ start: "2026-10-01", end: "2026-10-01" });
+  });
   it("shows and persists model abstention without claiming search failure or a useful answer", async () => {
     stubProvider().mockRejectedValueOnce(new ModelEvidenceAbstention());
     const saved: AskRecord[] = [];
@@ -2451,12 +2529,12 @@ describe("queryStore.ask workstream facts", () => {
   const at = (iso: string): number => Date.parse(iso) / 1000;
   const ledger = "codex:c0ffee01-0000-7000-8000-000000000001";
   const facts = {
-    version: 4, last_record_epoch: at("2026-11-07T12:00:00Z"), unassigned: 0,
+    version: 6, last_record_epoch: at("2026-11-07T12:00:00Z"), unassigned: 0,
     workstreams: { prj_lumen: { title: "Lumen", title_source: "readme", page: "wiki/workstreams/prj_lumen.md",
       first_epoch: at("2026-11-07T10:00:00Z"), last_epoch: at("2026-11-07T12:00:00Z"), conversations: 1, roots: 1,
       summary: "A synthetic reminder app.",
       open_items: [{ epoch: at("2026-11-07T12:00:00Z"), text: "Retry the synthetic sync", conversation: ledger }] } },
-    conversations: { [ledger]: { automated: false, fp: "synthetic", vendor: "codex", id: "c0ffee01-0000-7000-8000-000000000001",
+    conversations: { [ledger]: { automated: false, fp: "0123456789abcdef", vendor: "codex", id: "c0ffee01-0000-7000-8000-000000000001",
       raw: "raw/conversations/codex/codex-c0ffee01-synthetic.md", first_epoch: at("2026-11-07T10:00:00Z"),
       last_epoch: at("2026-11-07T12:00:00Z"), key: "prj_lumen", cwd_source: "state", root: ledger, subagent: false,
       request: "Add synthetic reminders", report: { epoch: at("2026-11-07T12:00:00Z"), text: "Implemented the synthetic scheduler." },
@@ -2478,9 +2556,200 @@ describe("queryStore.ask workstream facts", () => {
   });
   afterEach(() => { useQueryStore.getState().clear(); vi.useRealTimers(); });
 
+  it.each(["그럼 Beta 남은 작업은?", "What about the remaining work in Beta?"])(
+    "does not let a named different project inherit the previous selection: %s", async question => {
+      const model = "qwen3.5-4b-q4_k_m";
+      stubAskRole("builtin-local",model);
+      vi.spyOn(ipc,"localChatStatus").mockResolvedValue({model_id:model,state:"ready",bytes:100});
+      const source = structuredClone(facts);
+      Object.assign(source.workstreams,{beta:{...source.workstreams.prj_lumen,title:"Beta",page:"wiki/workstreams/beta.md",open_items:[]}});
+      Object.assign(source.conversations,{"codex:beta":{...source.conversations[ledger],id:"beta",key:"beta",root:"codex:beta",
+        raw:"raw/conversations/codex/beta.md"}});
+      vi.spyOn(ipc,"readFile").mockImplementation(async path => {
+        const raw = JSON.stringify(path.endsWith("ledger.json") ? {entries:{[ledger]:"0123456789abcdef","codex:beta":"0123456789abcdef"},
+          locations:{[`sessions:${ledger}`]:"sessions/alpha.md","sessions:codex:beta":"sessions/beta.md"}} : source);
+        return {path,raw,content:raw,frontmatter:null};
+      });
+      const recall = vi.spyOn(ipc,"activityRecall").mockImplementation(async request => ({
+        hits:request.paths!.map(page => ({page,stem:page,section:0,text:"A synthetic project request."})),
+        indexed_pages:2,scanned_pages:1,matched_chunks:1,incomplete:false,
+      }));
+      const synthesis = vi.spyOn(ipc,"localSynthesize").mockImplementation(async request => ({
+        answer:`A task was requested. [[${request.paths![0].replace(/\.md$/,"")}|source]]`,model_id:model,used_sources:request.paths!,
+        activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution),
+      }));
+      const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen",asOf:"2026-11-07"};
+      await ask(buildGuidedQuestion(choice,"en"),{guidedQuestion:choice});
+      expect(last().projectSelection?.key).toBe("prj_lumen");
+      await ask(question);
+      expect(last().needsClarification).toBe(true);
+      expect(recall).toHaveBeenCalledTimes(1);
+      expect(synthesis).toHaveBeenCalledTimes(1);
+      await ask("How far along is Beta now?");
+      expect(recall).toHaveBeenCalledTimes(2);
+      expect(recall.mock.calls[1][0]).toMatchObject({paths:["sessions/beta.md"],range:{start:"2026-11-07",end:"2026-11-08"}});
+      expect(last().projectSelection?.key).toBe("beta");
+      expect(synthesis.mock.calls[1][0].resolution?.mode).toBe("current_state");
+      expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    });
+
   it.each([
-    ["Lumen 지금 어디까지 했어?", "[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트는 "],
-    ["지금 어디까지 했어?", "대화가 가장 많은 Lumen 프로젝트로 가정했습니다"],
+    ["retry", false, false], ["follow-up", false, false],
+    ["retry", true, false], ["follow-up", true, false],
+    ["retry", false, true], ["follow-up", false, true],
+    ["retry", true, true], ["follow-up", true, true],
+  ] as const)("refreshes derived project paths on %s while retaining explicit paths %s and historical cutoff %s", async (resume, restricted, historical) => {
+    const model = "qwen3.5-4b-q4_k_m";
+    stubAskRole("builtin-local", model);
+    vi.spyOn(ipc,"localChatStatus").mockResolvedValue({model_id:model,state:"ready",bytes:100});
+    const source = structuredClone(facts);
+    const projection = "sessions/alpha.md";
+    const reopened = "sessions/reopened.md";
+    const reopeningId = "codex:reopened";
+    const locations: Record<string,string> = {[`sessions:${ledger}`]:projection};
+    vi.spyOn(ipc,"readFile").mockImplementation(async path => {
+      const raw = JSON.stringify(path.endsWith("ledger.json") ? {
+        entries:Object.fromEntries(Object.entries(source.conversations).map(([id, conversation]) => [id,conversation.fp])), locations,
+      } : source);
+      return {path,raw,content:raw,frontmatter:null};
+    });
+    const recall = vi.spyOn(ipc,"activityRecall").mockResolvedValue({hits:[{page:projection,stem:"Alpha",section:0,
+      text:"The synthetic export work was requested."}],indexed_pages:2,scanned_pages:1,matched_chunks:1,incomplete:false});
+    let rejectFirst = resume === "retry";
+    const synthesis = vi.spyOn(ipc,"localSynthesize").mockImplementation(async request => {
+      if (rejectFirst) { rejectFirst = false; throw new Error("synthetic first-attempt failure"); }
+      return {answer:"The work was requested. [[sessions/alpha|source]]",model_id:model,used_sources:[projection],
+        activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution)};
+    });
+    const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen",
+      ...(historical ? {asOf:"2026-11-07"} : {})};
+    await ask(buildGuidedQuestion(choice,"en"),{guidedQuestion:choice,scope:"all",
+      ...(restricted ? {paths:[projection]} : {}),
+      ...(historical ? {range:{start:"2026-11-07",end:"2026-11-07"}} : {})});
+    const first = last();
+    expect(first.searchContext?.paths).toEqual([projection]);
+    expect(first.projectSelection).toEqual({key:"prj_lumen",
+      ...(restricted ? {explicitPaths:[projection]} : {}),
+      ...(historical ? {explicitRange:{start:"2026-11-07",end:"2026-11-07"}} : {})});
+    expect(Boolean(first.error)).toBe(resume === "retry");
+    const priorTurn = JSON.stringify(first);
+    const priorRecord = recordOf(first,1);
+    const priorRecordBytes = JSON.stringify(priorRecord);
+    const oldResolution = synthesis.mock.calls[0][0].resolution;
+    const recordedAt = historical ? "2026-11-07T11:00:00Z" : "2026-11-09T09:00:00Z";
+    Object.assign(source.conversations,{[reopeningId]:{...source.conversations[ledger],id:"reopened",root:reopeningId,
+      raw:"raw/conversations/codex/reopened.md",first_epoch:at(recordedAt),last_epoch:at(recordedAt),
+      request:"Reopen the synthetic export work; acceptance is failing."}});
+    locations[`sessions:${reopeningId}`] = reopened;
+    source.workstreams.prj_lumen.conversations = 2;
+    source.workstreams.prj_lumen.roots = 2;
+    source.workstreams.prj_lumen.last_epoch = at("2026-11-09T09:00:00Z");
+    source.last_record_epoch = at("2026-11-09T09:00:00Z");
+    // A reused display name must not move the question to a different project.
+    source.workstreams.prj_lumen.title = "Renamed original project";
+    Object.assign(source.workstreams,{other_lumen:{...source.workstreams.prj_lumen,title:"Lumen",
+      page:"wiki/workstreams/other_lumen.md",open_items:[]}});
+    Object.assign(source.conversations,{"codex:unrelated":{...source.conversations[ledger],id:"unrelated",
+      root:"codex:unrelated",key:"other_lumen",raw:"raw/conversations/codex/unrelated.md"}});
+    locations["sessions:codex:unrelated"] = "sessions/unrelated.md";
+    if (historical) {
+      Object.assign(source.conversations,{"codex:future":{...source.conversations[ledger],id:"future",root:"codex:future",
+        raw:"raw/conversations/codex/future.md",first_epoch:at("2026-11-09T09:00:00Z"),last_epoch:at("2026-11-09T09:00:00Z")}});
+      locations["sessions:codex:future"] = "sessions/future.md";
+    }
+    vi.setSystemTime(new Date("2026-11-09T12:00:00Z"));
+    if (resume === "retry") await useQueryStore.getState().retry(0,"en",copy);
+    else await ask("why?");
+    const expectedPaths = restricted ? [projection] : [projection,reopened];
+    const expectedRange = {start:"2026-11-07",end:historical ? "2026-11-07" : "2026-11-09"};
+    expect(recall).toHaveBeenCalledTimes(2);
+    expect(recall.mock.calls[1][0]).toMatchObject({paths:expectedPaths,range:expectedRange,scope:"all"});
+    expect(synthesis.mock.calls[1][0]).toMatchObject({paths:expectedPaths,range:expectedRange,scope:"all",
+      resolution:{mode:historical ? "historical_as_of" : "current_state",
+        asOfEpoch:historical ? oldResolution!.asOfEpoch : at("2026-11-09T12:00:00Z")}});
+    expect(last()).toMatchObject({searchContext:{paths:expectedPaths},activityCoverage:{incomplete:false}});
+    expect(last().error).toBeUndefined();
+    expect(JSON.stringify(first)).toBe(priorTurn);
+    expect(JSON.stringify(priorRecord)).toBe(priorRecordBytes);
+    expect(priorRecord.searchContext?.paths).toEqual([projection]);
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    if (resume === "follow-up" && !restricted && !historical) {
+      Reflect.deleteProperty(source.workstreams,"prj_lumen");
+      Reflect.deleteProperty(source.conversations,ledger);
+      Reflect.deleteProperty(source.conversations,reopeningId);
+      await ask("why?");
+      expect(last().needsClarification).toBe(true);
+      expect(last().a).toContain("exact project name");
+      expect(recall).toHaveBeenCalledTimes(2);
+      expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    }
+  });
+
+  it.each([[undefined,false,undefined], ["2026-11-01",false,undefined], [undefined,true,undefined], [undefined,false,"all"]] as const)(
+    "resolves project state from original evidence with cutoff %s, incomplete candidates %s, scope %s", async (asOf,incomplete,selectedScope) => {
+    const scope = selectedScope ?? "sessions";
+    const model = "qwen3.5-4b-q4_k_m";
+    stubAskRole("builtin-local", model);
+    vi.spyOn(ipc,"localChatStatus").mockResolvedValue({model_id:model,state:"ready",bytes:100});
+    const source = structuredClone(facts);
+    source.workstreams.prj_lumen.first_epoch = at("2026-11-01T09:00:00Z");
+    source.conversations[ledger].first_epoch = at("2026-11-01T09:00:00Z");
+    if (incomplete) Object.assign(source.conversations, {[`${ledger}-missing`]:{
+      ...source.conversations[ledger],id:`${source.conversations[ledger].id}-missing`,root:`${ledger}-missing`,
+      raw:"raw/conversations/codex/codex-missing-0123456789abcdef.md",
+    }});
+    const projection = "sessions/2026-11/alpha.md";
+    vi.spyOn(ipc,"readFile").mockImplementation(async path => {
+      const raw = JSON.stringify(path.endsWith("ledger.json") ? {
+        entries:{[ledger]:source.conversations[ledger].fp}, locations:{[`sessions:${ledger}`]:projection},
+      } : source);
+      return {path,raw,content:raw,frontmatter:null};
+    });
+    const recall = vi.spyOn(ipc,"activityRecall").mockResolvedValue({hits:[{page:projection,stem:"Alpha",section:0,
+      text:"Please implement the synthetic export test. I plan to write it; it has not run."}],
+      indexed_pages:2,scanned_pages:1,matched_chunks:1,incomplete:false});
+    const synthesis = vi.spyOn(ipc,"localSynthesize").mockImplementation(async request => ({
+      answer:`${asOf ? "The work was requested and planned." : "Completion was reported, then the user reopened the work."} [[sessions/2026-11/alpha|source]]`,
+      model_id:model,used_sources:[projection],activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution),
+    }));
+    const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen",...(asOf ? {asOf} : {})};
+    await useQueryStore.getState().ask(buildGuidedQuestion(choice,"en"),"en",copy,{guidedQuestion:choice,
+      ...(selectedScope ? {scope:selectedScope,paths:[projection,"sessions/unrelated.md"]} : {})});
+    expect(recall).toHaveBeenCalledWith(expect.objectContaining({scope,paths:[projection],
+      range:{start:"2026-11-01",end:asOf ?? "2026-11-08"}}));
+    expect(synthesis).toHaveBeenCalledWith(expect.objectContaining({activityOverview:true,scope,paths:[projection],
+      resolution:expect.objectContaining({mode:asOf ? "historical_as_of" : "current_state"})}));
+    expect(last().a).not.toContain("Retry the synthetic sync");
+    expect(last()).toMatchObject({scope,extractive:false,activityReceipt:expect.any(Object),
+      searchContext:{paths:[projection]},activityCoverage:{incomplete}});
+    if (incomplete) expect(last().a).toContain("the full current state remains unconfirmed");
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    await ask("why?");
+    expect(recall).toHaveBeenCalledTimes(2);
+    expect(synthesis.mock.calls[1][0]).toMatchObject({paths:[projection],scope,
+      range:{start:"2026-11-01",end:asOf ?? "2026-11-08"},
+      resolution:{mode:asOf ? "historical_as_of" : "current_state"}});
+    expect(synthesis.mock.calls[1][0].question).toContain("Lumen");
+    expect(last().error).toBeUndefined();
+    const reply = await synthesis.mock.results[1].value;
+    synthesis.mockImplementationOnce(async request => {
+      source.conversations[ledger].fp = "changed-during-generation";
+      return {...reply,activity_receipt:syntheticActivityReceipt(request.range!,request.scope,request.resolution)};
+    });
+    await ask("why?");
+    expect(last()).toMatchObject({a:"",error:copy.sourceChanged});
+    expect(last().activityReceipt).toBeUndefined();
+    if (incomplete) {
+      source.conversations[ledger].fp = "0123456789abcdef";
+      recall.mockResolvedValueOnce({hits:[],indexed_pages:2,scanned_pages:1,matched_chunks:0,incomplete:false});
+      const calls = synthesis.mock.calls.length;
+      await ask("why?");
+      expect(last()).toMatchObject({a:"",error:copy.activityIncomplete,activityCoverage:{incomplete:true}});
+      expect(synthesis).toHaveBeenCalledTimes(calls);
+    }
+  });
+
+  it.each([
     ["내가 최근에 한 일이 뭐야?", "**[[wiki/workstreams/prj_lumen|Lumen]]** 대화 1건, 세션 1개"],
   ])("answers %s from the facts file before any model or role check", async (question, expected) => {
     const read = factsFile(JSON.stringify(facts));
@@ -2498,6 +2767,73 @@ describe("queryStore.ask workstream facts", () => {
     expect(ipc.semanticSearch).not.toHaveBeenCalled();
     await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
     expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1]).toMatchObject({ q: question, a: turn!.a });
+  });
+
+  it.each(["Lumen 지금 어디까지 했어?", "내가 최근에 한 일이 뭐야?"])(
+    "keeps an explicitly selected wiki scope for %s", async (question) => {
+      const read = factsFile(JSON.stringify(facts));
+      useUIStore.setState({ askScope: "wiki", isAskScopeExplicit: true });
+      const turn = await koAsk(question);
+      expect(read).not.toHaveBeenCalled();
+      expect(turn?.scope).toBe("wiki");
+      expect(turn?.a).not.toContain("Implemented the synthetic scheduler");
+    },
+  );
+
+  it.each(["어디까지 했어?", "그거 어디까지 했어?"])(
+    "keeps inherited wiki scope out of project discovery for %s", async question => {
+      const search = stubExtractive();
+      const read = factsFile(JSON.stringify(facts));
+      await ask("synthetic page topic", { scope: "wiki" });
+      search.mockClear();
+      read.mockClear();
+      const turn = await koAsk(question);
+      expect(read).not.toHaveBeenCalled();
+      expect(search).toHaveBeenCalled();
+      expect(search.mock.calls.at(-1)?.[5]).toBe("wiki");
+      expect(turn?.scope).toBe("wiki");
+    },
+  );
+
+  it("lets an explicit all scope override inherited wiki scope for project discovery", async () => {
+    stubExtractive();
+    const read = factsFile(JSON.stringify(facts));
+    await ask("synthetic page topic", { scope: "wiki" });
+    read.mockClear();
+    const turn = await useQueryStore.getState().ask("그거 어디까지 했어?", "ko", askCopy(STRINGS.ko), { scope: "all" });
+    expect(read).toHaveBeenCalledWith("/v/.myco/workstreams.json");
+    expect(turn).toMatchObject({ scope: "all", needsClarification: true });
+  });
+
+  it("keeps the explicitly selected all scope in the answer and saved history", async () => {
+    factsFile(JSON.stringify(facts));
+    useUIStore.setState({ askScope: "all", isAskScopeExplicit: true });
+    const turn = await koAsk("Lumen 지금 어디까지 했어?");
+    expect(turn?.scope).toBe("all");
+    await vi.waitFor(() => expect(ipc.askHistoryAppend).toHaveBeenCalled());
+    expect(vi.mocked(ipc.askHistoryAppend).mock.calls.at(-1)?.[1].scope).toBe("all");
+  });
+
+  it("does not replace an empty recent period with older project reports", async () => {
+    factsFile(JSON.stringify(facts));
+    vi.setSystemTime(new Date("2026-12-08T12:00:00Z"));
+    const turn = await koAsk("내가 최근에 한 일이 뭐야?");
+    expect(turn?.a).toContain("프로젝트로 묶인 대화가 없습니다");
+    expect(turn?.a).not.toContain("Implemented the synthetic scheduler");
+    expect(turn?.a).not.toContain("wiki/workstreams/prj_lumen");
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+  });
+
+  it("drops a workstream answer when its vault changes during the read", async () => {
+    let release!: (file: Awaited<ReturnType<typeof ipc.readFile>>) => void;
+    vi.spyOn(ipc, "readFile").mockImplementation(() => new Promise(resolve => { release = resolve; }));
+    const pending = koAsk("Lumen 지금 어디까지 했어?");
+    await vi.waitFor(() => expect(ipc.readFile).toHaveBeenCalledOnce());
+    useVaultStore.setState({ currentVault: { path: "/other", name: "other" } });
+    release({ path: "/v/.myco/workstreams.json", raw: JSON.stringify(facts), content: "", frontmatter: null });
+    await pending;
+    expect(useQueryStore.getState().turns.every(turn => !turn.a.includes("Implemented the synthetic scheduler"))).toBe(true);
+    expect(ipc.askHistoryAppend).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -2536,26 +2872,27 @@ describe("queryStore.ask workstream facts", () => {
     expect(ipc.captureModelRole).not.toHaveBeenCalled();
   });
 
-  it("answers the guided progress question about a project from the facts file", async () => {
+  it("does not turn project hints without current source projections into a progress answer", async () => {
     const read = factsFile(JSON.stringify(facts));
     const choice: GuidedQuestionSelection = { version: 1, intent: "progress", subject: "Lumen" };
     const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
       { guidedQuestion: choice });
     expect(read).toHaveBeenCalledWith("/v/.myco/workstreams.json");
-    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트는 ");
-    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", execution: { answerKind: "application", calls: [] } });
+    expect(turn?.a).not.toContain("Implemented the synthetic scheduler");
+    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", abstained:true,
+      activityFailure:"activity_insufficient_evidence",activityCoverage:{incomplete:true} });
     expect(ipc.captureModelRole).not.toHaveBeenCalled();
     expect(ipc.chatComplete).not.toHaveBeenCalled();
   });
 
-  it("answers the guided remaining-work question about a picked project from the facts file", async () => {
+  it("does not present old open items as current remaining work without source projections", async () => {
     factsFile(JSON.stringify(facts));
     const choice: GuidedQuestionSelection = { version: 1, intent: "remaining", subject: "Lumen" };
     const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
       { guidedQuestion: choice });
-    expect(turn?.a).toContain("[[wiki/workstreams/prj_lumen|Lumen]] 프로젝트의 최근 세션 보고에 남은 일로 적힌 항목이 1개 있습니다.");
-    expect(turn?.a).toContain("** Retry the synthetic sync [[raw/conversations/codex/codex-c0ffee01-synthetic|원문]]");
-    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", execution: { answerKind: "application", calls: [] } });
+    expect(turn?.a).not.toContain("Retry the synthetic sync");
+    expect(turn).toMatchObject({ guidedQuestion: choice, scope: "sessions", abstained:true,
+      activityFailure:"activity_insufficient_evidence" });
     expect(ipc.captureModelRole).not.toHaveBeenCalled();
   });
 
@@ -2568,7 +2905,6 @@ describe("queryStore.ask workstream facts", () => {
   });
 
   it.each([
-    ["a cutoff date", { version: 1, intent: "progress", subject: "Lumen", asOf: "2026-11-01" }],
     ["another intent", { version: 1, intent: "decision", subject: "Lumen" }],
   ] as const)("keeps the guided route for %s", async (_, choice) => {
     const read = factsFile(JSON.stringify(facts));
@@ -2578,21 +2914,52 @@ describe("queryStore.ask workstream facts", () => {
     expect(ipc.captureModelRole).toHaveBeenCalledOnce();
   });
 
-  it("keeps the guided route for a long topic that only mentions a project", async () => {
+  it("requires a project selection for a long topic that only mentions a project", async () => {
     factsFile(JSON.stringify(facts));
     const choice: GuidedQuestionSelection = { version: 1, intent: "progress", subject: "Lumen reminder scheduler retry window" };
     const turn = await useQueryStore.getState().ask(buildGuidedQuestion(choice, "ko"), "ko", askCopy(STRINGS.ko),
       { guidedQuestion: choice });
-    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
+    expect(turn).toMatchObject({needsClarification:true});
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
     expect(turn?.a).not.toContain("wiki/workstreams/");
   });
 
-  it("falls through when the named project is not in the facts file", async () => {
+  it("asks for an exact project when the name is unknown without searching unrelated records", async () => {
     factsFile(JSON.stringify(facts));
+    const recall = vi.spyOn(ipc,"activityRecall");
     const turn = await koAsk("Orbit 지금 어디까지 했어?");
-    expect(ipc.captureModelRole).toHaveBeenCalledOnce();
-    expect(ipc.semanticSearch).toHaveBeenCalled();
+    expect(turn).toMatchObject({needsClarification:true});
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(recall).not.toHaveBeenCalled();
     expect(turn?.a).not.toContain("wiki/workstreams/");
+  });
+
+  it("does not turn an ambiguous project name into an unrestricted guided search", async () => {
+    factsFile(JSON.stringify({...facts,workstreams:{...facts.workstreams,
+      other_lumen:{...facts.workstreams.prj_lumen,page:"wiki/workstreams/other_lumen.md",open_items:[]}},
+      conversations:{...facts.conversations,"codex:other":{...facts.conversations[ledger],id:"other",key:"other_lumen",
+        root:"codex:other",raw:"raw/conversations/codex/codex-other-0123456789abcdef.md"}}}));
+    const recall = vi.spyOn(ipc,"activityRecall");
+    const choice: GuidedQuestionSelection = {version:1,intent:"remaining",subject:"Lumen"};
+    const turn = await ask(buildGuidedQuestion(choice,"en"),{guidedQuestion:choice});
+    expect(turn).toMatchObject({needsClarification:true});
+    expect(turn?.a).toContain("exact project name");
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(recall).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
+  });
+
+  it("keeps invalid project facts an explicit incomplete error without broadening retrieval", async () => {
+    factsFile('{"version":3}');
+    const recall = vi.spyOn(ipc,"activityRecall");
+    const turn = await koAsk("Lumen 지금 어디까지 했어?");
+    expect(turn).toMatchObject({a:"",error:STRINGS.ko.q_activity_incomplete});
+    expect(ipc.captureModelRole).not.toHaveBeenCalled();
+    expect(ipc.semanticSearch).not.toHaveBeenCalled();
+    expect(recall).not.toHaveBeenCalled();
+    expect(ipc.chatComplete).not.toHaveBeenCalled();
   });
 
   it("does not read the facts file for other questions or over one note", async () => {

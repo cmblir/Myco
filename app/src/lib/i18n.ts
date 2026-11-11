@@ -775,6 +775,7 @@ export interface Strings extends EverydayStrings {
   p_lint_failed: string;
   h_empty: string;
   s_title: string;
+  s_loading: string;
   s_search_ph: string;
   s_search_empty: string; // {q}
   s_account: string;
@@ -1579,6 +1580,7 @@ export interface Strings extends EverydayStrings {
   set_distill_intensity_conservative: string;
   set_distill_intensity_standard: string;
   set_distill_intensity_aggressive: string;
+  set_distill_map_refresh_desc: string;
   set_distill_gate: string;
   set_distill_gate_strict: string;
   set_distill_gate_normal: string;
@@ -1682,6 +1684,35 @@ export interface Strings extends EverydayStrings {
   pf_retired: string;
   pf_outcome_delete: string;
   pf_confirm_msg_draft_map: string;
+  map_recovery_discover: string;
+  map_recovery_catalog_error: string;
+  map_recovery_catalog_incomplete: string;
+  map_recovery_retained_only: string;
+  map_recovery_missing_file: string;
+  map_recovery_title: string;
+  map_recovery_note: string;
+  map_recovery_empty: string;
+  map_recovery_error: string;
+  map_recovery_current: string;
+  map_recovery_unknown: string;
+  map_recovery_invalid: string;
+  map_recovery_invalid_note: string;
+  map_recovery_no_before: string;
+  map_recovery_saved: string;
+  map_history_title: string;
+  map_history_note: string;
+  map_history_select: string;
+  map_history_reload: string;
+  map_history_no_maps: string;
+  map_history_error: string;
+  map_history_missing: string;
+  map_history_changed: string;
+  map_history_before: string;
+  map_history_after: string;
+  map_refresh_title: string;
+  map_refresh_message: string;
+  map_refresh_apply: string;
+  map_refresh_needs_manual_review: string;
   pf_retry: string;
   pf_apply_failed: string;
   pf_map_needs_writer: string;
@@ -2976,7 +3007,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hist_expand: "Expand",
     ing_run_again: "Ingest another",
     ing_live_title: "Writing your wiki…",
-    ing_live_warmup: "Starting Claude…",
+    ing_live_warmup: "Preparing to process your source…",
     ing_live_activity: "Live activity",
     ing_live_earlier: "…{n} earlier",
     ing_live_files: "Pages touched",
@@ -3372,6 +3403,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint done",
     p_lint_failed: "Lint failed",
     s_title: "Settings",
+    s_loading: "Opening settings…",
     s_search_ph: "Search settings",
     s_search_empty: "No settings match “{q}”",
     s_account: "My space",
@@ -4180,6 +4212,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_intensity_conservative: "Conservative",
     set_distill_intensity_standard: "Standard",
     set_distill_intensity_aggressive: "Aggressive",
+    set_distill_map_refresh_desc: "Approved map proposals can update existing generated sections automatically. Your title and outside notes are preserved; edited generated sections wait for review. Map updates cannot yet be undone from History.",
     set_distill_gate: "Gate preset",
     set_distill_gate_strict: "Strict",
     set_distill_gate_normal: "Normal",
@@ -4284,7 +4317,36 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_outcome_admit: "Restores {n} quarantined item(s) to the vault.",
     pf_retired: "No longer needed — the originals stay as they are",
     pf_outcome_delete: "Moves {n} quarantined item(s) to the trash.",
-    pf_confirm_msg_draft_map: "Drafts a topic map (one model call).",
+    pf_confirm_msg_draft_map: "Drafts a topic map or prepares an existing map update for review (one model call).",
+    map_recovery_discover: "Find retained maps",
+    map_recovery_catalog_error: "Could not find retained maps. Try Find retained maps again.",
+    map_recovery_catalog_incomplete: "Some stored records could not be identified. This list may be incomplete.",
+    map_recovery_retained_only: "retained records only",
+    map_recovery_missing_file: "The current map file is not in the vault list. Open Retained map records below to inspect saved snapshots.",
+    map_recovery_title: "Retained map records",
+    map_recovery_note: "These are saved snapshots, not a timeline or confirmation of a completed update. Records marked publication unknown may be past updates or interrupted attempts. Nothing can be restored or deleted here.",
+    map_recovery_empty: "No retained records for this map.",
+    map_recovery_error: "Could not read the retained records. Retry with Reload.",
+    map_recovery_current: "Linked to the current file",
+    map_recovery_unknown: "Publication unknown",
+    map_recovery_invalid: "Invalid record",
+    map_recovery_invalid_note: "This record could not be validated. Its text is hidden and the record is preserved.",
+    map_recovery_no_before: "No earlier snapshot was recorded.",
+    map_recovery_saved: "Saved snapshot",
+    map_history_title: "Latest map update",
+    map_history_note: "Shows the latest recorded write, including interrupted updates. This does not confirm that source checks completed. Full history and undo are not available.",
+    map_history_select: "Select a map",
+    map_history_reload: "Reload",
+    map_history_no_maps: "No topic maps in this vault.",
+    map_history_error: "Could not read this update. Retry with Reload.",
+    map_history_missing: "No before/after record is available. This map may be new or use an older record format.",
+    map_history_changed: "This map has been edited since the saved update. The snapshots below show the saved update only.",
+    map_history_before: "Before update",
+    map_history_after: "After update",
+    map_refresh_title: "Review map update",
+    map_refresh_message: "Review the generated section changes. Your title and outside notes are preserved. History undo is not available for this update.",
+    map_refresh_apply: "Update map",
+    map_refresh_needs_manual_review: "This map's update record could not be verified. The existing map is preserved. Open the map to review and edit it manually.",
     pf_retry: "Retry",
     pf_apply_failed: "Apply failed — retry",
     pf_map_needs_writer: "Writing a topic map needs a model that can write",
@@ -5572,7 +5634,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hist_expand: "펼치기",
     ing_run_again: "다른 자료 추가",
     ing_live_title: "LLM 위키 작성 중…",
-    ing_live_warmup: "Claude 시작 중…",
+    ing_live_warmup: "자료 처리를 준비하는 중…",
     ing_live_activity: "실시간 활동",
     ing_live_earlier: "이전 {n}건",
     ing_live_files: "작업한 페이지",
@@ -5964,6 +6026,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint 완료",
     p_lint_failed: "Lint 실패",
     s_title: "설정",
+    s_loading: "설정을 여는 중…",
     s_search_ph: "설정 검색",
     s_search_empty: "“{q}”에 해당하는 설정이 없습니다",
     s_account: "내 공간",
@@ -6769,6 +6832,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_intensity_conservative: "보수",
     set_distill_intensity_standard: "표준",
     set_distill_intensity_aggressive: "적극",
+    set_distill_map_refresh_desc: "승인된 지도 제안은 기존 생성 영역을 자동으로 갱신할 수 있어요. 제목과 영역 밖에 작성한 내용은 보존하며, 생성 영역을 직접 수정했다면 검토를 기다려요. 지도 갱신은 아직 히스토리에서 되돌릴 수 없어요.",
     set_distill_gate: "게이트 프리셋",
     set_distill_gate_strict: "엄격",
     set_distill_gate_normal: "보통",
@@ -6871,7 +6935,36 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_outcome_admit: "격리된 자료 {n}개를 볼트로 되돌립니다.",
     pf_retired: "더 이상 필요 없어요 — 원본은 그대로 둡니다",
     pf_outcome_delete: "격리된 자료 {n}개를 휴지통으로 옮깁니다.",
-    pf_confirm_msg_draft_map: "주제 지도 초안을 씁니다 (모델을 한 번 씁니다).",
+    pf_confirm_msg_draft_map: "주제 지도 초안을 쓰거나 기존 지도 갱신안을 검토할 수 있게 준비합니다 (모델을 한 번 씁니다).",
+    map_recovery_discover: "보관된 지도 찾기",
+    map_recovery_catalog_error: "보관된 지도를 찾지 못했습니다. 보관된 지도 찾기로 다시 시도하세요.",
+    map_recovery_catalog_incomplete: "확인할 수 없는 보관 기록이 있어 목록이 완전하지 않을 수 있습니다.",
+    map_recovery_retained_only: "보관 기록만 있음",
+    map_recovery_missing_file: "현재 볼트 목록에 지도 파일이 없습니다. 아래 보관된 지도 기록을 펼쳐 저장된 스냅샷을 확인하세요.",
+    map_recovery_title: "보관된 지도 기록",
+    map_recovery_note: "저장된 스냅샷이며 시간순 이력이나 갱신 완료를 뜻하지 않습니다. 게시 여부 불명 기록은 과거 갱신 또는 중단된 시도일 수 있습니다. 여기서는 복원하거나 삭제할 수 없습니다.",
+    map_recovery_empty: "이 지도에 보관된 기록이 없습니다.",
+    map_recovery_error: "보관된 기록을 읽지 못했습니다. 다시 조회로 재시도하세요.",
+    map_recovery_current: "현재 파일과 연결된 기록",
+    map_recovery_unknown: "게시 여부 불명",
+    map_recovery_invalid: "검증할 수 없는 기록",
+    map_recovery_invalid_note: "이 기록을 검증하지 못해 본문을 숨겼습니다. 기록은 보존됩니다.",
+    map_recovery_no_before: "이전 스냅샷이 기록되지 않았습니다.",
+    map_recovery_saved: "저장된 스냅샷",
+    map_history_title: "최근 지도 갱신",
+    map_history_note: "중단된 갱신을 포함해 마지막으로 기록된 변경을 표시합니다. 출처 검증의 완료를 뜻하지는 않습니다. 전체 이력과 되돌리기는 아직 지원하지 않습니다.",
+    map_history_select: "지도 선택",
+    map_history_reload: "다시 조회",
+    map_history_no_maps: "이 볼트에는 토픽 지도가 없습니다.",
+    map_history_error: "갱신 기록을 읽지 못했습니다. 다시 조회해 주세요.",
+    map_history_missing: "변경 전후 기록이 없습니다. 새 지도이거나 이전 형식의 기록일 수 있습니다.",
+    map_history_changed: "저장된 갱신 이후 지도가 편집되었습니다. 아래 내용은 저장 당시의 기록입니다.",
+    map_history_before: "갱신 전",
+    map_history_after: "갱신 후",
+    map_refresh_title: "지도 변경 검토",
+    map_refresh_message: "생성 영역의 변경 내용을 확인하세요. 제목과 영역 밖에 작성한 내용은 보존됩니다. 이 갱신은 히스토리에서 되돌릴 수 없습니다.",
+    map_refresh_apply: "지도 갱신",
+    map_refresh_needs_manual_review: "이 지도의 갱신 기록을 확인할 수 없어요. 기존 지도는 보존했어요. 지도를 열어 직접 검토하고 수정하세요.",
     pf_retry: "재시도",
     pf_apply_failed: "적용 실패 — 재시도",
     pf_map_needs_writer: "주제 지도를 쓰려면 글을 쓰는 모델이 필요해요",
@@ -8014,7 +8107,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hist_expand: "展開",
     ing_run_again: "別のソースを取り込む",
     ing_live_title: "LLM がウィキを作成中…",
-    ing_live_warmup: "Claude を起動中…",
+    ing_live_warmup: "ソースの処理を準備中…",
     ing_live_activity: "ライブアクティビティ",
     ing_live_earlier: "以前の {n} 件",
     ing_live_files: "作業したページ",
@@ -8348,6 +8441,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint 完了",
     p_lint_failed: "Lint 失敗",
     s_title: "設定",
+    s_loading: "設定を開いています…",
     s_search_ph: "設定を検索",
     s_search_empty: "「{q}」に一致する設定はありません",
     s_account: "自分のスペース",
@@ -9148,6 +9242,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_intensity_conservative: "保守的",
     set_distill_intensity_standard: "標準",
     set_distill_intensity_aggressive: "積極的",
+    set_distill_map_refresh_desc: "承認済みのマップ提案は既存の生成部分を自動更新できます。タイトルと範囲外の記述は保持され、生成部分を編集した場合は確認を待ちます。マップ更新はまだ履歴から元に戻せません。",
     set_distill_gate: "ゲートプリセット",
     set_distill_gate_strict: "厳格",
     set_distill_gate_normal: "通常",
@@ -9251,7 +9346,36 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_outcome_admit: "隔離された資料 {n} 件をボルトへ戻します。",
     pf_retired: "もう必要ありません — 元の資料はそのまま残します",
     pf_outcome_delete: "隔離された資料 {n} 件をゴミ箱へ移します。",
-    pf_confirm_msg_draft_map: "トピックマップの下書きを作ります（モデルを1回使います）。",
+    pf_confirm_msg_draft_map: "トピックマップの下書き、または既存マップの更新案を作成して確認します（モデルを1回使います）。",
+    map_recovery_discover: "保管マップを探す",
+    map_recovery_catalog_error: "保管マップを取得できませんでした。「保管マップを探す」で再試行してください。",
+    map_recovery_catalog_incomplete: "識別できない保存記録があるため、一覧に不足がある可能性があります。",
+    map_recovery_retained_only: "保管記録のみ",
+    map_recovery_missing_file: "現在のボルト一覧にマップファイルがありません。下の保管されたマップ記録を開いてスナップショットを確認してください。",
+    map_recovery_title: "保管されたマップ記録",
+    map_recovery_note: "保存されたスナップショットです。時系列の履歴や更新完了を示すものではありません。反映状況が不明な記録には、過去の更新と中断された試行が含まれます。ここでは復元や削除はできません。",
+    map_recovery_empty: "このマップに保管された記録はありません。",
+    map_recovery_error: "保管された記録を読み込めませんでした。再読み込みで再試行してください。",
+    map_recovery_current: "現在のファイルに対応する記録",
+    map_recovery_unknown: "反映状況は不明",
+    map_recovery_invalid: "検証できない記録",
+    map_recovery_invalid_note: "この記録を検証できなかったため、本文を非表示にしています。記録は保持されます。",
+    map_recovery_no_before: "以前のスナップショットは記録されていません。",
+    map_recovery_saved: "保存されたスナップショット",
+    map_history_title: "最新のマップ更新",
+    map_history_note: "中断された更新を含む、最後に記録された変更を表示します。出典の検証完了を示すものではありません。全履歴と元に戻す操作は利用できません。",
+    map_history_select: "マップを選択",
+    map_history_reload: "再読み込み",
+    map_history_no_maps: "この保管庫にトピックマップはありません。",
+    map_history_error: "更新記録を読み込めませんでした。再読み込みしてください。",
+    map_history_missing: "更新前後の記録がありません。新しいマップか、古い形式の記録の可能性があります。",
+    map_history_changed: "保存された更新後にマップが編集されています。以下は保存時点の記録です。",
+    map_history_before: "更新前",
+    map_history_after: "更新後",
+    map_refresh_title: "マップの変更を確認",
+    map_refresh_message: "生成部分の変更を確認してください。タイトルと範囲外のメモは保持されます。この更新は履歴から元に戻せません。",
+    map_refresh_apply: "マップを更新",
+    map_refresh_needs_manual_review: "このマップの更新記録を確認できません。既存のマップは保持されています。マップを開き、内容を確認して手動で編集してください。",
     pf_retry: "再試行",
     pf_apply_failed: "適用に失敗しました — 再試行",
     pf_map_needs_writer: "トピックマップを書くには、文章を書けるモデルが必要です",

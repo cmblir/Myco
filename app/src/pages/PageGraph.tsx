@@ -594,10 +594,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     selectedRef.current = id;
     setSelected(id);
     focusOn(id);
-    sceneRef.current?.focusNode(
-      id,
-      withNeighbours ? { neighbours: true, coverRightPx: INSPECTOR_COVER_PX } : {},
-    );
+    sceneRef.current?.focusNode(id, {
+      neighbours: withNeighbours,
+      coverRightPx: INSPECTOR_COVER_PX,
+    });
     myceliumFocusRef.current?.(id);
   };
   // A pick from the gaps list, the find box or an inspector link means "show
@@ -2526,7 +2526,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 isSample={(id) => isSamplePath(currentVault?.path ?? "", id)}
                 onAction={act}
                 onNeighbors={(id) => {
-                  setSelected(id);
+                  showNode(id, true);
                   setSettings((prev) => ({ ...prev, question: "neighbors" }));
                 }}
               />

@@ -26,8 +26,11 @@ fn snapshot_revision_binds_same_stamp_bytes_and_survives_metadata_only_restore()
     let first = read_snapshot(&path).unwrap().unwrap();
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     std::fs::write(&path, b"bravo").unwrap();
-    let file = File::open(&path).unwrap();
-    file.set_times(std::fs::FileTimes::new().set_modified(modified))
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(modified))
         .unwrap();
     let second = read_snapshot(&path).unwrap().unwrap();
     assert_eq!(first.revision.len, second.revision.len);
@@ -35,7 +38,11 @@ fn snapshot_revision_binds_same_stamp_bytes_and_survives_metadata_only_restore()
     assert_ne!(first.revision.digest, second.revision.digest);
     assert_eq!(second.bytes, b"bravo");
     std::fs::write(&path, b"alpha").unwrap();
-    file.set_times(std::fs::FileTimes::new().set_modified(modified))
+    File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_times(std::fs::FileTimes::new().set_modified(modified))
         .unwrap();
     assert_eq!(
         first.revision,
@@ -67,7 +74,9 @@ fn snapshot_rejects_growth_and_shrink_during_held_read() {
         let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
         let result = read_snapshot_after_open(&path, |_| {
             std::fs::write(&path, replacement).unwrap();
-            File::open(&path)
+            File::options()
+                .write(true)
+                .open(&path)
                 .unwrap()
                 .set_times(std::fs::FileTimes::new().set_modified(modified))
                 .unwrap();
@@ -77,7 +86,7 @@ fn snapshot_rejects_growth_and_shrink_during_held_read() {
     }
 }
 
-#[cfg(unix)]
+#[cfg(any(unix, windows))]
 #[test]
 fn snapshot_rejects_same_stamp_write_during_held_read() {
     let directory = tempfile::tempdir().unwrap();
@@ -86,13 +95,41 @@ fn snapshot_rejects_same_stamp_write_during_held_read() {
     let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
     let result = read_snapshot_after_open(&path, |_| {
         std::fs::write(&path, b"bravo").unwrap();
-        File::open(&path)
+        File::options()
+            .write(true)
+            .open(&path)
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
     });
     assert!(result.is_err());
     assert_eq!(std::fs::read(&path).unwrap(), b"bravo");
+}
+
+#[cfg(windows)]
+#[test]
+fn snapshot_rejects_repeated_same_stamp_writes_from_one_retained_writer() {
+    use std::io::{Seek, SeekFrom, Write};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Synthetic 한글 index.mxb");
+    std::fs::write(&path, b"alpha").unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let mut writer = File::options().read(true).write(true).open(&path).unwrap();
+    for replacement in [b"bravo", b"alpha"].into_iter().cycle().take(16) {
+        let result = read_snapshot_after_open(&path, |_| {
+            writer.seek(SeekFrom::Start(0)).unwrap();
+            writer.write_all(replacement).unwrap();
+            writer
+                .set_times(std::fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+        });
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), replacement);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            modified
+        );
+    }
 }
 
 #[test]
@@ -194,4 +231,40 @@ fn snapshot_rejects_fifo_and_post_open_symlink_without_following_target() {
     });
     assert!(result.is_err());
     assert_eq!(std::fs::read(&target).unwrap(), b"bravo");
+}
+
+#[test]
+fn snapshot_rejects_same_bytes_same_time_replacement_during_read() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("synthetic 한글 index.mxb");
+    let old = directory.path().join("retained.mxb");
+    std::fs::write(&path, b"alpha").unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let result = read_snapshot_after_open(&path, |_| {
+        std::fs::rename(&path, &old).unwrap();
+        std::fs::write(&path, b"alpha").unwrap();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+    });
+    assert!(result.unwrap_err().contains("changed during read"));
+    assert_eq!(std::fs::read(&old).unwrap(), b"alpha");
+    assert_eq!(std::fs::read(&path).unwrap(), b"alpha");
+}
+
+#[test]
+fn snapshot_rejects_added_hard_link_during_read_without_removing_either_name() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("index.mxb");
+    let alias = directory.path().join("alias.mxb");
+    std::fs::write(&path, b"alpha").unwrap();
+    let result = read_snapshot_after_open(&path, |_| {
+        std::fs::hard_link(&path, &alias).unwrap();
+    });
+    assert!(result.unwrap_err().contains("changed during read"));
+    assert_eq!(std::fs::read(&path).unwrap(), b"alpha");
+    assert_eq!(std::fs::read(&alias).unwrap(), b"alpha");
 }

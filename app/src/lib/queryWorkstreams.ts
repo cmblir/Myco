@@ -7,6 +7,7 @@
 import type { Lang } from "./i18n";
 import { isUndatedActivityOverview } from "./queryActivity";
 import { chunkCitation } from "./retrievalContext";
+import { queryDateRange, type DateRange } from "./timeQuery";
 
 interface Report {
   epoch: number;
@@ -40,7 +41,7 @@ interface WorkstreamConversation {
   parent_report: Report | null;
 }
 
-const TITLE_SOURCES = ["user", "readme", "package", "derived", "key"] as const;
+const TITLE_SOURCES = ["user", "readme", "package", "derived", "key", "folder"] as const;
 
 /** A line a recent session's report leaves open. */
 interface OpenItem {
@@ -56,6 +57,8 @@ interface Workstream {
    * its conversations use distinctively, or else the key. */
   title_source: (typeof TITLE_SOURCES)[number];
   page: string;
+  /** Retained page bytes differ from current facts; native ownership is unproven. */
+  page_refresh_pending?: boolean;
   first_epoch: number;
   last_epoch: number;
   conversations: number;
@@ -66,10 +69,10 @@ interface Workstream {
   open_items: OpenItem[];
 }
 
-/** `.myco/workstreams.json` version 4, written by the native reconcile. Any
+/** `.myco/workstreams.json` version 6, written by the native reconcile. Any
  * other version is not read; the next reconcile rewrites it. */
 export interface WorkstreamFacts {
-  version: 4;
+  version: 6;
   last_record_epoch: number;
   unassigned: number;
   workstreams: Record<string, Workstream>;
@@ -101,6 +104,7 @@ function isWorkstream(value: unknown, key: string, conversations: Record<string,
   return isObject(value) && isText(value.title, 1024) &&
     (TITLE_SOURCES as readonly unknown[]).includes(value.title_source) &&
     isLinkPath(value.page, "wiki/workstreams/") &&
+    (value.page_refresh_pending === undefined || typeof value.page_refresh_pending === "boolean") &&
     [value.first_epoch, value.last_epoch, value.conversations, value.roots].every(isEpoch) &&
     (value.summary === null || isText(value.summary, 1024)) &&
     Array.isArray(value.open_items) && value.open_items.length <= 10 &&
@@ -125,7 +129,7 @@ function isConversation(value: unknown, workstreams: Record<string, unknown>): b
 
 /** Hand-written contract check; the file sits in the vault and may be edited. */
 function isWorkstreamFacts(value: unknown): value is WorkstreamFacts {
-  if (!isObject(value) || value.version !== 4 || !isEpoch(value.last_record_epoch) || !isEpoch(value.unassigned))
+  if (!isObject(value) || value.version !== 6 || !isEpoch(value.last_record_epoch) || !isEpoch(value.unassigned))
     return false;
   const { workstreams, conversations } = value;
   return isObject(workstreams) && isObject(conversations) &&
@@ -264,6 +268,67 @@ export function resolveWorkstream(name: string, facts: WorkstreamFacts): string 
   return top && top[1] >= MENTIONS && top[1] * 5 >= total * 4 ? top[0] : null;
 }
 
+export interface WorkstreamSources {
+  key: string;
+  title: string;
+  paths: string[];
+  range: DateRange | null;
+  incomplete: boolean;
+}
+
+/** A project follow-up cannot silently answer its old project when another
+ * current project key or title is explicitly named as whole words. */
+export function mentionsOtherWorkstream(question: string, selectedKey: string, facts: WorkstreamFacts): boolean {
+  const words = nameWords(question);
+  return Object.entries(facts.workstreams).some(([key, project]) => key !== selectedKey &&
+    [key, project.title].some(label => {
+      const named = nameWords(label);
+      return named.join("").length >= 2 && hasRun(words,named);
+    }));
+}
+
+/** Project facts select candidates, never establish a task's current state.
+ * Only current native-ledger projections may enter the original-source flow. */
+export function workstreamSources(name: string, facts: WorkstreamFacts, ledgerRaw: string, queryTime: Date,
+  limits: { paths?: readonly string[]; range?: DateRange; asOf?: string } = {}): WorkstreamSources | null {
+  const key = resolveWorkstream(name, facts);
+  if (!key) return null;
+  const members = Object.entries(facts.conversations).filter(([, c]) => c.key === key && !c.automated);
+  const day = (epoch: number) => workstreamRecentRange(new Date(epoch * 1000)).end;
+  const start = limits.range?.start ?? day(facts.workstreams[key].first_epoch);
+  const end = [limits.range?.end, limits.asOf, workstreamRecentRange(queryTime).end]
+    .filter((value): value is string => Boolean(value)).sort()[0];
+  const range = start <= end ? { start, end } : null;
+  const selected: WorkstreamSources = {key, title:facts.workstreams[key].title, paths:[], range, incomplete:false};
+  if (!range) return selected;
+  // This is a bounded candidate snapshot, not native custody or source proof.
+  if (ledgerRaw.length > 8 * 1024 * 1024) return {...selected,incomplete:true};
+  let ledger: unknown;
+  try { ledger = JSON.parse(ledgerRaw); }
+  catch { return {...selected,incomplete:true}; }
+  if (!isObject(ledger) || !isObject(ledger.entries) || !isObject(ledger.locations))
+    return {...selected,incomplete:true};
+  const { entries, locations } = ledger;
+  const bounds = queryDateRange(range);
+  const candidates = members.filter(([, c]) => c.first_epoch < bounds.endEpoch && c.last_epoch >= bounds.startEpoch);
+  const owners = new Map<string, number>();
+  for (const [location, path] of Object.entries(locations))
+    if (location.startsWith("sessions:") && typeof path === "string") owners.set(path,(owners.get(path) ?? 0) + 1);
+  for (const [id, c] of candidates) {
+    const path = locations[`sessions:${id}`];
+    if (id !== `${c.vendor}:${c.id}` || !/^[a-f0-9]{16}$/.test(c.fp) || entries[id] !== c.fp ||
+        !isLinkPath(path,"sessions/") || typeof path !== "string" ||
+        [...path].some(char => char === "\\" || char.charCodeAt(0) < 32 || char.charCodeAt(0) === 127) || owners.get(path) !== 1) {
+      selected.incomplete = true;
+      continue;
+    }
+    if (limits.paths && !limits.paths.includes(path)) continue;
+    selected.paths.push(path);
+  }
+  selected.paths.sort();
+  return selected;
+}
+
 const EN = {
   progress: "{page} has {roots} sessions ({conversations} conversations) from {first} to {last}. Newest first:",
   asked: "{page} (asked as “{name}”)",
@@ -275,9 +340,14 @@ const EN = {
   link: "{host} link",
   more: "{count} older sessions are on the {page}.",
   pageLink: "project page",
+  pageRefreshPending: "page refresh pending; existing content was preserved",
   window: "the last 7 days ({start} – {end})",
-  lastWindow: "the 7 days up to the last record ({start} – {end})",
   emptyWindow: "No conversation from the last 7 days ({start} – {end}) belongs to a project.",
+  choosePeriod: "Name a project or ask with explicit dates to search older records.",
+  chooseProject: "Name the project whose current work state you want to review.",
+  projectNotFound: "I couldn't identify one project. Select it from the project list or enter its exact project name or key.",
+  stateModelRequired: "Project state requires a built-in local chat model that supports original-source review. Select one in Model settings, then retry.",
+  stateIncomplete: "Some project records could not be checked. The supported state below covers only the available sources; the full current state remains unconfirmed.",
   recent: "In {window}, there were {conversations} conversations across {projects} projects:",
   recentLine: "{conversations} conversations in {roots} sessions, last active {date}",
   assumed: "No project was named, so this assumes {title}, the project with the most conversations in {window}. Name a project to ask about another one.",
@@ -308,9 +378,14 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     link: "{host} 링크",
     more: "이전 세션 {count}개는 {page}에서 볼 수 있습니다.",
     pageLink: "프로젝트 페이지",
+    pageRefreshPending: "페이지 갱신 대기: 기존 내용을 보존했습니다",
     window: "최근 7일({start} – {end})",
-    lastWindow: "마지막 기록까지의 7일({start} – {end})",
     emptyWindow: "최근 7일({start} – {end})에는 프로젝트로 묶인 대화가 없습니다.",
+    choosePeriod: "이전 기록을 보려면 프로젝트 이름이나 원하는 날짜를 넣어 다시 물어보세요.",
+    chooseProject: "현재 작업 상태를 확인할 프로젝트 이름을 입력해 주세요.",
+    projectNotFound: "프로젝트를 하나로 특정하지 못했습니다. 프로젝트 목록에서 선택하거나 정확한 이름 또는 식별자를 입력해 주세요.",
+    stateModelRequired: "프로젝트 상태 확인에는 원문 검토를 지원하는 내장 로컬 대화 모델이 필요합니다. 모델 설정에서 선택한 뒤 다시 시도해 주세요.",
+    stateIncomplete: "일부 프로젝트 기록을 확인하지 못했습니다. 아래 상태는 확인 가능한 원문에 한정되며, 전체 현재 상태는 미확인입니다.",
     recent: "{window} 동안 프로젝트 {projects}개에서 대화 {conversations}건이 있었습니다.",
     recentLine: "대화 {conversations}건, 세션 {roots}개, 마지막 활동 {date}",
     assumed: "프로젝트 이름이 없어, {window} 동안 대화가 가장 많은 {title} 프로젝트로 가정했습니다. 다른 프로젝트라면 이름을 넣어 다시 물어보세요.",
@@ -338,9 +413,14 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
     link: "{host}のリンク",
     more: "以前のセッション{count}件は{page}で確認できます。",
     pageLink: "プロジェクトページ",
+    pageRefreshPending: "ページ更新待ち：既存の内容を保持しました",
     window: "直近7日間（{start}〜{end}）",
-    lastWindow: "最後の記録までの7日間（{start}〜{end}）",
     emptyWindow: "直近7日間（{start}〜{end}）には、プロジェクトにまとめられた会話がありません。",
+    choosePeriod: "以前の記録を探すには、プロジェクト名か具体的な日付を指定して質問してください。",
+    chooseProject: "現在の作業状態を確認するプロジェクト名を入力してください。",
+    projectNotFound: "プロジェクトを一つに特定できませんでした。一覧から選ぶか、正確なプロジェクト名または識別子を入力してください。",
+    stateModelRequired: "プロジェクトの状態確認には原文レビューに対応した内蔵ローカルチャットモデルが必要です。モデル設定で選択して再試行してください。",
+    stateIncomplete: "一部のプロジェクト記録を確認できませんでした。以下は確認可能な原文に限られ、全体の現在の状態は未確認です。",
     recent: "{window}に、{projects}件のプロジェクトで会話が{conversations}件ありました。",
     recentLine: "会話{conversations}件、セッション{roots}件、最終活動 {date}",
     assumed: "プロジェクト名がないため、{window}に会話が最も多い{title}と仮定しました。別のプロジェクトについては、名前を入れて質問してください。",
@@ -359,8 +439,6 @@ export const WORKSTREAM_COPY: Record<Lang, Record<keyof typeof EN, string>> = {
   },
 };
 
-const DAY = 86_400;
-const WINDOW = 7 * DAY;
 /** Root sessions a progress answer lists; the project page keeps the rest. */
 const PROGRESS_ROOTS = 5;
 
@@ -397,16 +475,19 @@ function newest(entries: Entry[], at: (c: WorkstreamConversation) => number | un
 /** Letters only a report in that UI language has: Hangul for ko, kana for ja. */
 const UI_SCRIPT: Partial<Record<Lang, RegExp>> = { ko: /\p{Script=Hangul}/u, ja: /[\p{Script=Hiragana}\p{Script=Katakana}]/u };
 
-/** The report a session shows and the conversation it was read from: what
- * came back in the person's own thread, else that thread's answer a
- * sub-agent copied in when it forked (the thread may not be in the vault),
- * else what a sub-agent reported; within each, one written in the UI
- * language, then the latest; ties take the greater ledger key. */
+/** A parent link proves lineage, not project identity. */
+function copiedReport(entries: Entry[], conversation: WorkstreamConversation): Report | null {
+  return conversation.key !== null && entries.some(([id, parent]) =>
+    id === conversation.root && parent.key === conversation.key) ? conversation.parent_report : null;
+}
+
+/** Prefer the person's own report, then a positively same-project copy,
+ * then a sub-agent's report; within each, the UI language and latest time. */
 function preferredReport(entries: Entry[], lang: Lang): { entry: Entry; report: Report } | undefined {
   const script = UI_SCRIPT[lang];
   const shown = entries.flatMap((entry) => {
     const [, c] = entry;
-    return ([[c.subagent ? 0 : 2, c.report], [1, c.parent_report]] as const)
+    return ([[c.subagent ? 0 : 2, c.report], [1, copiedReport(entries, c)]] as const)
       .filter(([, report]) => report?.text.trim())
       .map(([tier, report]) => ({ entry, report: report!, tier, inLang: Number(script?.test(report!.text) ?? false) }));
   });
@@ -417,7 +498,7 @@ function preferredReport(entries: Entry[], lang: Lang): { entry: Entry; report: 
 /** Whether a session has anything to show: a request or a report. A helper
  * session that only named a git branch has neither. */
 const hasWords = (members: Entry[]): boolean =>
-  members.some(([, c]) => c.request?.trim() || c.report?.text.trim() || c.parent_report?.text.trim());
+  members.some(([, c]) => c.request?.trim() || c.report?.text.trim() || copiedReport(members, c)?.text.trim());
 
 function groupBy(entries: Entry[], keyOf: (c: WorkstreamConversation) => string | null): [string, Entry[]][] {
   const groups = new Map<string, Entry[]>();
@@ -436,21 +517,15 @@ const byLatest = (groups: [string, Entry[]][]) => groups
   .map(([key, members]) => ({ key, members, last: Math.max(...members.map(([, c]) => c.last_epoch)) }))
   .sort((a, b) => b.last - a.last || byText(a.key, b.key));
 
-/** [query time - 7 days, query time]; when no conversation of a project was
- * active then, the 7 days ending at the newest record. Null when neither
- * holds one. Unassigned conversations list nothing, so they choose nothing. */
-function recentSpan(entries: Entry[], lastRecord: number, queryTime: Date): { span: Span; asked: Span } | null {
-  const now = Math.floor(queryTime.getTime() / 1000);
-  const asked = { start: now - WINDOW, end: now };
-  const listed = entries.filter(([, c]) => c.key !== null);
-  if (listed.some(([, c]) => overlaps(c, asked))) return { span: asked, asked };
-  const last = { start: lastRecord - WINDOW, end: lastRecord };
-  return listed.some(([, c]) => overlaps(c, last)) ? { span: last, asked } : null;
+/** Seven local calendar days, including today; shared with saved Ask metadata. */
+export function workstreamRecentRange(queryTime: Date): DateRange {
+  const day = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  return { start: day(new Date(queryTime.getFullYear(), queryTime.getMonth(), queryTime.getDate() - 6)), end: day(queryTime) };
 }
 
 /** The deterministic answer, or null when the named project is unknown or
- * ambiguous, or no project was active in the recent window. Remaining work
- * and explain always name a project. */
+ * ambiguous. An empty recent period stays empty and offers an explicit
+ * older-record search. Remaining work and explain always name a project. */
 export function workstreamAnswer(question: WorkstreamQuestion, facts: WorkstreamFacts, lang: Lang, queryTime: Date): string | null {
   const copy = WORKSTREAM_COPY[lang];
   // Month and day, with the year only when it is not the year asked in. A
@@ -468,7 +543,9 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
   // A program's sessions are the person's work nowhere in an answer.
   const entries = Object.entries(facts.conversations).filter(([, c]) => !c.automated);
   const title = (key: string): string => facts.workstreams[key].title.replace(/\s+/g, " ").trim() || key;
-  const page = (key: string): string => chunkCitation({ page: facts.workstreams[key].page, stem: title(key) });
+  const page = (key: string, label = title(key)): string =>
+    chunkCitation({ page: facts.workstreams[key].page, stem: label }) +
+    (facts.workstreams[key].page_refresh_pending ? ` (${copy.pageRefreshPending})` : "");
   const source = ([, c]: Entry): string => chunkCitation({ page: c.raw, stem: copy.source });
   /** A request that is only a link reads as its site, not a long URL. */
   const asked = (request: string): string => {
@@ -526,7 +603,7 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
       fill(copy.progress, { page: named(key, name), roots: count(workstream.roots), conversations: count(workstream.conversations),
         first: day(workstream.first_epoch), last: day(workstream.last_epoch) }),
       roots.slice(0, PROGRESS_ROOTS).map(({ members, last }) => dated(members, last)).join("\n"),
-      more > 0 ? fill(copy.more, { count: count(more), page: chunkCitation({ page: workstream.page, stem: copy.pageLink }) }) : "",
+      more > 0 ? fill(copy.more, { count: count(more), page: page(key, copy.pageLink) }) : "",
       copy.reportedOnly,
     ].filter(Boolean).join("\n\n");
   };
@@ -578,20 +655,25 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
     return question.kind === "remaining" ? remaining(key, question.name) :
       question.kind === "explain" ? explain(key, question.name) : progress(key, question.name);
   }
-  const window = recentSpan(entries, facts.last_record_epoch, queryTime);
-  if (!window) return null;
-  const inWindow = entries.filter(([, c]) => overlaps(c, window.span));
+  const period = queryDateRange(workstreamRecentRange(queryTime));
+  const window = { start: period.startEpoch, end: Math.floor(queryTime.getTime() / 1000) };
+  const inWindow = entries.filter(([, c]) => overlaps(c, window)).map(([key, c]): Entry => [key, {
+    ...c,
+    // A long conversation can overlap the period while its quoted request or
+    // latest report does not. Never carry those outside-period words into it.
+    request: c.first_epoch >= window.start && c.first_epoch <= window.end ? c.request : null,
+    report: c.report && c.report.epoch >= window.start && c.report.epoch <= window.end ? c.report : null,
+    parent_report: c.parent_report && c.parent_report.epoch >= window.start && c.parent_report.epoch <= window.end ? c.parent_report : null,
+  }]);
   // Most conversations first, then latest activity: the unnamed default.
   const active = byLatest(groupBy(inWindow, (c) => c.key))
     .sort((a, b) => b.members.length - a.members.length || b.last - a.last || byText(a.key, b.key));
-  if (!active.length) return null;
-  const fallback = window.span !== window.asked;
   const range = (span: Span) => ({ start: day(span.start), end: day(span.end) });
-  const label = fill(fallback ? copy.lastWindow : copy.window, range(window.span));
-  const intro = fallback ? fill(copy.emptyWindow, range(window.asked)) : "";
+  if (!active.length) return [fill(copy.emptyWindow, range(window)), copy.choosePeriod].join("\n\n");
+  const label = fill(copy.window, range(window));
 
   if (question.kind === "progress")
-    return [intro, fill(copy.assumed, { window: label, title: inline(title(active[0].key)) }), progress(active[0].key, null)]
+    return [fill(copy.assumed, { window: label, title: inline(title(active[0].key)) }), progress(active[0].key, null)]
       .filter(Boolean).join("\n\n");
 
   // Each project with its counts, then its latest session in the window with
@@ -605,7 +687,6 @@ export function workstreamAnswer(question: WorkstreamQuestion, facts: Workstream
   });
   const unassigned = inWindow.filter(([, c]) => c.key === null).length;
   return [
-    intro,
     fill(copy.recent, { window: label, projects: count(active.length),
       conversations: count(active.reduce((sum, group) => sum + group.members.length, 0)) }),
     lines.join("\n"),
@@ -633,7 +714,7 @@ export interface WorkstreamChoice {
  * person's conversations is left out. */
 export function workstreamChoices(facts: WorkstreamFacts, queryTime: Date): WorkstreamChoice[] {
   const now = Math.floor(queryTime.getTime() / 1000);
-  const week = { start: now - WINDOW, end: now };
+  const week = { start: queryDateRange(workstreamRecentRange(queryTime)).startEpoch, end: now };
   const active = new Map<string, number>();
   for (const c of Object.values(facts.conversations))
     if (!c.automated && c.key !== null && overlaps(c, week)) active.set(c.key, (active.get(c.key) ?? 0) + 1);

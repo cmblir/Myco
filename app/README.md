@@ -31,7 +31,7 @@ together yourself:
   (1.27 GB of disk space) adds import drafts when explicitly selected for import,
   plus organization drafts when Ask uses the built-in provider. Drafts retain
   source quotes and require review.
-  Classification, maps and other file-tool workflows still need a connected
+  Classification and other file-tool workflows still need a connected
   provider. Intel Mac with 8 GB RAM inference
   performance has not been measured.
 
@@ -51,10 +51,23 @@ together yourself:
   generation prevents literal angle-bracket markup before validation. Valid links still
   do not certify the answer's meaning.
 
-  Topic-free recent-work questions such as “내가 최근에 한 일들에 대해서 정리해줘”
-  let the selected local chat model choose a period from the question and the
-  available record dates, without a fixed seven-day default. Ask displays that
-  period, reads date-grounded records within the selected scope, and summarizes
+  When imported workstream facts answer a topic-free recent-work question such
+  as “내가 최근에 한 일들에 대해서 정리해줘”, the overview uses seven local
+  calendar days including today, displayed in the answer and saved with it. An
+  empty period stays empty and offers an explicit search of older records.
+  Guided project questions disclose their session evidence before submission;
+  explicit scope and selected-note restrictions take priority. Recognized progress
+  and guided remaining-work questions use the selected built-in local chat model's
+  original-source resolution flow. Workstream facts only select project records;
+  they do not establish task completion. Current-state and historical-cutoff
+  queries retain the project identity and explicit filters on follow-up and retry,
+  rediscover available project records, expose missing coverage, and reject a
+  changed project snapshot before showing the answer. Other free-text
+  remaining-work phrasings still use ordinary Ask; this is not universal intent recognition.
+  An unsupported selected provider offers a model-setting message without
+  selecting another model. For other recent-activity questions, the selected local chat model can choose a period from
+  the question and available record dates. Ask displays that period, reads
+  date-grounded records within the selected scope, and summarizes
   work themes, reported results and requests with unrecorded outcomes.
   Related records become concrete work themes rather than a list of worker
   handoffs. Failed period planning and failed summary generation have separate
@@ -75,6 +88,9 @@ together yourself:
   Current Qwen 4B activity answers still fail semantic checks for unrecorded
   outcomes and missing citations; review them against their sources. See the
   [verification report](docs/research/2026-10-07-recent-activity-verification.md).
+  Project grouping now separates recorded absolute folders with opaque keys.
+  Verified repository equivalence across folders and actual-model project-state
+  acceptance remain open in the [current goal](docs/specs/2026-11-10-llm-wiki-goal.md).
 - **A vault you own** — everything is plain markdown on disk. Open the
   folder in Finder, in Obsidian, in Vim — myco never locks your data.
 
@@ -90,7 +106,213 @@ folder is created only when no previous folder has been selected.
 
 ## Highlights
 
+Unsubmitted Ingest titles and text persist on this device per vault across page
+changes and restarts. A storage failure retains the input in memory and offers
+Retry. Failed, cancelled and partial imports keep the draft; successful completion
+clears only the exact submitted version. Clear text explicitly discards a draft.
+Successful imports prioritize **Review notes**, with readable titles, observed
+creation/update status and the original source link. A page with insufficient
+before/after evidence is labelled changed. Partial imports prioritize Retry;
+result links are hidden after the originating vault opening changes.
+Local imports list only their confirmed writes, so concurrent edits to unrelated
+notes do not appear as import results or turn an empty write result into success.
+Legacy provider paths without a confirmed write list still show changes observed
+during the run and may include concurrent edits.
+
+Home uses a compact introduction on returning devices, preserving first-visit
+onboarding and custom layouts. Ask examples live inside the composer and only
+fill and focus the draft; choosing one does not submit a question.
+
+Follow-up questions retain a previous date window only within the same scope and
+selected-note context. An explicitly supplied new date takes priority. Switching
+scope or note does not carry the previous answer's topic or evidence into the new
+question. The current document-specific control is the selected-note scope; a
+general checked-document selector is not available in this build.
+Original-source rechecks use portable vault-relative paths, including nested
+folders with Unicode and spaces, while retaining the exact selected-note limit.
+Recall-period planning applies the same portable path check to its date catalog,
+so selected nested notes retain their dates without exposing their body text to
+the planning prompt.
+Free-form local answers retain recurring source links and subjects across distinct
+statements. The repetition guard stops consecutive repeated text while preserving
+its first complete copy; token limits and cancellation still bound generation.
+Local text previews pass system instructions separately from user messages through
+the native bridge. Map evidence therefore keeps its user-message boundary rather
+than being flattened together with the map's system instructions.
+
+Workstream facts v6 group source-recorded absolute working folders with opaque
+keys, rather than merging matching folder names. Ambiguous folders stay
+unassigned, including records with non-string working-folder declarations.
+The existing opaque project keys remain unchanged. Reconciliation rereads tracked
+immutable originals for the migration;
+it preserves existing project pages and name overrides. Differing retained pages
+show a refresh-pending notice. Different machines using the same path are not
+distinguished yet; verified equivalence between a repository's subdirectories or
+worktrees remains incomplete.
+
+New topic-map drafts delimit the generated body with `myco:map-generated:v1`
+comments and record its exact SHA-256 revision in `map_generated`. Titles and
+text outside that block remain separate from the generated section. These public
+descriptors are not ownership credentials and do not enable existing-map refresh.
+Empty output or output containing reserved section markers stays pending for retry
+without publishing a map. Durable native refresh authority is still required.
+The native publication command independently checks the versioned boundary and
+exact generated-body hash before writing. A matching descriptor proves content
+consistency only, not source entailment or ownership of an existing map.
+On supported Unix filesystems, new maps also retain their native file object and
+creation baseline under `<app-data>/map-creation-custody`. This requires vault and
+app data to support hard links on the same filesystem. Conflicting or failed
+records preserve output for recovery instead of confirming publication. These
+records support freshly authorized native refreshes. Custody cleanup remains
+incomplete.
+On supported Unix filesystems, foreground editor saves transfer verified private
+map custody to the atomically replaced file while retaining the original generated
+baseline. Human edits inside generated sections still prevent automatic refresh.
+Previously detached maps and external replacements are not adopted from public
+markers or matching bytes. Manual proposal errors explain in the selected language
+when an update record cannot be verified and direct you to review and edit the
+preserved map manually. Native regression/interruption tests and a bundled macOS
+editor → restart → two changed-source refresh replay preserve the human paragraph
+byte-for-byte with one map. That earlier replay produced an unsupported partial-
+coverage claim; see the [native replay receipt](docs/research/2026-11-11-native-editor-refresh-replay.json).
+Map generation now uses an example that excludes quoted commands while preserving
+source subjects and the scope of negation. The exact prompt passes three frozen
+offline cases across nine candidate outputs, including the existing-cluster failure.
+Historical map prompt prefixes remain recognized as machine-generated sessions.
+Rebuilt native/UI replay and broader explanation quality remain unverified; see the
+[controlled comparison](docs/research/2026-11-11-map-example-native-role-comparison-review.json).
+Before publication completes, the native writer re-reads the private record and
+checks its exact bytes and file identity; unstable or unsafe records stop completion.
+Creation observations also validate their schema, vault/target scope, baseline
+revision and retained file object. Reading a baseline and current human-edited
+text does not restore an update or deletion permit.
+Readback separately flags edits to the generated body or its evidence/descriptor
+metadata. Titles and annotations outside the generated markers do not count as
+generated-content edits. Ambiguous markers or metadata require manual review;
+the classifier does not overwrite either kind of edit.
+The native `preview_map_refresh` command returns merged review text and the current
+file revision after checking the active vault/organization role, native source
+snapshot and private creation record. It replaces only generated body and
+evidence/descriptor values, preserving titles and outside annotations. It writes
+no map and grants no update or undo permission.
+The native `apply_map_refresh` command independently repeats authorization,
+source checks, private record checks and merge, and requires the preview's current
+revision. Before canonical replacement, it retains the staged file anchor and a
+synced version-4 preparation record with exact before/after snapshots and the
+staged native file identity. Record bytes are written and synced under a private
+`.tmp` name before no-clobber publication to the final `.json` name; interrupted
+staging is excluded from observation discovery. Existing final records are never
+replaced. Failed staging paths are retained, including replaced paths, for later
+recovery rather than automatically unlinked. Both snapshots must fit the private
+record budget.
+Failure to save the record stops canonical replacement; the writer rechecks the
+staged object and target before replacing it. A prepared record does not certify
+publication completion or source validation.
+The read-only `latest_map_refresh_history` command requires the current map's
+physical identity to match its record and anchor. It can therefore read snapshots
+after a process exits immediately after replacement, before the writer returns.
+A staged candidate that never became the current file is not shown as a written
+update. Legacy version-1/2 records have no before-image; version-3 observations
+remain readable. Identical content remains a no-op; changed targets are rejected.
+Failures after persistence retain output for manual recovery instead of reporting
+success. Post-write source checks still must pass before refresh succeeds.
+History describes recorded writes, including interrupted updates, and does not
+certify completed source validation. Power-loss recovery, partial/corrupt private
+record repair and browsing unpublished attempts remain incomplete.
+The opening-bound, read-only `retained_map_snapshots` native command exposes
+stored before/after text for recovery inspection. `currentObject` means the
+record's retained inode matches the current file, not that its contents or sources
+are approved. Other validated records are `publicationUnknown`, including both
+interrupted attempts and superseded updates. Stable malformed records appear as
+`invalidRecord` without snapshot text; privacy, I/O and concurrent replacement
+failures abort the query. Results are ordered by opaque record ID, not time, and
+bounded to 256 snapshots, 32 MiB of records and 4,096 directory entries. This API
+does not retry, delete, restore or grant undo authority. In History, select an
+existing map and expand **Retained map records** to load these snapshots separately
+from its latest update. Each record discloses current-file association, unknown
+publication or invalid data; invalid text stays hidden. Records expand as escaped
+plain text, with reload, empty and error states. Switching or reopening the vault
+clears them. **Find retained maps** adds names from validated private records to
+the selector, including maps missing from the current file list. Those entries
+are labelled **retained records only** and open the saved snapshots without
+reading a nonexistent current map. The opening-bound `retained_map_keys` command
+validates vault identity, canonical map names, record hashes and anchors before
+returning names. It scans at most 4,096 entries and 32 MiB of private records and
+returns at most 256 unique names. Unidentifiable records produce an incomplete-list
+warning, never guessed names or text from another vault. Saved snapshots remain
+readable when `wiki/maps` or `wiki` has also been removed: inspection follows no
+descendants below the first missing parent and checks that it remains absent.
+It creates no folders or files. Reappearing paths, including symlinks, abort the
+read. Corrupt-record repair and restoring deleted maps remain incomplete.
+Refresh issues no creation/undo receipt. Manual map proposals show the native
+merged diff before applying an existing-map update. While a proposal is applying,
+its approval and dismissal controls are disabled and show localized progress.
+Cancelling or switching vaults
+stops the update; sources and the target revision are rechecked after approval.
+If multiple existing maps match the topic or its member-based label history,
+drafting stops before generation or publication and asks for map review. It does
+not pick a target by directory order or change either map, even for an approved
+automatic proposal.
+History offers a map selector with the latest saved before/after snapshots,
+a notice for edits since that update, and explicit empty/error/reload states.
+Snapshots stack on narrow screens and appear side by side on wide screens.
+Switching or reopening a vault clears the selection and old responses. This is
+not a full update timeline; refresh undo remains incomplete.
+Native creation now also discovers its observation by vault/path and current file
+identity, without relying on a remembered generation key. Missing, corrupt or
+ambiguous observations stop confirmation. Discovery is bounded to 4,096 directory
+entries and 32 MiB of matching records; exceeding a bound requires recovery.
+Live undo can remove an unchanged map created in that opening; human edits block
+removal. The private baseline and file anchor remain retained after undo.
+After confirmed undo through History or Settings, drafting the topic again starts
+a fresh run. Failed undo retains publication recovery. Map run IDs stay distinct
+even within the same second; maps in one automatic batch still share one undo run.
+
+New topic-map drafts use at most twelve selected member pages, bounded body
+excerpts, full relative-path citations and source revisions. Maps do not add
+unrelated retrieval context. Native reads accept at most 128KiB per member and
+retain file/directory identities under the original vault opening and organization
+role. Source checks and new-map publication share the cooperating-writer lock;
+external edits are checked before and after writing, not atomically excluded.
+Oversized, missing or changed sources leave the proposal pending. A failure after
+writing retains the output for manual recovery without publication/undo authority.
+A verified existing-map refresh receipt also retains its original-vault output
+path if the vault opening changes before frontend finalization; an invalid
+receipt does not establish that output was saved.
+If source-snapshot cleanup fails after a successful creation or refresh, the
+operation retains the completed map path and reports the cleanup failure as
+pending; it does not complete the proposal or silently retry the write.
+Existing maps without native custody remain pending for manual recovery. Automatic
+organization can refresh existing maps only from already-approved proposals,
+within its shared model budget and original organization-role authorization.
+It rechecks the approved proposal before generation and publication; existing-map
+refreshes check again after asynchronous source validation and preview hashing,
+immediately before native apply. A changed or withdrawn approval observed by that
+check stays pending. This does not atomically lock external edits to the proposal.
+Manual map work remains pending during review,
+so cancellation cannot leave an automatic approval behind. Proposal completion
+uses a revision-checked write. If a completed map cannot finalize its proposal
+because that write fails or the vault opening changes, the run retains the map
+path as published-but-pending without counting the proposal as done.
+Native map identity remains unavailable on Windows. Inbox and audio source reads
+now use retained Windows volume/file IDs and reject reparse files, additional hard
+links and deleted objects. Exact source-byte checks remain mandatory. Hosted NTFS source-handle and inbox
+tests pass, including checked manual archive. Broader publication and the complete
+installed Windows workflow remain unverified.
+Organization scans use portable vault-relative keys for nested wiki folders,
+including Unicode and spaces. Nonportable filenames are rejected without
+rewriting the source; native Windows publication still requires its own port.
+Generated explanations require review; link validation is not semantic validation.
+
+Ingest exposes one primary page heading and a subordinate intake heading for
+screen-reader heading navigation.
+
+Graph follows live changes to system reduced motion without reopening: direction arrows retain their visible geometry without advancing, idle rotation and pulses stop, and an active camera flight or orbit retarget completes at its destination immediately. Turning reduced motion off respects the ambient-motion toggle, flat layouts and ongoing user interaction.
+
 ### Writing
+
+Empty heading and text-block prompts use the readable secondary text color in
+both light and dark themes.
 
 | | |
 | --- | --- |
@@ -129,7 +351,7 @@ folder is created only when no previous folder has been selected.
 | Lint | "Run lint" in Provenance shells the CLAUDE.md checklist (structure / citation / connection / freshness) to the active model and renders a Markdown report. The run lives in a global store — navigate freely while it works; a Topbar chip tracks it and flips to done/failed until you return |
 | Provenance | Per-page citation coverage (claim lines vs cited claims); sort by lowest coverage, slider threshold flags below-target pages |
 | History | Lists the WHY report each ingest files under `ingest-reports/`, newest first, with an expandable in-place markdown preview and an open-in-reader jump |
-| Graph | Full vault link graph rendered as a **3D universe** with **three.js** (WebGL) over a **d3-force-3d** layout (the same force family Obsidian uses: link + many-body + x/y/z + collision), with degree-normalised link strength so leaves hug their hub and clusters drift into separated "dandelions". Glowing star nodes (UnrealBloom + depth fog + drifting starfield), faint filament edges, every note shown including link-less orphans. **Drag to orbit**, scroll to zoom, slow idle auto-rotate; **grabbing a star re-heats the sim** so neighbours follow in 3D and it springs back on release. The settings drawer starts with **eleven coordinated looks**: Spiral galaxy places the actual notes along spiral arms with soft starlight, alongside Sigma board, Cosmic web, Neural, Planetarium, Paper atlas, Chronicle, Meaning nebula, Walrus tree and Mycelium. **Woven** replaces Ribbon with actual links gathered into curved fiber bundles, calculated in a worker. One edge produces one strand, retaining exact endpoints. Selection, search, question highlights, filtering, dragging and fit-to-view use the shared graph interactions. Terrain and City are hidden from the pickers. Each look restores its full appearance while preserving the current question and filters. Tuned looks show **Adjusted** with a restore button. Numeric fields beside sliders support precise entry with bounded values. **Note name visibility** explains its zoom behavior; community names prefer existing notes and use a bounded display width. Appearance and motion controls follow the active renderer; static maps offer **Layout size**, simulated layouts offer force controls, and Mycelium offers mat and branch density. Hover spotlights the 1-hop neighbourhood, click opens the file. **▶ Timelapse** replays the vault oldest-to-newest by mtime with **live 3D physics** — each star spawns at the hub and shoves its placed neighbours aside as it arrives. The tree + graph **auto-refresh** on external file changes (Obsidian/Finder, finished ingest); drawer + slider state persists to localStorage. Above the stage a **question bar** picks one of four questions (where is it empty / what clumps together / what grew recently / this note's neighbours) — each one changes only the per-node encoding `{color, radius, alpha, ring}` (`lib/graphEncoding`) that the scene's own style pass applies, never the layout, so the answers sit on the same coordinates; the size channel switches between backlinks and citations, two checkboxes hide the first-run sample notes and toggle unresolved links, and a chip counts scene rebuilds (typing in the find box must never move it). A **gaps column** on the left lists orphans, missing pages, notes with no backlink, under-cited and low-confidence notes, each row offering open / draft a link question / log as a wanted topic. The gaps column and the legend on the right each fold to a 28px edge tab with their icon and count — the chevron in their head, `[` / `]` (ignored while typing, while a dialog is open and on key repeat), or **Graph settings → Panels** — and the stage takes their width (the canvas resizes through its ResizeObserver); in a window 821–1240px wide, where the legend sits under the gaps column, one fold gives the other column its full height and only folding both widens the stage, and at 820px and under, where the columns stack in 0px rows, neither folds (no chevron, no tab, no key). The fold is stored per device in the graph settings (`gapsRailOpen` / `legendRailOpen`), outside every look, so reloads and look changes keep it |
+| Graph | Full vault link graph rendered as a **3D universe** with **three.js** (WebGL) over a **d3-force-3d** layout (the same force family Obsidian uses: link + many-body + x/y/z + collision), with degree-normalised link strength so leaves hug their hub and clusters drift into separated "dandelions". Glowing star nodes (UnrealBloom + depth fog + drifting starfield), faint filament edges, every note shown including link-less orphans. **Drag to orbit**, scroll to zoom, slow idle auto-rotate; **grabbing a star re-heats the sim** so neighbours follow in 3D and it springs back on release. The settings drawer starts with **eleven coordinated looks**: Spiral galaxy places the actual notes along spiral arms with soft starlight, alongside Sigma board, Cosmic web, Neural, Planetarium, Paper atlas, Chronicle, Meaning nebula, Walrus tree and Mycelium. **Woven** replaces Ribbon with actual links gathered into curved fiber bundles, calculated in a worker. One edge produces one strand, retaining exact endpoints. Selection, search, question highlights, filtering, dragging and fit-to-view use the shared graph interactions. Terrain and City are hidden from the pickers. Each look restores its full appearance while preserving the current question and filters. Tuned looks show **Adjusted** with a restore button. Numeric fields beside sliders support precise entry with bounded values. **Note name visibility** explains its zoom behavior; community names prefer existing notes and use a bounded display width. Appearance and motion controls follow the active renderer; static maps offer **Layout size**, simulated layouts offer force controls, and Mycelium offers mat and branch density. Hover spotlights the 1-hop neighbourhood, click opens the file. **▶ Timelapse** replays the vault oldest-to-newest by mtime with **live 3D physics** — each star spawns at the hub and shoves its placed neighbours aside as it arrives. The tree + graph **auto-refresh** on external file changes (Obsidian/Finder, finished ingest); drawer + slider state persists to localStorage. Above the stage a **question bar** picks one of four questions (where is it empty / what clumps together / what grew recently / this note's neighbours) — each one changes only the per-node encoding `{color, radius, alpha, ring}` (`lib/graphEncoding`) that the scene's own style pass applies, never the layout, so the answers sit on the same coordinates; the size channel switches between backlinks and citations, two checkboxes hide the first-run sample notes and toggle unresolved links, and a chip counts scene rebuilds (typing in the find box must never move it). A **gaps column** on the left lists orphans, missing pages, notes with no backlink, under-cited and low-confidence notes, each row offering open / draft a link question / log as a wanted topic. The gaps column and the legend on the right each fold to a 28px edge tab with their icon and count — the chevron in their head, `[` / `]` (ignored while typing, while a dialog is open and on key repeat), or **Graph settings → Panels** — and the stage takes their width (the canvas resizes through its ResizeObserver); in a window 821–1240px wide, where the legend sits under the gaps column, one fold gives the other column its full height and only folding both widens the stage, at 769–820px, the graph appears first and both panels stack below it, retaining readable height and fold/restore controls on the scrolling page for mouse and touch. At 768px and under, the phone sheet provides panel access without changing saved desktop folds. The fold is stored per device in the graph settings (`gapsRailOpen` / `legendRailOpen`), outside every look, so reloads and look changes keep it |
 | Tidy | Offline ingest of session transcripts left `wiki/source-claude-code-<uuid>` pages titled `Source: <uuid>` whose `## Related` links named transcripts outside `wiki/` (the Graph's missing pages). Lists name such a page `Claude Code · 3f2a9c1e`, or its readable title once it has one (`listedName`). **Tidy** — the gaps column head, `⌘K` "Tidy the vault", Settings → My space → Tidy — scans the vault and proposes three groups (`lib/tidy.ts`, pure): titles from the transcript's first prompt, agent and date (found by stem or `conversation_id` under `sessions/` or `raw/`, read only; a page with no transcript is listed as skipped); Related links rewritten to `source-<stem>` or removed, prose and citations untouched; and, unticked by default, a move into `wiki/sessions/YYYY-MM/`. Applying (`lib/tidyRun.ts`) writes only `wiki/` through `write_file` / `move_path` (moves follow the page like the sidebar's: draft, route, favorites), re-reads each page first and leaves, and names, one that changed since the scan, after saving `.myco/tidy/<timestamp>.json` with each file's previous path, text and the sha256 of the new text. Undo, on the receipt or under Settings → Tidy history, restores a file only while it still hashes to what Tidy wrote and names the ones it left |
 
 Woven retains the `ribbon` storage key. Routing fans follow the link topology
@@ -166,7 +388,7 @@ palette. Void and grid backgrounds contain no residual decorative stars.
 
 Settings → Connections lets you connect any combination of:
 
-- **Built-in (offline)** — multilingual-e5-small-ko-v2 embedder (42 MB) bundled in the app, in-process llama.cpp — no install or key for search, quote-only Ask and extractive Ingest. Optionally download the separate Qwen3.5-4B Q4_K_M artifact (2.71 GB of disk space) under Settings → AI settings, then choose **Use Qwen for Ask**. It summarizes retrieved evidence locally; factual similarity questions preserve the quote-only answer when generation is unavailable or rejected, while recent-work overviews offer Retry. Rejected source evidence requires a fresh search through Retry. Optional Qwen3.5-2B Q4_K_M (1.27 GB of disk space), selected with **Use 2B for import and organization drafts**, adds reviewable summaries beside source quotes. Local organization uses the selected import model when Ask uses the built-in provider. Installation and model selection are explicit. Classification, maps and other file-tool workflows still need a connected provider. Intel Mac with 8 GB RAM inference performance has not been measured.
+- **Built-in (offline)** — multilingual-e5-small-ko-v2 embedder (42 MB) bundled in the app, in-process llama.cpp — no install or key for search, quote-only Ask and extractive Ingest. Optionally download the separate Qwen3.5-4B Q4_K_M artifact (2.71 GB of disk space) under Settings → AI settings, then choose **Use Qwen for Ask**. It summarizes retrieved evidence locally; factual similarity questions preserve the quote-only answer when generation is unavailable or rejected, while recent-work overviews offer Retry. Rejected source evidence requires a fresh search through Retry. Optional Qwen3.5-2B Q4_K_M (1.27 GB of disk space), selected with **Use 2B for import and organization drafts**, adds reviewable summaries beside source quotes. Local organization uses the selected import model when Ask uses the built-in provider. Installation and model selection are explicit. Classification and other file-tool workflows still need a connected provider. Intel Mac with 8 GB RAM inference performance has not been measured.
 - **Claude Code (CLI)** — uses your Pro/Max subscription. No key needed; just have `claude` on PATH.
 - **Anthropic API** — direct `/v1/messages`. Key from console.anthropic.com.
 - **OpenAI API** — `/v1/chat/completions`. Live model list fetched from `/v1/models`.
@@ -441,6 +663,12 @@ completion report does not independently verify a completed task. Topic-specific
 questions keep ordinary hybrid retrieval. Personal recall never falls back to
 a list of recently modified files. Explicit file-activity questions use their
 requested local-day window and scope, with unambiguous relative-path citations.
+An explicit or inherited wiki-only scope never uses the unrestricted Git log;
+the question keeps the normal scope-bound retrieval path instead.
+Wiki-only follow-ups also stay out of session-derived project discovery, unless
+the user explicitly changes the scope.
+Activity searches mark coverage as incomplete when a file name cannot be safely
+represented across platforms, such as a literal backslash in a Unix file name.
 
 Generic **connected ideas** questions can show existing wiki links and shared
 tags from the readable graph snapshot, without another model or an all-pairs
@@ -492,6 +720,20 @@ runtime, vector migration and Korean measurement prerequisites. It does not
 replace Qwen's generated wording; no candidate weights were installed or tested.
 The [local generation verification](docs/research/2026-10-05-local-generation-verification.md)
 records the optional Qwen Ask installation, source checks and measurement limits.
+Windows model verification now binds cached readiness to a retained native read
+lease as well as file IDs, size and timestamps. A broken lease requires the pinned
+SHA-256 check again; issued model packages retain invalidation through loading even
+when the verifier cache is replaced. Downloads are rehashed under a new lease after
+publication. Hosted Windows regressions pass repeated same-size/restored-time
+writes, valid/corrupt cache reuse and package checks after cache eviction. Installed
+Windows model loading remains unverified.
+Windows index reads also check retained file identity, change time and link count
+before returning a byte-bound snapshot. They now require an advisory native read
+lease throughout the bounded read and reject an invalidated or unsupported lease.
+Hosted Windows tests pass the production read integration, including repeated
+same-size/restored-time writes and existing/new writable memory mappings.
+These Windows cache/read guards are not accepted as complete; see the
+[latest hosted runtime receipt](docs/research/2026-11-11-windows-model-lease-runtime-review.json).
 The [local role comparison](docs/research/2026-10-05-local-model-routing.md)
 records separate Ask/import model selection, organization drafts and remaining
 retrieval and generation quality limits. Local Ask checks every chunk of each
@@ -511,7 +753,9 @@ the latest question. Quote-only Ask remains available without this notice.
 Local Ask has no automatic time limit for model verification or generation.
 The page shows elapsed time while it runs. Stop cancels the request and rejects
 a late reply; source rechecks and token/context bounds remain in place. Import
-previews retain a 45-second generation budget.
+previews retain a 45-second generation budget, starting after model artifact
+verification and loading. Cold preparation does not consume that budget;
+cancellation and source rechecks still apply.
 The [design system](docs/design/design-system.md) records theme and type tokens,
 component states, responsive layout, accessibility, brand and mascot motion.
 It distinguishes current implementation from requirements for subsequent work.
@@ -561,6 +805,26 @@ its selected neighborhood when the pointer leaves. Dense overview labels remain
 bounded to avoid overlap. See the [research and tradeoffs](docs/graph-readability-research.md).
 
 ## Dev
+
+### Native acceptance startup guard
+
+Build full-app validation binaries with `--features native-app-acceptance`.
+These binaries refuse startup unless they are debug builds with both
+`MYCO_REAL_DIAGNOSTIC=1` and `MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER=1`.
+The existing startup validation also requires an explicit, canonical, existing
+`MYCO_DATA_DIR` separate from production application data. Missing environment
+variables must never fall back to a normal production launch, including launches
+initiated by desktop automation or Launch Services.
+The acceptance feature also requires a regular, valid `settings.json` with
+`auto_import_enabled`, `auto_ingest_enabled`, `auto_reflect_enabled`, and
+`auto_reindex_enabled` disabled. Missing or invalid settings cannot silently
+enable automatic imports through the application's normal defaults.
+
+This guard is necessary but is not a complete filesystem sandbox. Before native
+acceptance, use a separate bundle/WebView identifier, explicit synthetic startup
+vault, disabled automatic imports and OS-level access restrictions. Do not reuse
+a fixture containing automatically imported personal sessions. Normal builds
+without this feature retain their existing startup behavior.
 
 ### Interactive graph design preview
 

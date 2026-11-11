@@ -381,13 +381,13 @@ pub(super) fn prepare(packet: Packet, capture_bytes: &[u8]) -> Result<Prepared, 
         || telemetry["requestedOutputTokens"] != OUTPUT
         || telemetry["loopStop"] != "eog"
         || telemetry["terminal"] != "returnedText"
-        || first_terminal.map_or(true, |r| {
+        || first_terminal.is_none_or(|r| {
             r["questionId"] != "recent_work"
                 || !r["error"]
                     .as_str()
                     .is_some_and(|e| e.starts_with("native activity claim_extraction_failed:"))
         })
-        || opening.map_or(true, |r| r["value"] != captured_origin)
+        || opening.is_none_or(|r| r["value"] != captured_origin)
     {
         return Err(
             "reading messages are not the first failed captured activity extraction".into(),

@@ -309,7 +309,7 @@ pub(super) fn preflight(
         || actual_prompt_tokens
             .checked_add(output_tokens as usize)
             .and_then(|sum| sum.checked_add(8))
-            .map_or(true, |sum| sum > packet.context_tokens as usize)
+            .is_none_or(|sum| sum > packet.context_tokens as usize)
     {
         return Err("replay full input and output reserve do not fit".into());
     }

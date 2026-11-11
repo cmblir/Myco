@@ -15,7 +15,9 @@ export interface HeroProps {
   figure?: ReactNode;
   /** The screen's one filled primary, stacked under `figure`. */
   action?: ReactNode;
-  /** `id` for the `<h1>`, so a page can point `aria-labelledby` at it. */
+  /** Use level 2 when the enclosing page already supplies its primary heading. */
+  headingLevel?: 1 | 2;
+  /** Heading `id`, so a page can point `aria-labelledby` at it. */
   titleId?: string;
   /** Anything else that belongs INSIDE the tile — Ingest's dropzone and its
    *  intake channels. Each child is a tile row and keeps its own `--i` stagger. */
@@ -39,11 +41,13 @@ export function Hero({
   figure,
   action,
   titleId,
+  headingLevel = 1,
   children,
 }: HeroProps): JSX.Element {
   // Custom properties are not in CSSProperties' type, hence the casts. Each
   // tile row rises 40ms after the one before it.
   const step = (i: number) => ({ "--i": i }) as CSSProperties;
+  const Heading = headingLevel === 1 ? "h1" : "h2";
   return (
     <section className="u-hero" aria-labelledby={titleId}>
       <div className="u-hero__glow" aria-hidden="true" />
@@ -53,9 +57,9 @@ export function Hero({
         </div>
         <div className="u-hero__text" style={step(1)}>
           {eyebrow ? <div className="u-hero__eyebrow">{eyebrow}</div> : null}
-          <h1 className="u-hero__title" id={titleId}>
+          <Heading className="u-hero__title" id={titleId}>
             {title}
-          </h1>
+          </Heading>
           {lede ? <p className="u-hero__lede">{lede}</p> : null}
         </div>
         {figure || action ? (

@@ -6,19 +6,20 @@
 // content-writing distill step already has (sessionDigest.ts, digests.ts).
 
 import { ipc } from "./ipc";
-import type { AgentVaultSession, DistillPublicationReceipt, FileNode } from "./ipc";
+import type { AgentVaultSession, FileNode } from "./ipc";
 import type { RoleSnapshot, RoleUsage } from "./modelRoles";
 import { complete } from "./chat";
-import HEADS from "./mycoPromptHeads.json";
+import { MAP_SYSTEM_PROMPT } from "./mapPrompt";
 import { stripFrontmatter } from "./markdown";
 import { matchWikilinkAt } from "./wikilinks";
 import { WorkflowOperationError } from "./workflowOutcome";
 import { publicationClaim, publishManagedNote, requireNativeCreation, requirePublicationOrigin } from "./distillPublication";
 import { isMissingFile } from "./sessionEvidence";
-
-interface PendingMapPublication { manifestId: string; publication: DistillPublicationReceipt }
-// Session-local recovery only; restart discovery requires the native journal.
-const pendingPublications = new Map<string, PendingMapPublication>();
+import { mapEvidencePrompt, mapMemberStem, withMapEvidence } from "./mapEvidence";
+import { renderMapDraft } from "./mapContent";
+import { newMapRunId } from "./mapRunId";
+import { refreshExistingMap, type MapRefreshDecision } from "./mapRefresh";
+import { pendingMapPublication, rememberMapPublication, type PendingMapPublication } from "./mapPublicationRecovery";
 
 export class MapPublicationError extends WorkflowOperationError {
   constructor(readonly writtenPath: string, error: unknown) {
@@ -27,36 +28,17 @@ export class MapPublicationError extends WorkflowOperationError {
   }
 }
 
+const recordedPublications = new WeakSet<object>();
+
 async function recordPublication(vaultPath: string, origin: AgentVaultSession, pending: PendingMapPublication): Promise<void> {
   try {
     requireNativeCreation(pending.publication);
     await ipc.appendDistillManifest(vaultPath, pending.manifestId, [], [pending.publication.path], origin,
       [publicationClaim(pending.publication)], [pending.publication.publicationId]);
+    recordedPublications.add(pending.publication);
   } catch (error) {
     throw new MapPublicationError(pending.publication.path, error);
   }
-}
-
-function mapSystemPrompt(cluster: string): string {
-  return (
-    `${HEADS.map}${cluster}' topic. Structure: one-paragraph ` +
-    "overview, then grouped [[wikilinks]] to the member pages with one-line descriptions. Only " +
-    "link to the member pages listed below — do not link to any other page. Cite nothing " +
-    "external. Output markdown body only."
-  );
-}
-
-/** `wiki/foo/bar-baz.md` -> `bar-baz` — wikilinks in this vault resolve by
- *  page stem (`index::build_name_index`), not by full path, so the model
- *  needs stems, not the cluster's raw member paths, to link correctly. */
-function memberStem(rel: string): string {
-  const name = rel.split("/").pop() ?? rel;
-  return name.replace(/\.md$/i, "");
-}
-
-function userPrompt(members: string[]): string {
-  const list = members.map((m) => `- [[${memberStem(m)}]]`).join("\n");
-  return `Member pages:\n${list}\n\nWrite the topic map body now.`;
 }
 
 /** The `.md` file children of `${root}/wiki/maps` — same 2-level tree-descend
@@ -81,6 +63,7 @@ function mapFileNodes(tree: FileNode[]): Extract<FileNode, { kind: "file" }>[] {
  *  drafted for an OLD medoid must still be found even after the label has
  *  since drifted to a different (but still current) member. Checked before
  *  drafting so a legacy map is preserved rather than duplicated after a crash.
+ *  Multiple matching pages require review instead of selecting by listing order.
  *  A matching file alone cannot complete the proposal or authorize undo;
  *  native capability recovery remains required. `ipc.readFile`'s `frontmatter`
  *  is already-parsed YAML (Rust's `vault::read_file`), so no hand-rolled
@@ -93,28 +76,37 @@ async function findExistingMapPath(
 ): Promise<string | null> {
   const tree = await ipc.listFiles(vaultPath);
   assertCurrent();
+  const matches: { path: string; hasBoundary: boolean }[] = [];
   for (const f of mapFileNodes(tree)) {
     const file = await ipc.readFile(f.path);
     assertCurrent();
     const fm = file?.frontmatter as { cluster?: unknown } | null | undefined;
     if (typeof fm?.cluster !== "string") continue;
     if (fm.cluster === cluster || memberStems.has(fm.cluster.toLowerCase())) {
-      return f.path.startsWith(`${vaultPath}/`) ? f.path.slice(vaultPath.length + 1) : f.path;
+      matches.push({ path: f.path, hasBoundary: typeof file.raw === "string" && file.raw.includes("<!-- myco:map-generated:v1 -->\n") });
     }
   }
-  return null;
+  if (matches.length > 1) {
+    throw new WorkflowOperationError("pending", "validation_rejected", "Multiple existing maps match this topic; review the maps before retrying. No map was changed.");
+  }
+  const match = matches[0];
+  if (!match) return null;
+  if (!match.hasBoundary) {
+    throw new WorkflowOperationError("pending", "unavailable", `Existing map ${match.path} has no generated-section boundary; manual recovery required`);
+  }
+  return match.path.startsWith(`${vaultPath}/`) ? match.path.slice(vaultPath.length + 1) : match.path;
 }
 
-/** Strip any `[[link]]` in `body` whose target isn't one of `allowedStems`
- *  (case-insensitive, matching how wikilinks actually resolve — lowercased
- *  in `index::build_name_index`) — a model that ignores the system prompt's
+/** Canonicalize path citations and strip targets outside the selected sources.
+ *  Bare stems are not proof of a selected path: another vault page may share
+ *  that name. A model that ignores the system prompt's
  *  "only link to the member pages" instruction gets its hallucinated
  *  citation degraded to plain text (its own display text, or the raw target
  *  if it had none) instead of a broken/misleading link left in the page.
  *  Returns the cleaned body and how many were stripped. */
 function stripUnknownWikilinks(
   body: string,
-  allowedStems: Set<string>,
+  allowedPaths: Map<string, string>,
 ): { body: string; strippedCount: number } {
   let out = "";
   let strippedCount = 0;
@@ -125,8 +117,10 @@ function stripUnknownWikilinks(
       i++;
       continue;
     }
-    if (allowedStems.has(m.target.toLowerCase())) {
-      out += body.slice(i, m.end);
+    const path = allowedPaths.get(m.target.replace(/\.md$/i, "").normalize("NFC").toLowerCase());
+    if (path) {
+      const display = m.display === m.target ? mapMemberStem(path) : m.display;
+      out += `[[${path}|${display}]]`;
     } else {
       out += m.display;
       strippedCount++;
@@ -177,17 +171,18 @@ async function freeMapPath(vaultPath: string, slug: string, assertCurrent: () =>
  *  from a single "undo this run" — minting a fresh id per call fragmented a
  *  multi-map run into manifests only undoable one id at a time, and the
  *  Settings undo button only ever reaches the newest. The default (a fresh
- *  `llm-<now>` id) fits the other caller, distillStore's manual per-click
+ *  `llm-<seconds>-<nonce>` id) fits the other caller, distillStore's manual per-click
  *  approve, where one click IS the whole run. `isCurrent` optionally guards
  *  that originating session; already-dispatched IO and model work cannot be undone. */
 export async function draftMap(
   vaultPath: string,
   cluster: string,
   members: string[],
-  manifestId = `llm-${Math.floor(Date.now() / 1000)}`,
+  manifestId = newMapRunId(),
   isCurrent: () => boolean = () => true,
   usage: RoleUsage = "foreground",
   capturedRole?: RoleSnapshot,
+  reviewRefresh?: MapRefreshDecision,
 ): Promise<string> {
   const assertCurrent = () => {
     if (!isCurrent()) throw new Error("Vault changed; topic map cancelled");
@@ -197,59 +192,72 @@ export async function draftMap(
   assertCurrent();
   requirePublicationOrigin(origin, vaultPath);
   const roleSnapshot = capturedRole ?? await ipc.captureModelRole(origin, "organization", usage);
-  const publicationKey = JSON.stringify([vaultPath, origin.openingToken, cluster]);
-  const pending = pendingPublications.get(publicationKey);
-  if (pending) {
+  const pending = pendingMapPublication(origin, cluster);
+  if (pending && (!reviewRefresh || !recordedPublications.has(pending.publication))) {
     await recordPublication(vaultPath, origin, pending);
     assertCurrent();
     return pending.publication.path;
   }
-  const memberStems = new Set(members.map((m) => memberStem(m).toLowerCase()));
+  const memberStems = new Set(members.map((m) => mapMemberStem(m).toLowerCase()));
   const existing = await findExistingMapPath(vaultPath, cluster, memberStems, assertCurrent);
   assertCurrent();
-  if (existing) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} has no native creation capability in this opening; manual recovery required`);
+  if (existing && !reviewRefresh) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} requires an interactive refresh review`);
 
-  const body = await complete({
-    task: "generate", featureRole: "organization", origin, roleSnapshot, usage,
-    cwd: vaultPath,
-    messages: [
-      { role: "system", content: mapSystemPrompt(cluster) },
-      { role: "user", content: userPrompt(members) },
-    ],
+  let completedPath: string | null = null;
+  return withMapEvidence(origin, roleSnapshot, members, assertCurrent, async (evidence, snapshotId, recheck) => {
+    assertCurrent();
+    if (reviewRefresh && typeof reviewRefresh !== "function") await reviewRefresh.recheck();
+    assertCurrent();
+
+    const body = await complete({
+      task: "generate", featureRole: "organization", origin, roleSnapshot, usage,
+      sourceContext: "supplied",
+      cwd: vaultPath,
+      messages: [
+        { role: "system", content: MAP_SYSTEM_PROMPT },
+        { role: "user", content: mapEvidencePrompt(evidence, cluster) },
+      ],
+    });
+    assertCurrent();
+    // Guard: the system prompt asks for "markdown body only", but a model can
+    // still emit its own frontmatter fence out of habit — strip it so code's
+    // own frontmatter block below is the only one in the file.
+    const clean = stripFrontmatter(body).trim();
+    const allowedPaths = new Map(evidence.map(member => [member.path.replace(/\.md$/i, "").normalize("NFC").toLowerCase(), member.path]));
+    const { body: safeBody, strippedCount } = stripUnknownWikilinks(clean, allowedPaths);
+    if (strippedCount > 0) {
+      console.warn(
+        `[maps] draftMap(${cluster}): stripped ${strippedCount} wikilink(s) not in the member list`,
+      );
+    }
+
+    const created = new Date().toISOString().slice(0, 10);
+    const content = await renderMapDraft(cluster, safeBody, evidence, created);
+
+    assertCurrent();
+    if (existing && reviewRefresh) {
+      completedPath = await refreshExistingMap(origin, roleSnapshot, existing, content, snapshotId, reviewRefresh, assertCurrent, recheck);
+      return completedPath;
+    }
+    const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
+    assertCurrent();
+    const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
+    const key = rel.slice("wiki/maps/".length).replace(/\.md$/, "");
+    await recheck();
+    if (reviewRefresh && typeof reviewRefresh !== "function") await reviewRefresh.recheck();
+    assertCurrent();
+    const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot, snapshotId);
+    rememberMapPublication(origin, cluster, { manifestId, publication });
+    assertCurrent();
+    await recordPublication(vaultPath, origin, { manifestId, publication });
+    assertCurrent();
+    completedPath = rel;
+    return completedPath;
+  }).catch(error => {
+    // The consumer completed; only source cleanup remains outside its lifetime.
+    if (completedPath) throw Object.assign(new WorkflowOperationError("pending", "unavailable",
+      `Topic map ${completedPath} is retained; source cleanup failed: ${String(error)}`),
+    { writtenPath: completedPath, cause: error });
+    throw error;
   });
-  assertCurrent();
-  // Guard: the system prompt asks for "markdown body only", but a model can
-  // still emit its own frontmatter fence out of habit — strip it so code's
-  // own frontmatter block below is the only one in the file.
-  const clean = stripFrontmatter(body).trim();
-  const { body: safeBody, strippedCount } = stripUnknownWikilinks(clean, memberStems);
-  if (strippedCount > 0) {
-    console.warn(
-      `[maps] draftMap(${cluster}): stripped ${strippedCount} wikilink(s) not in the member list`,
-    );
-  }
-
-  const created = new Date().toISOString().slice(0, 10);
-  const content =
-    `---\n` +
-    `title: ${JSON.stringify(`Map: ${cluster}`)}\n` +
-    `type: map\n` +
-    `cluster: ${JSON.stringify(cluster)}\n` +
-    `created: ${created}\n` +
-    `confidence: medium\n` +
-    `status: draft\n` +
-    `tags: [map]\n` +
-    `---\n\n${safeBody}\n`;
-
-  assertCurrent();
-  const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
-  assertCurrent();
-  const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
-  const key = rel.slice("wiki/maps/".length).replace(/\.md$/, "");
-  const publication = await publishManagedNote(origin, manifestId, { kind: "map", key }, content, null, roleSnapshot);
-  pendingPublications.set(publicationKey, { manifestId, publication });
-  assertCurrent();
-  await recordPublication(vaultPath, origin, { manifestId, publication });
-  assertCurrent();
-  return rel;
 }

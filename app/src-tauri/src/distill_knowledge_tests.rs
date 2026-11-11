@@ -53,6 +53,41 @@ fn fixture() -> (tempfile::TempDir, VectorStore) {
     (directory, store)
 }
 
+#[test]
+fn knowledge_native_nested_paths_match_portable_index_keys() {
+    let directory = tempfile::tempdir().unwrap();
+    let page = "wiki/한글 folder/nested source.md";
+    let value = content("concept", "active");
+    write_source(directory.path(), page, &value);
+    let mut store = labelled_store();
+    insert_source(&mut store, page, &value);
+    let snapshot = read(directory.path()).unwrap();
+    assert_eq!(snapshot.pages.len(), 1);
+    assert_eq!(snapshot.pages[0].path, page);
+    assert_eq!(snapshot.covered_store(&store).unwrap().records.len(), 2);
+    assert_eq!(
+        std::fs::read_to_string(directory.path().join(page)).unwrap(),
+        value
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn knowledge_rejects_literal_backslash_names_without_aliasing_nested_sources() {
+    let directory = tempfile::tempdir().unwrap();
+    let value = content("concept", "active");
+    for page in ["wiki/nested/source.md", "wiki/nested\\source.md"] {
+        write_source(directory.path(), page, &value);
+    }
+    assert!(read(directory.path()).is_err());
+    for page in ["wiki/nested/source.md", "wiki/nested\\source.md"] {
+        assert_eq!(
+            std::fs::read_to_string(directory.path().join(page)).unwrap(),
+            value
+        );
+    }
+}
+
 fn assert_bad_typed_field(field: &str, replacement: &str) {
     let directory = tempfile::tempdir().unwrap();
     let value = content("map", "active");

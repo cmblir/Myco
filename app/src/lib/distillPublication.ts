@@ -17,11 +17,15 @@ export function publicationClaim(receipt: DistillPublicationReceipt): ArchivePub
 
 /** Native still verifies the private capability and exact file identity at use. */
 export async function publishManagedNote(origin: AgentVaultSession, operationId: string,
-  artifact: ManagedDistillArtifact, content: string, expected: string | null, roleSnapshot?: RoleSnapshot): Promise<DistillPublicationReceipt> {
+  artifact: ManagedDistillArtifact, content: string, expected: string | null, roleSnapshot?: RoleSnapshot, mapSourceSnapshotId?: string): Promise<DistillPublicationReceipt> {
   requirePublicationOrigin(origin, origin?.vaultPath ?? "");
   if (!roleSnapshot || roleSnapshot.role !== "organization" || roleSnapshot.origin.openingToken !== origin.openingToken) throw new WorkflowOperationError("pending", "validation_rejected", "Managed publication requires its original organization role snapshot");
   let receipt: DistillPublicationReceipt;
-  try { receipt = await ipc.publishDistillNote(origin, operationId, artifact, content, expected, roleSnapshot); }
+  try {
+    receipt = mapSourceSnapshotId === undefined
+      ? await ipc.publishDistillNote(origin, operationId, artifact, content, expected, roleSnapshot)
+      : await ipc.publishDistillNote(origin, operationId, artifact, content, expected, roleSnapshot, mapSourceSnapshotId);
+  }
   catch (error) {
     const message = String(error);
     if (/active vault changed|vault opening was superseded|no vault is open/i.test(message)) {

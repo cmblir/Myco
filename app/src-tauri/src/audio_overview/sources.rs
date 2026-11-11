@@ -51,7 +51,11 @@ fn identity(handle: &File, path: &Path) -> Result<(), String> {
         }
         Ok(())
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    {
+        crate::windows_source::verify(handle, path)
+    }
+    #[cfg(not(any(unix, windows)))]
     Err("retained audio source identity is unsupported on this platform".into())
 }
 
@@ -61,7 +65,9 @@ fn open_regular(path: &Path) -> Result<File, String> {
     if !metadata.file_type().is_file() {
         return Err("selected audio source is not a regular Markdown file".into());
     }
+    #[cfg(not(windows))]
     let mut options = std::fs::OpenOptions::new();
+    #[cfg(not(windows))]
     options.read(true);
     #[cfg(unix)]
     {
@@ -70,6 +76,9 @@ fn open_regular(path: &Path) -> Result<File, String> {
         // blocking FIFO. Identity is verified again on the opened handle.
         options.custom_flags(libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    let file = crate::windows_source::open(path)?;
+    #[cfg(not(windows))]
     let file = options
         .open(path)
         .map_err(|error| format!("open selected audio source: {error}"))?;

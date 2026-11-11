@@ -356,13 +356,13 @@ fn move_planned(
     if destination.is_some() {
         return Err("two-name archive recovery requires file identity support".into());
     }
-    if !read_optional(&from)?.is_some_and(|bytes| sha(&bytes) == plan.revision) {
+    if read_optional(&from)?.is_none_or(|bytes| sha(&bytes) != plan.revision) {
         return Err("source revision changed before unlink".into());
     }
     #[cfg(test)]
     checkpoint(MoveCheckpoint::Unlink);
     std::fs::remove_file(&from).map_err(|e| format!("remove archived source name: {e}"))?;
-    if !read_optional(&to)?.is_some_and(|bytes| sha(&bytes) == plan.revision) {
+    if read_optional(&to)?.is_none_or(|bytes| sha(&bytes) != plan.revision) {
         // Restore only into an absent source name. Never overwrite a new source.
         std::fs::hard_link(&to, &from)
             .map_err(|e| format!("changed archive needs manual recovery: {e}"))?;
@@ -628,7 +628,7 @@ pub(super) fn undo_checked(root: &Path, id: &str) -> Result<usize, String> {
         let to = checked_path(root, &entry.to)?;
         if let Some(revision) = manifest.move_revisions.get(&entry.to) {
             if read_optional(&from)?.is_some()
-                || !read_optional(&to)?.is_some_and(|bytes| sha(&bytes) == *revision)
+                || read_optional(&to)?.is_none_or(|bytes| sha(&bytes) != *revision)
             {
                 eprintln!(
                     "distill undo {id}: move revision or destination changed: {}",

@@ -47,9 +47,13 @@ fn current_compiler_accepts_closed_structure_and_reviews_canonical_rows() {
         "en",
         &mut progress,
         |_, _| Ok(800),
-        |_, user, _, _, schema| {
+        |system, user, output, context, schema| {
             calls.push(schema);
             if schema == CompilerSchema::Compilation {
+                assert_eq!(system, structure::SYSTEM);
+                let input: Value = serde_json::from_str(user).unwrap();
+                assert_eq!(input["claims"].as_array().unwrap().len(), 1);
+                assert_eq!((output, context), (768, 4096));
                 let raw = w03_11_structure_reply(user);
                 raw_structure = Some(raw.clone());
                 Ok(raw)

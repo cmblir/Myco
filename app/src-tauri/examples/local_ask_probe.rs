@@ -271,10 +271,10 @@ fn main() -> Result<(), String> {
         serde_json::json!({"phase":"cancel","elapsed_ms":stop_start.elapsed().as_secs_f64()*1000.0,
         "after_signal_ms":signalled_at.elapsed().as_secs_f64()*1000.0,"error":result.as_ref().err()})
     );
-    if !result
+    if result
         .as_ref()
         .err()
-        .is_some_and(|error| error == "local generation cancelled")
+        .is_none_or(|error| error != "local generation cancelled")
     {
         return Err("real mid-inference cancellation did not return cancelled".into());
     }

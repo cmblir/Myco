@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // `apply()`'s draft-map branch calls the REAL `draftMap` (not mocked) so
-// this exercises its actual idempotency check — only `complete` (the LLM
-// call inside it) is stubbed, mirroring `maps.test.ts`'s own mock.
+// this exercises its actual idempotency check. The LLM and native IPC use
+// synthetic fixtures, mirroring `maps.test.ts`'s boundary mocks.
 const complete = vi.fn();
 // What getActiveModel("generate") reports — a provider that writes by
 // default, so the draft-map tests below reach draftMap; canGenerate stays real.
@@ -34,12 +34,27 @@ import type { FileNode, MycoSettings } from "../lib/ipc";
 import type { DistillStatus } from "../lib/distill";
 import { roleFixture, selectedRolesFixture } from "../lib/modelRoles.testSupport";
 import { BUILTIN_CHAT_MODEL } from "../lib/providers";
+import { sha256 } from "../lib/tidyRun";
+import { renderMapDraft } from "../lib/mapContent";
 
 function mockOrganizationRole(): void {
   vi.spyOn(ipc, "captureModelRole").mockImplementation(async (origin, role, usage) => {
     expect(role).toBe("organization");
     return roleFixture(role, generateProvider, generateProvider === "builtin-local" ? "extractive-ingest" : "synthetic-writer", origin, usage);
   });
+}
+
+function mockMapSources() {
+  const capture = vi.spyOn(ipc, "captureMapSources").mockImplementation(async (origin, role, members) => {
+    expect(role.role).toBe("organization");
+    expect(role.origin).toEqual(origin);
+    const raw = "Synthetic selected member requires an implementation review.";
+    return { snapshotId: "d".repeat(64), origin, members: await Promise.all(members.map(async path =>
+      ({ path, raw, revision: await sha256(raw) }))) };
+  });
+  const check = vi.spyOn(ipc, "checkMapSources").mockResolvedValue(undefined);
+  const release = vi.spyOn(ipc, "releaseMapSources").mockResolvedValue(undefined);
+  return { capture, check, release };
 }
 
 const STATUS: DistillStatus = {
@@ -228,6 +243,7 @@ describe("useDistillStore", () => {
     // Native origin capture is IPC; the store/map logic remains real in Node.
     vi.spyOn(ipc, "agentVaultSession").mockResolvedValue({ vaultPath: "/v", openingToken: "synthetic-native-opening" });
     mockOrganizationRole();
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     complete.mockReset();
     generateProvider = "anthropic-api";
     useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
@@ -275,6 +291,7 @@ describe("useDistillStore", () => {
   });
 
   it("apply reports CHAT_MODEL_MISSING in the UI language, not the backend's English", async () => {
+    const sources = mockMapSources();
     const raw = [
       "---",
       "type: distill-proposal",
@@ -302,6 +319,12 @@ describe("useDistillStore", () => {
     await useDistillStore.getState().apply("work/feedback/map.md");
 
     expect(useDistillStore.getState().error).toBe(STRINGS.ko.pf_map_needs_writer);
+    expect(complete).toHaveBeenCalledOnce();
+    expect(sources.capture).toHaveBeenCalledWith(
+      { vaultPath: "/v", openingToken: "synthetic-native-opening" }, expect.objectContaining({ role: "organization" }), ["wiki/a.md"],
+    );
+    expect(sources.check).not.toHaveBeenCalled();
+    expect(sources.release).toHaveBeenCalledWith({ vaultPath: "/v", openingToken: "synthetic-native-opening" }, "d".repeat(64));
     useUIStore.setState({ lang });
   });
 
@@ -560,7 +583,76 @@ describe("useDistillStore", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
-  it("keeps an already-mapped legacy proposal approved for manual recovery", async () => {
+  it.each([true, false])("reviews an existing map update without exposing manual approval to the automatic runner: accept=%s", async accept => {
+    const proposalPath = "/v/work/feedback/synthetic-refresh.md";
+    const mapPath = "/v/wiki/maps/attention.md";
+    const raw = '---\ntype: distill-proposal\naction: draft-map\nstatus: approved\ncreated: 2026-11-11\npayload: {"cluster":"attention","members":["wiki/a.md"]}\n---\n\n# Synthetic map update\n';
+    const before = await renderMapDraft("attention", "Synthetic old body.", [], "2026-11-11");
+    const after = await renderMapDraft("attention", "Synthetic new body.", [], "2026-11-11");
+    mockMapSources();
+    complete.mockResolvedValue("Synthetic new body.");
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+      { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [{ kind: "file", name: "attention.md", path: mapPath }] },
+    ] }]);
+    vi.spyOn(ipc, "readFile").mockImplementation(async path => ({ path, raw: path === proposalPath ? raw : before,
+      content: "", frontmatter: path === proposalPath ? null : { cluster: "attention" } }));
+    const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    const preview = vi.spyOn(ipc, "previewMapRefresh").mockResolvedValue({ path: "wiki/maps/attention.md", currentRevision: await sha256(before), content: after });
+    const apply = vi.spyOn(ipc, "applyMapRefresh").mockResolvedValue({ path: "wiki/maps/attention.md", revision: await sha256(after), changed: true });
+    const publish = vi.spyOn(ipc, "publishDistillNote");
+    const manifest = vi.spyOn(ipc, "appendDistillManifest");
+    const pending = useDistillStore.getState().apply("work/feedback/synthetic-refresh.md");
+    await vi.waitFor(() => expect(useDialogStore.getState().request?.title).toBe(STRINGS[useUIStore.getState().lang].map_refresh_title));
+    expect(preview).toHaveBeenCalledOnce();
+    expect(apply).not.toHaveBeenCalled();
+    expect(ipc.writeFileIfUnchanged).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: pending"), await sha256(raw));
+    useDialogStore.getState().close(accept ? "ok" : null);
+    await expect(pending).resolves.toBe(accept ? "wiki/maps/attention.md" : null);
+    if (accept) {
+      expect(apply).toHaveBeenCalledOnce();
+      expect(ipc.writeFileIfUnchanged).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: done"), await sha256(raw.replace("status: approved", "status: pending")));
+    } else {
+      expect(apply).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+    }
+    expect(publish).not.toHaveBeenCalled();
+    expect(manifest).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["en", "This map's update record could not be verified. The existing map is preserved. Open the map to review and edit it manually."],
+    ["ko", "이 지도의 갱신 기록을 확인할 수 없어요. 기존 지도는 보존했어요. 지도를 열어 직접 검토하고 수정하세요."],
+    ["ja", "このマップの更新記録を確認できません。既存のマップは保持されています。マップを開き、内容を確認して手動で編集してください。"],
+  ] as const)("explains missing map custody in %s without publishing or completing the proposal", async (lang, message) => {
+    const proposalPath = "/v/work/feedback/synthetic-refresh.md";
+    const mapPath = "/v/wiki/maps/attention.md";
+    const raw = '---\ntype: distill-proposal\naction: draft-map\nstatus: pending\ncreated: 2026-11-11\npayload: {"cluster":"attention","members":["wiki/a.md"]}\n---\n\n# Synthetic map update\n';
+    const before = await renderMapDraft("attention", "Synthetic old body.", [], "2026-11-11");
+    mockMapSources();
+    complete.mockResolvedValue("Synthetic new body.");
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+      { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [{ kind: "file", name: "attention.md", path: mapPath }] },
+    ] }]);
+    vi.spyOn(ipc, "readFile").mockImplementation(async path => ({ path, raw: path === proposalPath ? raw : before,
+      content: "", frontmatter: path === proposalPath ? null : { cluster: "attention" } }));
+    vi.spyOn(ipc, "previewMapRefresh").mockRejectedValue("no creation observation matches the current map object");
+    const apply = vi.spyOn(ipc, "applyMapRefresh");
+    const publish = vi.spyOn(ipc, "publishDistillNote");
+    const write = vi.spyOn(ipc, "writeFile");
+    const priorLang = useUIStore.getState().lang;
+    useUIStore.setState({ lang });
+    try {
+      await expect(useDistillStore.getState().apply("work/feedback/synthetic-refresh.md")).resolves.toBeNull();
+      expect(useDistillStore.getState().error).toBe(message);
+      expect(apply).not.toHaveBeenCalled();
+      expect(publish).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+      expect(ipc.writeFileIfUnchanged).not.toHaveBeenCalled();
+    } finally { useUIStore.setState({ lang: priorLang }); }
+  });
+
+  it("returns an already-mapped legacy proposal to pending for manual recovery", async () => {
     // Existing bytes and a matching cluster do not prove native ownership.
     const draftMapProposalRaw = [
       "---",
@@ -606,6 +698,8 @@ describe("useDistillStore", () => {
     expect(rel).toBeNull();
     expect(writeSpy).not.toHaveBeenCalled();
     expect(useDistillStore.getState().error).toContain("manual recovery");
+    expect(ipc.writeFileIfUnchanged).toHaveBeenCalledWith(proposalPath,
+      expect.stringContaining("status: pending"), await sha256(draftMapProposalRaw));
   });
 
   // The activity popover / tray panel approve buttons call this very action
@@ -666,8 +760,8 @@ describe("useDistillStore", () => {
       const approvals = writeSpy.mock.calls.filter(
         ([p, c]) => p === path && c.includes("status: approved"),
       );
-      expect(approvals).toHaveLength(1);
-      expect(files.get(path)).toContain("status: approved");
+      expect(approvals).toHaveLength(0);
+      expect(files.get(path)).toContain("status: pending");
       expect(files.get(path)).not.toContain("status: done");
     }
   });
@@ -715,6 +809,7 @@ describe("proposal actions retain their originating vault session", () => {
     vi.spyOn(ipc, "listQuarantine").mockResolvedValue([]);
     vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
     vi.spyOn(ipc, "applyDistillProposal").mockResolvedValue("synthetic applied");
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
   });
 
   it.each(["apply", "dismiss"] as const)("stops %s after a late read across A → B → A", async (action) => {
@@ -827,6 +922,7 @@ describe("proposal actions retain their originating vault session", () => {
   });
 
   it("passes the original session guard into a map's delayed generation", async () => {
+    const sources = mockMapSources();
     const raw = PROPOSAL_RAW.replace("action: admit-cluster", "action: draft-map")
       .replace("status: pending", "status: approved")
       .replace(/^payload:.*$/m, 'payload: {"cluster":"synthetic-topic","members":["wiki/a.md"]}');
@@ -844,6 +940,9 @@ describe("proposal actions retain their originating vault session", () => {
     expect(ipc.writeFile).not.toHaveBeenCalled();
     expect(manifest).not.toHaveBeenCalled();
     expect(ipc.distillStatus).not.toHaveBeenCalled();
+    expect(sources.capture).toHaveBeenCalledOnce();
+    expect(sources.check).not.toHaveBeenCalled();
+    expect(sources.release).toHaveBeenCalledWith({ vaultPath: "/v", openingToken: "synthetic-native-origin" }, "d".repeat(64));
   });
 
   it("stops a map after native origin capture resolves across a same-path reopen", async () => {

@@ -1,5 +1,8 @@
 //! Fake verdicts verify control/binding only, never model semantic quality.
 
+#[path = "ordinary_selected_note_model_tests.rs"]
+mod selected_note_model;
+
 use super::*;
 use crate::commands::DateRange;
 use crate::retrieval::Scope;

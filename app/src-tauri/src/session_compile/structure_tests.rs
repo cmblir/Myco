@@ -5,6 +5,15 @@ use crate::session_compile::materializer::test_support::{bound, proposal, struct
 use serde_json::json;
 
 #[test]
+fn structure_prompt_matches_observed_nonempty_guidance() {
+    // Frozen from the offline structure-only A/B candidate, not meaning gold.
+    assert_eq!(
+        source_revision(SYSTEM),
+        "f9a5d6d2e9e87be7ca6835daebc900add458a52aa4f981697843e3e31d314036"
+    );
+}
+
+#[test]
 fn zero_one_and_sixteen_claims_are_closed_and_bound() {
     for count in [0, 1, 16] {
         let claims = bound(

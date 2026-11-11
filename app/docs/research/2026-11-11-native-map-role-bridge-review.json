@@ -1,0 +1,141 @@
+{
+  "sourceRevision": "f81885926ad2d48d6725b9c305c3819820827be0",
+  "build": {
+    "sourceRevision": "f81885926ad2d48d6725b9c305c3819820827be0",
+    "startedAt": 1794365296.014783,
+    "profileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+    "markdownBefore": {
+      "Alpha/wiki/synthetic-reader.md": "81631145104e5c52be7ad4adec7eafe82d638fb9e8022e622d2331efddaedd39",
+      "Alpha/wiki/source-synthetic-cedar-inventory.md": "b3ca7dd03fe216aaf13e5028f77986d6bd807d5f0129e93ddfde4c0cc502b6b8",
+      "Alpha/wiki/source-synthetic-willow-inventory.md": "ebeac6dd4edfad8c474cbd4afbf51804d268801ca847a7823f14991ba031dd00",
+      "Alpha/wiki/log.md": "1ecc005b4ffde069a4c48a52fa397f31251935e7a4fc5ce9f3338b32531954c2",
+      "Alpha/wiki/index.md": "f3c17c5db4cb05aa9e1e3e555c35561dafaaa013045fa72d95daaa572a59cde5",
+      "Alpha/wiki/synthetic-graph-west.md": "a47dafcd64ac3b25edaa080988a59bb58e554b90c6be06430afd090d2343e69b",
+      "Alpha/wiki/synthetic-graph-east.md": "8071285b441665f837e264cde3ff6952b8658cac49930077f18f79035719bdfb",
+      "Alpha/wiki/synthetic-graph-center.md": "50eea317b792f1d9b86498b39bb68c5fed30a0091e020407437b614bd4c2288d",
+      "Alpha/ingest-reports/2026-11-11-050446-synthetic-willow-inventory.md": "52006359186a9f1db1551caafe627129447fc4f62a8f1b946b34228d60fb1372",
+      "Alpha/ingest-reports/2026-11-11-045229-synthetic-cedar-inventory.md": "eae4c28511893271e8f13d0641ee0b5f90b5edd3c67df40244547efa8f819b63",
+      "Alpha/raw/synthetic-willow-inventory.md": "a2786e9a4638022a039b1988d9dcc9be1978e77349a83ffde093beaa9d5e4c71",
+      "Alpha/raw/synthetic-cedar-inventory.md": "b12a36df3701372da9b73e47a48985e7235ebd8f51f0d65310d5dc1cfe3db287",
+      "Alpha/raw/synthetic-source.md": "7c581522a41d2ae57a758b42dc2ffa9f001a97a1c2d4a90c953cce3607c6b771",
+      "Alpha/raw/synthetic-aspen-submission-race.md": "00b3d88d7ba07b664a11cabb03f529c9a59277dc8a787aa5881fd6c097c93841",
+      "Alpha/raw/synthetic-source-2.md": "2e1de3faf34a77f39537d9ab03cf8387bedf3223364e894a5a8ef1e41923e348",
+      "Alpha/raw/synthetic-birch-cancellation.md": "21e5c7e8b38530ab0576f8adc7a443fe1d84af8d0921fd983f2e742fa9d9df53",
+      "Beta/wiki/synthetic-reader.md": "81631145104e5c52be7ad4adec7eafe82d638fb9e8022e622d2331efddaedd39"
+    },
+    "command": [
+      "./node_modules/.bin/tauri",
+      "build",
+      "--debug",
+      "--features",
+      "native-app-acceptance",
+      "--bundles",
+      "app",
+      "--no-sign",
+      "--config",
+      "/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/tauri.override.json",
+      "--",
+      "--offline",
+      "--locked"
+    ],
+    "buildExitCode": 0,
+    "nativeSha256": "d81f5408df67aa759a2bf75034a716ff7306bfb60833c7b246741dc1fbab688d",
+    "launcherSha256": "cd8e08a95999dbf0ffb2457ef906c8ededa98c35fddce41cbfd0f382d78fef7c",
+    "wrapperRestored": true,
+    "markdownAfter": {
+      "Alpha/wiki/synthetic-reader.md": "81631145104e5c52be7ad4adec7eafe82d638fb9e8022e622d2331efddaedd39",
+      "Alpha/wiki/source-synthetic-cedar-inventory.md": "b3ca7dd03fe216aaf13e5028f77986d6bd807d5f0129e93ddfde4c0cc502b6b8",
+      "Alpha/wiki/source-synthetic-willow-inventory.md": "ebeac6dd4edfad8c474cbd4afbf51804d268801ca847a7823f14991ba031dd00",
+      "Alpha/wiki/log.md": "1ecc005b4ffde069a4c48a52fa397f31251935e7a4fc5ce9f3338b32531954c2",
+      "Alpha/wiki/index.md": "f3c17c5db4cb05aa9e1e3e555c35561dafaaa013045fa72d95daaa572a59cde5",
+      "Alpha/wiki/synthetic-graph-west.md": "a47dafcd64ac3b25edaa080988a59bb58e554b90c6be06430afd090d2343e69b",
+      "Alpha/wiki/synthetic-graph-east.md": "8071285b441665f837e264cde3ff6952b8658cac49930077f18f79035719bdfb",
+      "Alpha/wiki/synthetic-graph-center.md": "50eea317b792f1d9b86498b39bb68c5fed30a0091e020407437b614bd4c2288d",
+      "Alpha/ingest-reports/2026-11-11-050446-synthetic-willow-inventory.md": "52006359186a9f1db1551caafe627129447fc4f62a8f1b946b34228d60fb1372",
+      "Alpha/ingest-reports/2026-11-11-045229-synthetic-cedar-inventory.md": "eae4c28511893271e8f13d0641ee0b5f90b5edd3c67df40244547efa8f819b63",
+      "Alpha/raw/synthetic-willow-inventory.md": "a2786e9a4638022a039b1988d9dcc9be1978e77349a83ffde093beaa9d5e4c71",
+      "Alpha/raw/synthetic-cedar-inventory.md": "b12a36df3701372da9b73e47a48985e7235ebd8f51f0d65310d5dc1cfe3db287",
+      "Alpha/raw/synthetic-source.md": "7c581522a41d2ae57a758b42dc2ffa9f001a97a1c2d4a90c953cce3607c6b771",
+      "Alpha/raw/synthetic-aspen-submission-race.md": "00b3d88d7ba07b664a11cabb03f529c9a59277dc8a787aa5881fd6c097c93841",
+      "Alpha/raw/synthetic-source-2.md": "2e1de3faf34a77f39537d9ab03cf8387bedf3223364e894a5a8ef1e41923e348",
+      "Alpha/raw/synthetic-birch-cancellation.md": "21e5c7e8b38530ab0576f8adc7a443fe1d84af8d0921fd983f2e742fa9d9df53",
+      "Beta/wiki/synthetic-reader.md": "81631145104e5c52be7ad4adec7eafe82d638fb9e8022e622d2331efddaedd39"
+    },
+    "markdownUnchanged": true,
+    "wallSeconds": 125.46210527420044
+  },
+  "preflight": {
+    "startupRefusedWithoutIsolation": true,
+    "refusalExitCode": 0,
+    "refusalStderr": "refusing diagnostic startup: acceptance binary requires diagnostic isolation\n",
+    "networkProbeDenied": true,
+    "seededFiles": [
+      {
+        "path": "wiki/synthetic-relay.md",
+        "sha256": "3cea27966dec2e01d84e0600a55aa1dd94e3c507d193e608d35f1a82eb76424a"
+      },
+      {
+        "path": "wiki/synthetic-ledger.md",
+        "sha256": "3522bf3db1588130e609963bcbb9181ab829784f7587d5babfede3fe64a7e7fe"
+      },
+      {
+        "path": "work/feedback/2026-11-11-native-roles-map.md",
+        "sha256": "cb06723b51087510a2b8161d212a46599bcda909b454cbdd16e015b3955e0abf"
+      }
+    ],
+    "limits": [
+      "The proposal is a seeded synthetic fixture, not proof of automatic proposal detection.",
+      "Model generation and publication must be invoked through the real UI/native flow."
+    ]
+  },
+  "firstMapWithHumanAnnotation": "---\ntitle: \"Map: Synthetic pipeline\"\ntype: map\ncluster: \"Synthetic pipeline\"\ncreated: 2026-11-11\nconfidence: medium\nstatus: draft\nmap_evidence: {\"version\":1,\"members\":[{\"path\":\"wiki/synthetic-relay.md\",\"revision\":\"3cea27966dec2e01d84e0600a55aa1dd94e3c507d193e608d35f1a82eb76424a\",\"sourceChars\":90,\"excerptChars\":90,\"truncated\":false},{\"path\":\"wiki/synthetic-ledger.md\",\"revision\":\"3522bf3db1588130e609963bcbb9181ab829784f7587d5babfede3fe64a7e7fe\",\"sourceChars\":91,\"excerptChars\":91,\"truncated\":false}]}\nmap_generated: {\"version\":1,\"bodyRevision\":\"fbcf1d12dc0cadb47194b6a50b31c8d80d57d889a86d326a398838f029762ab8\"}\ntags: [map]\n---\n\n<!-- myco:map-generated:v1 -->\nThe 'Synthetic pipeline' cluster describes a two-component system where the Synthetic Ledger acts as a storage layer and the Synthetic Relay functions as an event reader, with no external archives mentioned. [[wiki/synthetic-ledger.md|synthetic-ledger]] stores events specifically for consumption by the relay, while [[wiki/synthetic-relay.md|synthetic-relay]] reads from this ledger but does not write back to it.\n<!-- /myco:map-generated -->\n\nSynthetic human annotation: preserve this review note during map refresh.",
+  "firstMapSha256": "3eabfafafa49ec75a6ed9042a2d42fb5d6f33f7a225ea8a03a9f8ea00f3558b2",
+  "originalMarkdownUnchanged": true,
+  "proposalCompleted": true,
+  "restartedAndRendered": true,
+  "searchBeforeRestart": "No result for exact synthetic-pipeline search; sidebar remained stale. Index updater is disabled in this acceptance mode.",
+  "refreshFixtureChanges": [
+    {
+      "path": "wiki/synthetic-relay.md",
+      "beforeSha256": "3cea27966dec2e01d84e0600a55aa1dd94e3c507d193e608d35f1a82eb76424a",
+      "afterSha256": "7c4c841badbff6de7c345ffd604ecf25336ed760c5448f03a190ad1db5c69053"
+    },
+    {
+      "path": "wiki/synthetic-ledger.md",
+      "beforeSha256": "3522bf3db1588130e609963bcbb9181ab829784f7587d5babfede3fe64a7e7fe",
+      "afterSha256": "aa53ec3c6f354a9c324428e690711f45dab5ed228ebfd3e3ffd73b359101d545"
+    }
+  ],
+  "status": "completed-with-refresh-failure",
+  "refreshControlsDifference": "Retain the existing Synthetic pipeline cluster label so the approved proposal refreshes the same map; source bodies match the frozen withdrawal case exactly.",
+  "refreshError": "no creation observation matches the current map object",
+  "refreshAccepted": false,
+  "creationAcceptedForFrozenCase": true,
+  "mapAfterRejectedRefresh": "---\ntitle: \"Map: Synthetic pipeline\"\ntype: map\ncluster: \"Synthetic pipeline\"\ncreated: 2026-11-11\nconfidence: medium\nstatus: draft\nmap_evidence: {\"version\":1,\"members\":[{\"path\":\"wiki/synthetic-relay.md\",\"revision\":\"3cea27966dec2e01d84e0600a55aa1dd94e3c507d193e608d35f1a82eb76424a\",\"sourceChars\":90,\"excerptChars\":90,\"truncated\":false},{\"path\":\"wiki/synthetic-ledger.md\",\"revision\":\"3522bf3db1588130e609963bcbb9181ab829784f7587d5babfede3fe64a7e7fe\",\"sourceChars\":91,\"excerptChars\":91,\"truncated\":false}]}\nmap_generated: {\"version\":1,\"bodyRevision\":\"fbcf1d12dc0cadb47194b6a50b31c8d80d57d889a86d326a398838f029762ab8\"}\ntags: [map]\n---\n\n<!-- myco:map-generated:v1 -->\nThe 'Synthetic pipeline' cluster describes a two-component system where the Synthetic Ledger acts as a storage layer and the Synthetic Relay functions as an event reader, with no external archives mentioned. [[wiki/synthetic-ledger.md|synthetic-ledger]] stores events specifically for consumption by the relay, while [[wiki/synthetic-relay.md|synthetic-relay]] reads from this ledger but does not write back to it.\n<!-- /myco:map-generated -->\n\nSynthetic human annotation: preserve this review note during map refresh.",
+  "mapUnchangedByRejectedRefresh": true,
+  "currentIdentity": {
+    "device": 16777233,
+    "inode": 130491227
+  },
+  "creationObservations": [
+    {
+      "state": "creationObserved",
+      "baselineRevision": "1e755c51b6cc61b0badd01298fa18cb633316a16fb811a844e5a9577ff72d7ec",
+      "issuedDevice": 16777233,
+      "issuedInode": 130490780,
+      "matchesCurrentObject": false
+    }
+  ],
+  "mapCount": 1,
+  "refreshProposalRetainedPending": true,
+  "appStopped": true,
+  "limits": [
+    "Unsigned debug macOS ARM acceptance app, not a signed release or Windows UI result.",
+    "Proposal fixtures were manually seeded; automatic proposal detection was not exercised.",
+    "M1 body matches the accepted frozen helper output exactly, with its one-paragraph layout limitation.",
+    "M2 rejected before publication after a real editor save and restart; its generated candidate is not exposed in this receipt.",
+    "Immediate sidebar/search did not show the newly created map until restart with the diagnostic index updater disabled.",
+    "Generated-section marker comments are visibly shown in the native editor.",
+    "G5 is not complete: safe refresh across ordinary editor saves still fails."
+  ]
+}

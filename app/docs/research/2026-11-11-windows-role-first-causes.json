@@ -1,0 +1,1083 @@
+{
+  "head": "cc30681f74610c24c1548f357500a278ae42d56c",
+  "runUrl": "https://github.com/cmblir/Myco/actions/runs/42950000035",
+  "logSha256": "e8777d67ae71fb395d176c61deca59cc89181054ea42d76e314ddc63bdf3938b",
+  "fullSuite": {
+    "passed": 2178,
+    "failed": 209,
+    "ignored": 31
+  },
+  "moduleCounts": {
+    "archive_pack": 25,
+    "audio_overview": 21,
+    "commands": 8,
+    "distill": 25,
+    "distill_publication": 17,
+    "importers": 1,
+    "inbox_source": 5,
+    "index_publication": 2,
+    "local_model": 1,
+    "mcp_native": 1,
+    "retrieval": 4,
+    "session_compile": 73,
+    "settings": 4,
+    "validator": 1,
+    "vault": 1,
+    "vector_index": 8,
+    "workstreams": 12
+  },
+  "classificationCounts": {
+    "access-denied-or-directory-open": 27,
+    "requires-case-review": 71,
+    "unsupported-platform": 67,
+    "poisoned-lock-secondary": 44
+  },
+  "classificationLimit": "Initial triage from first panic text only; assertions and nested process errors remain unclassified until inspected. These are not inferred root causes.",
+  "failures": [
+    {
+      "test": "archive_pack::authority::tests::stale_opening_retains_owned_sealed_stage_and_reports_refused_cleanup",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack_authority_tests.rs:40:84:\ncalled `Result::unwrap_err()` on an `Ok` value: PackReport { buckets: 0, files: 0, reclaimed: 0, failed: [\"sessions/2026-01: open archive directory \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpsrcNOY: Access is denied. (os error 5)\"] }"
+    },
+    {
+      "test": "archive_pack::mutation_tests::pack_rechecks_source_after_preparation_instead_of_deleting_a_newer_write",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_mutation_tests.rs:133:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::mutation_tests::pack_serializes_final_verification_and_unlink_against_cooperating_create_write",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_mutation_tests.rs:16:10:\nsynthetic archive worker did not reach its checkpoint: Disconnected"
+    },
+    {
+      "test": "archive_pack::mutation_tests::partial_pack_unlink_preserves_complete_archive_and_can_resume_remaining_originals",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_mutation_tests.rs:42:86:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 2, kind: NotFound, message: \"The system cannot find the file specified.\" }"
+    },
+    {
+      "test": "archive_pack::mutation_tests::restore_serializes_absence_check_and_persist_against_a_cooperating_write",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_mutation_tests.rs:150:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::safety_tests::pack_preseal_source_change_cleans_unchanged_owned_stage",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:643:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::safety_tests::pack_preserves_replaced_stage_before_path_publication_and_cleanup",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:335:5:\nPackReport { buckets: 0, files: 0, reclaimed: 0, failed: [\"sessions/2026-01: open archive directory \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpZHtiG1: Access is denied. (os error 5)\"] }"
+    },
+    {
+      "test": "archive_pack::safety_tests::pack_rechecks_preparation_time_bucket_directory_identity",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:278:56:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 3, kind: NotFound, message: \"The system cannot find the path specified.\" }"
+    },
+    {
+      "test": "archive_pack::safety_tests::pack_verification_failure_cleans_unchanged_owned_stage",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:525:5:\nPackReport { buckets: 0, files: 0, reclaimed: 0, failed: [\"sessions/2026-01: open archive directory \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpAQ4eMD: Access is denied. (os error 5)\"] }"
+    },
+    {
+      "test": "archive_pack::safety_tests::pack_and_independent_zip_restore_96_members_with_bounded_handles",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:576:5:\nassertion `left == right` failed: PackReport { buckets: 0, files: 0, reclaimed: 0, failed: [\"sessions/2026-01: open archive directory \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpEsgTZr: Access is denied. (os error 5)\"] }"
+    },
+    {
+      "test": "archive_pack::safety_tests::partial_pack_retry_reads_the_zip_member_with_no_remaining_original",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:228:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::safety_tests::restore_persist_error_preserves_replacement_stage_and_competing_destination",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:468:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::safety_tests::restore_prepublish_failure_cleans_unchanged_owned_stage",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:541:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::safety_tests::restore_preserves_replaced_stage_before_path_publication_and_cleanup",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:394:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::safety_tests::restore_rechecks_an_earlier_destination_before_removing_zip",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack_safety_tests.rs:202:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::tests::a_failed_verification_leaves_every_original_in_place",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack.rs:1553:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::tests::a_bucket_newer_than_the_cutoff_is_untouched",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack.rs:1477:9:\nassertion `left == right` failed: failed: [\"sessions/2026-04: open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmpgUUChJ: Access is denied. (os error 5)\"]"
+    },
+    {
+      "test": "archive_pack::tests::a_partial_restore_can_be_retried",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack.rs:1668:77:\ncalled `Result::unwrap()` on an `Err` value: \"open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmp84zHvl: Access is denied. (os error 5)\""
+    },
+    {
+      "test": "archive_pack::tests::an_interrupted_pack_finishes_instead_of_deadlocking",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack.rs:1636:39:\ncalled `Result::unwrap()` on an `Err` value: \"open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmpX6JD0m: Access is denied. (os error 5)\""
+    },
+    {
+      "test": "archive_pack::tests::compress_then_restore_round_trips_byte_identically",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack.rs:1416:9:\nassertion `left == right` failed: failed: [\"daily/2026-W02: open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmp89AHJX: Access is denied. (os error 5)\", \"sessions/2026-01: open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmp89AHJX: Access is denied. (os error 5)\"]"
+    },
+    {
+      "test": "archive_pack::tests::packing_over_an_existing_archive_is_refused",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack.rs:1702:9:\n[\"sessions/2026-01: open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmp85jVtE: Access is denied. (os error 5)\"]"
+    },
+    {
+      "test": "archive_pack::tests::the_weekly_archive_tree_compresses_on_the_month_cutoff",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\archive_pack.rs:1451:9:\nassertion `left == right` failed: failed: [\"weekly/2026-02: open archive directory C:\\\\Users\\\\RUNNER~1\\\\AppData\\\\Local\\\\Temp\\\\.tmp5FyEMT: Access is denied. (os error 5)\"]"
+    },
+    {
+      "test": "archive_pack::tests::raw_archive_is_never_compressed",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack.rs:1512:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "archive_pack::tests::usage_reports_loose_and_packed_buckets",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack.rs:1617:9:\nassertion `left == right` failed: [BucketUsage { tree: \"daily\", bucket: \"2026-W02\", files: 1, bytes: 3, packed: false }, BucketUsage { tree: \"sessions\", bucket: \"2026-01\", files: 1, bytes: 10, packed: false }, BucketUsage { tree: \"sessions\", bucket: \"2026-07\", files: 1, bytes: 5, packed: false }]"
+    },
+    {
+      "test": "archive_pack::tests::verify_pack_rejects_a_truncated_archive",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_pack.rs:1575:9:\nassertion failed: verify_pack(&zip_path, &files).unwrap_err().contains(\"expected 2\")"
+    },
+    {
+      "test": "audio_overview::tests::admission_refuses_unreadable_later_selection_and_first_over_budget_page",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:202:9:\nretained audio source identity is unsupported on this platform"
+    },
+    {
+      "test": "audio_overview::tests::cancelled_late_begin_response_and_wrong_origin_never_adopt_or_dispatch",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:540:62:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::cancelled_pending_decode_and_repair_keep_owner_until_callback_reports_terminal",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:916:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::changed_source_after_success_cannot_adopt_a_cached_persisted_receipt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:1102:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::cooperating_editor_move_delete_and_archive_win_before_publication_writer",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:829:63:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::coverage_and_citations_use_included_body_bytes_not_all_selected_or_frontmatter",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:988:77:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::decode_and_repair_postcheck_actual_source_even_when_generation_returns_error",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:360:69:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::exact_cancel_during_decode_or_repair_rejects_late_result_without_cancelling_new_job",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:511:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::excluded_source_citations_fail_both_format_attempts_without_draft_or_file",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:231:18:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::existing_human_transcript_is_preserved_after_valid_draft",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:563:57:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::genuine_other_role_and_automatic_grants_never_dispatch_manual_audio",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:421:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::human_edited_or_same_byte_replaced_transcript_refuses_cached_persisted_adoption",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:1136:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::job_and_draft_contexts_cannot_supply_model_content_or_target_authority",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:257:57:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::omitted_selected_original_stays_bound_through_generation",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:1037:18:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::persisted_without_receipt_returns_sticky_partial_and_never_retry_overwrites",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:650:57:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::preview_source_changes_reopen_revocation_and_cancel_prevent_publication",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:720:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::publisher_wins_writer_order_without_later_mutations_rewriting_transcript",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:760:63:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::reopen_and_revocation_postcheck_decode_and_repair_even_on_error",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:459:69:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::two_simultaneous_native_drafts_have_exactly_one_absence_cas_winner",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:586:59:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::unchanged_decode_and_repair_transport_errors_are_preserved_without_extra_retry",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:1066:61:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "audio_overview::tests::unchanged_sources_issue_only_native_draft_and_persisted_receipt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\audio_overview\\tests.rs:134:57:\ncalled `Result::unwrap()` on an `Err` value: \"retained audio source identity is unsupported on this platform\""
+    },
+    {
+      "test": "commands::archive_compaction_admission_tests::exact_current_opening_can_pack_and_restore_without_changing_raw",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_compaction_admission_tests.rs:197:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "commands::archive_compaction_admission_tests::restore_finalize_reopen_preserves_zip_and_already_restored_bytes",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\archive_compaction_admission_tests.rs:189:62:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 3, kind: NotFound, message: \"The system cannot find the path specified.\" }"
+    },
+    {
+      "test": "commands::distill_publication_boundary_tests::publication_native_boundary_archive_requires_capability_and_defers_unknown_move_undo",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_boundary_tests.rs:207:6:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "commands::distill_publication_boundary_tests::publication_native_boundary_genuine_creation_appends_once_and_consumes_on_undo",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_boundary_tests.rs:108:6:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "commands::distill_publication_boundary_tests::publication_native_boundary_stale_opening_cannot_publish_append_or_undo",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_boundary_tests.rs:276:6:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "commands::distill_publication_boundary_tests::publication_native_boundary_valid_human_update_token_cannot_forge_created_authority",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_boundary_tests.rs:336:6:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "commands::scan_tests::native_reflect_creates_a_stub_without_overwriting_an_existing_human_page",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\commands_scan_tests.rs:99:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "commands::session_bucket_tests::archived_sessions_are_indexed_on_opt_in_with_duplicate_bodies_once",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\commands.rs:11918:9:\nassertion `left == right` failed: flag on: archive indexed, live copy wins over its archived twin, the archive's own twin indexed once, other cold tiers unchanged"
+    },
+    {
+      "test": "distill::archive_safety_tests::archive_legacy_unsigned_undo_preserves_changed_bytes_even_with_old_mtime",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\distill_archive_safety_tests.rs:347:14:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "distill::archive_safety_tests::archive_manifest_undo_preserves_same_second_human_edit",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\distill_archive_safety_tests.rs:79:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "distill::tests::a_run_keeps_raw_byte_identical_and_still_sweeps_the_rest",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill.rs:6184:50:\ncalled `Result::unwrap()` on an `Err` value: \"automatic recoverable expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpCkotdv\\\\_inbox\\\\quarantine\\\\old.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpCkotdv\\\\_inbox\\\\quarantine\\\\old.verdict.json: automatic expiry file identity is unsupported on this platform\""
+    },
+    {
+      "test": "distill::tests::an_expired_session_becomes_a_proposal_and_the_purge_spares_it",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\distill.rs:7652:22:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "distill::tests::crash_mid_run_preserves_manifest_for_completed_moves",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill.rs:7218:13:\nunexpected error: automatic recoverable expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmp8rPqK6\\_inbox\\quarantine\\q.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmp8rPqK6\\_inbox\\quarantine\\q.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::tests::permanent_cleanup_removes_expired_items_without_an_undo_copy",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill.rs:7450:77:\ncalled `Result::unwrap()` on an `Err` value: \"automatic expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmp2maPU3\\\\_inbox\\\\quarantine\\\\expired.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmp2maPU3\\\\_inbox\\\\quarantine\\\\expired.verdict.json: automatic expiry file identity is unsupported on this platform\""
+    },
+    {
+      "test": "distill::tests::provenance_tests::provenance_empty_index_lifecycle_runs_without_models_and_keeps_history",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_provenance_tests.rs:676:78:\ncalled `Result::unwrap()` on an `Err` value: \"automatic recoverable expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpupJ5Ll\\\\_inbox\\\\quarantine\\\\expired-cold.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpupJ5Ll\\\\_inbox\\\\quarantine\\\\expired-cold.verdict.json: automatic expiry file identity is unsupported on this platform\""
+    },
+    {
+      "test": "distill::tests::undo_preserves_unsigned_run_layout_for_manual_recovery",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill.rs:7359:56:\ncalled `Result::unwrap()` on an `Err` value: \"automatic recoverable expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpb9JyW1\\\\_inbox\\\\quarantine\\\\q.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpb9JyW1\\\\_inbox\\\\quarantine\\\\q.verdict.json: automatic expiry file identity is unsupported on this platform\""
+    },
+    {
+      "test": "distill::ttl::keep_revision_tests::actual_keep_completed_before_permanent_commit_retains_the_complete_pair",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_keep_revision_tests.rs:266:9:\nKeep did not extend the verdict; expiry result: automatic expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpaog3vb\\_inbox\\quarantine\\note.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpaog3vb\\_inbox\\quarantine\\note.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::keep_writer_tests::actual_keep_waits_for_permanent_expiry_and_refuses_the_deleted_pair",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_keep_writer_tests.rs:251:32:\nexpiry did not reach the Keep seam: Err(\"automatic expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpKQG9zW\\\\_inbox\\\\quarantine\\\\note.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpKQG9zW\\\\_inbox\\\\quarantine\\\\note.verdict.json: automatic expiry file identity is unsupported on this platform\")"
+    },
+    {
+      "test": "distill::ttl::keep_writer_tests::actual_keep_waits_for_recoverable_expiry_and_refuses_the_moved_pair",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_keep_writer_tests.rs:251:32:\nexpiry did not reach the Keep seam: Err(\"automatic recoverable expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpQSfdZR\\\\_inbox\\\\quarantine\\\\note.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpQSfdZR\\\\_inbox\\\\quarantine\\\\note.verdict.json: automatic expiry file identity is unsupported on this platform\")"
+    },
+    {
+      "test": "distill::ttl::lifecycle_tests::manifest_save_failure_reports_irreversible_paths_and_does_not_complete",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_lifecycle_tests.rs:158:9:\nautomatic expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpbnwf1g\\_inbox\\quarantine\\scratch.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpbnwf1g\\_inbox\\quarantine\\scratch.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::lifecycle_tests::policy_revoked_before_commit_preserves_the_complete_pair",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_lifecycle_tests.rs:59:9:\nautomatic expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpjEt5tU\\_inbox\\quarantine\\scratch.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpjEt5tU\\_inbox\\quarantine\\scratch.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::lifecycle_tests::second_file_conflict_records_only_the_actual_first_deletion",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_lifecycle_tests.rs:110:9:\nautomatic expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpOke2dJ\\_inbox\\quarantine\\scratch.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpOke2dJ\\_inbox\\quarantine\\scratch.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::actual_keep_command_after_preparation_preserves_the_extended_pair",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:145:9:\nKeep did not extend the verdict; expiry result: Err(\"automatic recoverable expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpamFxfB\\\\_inbox\\\\quarantine\\\\note.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpamFxfB\\\\_inbox\\\\quarantine\\\\note.verdict.json: automatic expiry file identity is unsupported on this platform\")"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::changed_destination_after_link_retains_both_names_for_manual_review",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:282:60:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 3, kind: NotFound, message: \"The system cannot find the path specified.\" }"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::destination_change_after_unlink_keeps_the_actual_move_in_history",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:359:9:\nautomatic recoverable expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmp3xw8EW\\_inbox\\quarantine\\note.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmp3xw8EW\\_inbox\\quarantine\\note.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::manifest_failure_reports_actual_moves_and_does_not_complete_the_run",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:451:9:\nautomatic recoverable expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpUJqN0T\\_inbox\\quarantine\\note.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmpUJqN0T\\_inbox\\quarantine\\note.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::native_save_after_preparation_keeps_the_newer_source_in_place",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:46:9:\nassertion `left == right` failed: recoverable expiry must preserve the current source"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::occupied_destination_at_link_seam_is_never_overwritten",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:220:14:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 3, kind: NotFound, message: \"The system cannot find the path specified.\" }"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::second_source_conflict_records_only_the_actual_first_move",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:314:9:\nautomatic recoverable expiry refused; retained \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmp45ujub\\_inbox\\quarantine\\note.md and \\\\?\\C:\\Users\\runneradmin\\AppData\\Local\\Temp\\.tmp45ujub\\_inbox\\quarantine\\note.verdict.json: automatic expiry file identity is unsupported on this platform"
+    },
+    {
+      "test": "distill::ttl::recoverable_tests::unchanged_pair_is_preserved_in_trash_with_actual_move_history",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_recoverable_tests.rs:544:36:\ncalled `Result::unwrap()` on an `Err` value: \"automatic recoverable expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpUxZied\\\\_inbox\\\\quarantine\\\\note.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpUxZied\\\\_inbox\\\\quarantine\\\\note.verdict.json: automatic expiry file identity is unsupported on this platform\""
+    },
+    {
+      "test": "distill::ttl::revision_tests::cooperating_save_after_expiry_preparation_keeps_newer_revision",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_ttl_revision_tests.rs:49:9:\nassertion `left == right` failed: automatic expiry must preserve the current content"
+    },
+    {
+      "test": "distill::ttl::revision_tests::extended_verdict_after_expiry_preparation_keeps_current_pair",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_ttl_revision_tests.rs:54:9:\nassertion `left == right` failed: automatic expiry must preserve the current sidecar"
+    },
+    {
+      "test": "distill_publication::tests::map_tests::checked_map_cannot_overwrite_an_existing_human_target",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:252:5:\nassertion failed: fixture.publish_map(\"map-existing\", \"private-grant-a\","
+    },
+    {
+      "test": "distill_publication::tests::map_tests::checked_map_creation_and_unchanged_retry_recheck_sources_under_writer_lock",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:49:10:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::map_tests::cooperating_writer_cannot_run_between_map_source_checks_and_publication",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:329:25:\ncalled `Option::unwrap()` on a `None` value"
+    },
+    {
+      "test": "distill_publication::tests::map_tests::operation_keeps_each_target_grant_bound_and_allows_a_shared_multimap_manifest",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:196:10:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::map_tests::persisted_registration_hook_keeps_maps_prepared_and_quarantined",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:172:5:\nassertion failed: fixture.publish_map(\"map-hook\", \"private-grant-a\","
+    },
+    {
+      "test": "distill_publication::tests::map_tests::postpersist_source_failure_retains_private_receipt_without_publication_authority",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:122:5:\nassertion `left == right` failed"
+    },
+    {
+      "test": "distill_publication::tests::map_tests::source_failure_before_preparation_or_immediately_before_write_keeps_target_absent",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_map_tests.rs:95:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "distill_publication::tests::publication_native_absence_cas_issues_created_receipt_and_idempotent_retry",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:105:67:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_consumes_creation_only_after_exact_native_removal",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:270:60:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_existing_human_update_never_issues_creation_authority",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:141:10:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_registration_failure_preserves_output_without_authority",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:335:5:\nassertion failed: error.contains(\"bytes persisted\")"
+    },
+    {
+      "test": "distill_publication::tests::publication_native_parallel_same_operation_retries_share_one_receipt",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:483:83:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_registry_restart_does_not_reconstruct_authority_from_bytes",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:300:60:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_rejects_forged_other_operation_path_revision_and_token",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:166:60:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_rejects_same_path_reopen_and_closed_origin_before_write",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:206:60:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_undo_history_cannot_redirect_to_human_or_another_operation",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:499:67:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill_publication::tests::publication_native_unknown_move_receipt_preserves_all_history_artifacts",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\distill_publication_tests.rs:535:67:\ncalled `Result::unwrap()` on an `Err` value: \"native publication identity is not yet supported on this platform\""
+    },
+    {
+      "test": "distill::ttl::revision_tests::unchanged_expired_pair_is_deleted_and_exact_paths_are_recorded",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\distill_ttl_revision_tests.rs:223:36:\ncalled `Result::unwrap()` on an `Err` value: \"automatic expiry refused; retained \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpB4WRtG\\\\_inbox\\\\quarantine\\\\note.md and \\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\.tmpB4WRtG\\\\_inbox\\\\quarantine\\\\note.verdict.json: automatic expiry file identity is unsupported on this platform\""
+    },
+    {
+      "test": "importers::ledger::safety_tests::ledger_publication_keeps_the_previous_open_file_complete",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\importers\\ledger_safety_tests.rs:74:31:\ncalled `Result::unwrap()` on an `Err` value: \"publish ledger: rename failed: Access is denied. (os error 5)\""
+    },
+    {
+      "test": "inbox_source::tests::checked_manual_archive_returns_real_path_and_never_claims_harvest_completion",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\inbox_source_tests.rs:76:66:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "inbox_source::tests::corrupt_state_refuses_checked_archive_without_moving_original",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\inbox_source_tests.rs:92:66:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "inbox_source::tests::native_snapshot_reads_exact_bytes_and_rejects_selected_revision_change",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\inbox_source_tests.rs:25:77:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "inbox_source::tests::public_snapshot_fields_do_not_recreate_native_authority",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\inbox_source_tests.rs:57:66:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "inbox_source::tests::same_path_reopen_refuses_old_snapshot_and_release_still_reclaims_it",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\inbox_source_tests.rs:43:66:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "index_publication::file_snapshot::tests::snapshot_rejects_growth_and_shrink_during_held_read",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\index_file_snapshot_tests.rs:73:18:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "index_publication::file_snapshot::tests::snapshot_revision_binds_same_stamp_bytes_and_survives_metadata_only_restore",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\index_file_snapshot_tests.rs:31:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "local_model::tests::same_size_changed_bytes_invalidate_readiness",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\local_model.rs:1042:9:\nassertion failed: resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).is_err()"
+    },
+    {
+      "test": "mcp_native::tests::a_resumed_legacy_archive_reenters_active_sessions_without_rewriting_the_archive",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\mcp_native.rs:8075:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "retrieval::cache_admission_tests::bm25_decoder_uses_captured_bytes_after_path_replacement",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\retrieval_cache_admission_tests.rs:21:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "retrieval::cache_admission_tests::bm25_warm_same_generation_pair_reads_terms_and_checks_checksum",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\retrieval_cache_admission_tests.rs:21:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "retrieval::cache_admission_tests::bm25_warm_same_stamp_corruption_is_checked_error_then_recovers",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\retrieval_cache_admission_tests.rs:21:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "retrieval::cache_admission_tests::bm25_warm_same_stamp_reads_new_terms_and_chunk_hash",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\retrieval_cache_admission_tests.rs:21:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "session_compile::contract_revalidation_tests::automatic_retry_of_previous_contract_discards_checkpoint_and_preserves_history",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\contract_revalidation_tests.rs:319:10:\ncalled `Result::unwrap()` on an `Err` value: \"native file identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::contract_revalidation_tests::materializer_contract_revalidation_tests::historical_v4_unavailable_partial_re_admission_requires_a_fresh_v9_attempt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\materializer_contract_revalidation_tests.rs:285:6:\ncalled `Result::unwrap()` on an `Err` value: \"native file identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::contract_revalidation_tests::materializer_contract_revalidation_tests::historical_v5_unavailable_partial_re_admission_requires_a_fresh_v9_attempt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\materializer_contract_revalidation_tests.rs:285:6:\ncalled `Result::unwrap()` on an `Err` value: \"native file identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::contract_revalidation_tests::materializer_contract_revalidation_tests::historical_v6_unavailable_partial_re_admission_requires_a_fresh_v9_attempt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\materializer_contract_revalidation_tests.rs:285:6:\ncalled `Result::unwrap()` on an `Err` value: \"native file identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::contract_revalidation_tests::materializer_contract_revalidation_tests::nonempty_structure_v8_unreviewed_partial_requires_a_fresh_v9_attempt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\materializer_contract_revalidation_tests.rs:285:6:\ncalled `Result::unwrap()` on an `Err` value: \"native file identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::contract_revalidation_tests::materializer_contract_revalidation_tests::source_reading_v7_unreviewed_partial_requires_a_fresh_v9_attempt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\materializer_contract_revalidation_tests.rs:285:6:\ncalled `Result::unwrap()` on an `Err` value: \"native file identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::execution::tests::cancellation_before_checkpoint_does_not_save_model_passed_output",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_tests.rs:206:9:\nassertion failed: error.to_string().contains(\"cancelled\")"
+    },
+    {
+      "test": "session_compile::execution::tests::checkpoint_requires_native_source_review_and_inference_does_not_hold_opening_lock",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_tests.rs:105:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"8e792d794df9222193c1dbdbce781089\", source_revision: \"f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400\", compile_signature: \"e451f5aa20ea50a88daaa9024470dbba42972560c045652abaa449d0d3743b50\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-execution-synthetic-qeKjCQ\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:c4\" }, role_snapshot_"
+    },
+    {
+      "test": "session_compile::execution::tests::empty_proposals_with_missing_source_coverage_finish_partial_without_publication",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_tests.rs:277:15:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"9382f8741e248ac45c82c777a76d50c0\", source_revision: \"f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400\", compile_signature: \"e451f5aa20ea50a88daaa9024470dbba42972560c045652abaa449d0d3743b50\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-execution-synthetic-firVk3\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:c5\" }, role_snapshot_"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::changed_source_and_revoked_role_end_only_owned_attempt_without_publication",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:265:13:\nassertion failed: error.message.contains(\"synthetic original generator failure\")"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::checkpoint_before_publication_error_retains_intent_file_and_human_bytes",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:720:59:\ncalled `Option::unwrap()` on a `None` value"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::each_owned_processing_stage_records_exact_failure_without_a_completion_receipt",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:135:13:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::failed_queue_read_preserves_original_error_without_claiming_durable_outcome",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:403:9:\nassertion failed: error.message.contains(\"synthetic original generator failure\")"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::foreign_owner_busy_and_changed_language_are_admission_errors_without_mutation",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:218:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"6ddf1ef364908d141ae9cde459f0fb48\", source_revision: \"f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400\", compile_signature: \"e451f5aa20ea50a88daaa9024470dbba42972560c045652abaa449d0d3743b50\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-execution-synthetic-A9VJLT\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:cd\" }, role_s"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::generator_failure_preserves_previous_verified_checkpoint",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:59:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"c47a9981571968a193a71bf821c304da\", source_revision: \"f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400\", compile_signature: \"e451f5aa20ea50a88daaa9024470dbba42972560c045652abaa449d0d3743b50\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-execution-synthetic-Cvrnip\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:ce\" }, role_sn"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::intervening_checkpoint_stop_and_new_attempt_are_not_overwritten",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:318:13:\nassertion failed: error.message.contains(\"synthetic late generator failure\")"
+    },
+    {
+      "test": "session_compile::execution::tests::failure_tests::unconfirmed_cleanup_cannot_retire_changed_request_or_active_packet",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:484:14:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"887bc73818ba67f1caeabf2f80aca5af\", source_revision: \"f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400\", compile_signature: \"e451f5aa20ea50a88daaa9024470dbba42972560c045652abaa449d0d3743b50\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-execution-synthetic-MM2VeC\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:d1\" }, role_s"
+    },
+    {
+      "test": "session_compile::execution::tests::fresh_attempt_rechecks_saved_batches_instead_of_reusing_review_authority",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_tests.rs:229:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"99f912526d5222304bbc50a0143959c2\", source_revision: \"f95f310d45a6347224480fac2b57e2a134aa5c477bfbc29afbeef3805f356400\", compile_signature: \"e451f5aa20ea50a88daaa9024470dbba42972560c045652abaa449d0d3743b50\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-execution-synthetic-0G7c7u\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:d2\" }, role_snapshot_"
+    },
+    {
+      "test": "session_compile::execution::tests::generation_error_still_rechecks_changed_original_without_a_checkpoint",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_tests.rs:140:9:\ndurable compiler custody is unsupported on this platform; preserve source and draft"
+    },
+    {
+      "test": "session_compile::execution::tests::process_recovery_tests::completed_canonical_automatically_refreshes_appended_revision_after_distinct_process_restart",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_process_recovery_tests.rs:136:17:\nsynthetic recovery child failed: exit code: 101; stdout:"
+    },
+    {
+      "test": "session_compile::execution::tests::process_recovery_tests::completed_canonical_refreshes_appended_revision_after_distinct_process_restart",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_process_recovery_tests.rs:136:17:\nsynthetic recovery child failed: exit code: 101; stdout:"
+    },
+    {
+      "test": "session_compile::execution::tests::process_recovery_tests::os_kill_and_restart_preserve_checkpoint_and_require_fresh_automatic_review",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_process_recovery_tests.rs:92:17:\nsynthetic recovery child terminated before OS kill: exit code: 101; stdout:"
+    },
+    {
+      "test": "session_compile::execution::tests::process_recovery_tests::os_kill_and_restart_preserve_checkpoint_and_require_fresh_foreground_review",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_process_recovery_tests.rs:92:17:\nsynthetic recovery child terminated before OS kill: exit code: 101; stdout:"
+    },
+    {
+      "test": "session_compile::execution::tests::same_path_reopen_during_model_call_never_checkpoints_old_attempt",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_tests.rs:173:9:\ndurable compiler custody is unsupported on this platform; preserve source and draft"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::intervening_durable_checkpoint_is_not_replaced_by_a_late_unreviewed_draft",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:739:9:\nassertion failed: error.message.contains(REVIEW_UNAVAILABLE)"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::late_source_role_or_opening_change_cannot_adopt_an_unreviewed_draft",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:667:13:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::request_owned_unavailable_review_issues_exact_public_failure_after_durable_partial_save",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:449:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::review_input_3321_retains_exact_unreviewed_native_checkpoint_without_advancing_cursor",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:165:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::review_tokenizer_error_retains_exact_unreviewed_native_checkpoint_without_publication",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:165:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::review_transport_error_retains_exact_unreviewed_native_checkpoint_without_publication",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:165:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::stored_review_unavailable_retains_existing_raw_batch_without_new_tail_or_current_run_completion",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:549:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"67736034a2e900d0f1e05e2d332643ac\", source_revision: \"5c8b3fb209aeedc9ed5b58475a843fd8ddd0d7725cdc693650c4bf80285b9d51\", compile_signature: \"3bb45f9f72c55ae84f10ac6f0081c215f994e94023e6eb9b6e70151505ecd7e5\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-compiler-unreviewed-synthetic-biVmcC\", opening_token: \"e8ad12193a2c2c90095e751a4a83427"
+    },
+    {
+      "test": "session_compile::execution::tests::unreviewed_checkpoint_tests::zero_claim_review_unavailable_preserves_app_owned_empty_structure_as_partial",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_unreviewed_checkpoint_tests.rs:386:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::actual_compiler_publication_allows_writer_guarded_completion_recheck",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:83:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"127b27a3a551f19815543a098f339152\", source_revision: \"314a27989b265e89b70e441a92cde246c57bf077c61ffd9df27c95542fd472eb\", compile_signature: \"6075733eafa740ec59e84713064ebbab26b9da499cba56b6a80b79043cd2d476\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-inbox-compiler-authority-synthetic-6vAejf\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:e1\" }, rol"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::automatic_original_requires_enablement_and_completion_rejects_revocation",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:83:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"71c2de9baaf85154cac210131379f428\", source_revision: \"314a27989b265e89b70e441a92cde246c57bf077c61ffd9df27c95542fd472eb\", compile_signature: \"6075733eafa740ec59e84713064ebbab26b9da499cba56b6a80b79043cd2d476\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-inbox-compiler-authority-synthetic-UV4Ioj\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:e2\" }, rol"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::caller_context_changes_and_runtime_authority_loss_reject_completed_output",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:83:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"b27adc693788db8f19604aa18bffadd9\", source_revision: \"314a27989b265e89b70e441a92cde246c57bf077c61ffd9df27c95542fd472eb\", compile_signature: \"6075733eafa740ec59e84713064ebbab26b9da499cba56b6a80b79043cd2d476\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-inbox-compiler-authority-synthetic-SXCesR\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:e3\" }, rol"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::changed_shared_session_after_native_compilation_prevents_archive_and_completion",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:471:6:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::completed_output_rejects_a_changed_compilation_role",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:83:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"5e38dd657d93629abf1351aed361fbef\", source_revision: \"314a27989b265e89b70e441a92cde246c57bf077c61ffd9df27c95542fd472eb\", compile_signature: \"6075733eafa740ec59e84713064ebbab26b9da499cba56b6a80b79043cd2d476\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-inbox-compiler-authority-synthetic-TqRmGu\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:e7\" }, rol"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::failed_automatic_attempt_finalizes_natively_before_fresh_retry",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:471:6:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::matching_forged_durable_checks_cannot_archive_a_native_completed_original",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:471:6:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::native_snapshot_to_compiler_to_actual_archive_records_exact_completion",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:471:6:\ncalled `Result::unwrap()` on an `Err` value: \"native inbox source identity is unsupported on this platform\""
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::partial_model_review_cannot_authorize_commit",
+      "classification": "unsupported-platform",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:83:10:\ncalled `Result::unwrap()` on an `Err` value: CompileFailure { version: \"SessionCompileFailureV1\", message: \"durable compiler custody is unsupported on this platform; preserve source and draft\", outcome: Some(FailureOutcome { attempt_id: \"76cefd5dc1d3f19276ad3239792cd16f\", source_revision: \"314a27989b265e89b70e441a92cde246c57bf077c61ffd9df27c95542fd472eb\", compile_signature: \"6075733eafa740ec59e84713064ebbab26b9da499cba56b6a80b79043cd2d476\", origin: AgentVaultSession { vault_path: \"\\\\\\\\?\\\\C:\\\\Users\\\\runneradmin\\\\AppData\\\\Local\\\\Temp\\\\myco-inbox-compiler-authority-synthetic-kIi8bB\", opening_token: \"e8ad12193a2c2c90095e751a4a83427b:ed\" }, rol"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::quote_publication_and_forged_durable_passes_do_not_issue_completion_authority",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\execution_failure_tests.rs:692:76:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 3, kind: NotFound, message: \"The system cannot find the path specified.\" }"
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::same_byte_human_replacement_and_same_path_reopen_preserve_without_commit",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:65:6:\ncalled `Result::unwrap()` on an `Err` value: \"import lock poisoned\""
+    },
+    {
+      "test": "session_compile::inbox_authority_tests::source_output_and_completed_queue_changes_inside_commit_fail_recheck",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\inbox_authority_tests.rs:65:6:\ncalled `Result::unwrap()` on an `Err` value: \"import lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::automatic_partial_preview_does_not_generate_repeated_identical_attempts",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:437:10:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::concurrent_human_edit_fails_cas_without_losing_annotation_or_raw",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:175:85:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::duplicate_job_ids_do_not_share_runtime_revalidation",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:78:85:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::explicit_manual_begin_admits_archive_only_lineage_without_automatic_reminder",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:329:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "session_compile::native_tests::explicit_manual_begin_refuses_raw_sha_without_native_ledger_lineage",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:418:9:\nassertion failed: begin(&state, &origin, source.clone(),"
+    },
+    {
+      "test": "session_compile::native_tests::legacy_reminder_completion_does_not_delete_compiler_work",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:122:41:\ncalled `Result::unwrap()` on an `Err` value: \"import lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::final_queue_cas_failure_retains_artifact_and_intent_without_native_authority",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:283:77:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::list_never_migrates_legacy_or_mutates_its_loaded_bytes",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:69:48:\ncalled `Result::unwrap()` on an `Err` value: \"import lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::issued_attempt_rejects_caller_path_signature_and_raw_write",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:148:85:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::latest_identity_binding_mismatch_is_pending_and_never_reuses_old_context",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::latest_non_running_attempt_is_pending_and_never_reuses_old_context",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::latest_origin_binding_mismatch_is_pending_and_never_reuses_old_context",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::latest_role_binding_mismatch_is_pending_and_never_reuses_old_context",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::latest_source_binding_mismatch_is_pending_and_never_reuses_old_context",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::live_idle_bound_and_leased_attempts_remain_running_across_packet_boundaries",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::lost_runtime_issuer_projects_pending_without_mutating_durable_history",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::live_view_tests::same_path_reopen_projects_pending_even_when_old_issuer_is_retained",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\live_view_tests.rs:26:71:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::preview_and_quote_publication_stays_partial_without_semantic_authority",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:211:85:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::runtime_issuer_loss_requires_new_attempt_without_rebuilding_authority_from_sha",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:264:81:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::native_tests::same_path_reopen_expires_old_attempt_and_preserves_durable_output_history",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\native_tests.rs:238:81:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::actual_native_publication_completes_exact_job_and_reminder_once",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:103:92:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::appended_source_refresh_keeps_prior_raw_and_records_new_exact_lineage",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:383:92:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::changed_owned_section_and_identical_byte_replacement_never_recover_authority",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:195:84:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::in_place_human_title_yaml_comments_and_postscript_survive_owned_refresh",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:145:92:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::legacy_human_page_is_appended_without_claiming_title_or_body_ownership",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:304:84:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::legacy_unowned_original_lineage_cannot_point_at_an_old_revision_after_refresh",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:325:92:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::materialized_publication_tests::reviewed_rows_publish_once_with_exact_claims_and_reversible_action",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\materialized_publication_tests.rs:14:92:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::post_write_queue_failure_retains_native_section_and_never_finishes",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:251:84:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "session_compile::publication::compiled::tests::public_preview_cannot_grant_private_compiler_section_authority",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\session_compile\\compiled_publication_tests.rs:437:84:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "settings::role_authorization_baseline_tests::native_role_legacy_endpoint_change_revokes_the_existing_foreground_grant",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\role_authorization_baseline_tests.rs:137:38:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "settings::tests::model_server_endpoint_survives_reload_and_rejects_unsafe_urls",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\settings.rs:939:29:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "settings::tests::save_replaces_atomically_leaving_no_temp_files",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\settings.rs:982:40:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "settings::tests::save_then_load_roundtrips",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\settings.rs:966:22:\ncalled `Result::unwrap()` on an `Err` value: \"role authorization lock poisoned\""
+    },
+    {
+      "test": "validator::tests::legacy_flat_citation_resolves_one_unique_archived_source",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\validator.rs:671:9:\nassertion failed: validate_pages(&root, &[\"wiki/check.md\".into()]).ok()"
+    },
+    {
+      "test": "vault::tests::search_fills_its_limit_with_my_notes_before_managed_folders",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\vault.rs:2510:9:\nassertion `left == right` failed"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_decoder_uses_captured_bytes_after_path_replacement",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:52:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_pair_generation_expires_same_size_same_mtime_revision",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:294:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_parent_not_a_directory_is_a_read_error",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:135:5:\nassertion failed: cache.get_async(path.clone()).await.is_err()"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_same_stamp_geometry_keeps_old_edge_work_out_of_new_revision",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:52:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_warm_same_generation_pair_reads_content_and_checksum",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:52:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_warm_same_stamp_binary_reads_new_content",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:460:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_warm_same_stamp_corruption_cannot_use_legacy_fallback",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:52:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "vector_index::cache_admission_tests::cache_admission_warm_same_stamp_legacy_json_reads_new_content",
+      "classification": "access-denied-or-directory-open",
+      "panicExcerpt": " src\\vector_cache_admission_tests.rs:52:10:\ncalled `Result::unwrap()` on an `Err` value: Os { code: 5, kind: PermissionDenied, message: \"Access is denied.\" }"
+    },
+    {
+      "test": "workstreams::identity_tests::admitted_codex_import_keeps_recorded_cwd_and_conflicts_without_live_lookup",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::identity_tests::copied_parent_report_requires_positive_same_project_evidence_but_source_survives",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::a_full_rebuild_leaves_raw_bytes_and_ignores_unledgered_sources",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::a_later_pass_catches_up_what_an_earlier_one_missed",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::a_page_without_its_marker_belongs_to_a_person",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::a_pass_that_lost_a_compare_and_swap_plans_again",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::a_thread_without_a_folder_is_looked_up_again",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::a_vanished_rollout_keeps_the_key_and_title_already_read",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::facts_of_another_version_are_read_again_in_full",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::imports_publish_facts_and_pages_and_a_second_pass_writes_nothing",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    },
+    {
+      "test": "workstreams::tests::facts_match_the_shared_reader_fixture",
+      "classification": "requires-case-review",
+      "panicExcerpt": " src\\workstreams.rs:4048:9:\nsrc/lib/workstreamFacts.fixture.json is out of date; the writer now produces:"
+    },
+    {
+      "test": "workstreams::tests::the_persons_names_file_titles_a_workstream_and_is_only_read",
+      "classification": "poisoned-lock-secondary",
+      "panicExcerpt": " src\\workstreams.rs:3587:9:\n[\"import lock poisoned\"]"
+    }
+  ]
+}

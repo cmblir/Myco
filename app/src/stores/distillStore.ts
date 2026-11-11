@@ -10,6 +10,8 @@ import type { DistillStatus } from "../lib/distill";
 import { batchConfirm } from "../lib/quarantine";
 import type { QuarantineGroup, QuarantineItem } from "../lib/quarantine";
 import { draftMap } from "../lib/maps";
+import { reviewMapRefresh } from "../lib/reviewMapRefresh";
+import { sha256 } from "../lib/tidyRun";
 import { canGenerate, getActiveModel, roleFor } from "../lib/chat";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
@@ -193,15 +195,16 @@ export function settingsNeedWriter(s: MycoSettings | null): boolean {
   return !canGenerate(selected.provider, selected.model);
 }
 
-/** An apply failure as the card's page shows it. The backend's
- *  CHAT_MODEL_MISSING is an English sentence about bundled chat models, so it
- *  becomes the localized needs-writer line, as `audioStore` does; any other
- *  error shows as it is. */
+/** Localize recognized recovery conditions; preserve other failure details. */
 function applyErrorText(err: unknown): string {
   const msg = String(err);
-  if (!msg.includes("no local chat model is bundled")) return msg;
+  const detail = err instanceof Error ? err.message : msg;
   const t = STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
-  return t.pf_map_needs_writer ?? "Writing a topic map needs a model that can write";
+  if (detail === "no creation observation matches the current map object") {
+    return t.map_refresh_needs_manual_review;
+  }
+  if (msg.includes("no local chat model is bundled")) return t.pf_map_needs_writer;
+  return msg;
 }
 
 export interface DistillState {
@@ -221,7 +224,9 @@ export interface DistillState {
    *  Set by refresh() and by an apply() the gate stopped. */
   needsWriter: boolean;
   refresh: () => Promise<void>;
-  /** `pending` proposals: rewrites status pending -> approved, then calls
+  /** Map proposals stay pending during manual generation/review and become done
+   *  only after verified output, using a revision-checked status write.
+   *  Other `pending` proposals: rewrite status pending -> approved, then call
    *  applyDistillProposal (which flips it to done on success). `approved`
    *  proposals (a retry, after a prior applyDistillProposal rejected): skips
    *  the rewrite — it's already approved — and just calls
@@ -405,7 +410,20 @@ export const useDistillStore = create<DistillState>((set, get) => ({
       // proposal is already `approved` because the previous applyDistillProposal
       // call failed after the rewrite succeeded) must not touch the file again.
       let raw = file.raw;
-      if (parsed?.status === "pending") {
+      // Manual map work remains pending while its generated diff is reviewed.
+      // An old approved marker must not let a background run bypass that review.
+      if (parsed?.action === "draft-map" && parsed.status === "approved") {
+        const nativeOrigin = await ipc.agentVaultSession();
+        if (!isCurrent()) return null;
+        if (nativeOrigin.vaultPath !== vault.path || !nativeOrigin.openingToken) {
+          throw new Error("Vault changed before native publication");
+        }
+        raw = rewriteStatus(file.raw, "pending");
+        const revision = await sha256(file.raw);
+        if (!isCurrent()) return null;
+        await ipc.writeFileIfUnchanged(full, raw, revision);
+        if (!isCurrent()) return null;
+      } else if (parsed?.status === "pending" && parsed.action !== "draft-map") {
         raw = rewriteStatus(file.raw, "approved");
         await ipc.writeFile(full, raw);
         if (!isCurrent()) return null;
@@ -418,9 +436,12 @@ export const useDistillStore = create<DistillState>((set, get) => ({
         if (!parsed.cluster || !parsed.members) {
           throw new Error(`draft-map proposal ${path} is missing its cluster/members payload`);
         }
-        const rel = await draftMap(vault.path, parsed.cluster, parsed.members, undefined, isCurrent);
+        const rel = await draftMap(vault.path, parsed.cluster, parsed.members, undefined, isCurrent, "foreground", undefined,
+          (review) => reviewMapRefresh(review, isCurrent));
         if (!isCurrent()) return null;
-        await ipc.writeFile(full, rewriteStatus(raw, "done"));
+        const revision = await sha256(raw);
+        if (!isCurrent()) return null;
+        await ipc.writeFileIfUnchanged(full, rewriteStatus(raw, "done"), revision);
         return isCurrent() ? rel : null;
       }
       const result = await (expectedPermanent === undefined

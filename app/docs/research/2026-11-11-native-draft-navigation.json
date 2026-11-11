@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "binaryCodeRevision": "8e705a2852251bc4e2ac47253ab03dd4f0768a95",
+  "validationRevision": "ec3e26f6a509862da3e0aebd8b20e87b0f65e062",
+  "platform": {
+    "os": "macOS",
+    "version": "26.5.1",
+    "architecture": "arm64",
+    "bundle": "unsigned debug .app, full frontend and native IPC"
+  },
+  "bundleIdentifier": "dev.cmblir.myco.acceptance-20261111-2",
+  "nativeBinarySha256": "12fcc6fd024b289a5b8826e499503cf365832f5abb256c28682d65056870d3de",
+  "launcherSha256": "e805b2aac6d53d2f064a8d53fe68333b7b84128207bd9f25a691c623524b12a3",
+  "sandboxProfileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+  "launcher": {
+    "scope": "temporary acceptance bundle only; repository application code unchanged",
+    "behavior": "Launch Services executes the wrapper, which verifies native binary and OS profile SHA-256, fixes diagnostic variables and the synthetic state directory, then execs sandbox-exec and the unchanged native binary. Caller arguments are not forwarded.",
+    "body": "#!/bin/sh\nset -eu\nchecksum=$(/usr/bin/shasum -a 256 '/Users/o/prj/karpathy/app/src-tauri/target/debug/bundle/macos/Myco Isolated Acceptance.app/Contents/MacOS/myco-native')\n[ \"${checksum%% *}\" = 12fcc6fd024b289a5b8826e499503cf365832f5abb256c28682d65056870d3de ] || exit 1\nchecksum=$(/usr/bin/shasum -a 256 /private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/native.sb)\n[ \"${checksum%% *}\" = 3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73 ] || exit 1\nunset MEMEX_DATA_DIR\nexport MYCO_REAL_DIAGNOSTIC=1\nexport MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER=1\nexport MYCO_DATA_DIR=/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/state\nexec /usr/bin/sandbox-exec -D SCRATCH=/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl -D WEBKIT=/Users/o/Library/WebKit/dev.cmblir.myco.acceptance-20261111-2 -D CACHE=/Users/o/Library/Caches/dev.cmblir.myco.acceptance-20261111-2 -D 'APPSTATE=/Users/o/Library/Application Support/dev.cmblir.myco.acceptance-20261111-2' -D DARWINCACHE=/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/C/dev.cmblir.myco.acceptance-20261111-2 -D 'PRODUCTION=/Users/o/Library/Application Support/dev.cmblir.myco' -D 'LEGACY=/Users/o/Library/Application Support/dev.cmblir.memex' -D CODEX=/Users/o/.codex -D CLAUDE=/Users/o/.claude -D DOCUMENTS=/Users/o/Documents -D CANARY=/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/protected-canary -D WEBKITTEMP=/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/dev.cmblir.myco.acceptance-20261111-2 -f /private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/native.sb '/Users/o/prj/karpathy/app/src-tauri/target/debug/bundle/macos/Myco Isolated Acceptance.app/Contents/MacOS/myco-native' >>/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/launcher.stdout.log 2>>/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl/launcher.stderr.log\n"
+  },
+  "evidenceSource": "CUA accessibility trees and screenshot observed in this conversation, with separate process and filesystem checks; no mocked IPC",
+  "frozenCases": [
+    {
+      "id": "D1",
+      "result": "passed on this bundled macOS build",
+      "title": "Synthetic source",
+      "body": "Synthetic report draft",
+      "actions": [
+        "Enter exact fields in Alpha",
+        "Visit Ask",
+        "Visit Settings",
+        "Open synthetic-reader in Reader",
+        "Return to Ingest"
+      ],
+      "observed": "Both exact fields visible after navigation"
+    },
+    {
+      "id": "D2",
+      "result": "passed for the restart variant on this bundled macOS build",
+      "actions": [
+        "Quit normally with D1 saved",
+        "Confirm the old native PID is absent",
+        "Relaunch through the same sandbox wrapper",
+        "Observe exact Alpha fields",
+        "Switch to Beta",
+        "Set empty optional title and body Different synthetic draft",
+        "Return to Alpha",
+        "Return to Beta"
+      ],
+      "observed": {
+        "Alpha": {
+          "title": "Synthetic source",
+          "body": "Synthetic report draft"
+        },
+        "Beta": {
+          "title": "",
+          "body": "Different synthetic draft"
+        }
+      }
+    }
+  ],
+  "supplementalCases": [
+    "Longer distinct Alpha/Beta titles and bodies survived navigation and two separate normal restarts",
+    "Beta initially showed empty fields rather than Alpha content"
+  ],
+  "processes": {
+    "distinctNativePids": [
+      82565,
+      82847,
+      83265,
+      83593
+    ],
+    "normalQuitRelaunchBoundaries": 3,
+    "finalProcessStopped": true,
+    "finalStop": "SIGTERM after UI acceptance observation; no further CUA launch"
+  },
+  "integrity": {
+    "nativeBinaryBytesUnchanged": true,
+    "sandboxProfileBytesUnchanged": true,
+    "productionMarkerMetadataUnchanged": true,
+    "automaticImportIngestReflectReindexRemainDisabled": true,
+    "Alpha": {
+      "wikiFiles": 1,
+      "rawFiles": 0,
+      "readerBytesUnchanged": true
+    },
+    "Beta": {
+      "wikiFiles": 1,
+      "rawFiles": 0,
+      "readerBytesUnchanged": true
+    }
+  },
+  "limits": [
+    "Not a signed release installer or Windows result",
+    "D3 submission/edit races and D4 storage-failure recovery not executed here",
+    "No successful import, model inference, semantic quality or three-repeat model acceptance",
+    "Startup URL explicitly selects Alpha; restoring the last selected vault on boot was not tested",
+    "No proof of every delegated WebKit helper boundary",
+    "Earlier contaminated fixture and withdrawn results remain excluded",
+    "Original production active-vault path still awaits user input; unchanged metadata does not restore its value"
+  ],
+  "fixtureDirectory": "/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl"
+}

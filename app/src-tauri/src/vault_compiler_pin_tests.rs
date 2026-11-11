@@ -353,6 +353,7 @@ fn same_bytes_aba_after_staging_is_caught_by_writer_held_identity_recheck() {
         Some(&old.revision),
         &directory,
         "staged-native.anchor",
+        |_| Ok(()),
         |phase| {
             if matches!(phase, PinCheckpoint::Pinned) {
                 let replacement = path.with_file_name("external-replacement.md");
@@ -388,6 +389,7 @@ fn failure_after_canonical_persist_keeps_old_and_new_inode_custody() {
         Some(&old.revision),
         &directory,
         "uncertain-native.anchor",
+        |_| Ok(()),
         |phase| {
             if matches!(phase, PinCheckpoint::Persisted) {
                 return Err("synthetic post-persist failure".into());
@@ -416,4 +418,195 @@ fn failure_after_canonical_persist_keeps_old_and_new_inode_custody() {
             .nlink(),
         1
     );
+}
+
+#[test]
+#[ignore = "invoked only by the isolated compiler process-kill test"]
+fn synthetic_kill_checkpoint_child() {
+    let root = PathBuf::from(std::env::var_os("MYCO_SYNTHETIC_PIN_ROOT").unwrap());
+    assert_eq!(
+        fs::read_to_string(root.join("synthetic.marker")).unwrap(),
+        "Synthetic compiler kill test only"
+    );
+    let phase = std::env::var("MYCO_SYNTHETIC_PIN_PHASE").unwrap();
+    let checkpoint = std::env::var("MYCO_SYNTHETIC_PIN_CHECKPOINT").unwrap();
+    assert!(matches!(checkpoint.as_str(), "pinned" | "persisted"));
+    let path = root.join("synthetic.md");
+    let private = root.join("private-custody");
+    const BEFORE: &str = "Native section\nHuman outside note 한글.\n";
+    const AFTER: &str = "Fresh section\nHuman outside note 한글.\n";
+    if phase == "inspect" {
+        assert_eq!(
+            fs::read_to_string(root.join("raw/source.md")).unwrap(),
+            "Immutable synthetic source.\n"
+        );
+        let old_anchor = private.join("first-native.anchor");
+        let next_anchor = private.join("interrupted-native.anchor");
+        assert_eq!(fs::read_to_string(&old_anchor).unwrap(), BEFORE);
+        assert_eq!(fs::read_to_string(&next_anchor).unwrap(), AFTER);
+        assert_eq!(
+            fs::read_to_string(&path).unwrap(),
+            if checkpoint == "pinned" {
+                BEFORE
+            } else {
+                AFTER
+            }
+        );
+        let canonical = fs::metadata(&path).unwrap();
+        let old = fs::metadata(old_anchor).unwrap();
+        let next = fs::metadata(next_anchor).unwrap();
+        assert_eq!(canonical.nlink(), 2);
+        assert_ne!(old.ino(), next.ino());
+        assert_eq!(
+            canonical.ino(),
+            if checkpoint == "pinned" {
+                old.ino()
+            } else {
+                next.ino()
+            }
+        );
+        assert_eq!(old.nlink(), if checkpoint == "pinned" { 2 } else { 1 });
+        assert_eq!(next.nlink(), 2);
+        return;
+    }
+    assert_eq!(phase, "write");
+    fs::create_dir(&private).unwrap();
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).unwrap();
+    fs::create_dir(root.join("raw")).unwrap();
+    fs::write(root.join("raw/source.md"), "Immutable synthetic source.\n").unwrap();
+    let directory = open_compiler_pin_directory(&private).unwrap();
+    create(&path, &directory);
+    fs::write(&path, BEFORE).unwrap();
+    let prior = reopen_compiler_prior_file_pin(&path, &directory, "first-native.anchor").unwrap();
+    let _guard = vault::lock_file_mutation().unwrap();
+    let _ = write_anchored(
+        &path,
+        AFTER,
+        Some(&prior),
+        Some(&hash(BEFORE)),
+        &directory,
+        "interrupted-native.anchor",
+        |_| Ok(()),
+        |at| {
+            if matches!(
+                (checkpoint.as_str(), at),
+                ("pinned", PinCheckpoint::Pinned) | ("persisted", PinCheckpoint::Persisted)
+            ) {
+                // Tell the parent the exact boundary, then let it kill this
+                // process without running tempfile or receipt destructors.
+                fs::write(root.join("ready.marker"), checkpoint.as_bytes()).unwrap();
+                loop {
+                    std::thread::park();
+                }
+            }
+            Ok(())
+        },
+    );
+    panic!("synthetic process-kill checkpoint was not reached");
+}
+
+#[test]
+fn process_kill_preserves_both_versions_around_canonical_replacement() {
+    for checkpoint in ["pinned", "persisted"] {
+        let temporary = tempfile::Builder::new()
+            .prefix("myco-synthetic-pin-kill-")
+            .tempdir()
+            .unwrap();
+        let root = temporary.path().canonicalize().unwrap();
+        fs::write(
+            root.join("synthetic.marker"),
+            "Synthetic compiler kill test only",
+        )
+        .unwrap();
+        let child_command = |phase: &str| {
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "vault::compiler_pin::tests::synthetic_kill_checkpoint_child",
+                    "--ignored",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env("MYCO_SYNTHETIC_PIN_ROOT", &root)
+                .env("MYCO_SYNTHETIC_PIN_PHASE", phase)
+                .env("MYCO_SYNTHETIC_PIN_CHECKPOINT", checkpoint)
+                .env("MYCO_DATA_DIR", root.join("isolated-settings"))
+                .env_remove("MEMEX_DATA_DIR");
+            command
+        };
+        let mut child = child_command("write")
+            .stdout(std::process::Stdio::null())
+            .spawn()
+            .unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while !root.join("ready.marker").exists() {
+            if let Some(status) = child.try_wait().unwrap() {
+                panic!("{checkpoint} child exited before checkpoint: {status}");
+            }
+            if std::time::Instant::now() >= deadline {
+                child.kill().unwrap();
+                child.wait().unwrap();
+                panic!("{checkpoint} child did not reach checkpoint");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        child.kill().unwrap();
+        let status = child.wait().unwrap();
+        use std::os::unix::process::ExitStatusExt;
+        assert_eq!(status.signal(), Some(libc::SIGKILL));
+        let inspected = child_command("inspect").output().unwrap();
+        assert!(
+            inspected.status.success(),
+            "{checkpoint}: stdout={} stderr={}",
+            String::from_utf8_lossy(&inspected.stdout),
+            String::from_utf8_lossy(&inspected.stderr)
+        );
+        assert!(String::from_utf8_lossy(&inspected.stdout).contains("1 passed"));
+    }
+}
+
+#[test]
+fn preparation_failure_and_staged_mutation_preserve_the_prior_canonical() {
+    for mutate in [false, true] {
+        let (_temporary, path, directory) = fixture();
+        let old = create(&path, &directory);
+        let prior = compiler_prior_from_receipt(&old).unwrap();
+        let guard = vault::lock_file_mutation().unwrap();
+        let error = write_compiler_file_anchored_observed_locked(
+            &guard,
+            path.to_str().unwrap(),
+            "Fresh section\n",
+            Some(&prior),
+            Some(&old.revision),
+            &directory,
+            "prepared-native.anchor",
+            |_identity| {
+                if mutate {
+                    fs::write(
+                        directory.path().join("prepared-native.anchor"),
+                        "Changed staging bytes\n",
+                    )
+                    .unwrap();
+                    Ok(())
+                } else {
+                    Err("synthetic preparation persistence failure".into())
+                }
+            },
+        )
+        .unwrap_err();
+        assert!(error.contains("before canonical persist"), "{error}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), "Native section\n");
+        assert_eq!(
+            fs::metadata(&path).unwrap().ino(),
+            fs::metadata(directory.path().join("first-native.anchor"))
+                .unwrap()
+                .ino()
+        );
+        if mutate {
+            assert!(error.contains("changed during preparation"));
+        } else {
+            assert!(error.contains("synthetic preparation persistence failure"));
+        }
+    }
 }

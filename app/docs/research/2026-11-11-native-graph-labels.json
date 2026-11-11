@@ -1,0 +1,60 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "case": "G6 native graph label bounds and contrast",
+  "baseRevision": "9336208a",
+  "graphSceneSha256": "156a2c8013a713ec8b065059c77142d28f5090499412509afb6f32cbce582227",
+  "stylesSha256": "c9c864233b30753bcffe54f8afaef1e07191800222d3f79a8c359211cb733fb7",
+  "nativeSha256": "3ec3e591f9e6372ca72a4e4c26f32464c8a410da4251210e1ba73777b420d1fb",
+  "profileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+  "environmentReceipt": "2026-11-11-native-ingest-cold-success.json",
+  "method": "CUA on rebuilt unsigned debug macOS app, real synthetic graph; read-only Web Inspector computed-style query",
+  "viewport": [
+    1280,
+    800
+  ],
+  "observations": {
+    "centerAndTwoNeighborTitlesVisibleWithoutEdgeClipping": true,
+    "labelsRemainOutsideRightInspector": true,
+    "brightNodeArtworkBlockedByOpaqueTextBacking": true,
+    "longUnrelatedTitleEllipsizedWithinAvailableStrip": true
+  },
+  "contrast": {
+    "computedInk": [
+      237,
+      237,
+      236
+    ],
+    "computedBackground": [
+      25,
+      25,
+      25
+    ],
+    "ancestorOpacityProduct": 1,
+    "fontSizePx": 11,
+    "relativeLuminanceContrast": 15.007903607128918,
+    "scope": "Observed dark graph node-label backing only; not all UI text, themes or states"
+  },
+  "checks": {
+    "fullTestsPassed": 6494,
+    "testFilesPassed": 405,
+    "targetedTestsPassed": 104,
+    "lintErrors": 0,
+    "existingLintWarnings": 2,
+    "typeAndFrontendBuildPassed": true,
+    "nativeBundleBuildPassed": true,
+    "missingDiagnosticEnvironmentRefused": true
+  },
+  "integrity": {
+    "existingSyntheticMarkdownChecked": 11,
+    "allExistingSyntheticMarkdownUnchanged": true,
+    "nativeProcessStopped": true,
+    "productionMarkerMetadataUnchangedRelativeToIncidentBaseline": true
+  },
+  "limits": [
+    "Other graph themes and viewport widths not replayed in this native run",
+    "Bottom inspector covered by unit regression, not native visual acceptance",
+    "VoiceOver, full keyboard and complete state matrix remain open",
+    "Prior production active-vault incident remains unresolved"
+  ]
+}

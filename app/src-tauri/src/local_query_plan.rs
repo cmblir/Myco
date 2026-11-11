@@ -224,12 +224,9 @@ pub(crate) fn catalog(
                     return Err("invalid recall catalog path".into());
                 }
                 let path = crate::vault::confine_path(root, &root.join(page).to_string_lossy())?;
-                let resolved = path
-                    .strip_prefix(root)
-                    .ok()
-                    .and_then(Path::to_str)
+                let resolved = crate::vault_path::relative_key(root, &path)
                     .ok_or("invalid recall catalog path")?;
-                if !keeps(resolved) {
+                if !keeps(&resolved) {
                     return Err("recall catalog source is outside scope".into());
                 }
                 let metadata =
@@ -459,11 +456,11 @@ mod tests {
     #[test]
     fn planner_catalog_keeps_scope_paths_dates_and_excludes_private_passages_from_prompt() {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::create_dir(dir.path().join("wiki")).unwrap();
+        std::fs::create_dir_all(dir.path().join("wiki/한글 notes")).unwrap();
         std::fs::create_dir_all(dir.path().join("sessions/2026-10")).unwrap();
         let mut index = Bm25Index::new();
         for (page, content) in [
-            ("wiki/a.md", "---\ncreated: '2026-10-06'\nlast_updated: '2026-10-07'\n---\n\nSYNTHETIC_PRIVATE_PASSAGE"),
+            ("wiki/한글 notes/a.md", "---\ncreated: '2026-10-06'\nlast_updated: '2026-10-07'\n---\n\nSYNTHETIC_PRIVATE_PASSAGE"),
             ("wiki/b.md", "---\ncreated: '2020-01-01'\n---\n\nSYNTHETIC_OTHER_PASSAGE"),
             ("sessions/2026-10/a.md", "---\ncreated: '2026-10-05'\n---\n\nSYNTHETIC_SESSION_PASSAGE"),
         ] {
@@ -471,7 +468,7 @@ mod tests {
             index.upsert_page(page, page, &crate::embeddings::chunk_page(content));
         }
         let mut request = request();
-        request.paths = Some(vec!["wiki/a.md".into()]);
+        request.paths = Some(vec!["wiki/한글 notes/a.md".into()]);
         let cancelled = AtomicBool::new(false);
         let catalog = catalog(dir.path(), &index, &request, &cancelled, false).unwrap();
         assert_eq!(catalog.eligible_pages, 1);
@@ -480,7 +477,7 @@ mod tests {
         let (_, user) = prepare(&request, &catalog).unwrap();
         for excluded in [
             "SYNTHETIC_PRIVATE_PASSAGE",
-            "wiki/a.md",
+            "wiki/한글 notes/a.md",
             "2020-01-01",
             "2026-10-05",
         ] {

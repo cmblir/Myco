@@ -47,7 +47,7 @@ pub(super) fn parse(raw: &str) -> Result<Batch<FocusedClaim>, String> {
     let shape: serde_json::Value = serde_json::from_str(raw)
         .map_err(|error| format!("invalid complete named source focus QA output: {error}"))?;
     if !shape.is_object()
-        || shape["claims"].as_array().map_or(true, |claims| {
+        || shape["claims"].as_array().is_none_or(|claims| {
             claims.iter().any(|claim| {
                 !claim.is_object() || !claim["actor"].is_object() || !claim["eventTime"].is_object()
             })

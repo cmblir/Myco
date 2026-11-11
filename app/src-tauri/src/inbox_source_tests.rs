@@ -134,3 +134,19 @@ fn snapshot_rejects_links_nested_paths_binary_and_same_bytes_replacement() {
     assert!(root.join("_inbox/retained-original.md").is_file());
     release(&snapshot).unwrap();
 }
+
+#[test]
+fn retained_snapshot_rejects_same_bytes_replacement_on_supported_platforms() {
+    let (_directory, root, state, origin) = fixture();
+    let snapshot = capture(&state, &origin, "_inbox/a.md", None).unwrap();
+    let original = root.join("_inbox/retained-original.md");
+    std::fs::rename(root.join("_inbox/a.md"), &original).unwrap();
+    std::fs::write(root.join("_inbox/a.md"), &snapshot.text).unwrap();
+    assert!(archive(&state, &snapshot, None).is_err());
+    assert_eq!(std::fs::read_to_string(&original).unwrap(), snapshot.text);
+    assert_eq!(
+        std::fs::read_to_string(root.join("_inbox/a.md")).unwrap(),
+        snapshot.text
+    );
+    release(&snapshot).unwrap();
+}

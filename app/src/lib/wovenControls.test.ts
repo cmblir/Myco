@@ -106,8 +106,10 @@ vi.mock("./shipController", () => ({
 }));
 
 function fakeElement(): Record<string, unknown> {
+  const style: Record<string, unknown> = {};
+  style.setProperty = (name: string, value: string) => { style[name] = value; };
   const element: Record<string, unknown> = {
-    style: {},
+    style,
     dataset: {},
     classList: { add: vi.fn(), remove: vi.fn(), toggle: vi.fn(), contains: () => false },
     clientWidth: 960,

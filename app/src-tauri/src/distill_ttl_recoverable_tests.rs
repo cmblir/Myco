@@ -142,7 +142,10 @@ fn actual_keep_command_after_preparation_preserves_the_extended_pair() {
         let result = fixture.run();
         fixture.verdict = std::fs::read_to_string(&fixture.sidecar).unwrap();
         let current: serde_json::Value = serde_json::from_str(&fixture.verdict).unwrap();
-        assert!(current["expires"].as_i64().unwrap() > now_secs());
+        assert!(
+            current["expires"].as_i64().unwrap() > now_secs(),
+            "Keep did not extend the verdict; expiry result: {result:?}"
+        );
         assert_eq!(
             current["source_sha256"],
             admission::sha256(ORIGINAL.as_bytes())

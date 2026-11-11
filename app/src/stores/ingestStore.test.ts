@@ -70,6 +70,7 @@ import { useVaultStore } from "./vaultStore";
 import { notice } from "../lib/notice";
 import { STRINGS } from "../lib/i18n";
 import { BUILTIN_CHAT_MODEL } from "../lib/providers";
+import * as extractiveIngest from "../lib/extractiveIngest";
 import { roleFixture, selectedRolesFixture } from "../lib/modelRoles.testSupport";
 import { runInboxPass } from "../lib/autoIngest";
 
@@ -135,6 +136,10 @@ describe("native-bound inbox compilation action", () => {
       reportPath: null });
     expect(useIngestStore.getState().changedPages).not.toContain(context.indexPath);
     expect(useIngestStore.getState().changedPages).not.toContain(context.logPath);
+    expect(useIngestStore.getState().review).toEqual({
+      vaultToken: options.expectedVaultToken, sourcePath: context.source.rawPath,
+      pages: [{ path: context.summaryPath, change: "changed" }],
+    });
     expect(write).not.toHaveBeenCalled(); expect(mtimes).not.toHaveBeenCalled(); expect(recapture).not.toHaveBeenCalled();
   });
 
@@ -1395,6 +1400,59 @@ describe("builtin-local offline ingest", () => {
       "wiki/log.md",
       "wiki/source-my-source.md",
     ]);
+    expect(useIngestStore.getState().review).toMatchObject({
+      vaultToken: "synthetic-ui-opening", sourcePath: "raw/my-source.md",
+      pages: expect.arrayContaining([{ path: "wiki/source-my-source.md", change: "created" }]),
+    });
+  });
+
+  it("attributes only confirmed local writes when a human edits another wiki page during ingest", async () => {
+    files["/v/wiki/index.md"] = "# Index\n";
+    files["/v/wiki/unrelated.md"] = "Original synthetic human note.\n";
+    vi.mocked(ipc.fileMtimes).mockImplementation(async () => {
+      const after = useIngestStore.getState().stage === "indexing";
+      if (after) files["/v/wiki/unrelated.md"] = "Concurrent synthetic human edit.\n";
+      return Object.keys(files).map(path => [path, after ? 2 : 1] as [string, number]);
+    });
+
+    await useIngestStore.getState().startIngest("My source", SOURCE);
+
+    expect(useIngestStore.getState().stage).toBe("done");
+    expect([...useIngestStore.getState().changedPages].sort()).toEqual([
+      "wiki/index.md", "wiki/log.md", "wiki/source-my-source.md",
+    ]);
+    expect(useIngestStore.getState().review?.pages).toEqual([
+      { path: "wiki/source-my-source.md", change: "created" },
+      { path: "wiki/index.md", change: "updated" },
+      { path: "wiki/log.md", change: "created" },
+    ]);
+    expect(ipc.validateIngest).toHaveBeenCalledWith("/v", [
+      "wiki/source-my-source.md", "wiki/index.md", "wiki/log.md",
+    ]);
+    expect(files["/v/wiki/unrelated.md"]).toBe("Concurrent synthetic human edit.\n");
+  });
+
+  it("does not turn an empty confirmed local write result into success from an unrelated new note", async () => {
+    // The synthetic empty pipeline receipt exercises the store's trust boundary.
+    const pipeline = vi.spyOn(extractiveIngest, "runExtractiveIngest").mockResolvedValue({
+      written: [], chunksProcessed: 0, chunksPending: 0,
+      summary: { rel: "wiki/source-my-source.md", content: "", passages: [], tags: [], related: [] },
+    });
+    vi.mocked(ipc.fileMtimes).mockImplementation(async () => {
+      if (useIngestStore.getState().stage === "indexing") {
+        files["/v/wiki/unrelated.md"] = "Concurrent synthetic human note.\n";
+      }
+      return Object.keys(files).map(path => [path, 1] as [string, number]);
+    });
+
+    await useIngestStore.getState().startIngest("My source", SOURCE);
+
+    expect(pipeline).toHaveBeenCalledOnce();
+    expect(useIngestStore.getState()).toMatchObject({
+      stage: "error", workflowStatus: "failed", changedPages: [], review: null, reportPath: null,
+    });
+    expect(ipc.validateIngest).not.toHaveBeenCalled();
+    expect(files["/v/wiki/unrelated.md"]).toBe("Concurrent synthetic human note.\n");
   });
 
   it("links a transcript candidate through the summary the vault has", async () => {

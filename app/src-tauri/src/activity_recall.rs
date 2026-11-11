@@ -601,9 +601,9 @@ fn curated_sections(
                 let path =
                     crate::vault::confine_path(root, &root.join(&quote.source).to_string_lossy())
                         .ok()?;
-                let resolved = path.strip_prefix(root).ok()?.to_str()?;
+                let resolved = crate::vault_path::relative_key(root, &path)?;
                 if !(resolved.starts_with("raw/") || resolved.starts_with("sessions/"))
-                    || crate::vector_index::is_cold_for(resolved, include_archived)
+                    || crate::vector_index::is_cold_for(&resolved, include_archived)
                 {
                     return None;
                 }
@@ -1127,11 +1127,11 @@ fn recall_with_limits(
             result.incomplete = true;
             continue;
         };
-        let Some(resolved) = path.strip_prefix(&root).ok().and_then(Path::to_str) else {
+        let Some(resolved) = crate::vault_path::relative_key(&root, &path) else {
             result.incomplete = true;
             continue;
         };
-        if !keeps(resolved) {
+        if !keeps(&resolved) {
             result.incomplete = true;
             continue;
         }
@@ -1200,10 +1200,8 @@ fn recall_with_limits(
             result.incomplete = true;
             continue;
         };
-        if !path
-            .strip_prefix(&root)
-            .ok()
-            .and_then(Path::to_str)
+        if !crate::vault_path::relative_key(&root, &path)
+            .as_deref()
             .is_some_and(keeps)
         {
             result.incomplete = true;
@@ -2851,6 +2849,50 @@ mod tests {
         assert!(result.hits[0]
             .text
             .contains("Implemented the synthetic reader"));
+    }
+
+    #[test]
+    fn selected_native_path_keeps_portable_unicode_page_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let mut index = Bm25Index::new();
+        let page = "sessions/2026-10/합성 작업/reader note.md";
+        let content = "---\nturn_metadata: [{\"timestamp\":\"2026-10-03T00:30:00+09:00\"}]\n---\n\n# Synthetic transcript\n\n**User:**\n\nImplemented the synthetic reader.\n";
+        index_file(root.path(), &mut index, page, content);
+        let paths = vec![page.to_owned()];
+        let result = recall(
+            root.path(),
+            &index,
+            &range(),
+            Scope::Sessions,
+            Some(&paths),
+            false,
+        )
+        .unwrap();
+        assert_eq!(result.hits.len(), 1);
+        assert_eq!(result.hits[0].page, page);
+        assert!(!result.incomplete);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_backslash_filename_is_not_a_portable_activity_page() {
+        let root = tempfile::tempdir().unwrap();
+        let mut index = Bm25Index::new();
+        let page = "sessions/2026-10/reader\\note.md";
+        index_file(root.path(), &mut index, page, transcript());
+        let paths = vec![page.to_owned()];
+        let result = recall(
+            root.path(),
+            &index,
+            &range(),
+            Scope::Sessions,
+            Some(&paths),
+            false,
+        )
+        .unwrap();
+        assert!(result.hits.is_empty());
+        assert_eq!(result.scanned_pages, 0);
+        assert!(result.incomplete);
     }
 
     #[test]

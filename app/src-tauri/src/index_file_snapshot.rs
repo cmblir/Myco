@@ -1,6 +1,8 @@
 //! One bounded read binds cache freshness and decoding to the same file bytes.
 
-use std::fs::{File, Metadata, OpenOptions};
+#[cfg(not(windows))]
+use std::fs::OpenOptions;
+use std::fs::{File, Metadata};
 use std::io::Read;
 use std::path::Path;
 use std::time::SystemTime;
@@ -21,6 +23,14 @@ pub(crate) struct IndexFileSnapshot {
 }
 
 fn regular(metadata: &Metadata) -> bool {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
+        if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+            return false;
+        }
+    }
     metadata.is_file() && !metadata.file_type().is_symlink()
 }
 
@@ -68,7 +78,12 @@ fn read_snapshot_after_open(
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
         Err(error) => return Err(format!("inspect index file: {error}")),
     };
+    #[cfg(windows)]
+    let named_stamp =
+        crate::windows_file_stamp::Stamp::read(&crate::windows_file_stamp::open(path)?)?;
+    #[cfg(not(windows))]
     let mut options = OpenOptions::new();
+    #[cfg(not(windows))]
     options.read(true);
     #[cfg(unix)]
     {
@@ -76,13 +91,25 @@ fn read_snapshot_after_open(
         // A replacement FIFO must not block open; a leaf symlink is never followed.
         options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
     }
+    #[cfg(windows)]
+    let mut file = crate::windows_file_stamp::open(path)?;
+    #[cfg(not(windows))]
     let mut file = options
         .open(path)
         .map_err(|error| format!("open index file: {error}"))?;
+    #[cfg(windows)]
+    let read_lease = crate::windows_read_lease::ReadLease::acquire(path, &file)
+        .map_err(|error| format!("protect native index read: {error}"))?;
     let before = file
         .metadata()
         .map_err(|error| format!("inspect opened index file: {error}"))?;
     if !same_read_identity(&named, &before) {
+        return Err("index file changed while opening".into());
+    }
+    #[cfg(windows)]
+    let held_stamp = crate::windows_file_stamp::Stamp::read(&file)?;
+    #[cfg(windows)]
+    if held_stamp != named_stamp {
         return Err("index file changed while opening".into());
     }
     let modified = before
@@ -107,6 +134,20 @@ fn read_snapshot_after_open(
     if bytes.len() as u64 != before.len()
         || !same_read_identity(&before, &after)
         || !same_read_identity(&after, &named_after)
+    {
+        return Err("index file changed during read".into());
+    }
+    #[cfg(windows)]
+    if crate::windows_file_stamp::Stamp::read(&file)? != held_stamp
+        || crate::windows_file_stamp::Stamp::read(&crate::windows_file_stamp::open(path)?)?
+            != held_stamp
+    {
+        return Err("index file changed during read".into());
+    }
+    #[cfg(windows)]
+    if !read_lease
+        .is_valid()
+        .map_err(|error| format!("verify native index read lease: {error}"))?
     {
         return Err("index file changed during read".into());
     }

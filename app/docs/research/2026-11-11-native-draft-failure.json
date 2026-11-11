@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "validationRevision": "8518daba",
+  "binaryCodeRevision": "8e705a2852251bc4e2ac47253ab03dd4f0768a95",
+  "environmentReceipt": "2026-11-11-native-draft-navigation.json",
+  "evidence": "CUA native accessibility observations; full frontend and native IPC, no mock",
+  "preflight": {
+    "nativeBinaryHashMatches": true,
+    "launcherHashMatches": true,
+    "sandboxProfileHashMatches": true
+  },
+  "attempts": [
+    {
+      "inputBytes": 186,
+      "result": "junk heuristic (< 200 bytes); no model call",
+      "draftRetained": true
+    },
+    {
+      "inputBytes": 323,
+      "result": "raw-only log (< 8 KB floor), not an inference failure",
+      "draftRetained": true
+    },
+    {
+      "inputBytes": 10654,
+      "inputSha256": "8f0801c68a5e567cae8d9f8b7cb5d973566f9a364d2c57d0d53df66f1ea501ac",
+      "inputConstruction": "45 sections numbered 1 through 45, separated by two LF characters",
+      "sectionTemplate": "Synthetic archive section {number}. This fictional archive contains sample notes about a planned report. The invented team requested a summary, but no completed work is verified. Preserve the source and the current draft if processing fails.",
+      "result": "WorkflowOperationError: WorkflowOperationError: Local preview rejected: generation_unavailable_or_rejected",
+      "title": "Synthetic source",
+      "titleRetained": true,
+      "bodyExactlyRetainedAfterAskNavigation": true,
+      "sectionsCompared": 45
+    }
+  ],
+  "integrity": {
+    "nativeProcessStopped": true,
+    "AlphaRawMarkdownFiles": 2,
+    "AlphaWikiMarkdownFiles": 1,
+    "BetaRawMarkdownFiles": 0,
+    "BetaWikiMarkdownFiles": 1,
+    "bothSyntheticReadersUnchanged": true,
+    "productionMarkerMetadataUnchangedRelativeToExistingIncidentBaseline": true
+  },
+  "limitations": [
+    "D3 failure retention only; no successful inference or publication established",
+    "D3 older successful submission versus newer draft, cancellation and other partial outcomes remain unverified in the native app",
+    "D4 storage failure and recovery remain unverified",
+    "Unsigned debug macOS bundle only; no signed installer or Windows acceptance",
+    "Prior production active-vault incident remains unresolved; unchanged metadata does not prove restoration"
+  ]
+}

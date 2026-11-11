@@ -148,7 +148,7 @@ agree in every GraphScene look.
 
 | token | value | where |
 |---|---|---|
-| note label | `var(--font-sans)` 11 px / 500 / line-height 1, colour `theme.ink`, dark double halo; on a light ground a white halo `0 0 3px #fff, 0 0 6px #fff` | `styles.css` · `.graph-label-3d`, `graphScene.ts` · `ensureLabel` |
+| note label | `var(--font-sans)` 11 px / 500 / line-height 1, colour `theme.ink`, opaque `theme.bg` text backing; bounded by the canvas and open inspector, with ellipsis for titles wider than the available strip (November 11 repair) | `styles.css` · `.graph-label-3d`, `graphScene.ts` · `ensureLabel` / `updateLabels` |
 | mycelium note label | same typography | `styles.css` · `.myc-hub-label` |
 | cluster name | `var(--font-sans)` 12.5 px / 600, letter-spacing 0.02em, in the cluster's hub colour, opacity 0.85, 480 ms fade; light ground: `brightness(0.45) saturate(1.6)` | `styles.css` · `.graph-cluster-label`, `clusterLabels.ts` |
 | cluster names show | top 6 clusters of ≥ 3 notes, while camera distance > 0.6 × framed distance | `clusterLabels.ts` · `MAX_LABELS`, `MIN_MEMBERS`, `SHOW_RATIO` (private) |

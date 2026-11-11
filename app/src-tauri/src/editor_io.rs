@@ -87,6 +87,19 @@ pub(crate) fn write_impl(
                         "refused: raw/ is immutable — editor saves are for derived notes".into(),
                     );
                 }
+                #[cfg(unix)]
+                if let Some(receipt) = crate::map_custody::MapCreationStore::try_editor_write(
+                    canonical_root,
+                    &confined,
+                    content,
+                    expected_sha256,
+                    guard,
+                )? {
+                    #[cfg(test)]
+                    after_persist(&receipt.path)?;
+                    vault::verify_recorded_file_unlocked(&receipt)?;
+                    return Ok(receipt);
+                }
                 vault::write_file_if_unchanged_recorded_locked_impl(
                     guard,
                     &confined.to_string_lossy(),

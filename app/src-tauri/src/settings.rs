@@ -357,7 +357,7 @@ fn resolve_env_data_dir(
 
 /// An explicitly isolated debug replay must not migrate the user's global
 /// state or compete for their MCP port/global shortcuts. Normal launches,
-/// including every release build, retain the existing startup behavior.
+/// without the acceptance feature retain the existing startup behavior.
 /// Validate without creating or migrating any directory; a requested but
 /// invalid isolation fails startup instead of falling back to global effects.
 pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
@@ -365,6 +365,9 @@ pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
         || std::env::var("MYCO_REAL_DIAGNOSTIC").as_deref() != Ok("1")
         || std::env::var("MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER").as_deref() != Ok("1")
     {
+        if cfg!(feature = "native-app-acceptance") {
+            return Err("acceptance binary requires diagnostic isolation".into());
+        }
         return Ok(false);
     }
     let data = std::env::var_os("MYCO_DATA_DIR")
@@ -391,6 +394,24 @@ pub(crate) fn isolated_diagnostic_startup() -> Result<bool, String> {
             return Err(
                 "diagnostic data directory must be separate from production app data".into(),
             );
+        }
+    }
+    #[cfg(feature = "native-app-acceptance")]
+    {
+        let metadata = std::fs::symlink_metadata(canonical.join("settings.json"))
+            .map_err(|_| "acceptance startup requires an existing settings file")?;
+        if !metadata.file_type().is_file() {
+            return Err("acceptance settings must be a regular file, not a link".into());
+        }
+        // Use the application's validation too: invalid roles/endpoints would
+        // otherwise fall back to defaults with automatic imports enabled.
+        let settings = read_checked().map_err(|_| "acceptance settings must be valid")?;
+        if settings.auto_import_enabled
+            || settings.auto_ingest_enabled
+            || settings.auto_reflect_enabled
+            || settings.auto_reindex_enabled
+        {
+            return Err("acceptance startup requires disabled automatic jobs".into());
         }
     }
     Ok(true)
@@ -1165,6 +1186,94 @@ mod tests {
     }
 
     // ---- C1: no test may ever reach the developer's real app-data dir ------
+
+    #[cfg(feature = "native-app-acceptance")]
+    #[test]
+    fn acceptance_binary_requires_disabled_background_jobs() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = temp_dir("acceptance-settings");
+        std::fs::create_dir_all(&dir).unwrap();
+        let dir = dir.canonicalize().unwrap();
+        let names = [
+            "MYCO_REAL_DIAGNOSTIC",
+            "MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER",
+            "MYCO_DATA_DIR",
+        ];
+        let previous = names.map(std::env::var_os);
+        unsafe {
+            std::env::set_var(names[0], "1");
+            std::env::set_var(names[1], "1");
+            std::env::set_var(names[2], &dir);
+        }
+        let mut rejected = vec![isolated_diagnostic_startup()];
+        for raw in [
+            "{}",
+            "invalid json",
+            r#"{"auto_import_enabled":true}"#,
+            r#"{"auto_import_enabled":false,"auto_ingest_enabled":true}"#,
+            r#"{"auto_import_enabled":false,"auto_reflect_enabled":true}"#,
+            r#"{"auto_import_enabled":false,"auto_reindex_enabled":true}"#,
+            r#"{"auto_import_enabled":false,"ollama_url":"invalid endpoint"}"#,
+        ] {
+            std::fs::write(dir.join("settings.json"), raw).unwrap();
+            rejected.push(isolated_diagnostic_startup());
+        }
+        let safe = r#"{"auto_import_enabled":false,"auto_ingest_enabled":false,"auto_reflect_enabled":false,"auto_reindex_enabled":false}"#;
+        std::fs::write(dir.join("settings.json"), safe).unwrap();
+        let accepted = isolated_diagnostic_startup();
+        let unchanged = std::fs::read_to_string(dir.join("settings.json")).unwrap();
+        #[cfg(unix)]
+        {
+            std::fs::rename(dir.join("settings.json"), dir.join("synthetic.json")).unwrap();
+            std::os::unix::fs::symlink("synthetic.json", dir.join("settings.json")).unwrap();
+            rejected.push(isolated_diagnostic_startup());
+        }
+        for (name, value) in names.into_iter().zip(previous) {
+            unsafe {
+                match value {
+                    Some(value) => std::env::set_var(name, value),
+                    None => std::env::remove_var(name),
+                }
+            }
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+        for result in rejected {
+            assert!(
+                result.is_err(),
+                "unsafe acceptance settings allowed: {result:?}"
+            );
+        }
+        assert_eq!(accepted, Ok(true));
+        assert_eq!(unchanged, safe);
+    }
+
+    #[cfg(feature = "native-app-acceptance")]
+    #[test]
+    fn acceptance_binary_refuses_launch_without_diagnostic_environment() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let names = [
+            "MYCO_REAL_DIAGNOSTIC",
+            "MYCO_DIAGNOSTIC_DISABLE_INDEX_UPDATER",
+        ];
+        let previous = names.map(|name| std::env::var(name).ok());
+        let mut results = Vec::new();
+        for flags in [(None, None), (Some("1"), None), (None, Some("1"))] {
+            unsafe {
+                restore_var(names[0], flags.0.map(str::to_owned));
+                restore_var(names[1], flags.1.map(str::to_owned));
+            }
+            results.push(isolated_diagnostic_startup());
+        }
+        for (name, value) in names.into_iter().zip(previous) {
+            unsafe { restore_var(name, value) };
+        }
+        for result in results {
+            assert_eq!(
+                result.unwrap_err(),
+                "acceptance binary requires diagnostic isolation"
+            );
+        }
+    }
 
     #[test]
     fn settings_dir_refuses_the_real_data_dir_when_no_override_is_set() {

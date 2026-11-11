@@ -3,6 +3,22 @@
   container-type: inline-size;
   margin-bottom: 2rem;
 }
+.everyday-home--compact {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+}
+.everyday-quick-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.everyday-quick-actions .u-btn {
+  white-space: normal;
+  text-align: start;
+}
 /* Ask-or-capture band above the hero: Enter asks, Cmd+Enter writes the line
    into today's daily note. */
 .home-ask {

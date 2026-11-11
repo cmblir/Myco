@@ -9,6 +9,7 @@ import type { ContextPackingRecord } from "./modelContextBudget";
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { IMAGE_EXTS } from "./assets";
+import { forgetUndoneMapPublications } from "./mapPublicationRecovery";
 import { queryDateRange } from "./timeQuery";
 import type { RoleSnapshot, RoleId, RoleUsage, RoleSelectionRequest, ModelRoleSettings } from "./modelRoles";
 import type {
@@ -1139,6 +1140,13 @@ export interface AgentVaultSession {
   readonly openingToken: string;
 }
 
+/** Text receipt only; the opaque id must resolve to a native retained source grant. */
+export interface MapSourceSnapshot {
+  snapshotId: string;
+  origin: AgentVaultSession;
+  members: { path: string; revision: string; raw: string }[];
+}
+
 /** Public identity of a private native-held Audio source job. */
 export interface AudioOverviewJobContext {
   readonly jobId: string;
@@ -1675,6 +1683,12 @@ export const ipc = {
   getSettings: () => invoke<MycoSettings>("get_settings"),
   captureModelRole: (origin: AgentVaultSession, role: RoleId, usage: RoleUsage = "foreground") =>
     invoke<RoleSnapshot>("capture_model_role", { origin, role, usage }),
+  captureMapSources: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, members: readonly string[]) =>
+    invoke<MapSourceSnapshot>("capture_map_sources", { origin, roleSnapshot, members }),
+  checkMapSources: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, snapshotId: string) =>
+    invoke<void>("check_map_sources", { origin, roleSnapshot, snapshotId }),
+  releaseMapSources: (origin: AgentVaultSession, snapshotId: string) =>
+    invoke<void>("release_map_sources", { origin, snapshotId }),
   selectModelRole: (request: RoleSelectionRequest) =>
     invoke<MycoSettings>("select_model_role", { request }),
   setRoleAutomaticUse: (role: RoleId, allowed: boolean, expectedAuthorizationRevision: string) =>
@@ -1800,13 +1814,24 @@ export const ipc = {
     content: string,
     expectedSha256: string | null,
     roleSnapshot?: RoleSnapshot,
+    mapSourceSnapshotId?: string,
   ) => {
     if (!origin?.vaultPath || !origin.openingToken) return Promise.reject(new Error("Native publication requires a vault opening identity"));
     if (!roleSnapshot) return Promise.reject(new Error("Managed publication requires its generation role snapshot"));
-    return invoke<DistillPublicationReceipt>("publish_distill_note", { origin, operationId, artifact, content, expectedSha256, roleSnapshot });
+    return invoke<DistillPublicationReceipt>("publish_distill_note", { origin, operationId, artifact, content, expectedSha256, roleSnapshot, ...(mapSourceSnapshotId === undefined ? {} : { mapSourceSnapshotId }) });
   },
   agentToolsSchema: () =>
     invoke<AgentToolDescriptor[]>("agent_tools_schema", {}),
+  previewMapRefresh: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, key: string, candidate: string, sourceSnapshotId: string) =>
+    invoke<{ path: string; currentRevision: string; content: string }>("preview_map_refresh", { origin, roleSnapshot, key, candidate, sourceSnapshotId }),
+  latestMapRefreshHistory: (origin: AgentVaultSession, key: string) =>
+    invoke<{ path: string; before: string; after: string; hasChangesSinceRefresh: boolean } | null>("latest_map_refresh_history", { origin, key }),
+  retainedMapSnapshots: (origin: AgentVaultSession, key: string) =>
+    invoke<{ path: string; records: { recordId: string; evidence: "currentObject" | "publicationUnknown" | "invalidRecord"; before: string | null; after: string | null }[] }>("retained_map_snapshots", { origin, key }),
+  retainedMapKeys: (origin: AgentVaultSession) =>
+    invoke<{ keys: string[]; hasUnidentifiedRecords: boolean }>("retained_map_keys", { origin }),
+  applyMapRefresh: (origin: AgentVaultSession, roleSnapshot: RoleSnapshot, key: string, candidate: string, sourceSnapshotId: string, expectedSha256: string) =>
+    invoke<{ path: string; revision: string; changed: boolean }>("apply_map_refresh", { origin, roleSnapshot, key, candidate, sourceSnapshotId, expectedSha256 }),
   agentToolCall: (
     name: string,
     args: Record<string, unknown>,
@@ -1829,7 +1854,9 @@ export const ipc = {
   undoDistillRun: async (vault: string, id: string) => {
     const origin = await invoke<AgentVaultSession>("agent_vault_session", {});
     if (origin?.vaultPath !== vault || !origin.openingToken) throw new Error("Undo requires the current vault opening; preserve artifacts for manual recovery");
-    return invoke<number>("undo_distill_run", { vault, id, origin });
+    const removed = await invoke<number>("undo_distill_run", { vault, id, origin });
+    if (Number.isSafeInteger(removed) && removed > 0) forgetUndoneMapPublications(origin, id);
+    return removed;
   },
   // Run list with per-row undo (Q4 item 3).
   listDistillRuns: (vault: string, limit?: number) =>
@@ -2047,10 +2074,10 @@ export const ipc = {
    *  `.myco/plugins/` (lib/plugins.ts validates them). */
   listPlugins: () => invoke<PluginFile[]>("list_plugins"),
   mcpConnect: () => invoke<string>("mcp_connect"),
-  // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
-  // lazily loads the weights, so it can take a few extra seconds.
-  localQuery: (prompt: string, maxTokens?: number, origin?: AgentVaultSession, roleSnapshot?: RoleSnapshot, requestId?: string) =>
-    invoke<string>("local_query", { prompt, maxTokens, origin, roleSnapshot, requestId }),
+  // Bounded preview through the selected local role and separately installed
+  // weights. Keep trusted instructions separate from quoted user evidence.
+  localQuery: (prompt: string, maxTokens?: number, origin?: AgentVaultSession, roleSnapshot?: RoleSnapshot, requestId?: string, system?: string) =>
+    invoke<string>("local_query", { prompt, maxTokens, origin, roleSnapshot, requestId, system }),
   // Cheap `is_file()` check (no model load) — no chat GGUF has shipped since
   // Ask went extractive, so this is normally always false.
   localChatModelAvailable: () => invoke<boolean>("local_chat_model_available"),

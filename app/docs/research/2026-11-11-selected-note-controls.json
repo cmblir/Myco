@@ -1,0 +1,30 @@
+{
+  "question": "Which two notes does Synthetic Graph Center link to? Answer only from the selected note and cite it.",
+  "language": "ko",
+  "documents": [
+    {
+      "path": "wiki/synthetic-graph-center.md",
+      "title": "synthetic-graph-center",
+      "original": "---\ntitle: Synthetic Graph Center\ntype: concept\n---\n\n# Synthetic Graph Center\n\nSynthetic hub linked to [[synthetic-graph-east]] and [[synthetic-graph-west]].\n",
+      "sha256": "50eea317b792f1d9b86498b39bb68c5fed30a0091e020407437b614bd4c2288d"
+    },
+    {
+      "path": "wiki/synthetic-graph-east.md",
+      "title": "synthetic-graph-east",
+      "original": "---\ntitle: Synthetic Graph East\ntype: concept\n---\n\n# Synthetic Graph East\n\nSynthetic eastern note linked to [[synthetic-graph-center]].\n",
+      "sha256": "8071285b441665f837e264cde3ff6952b8658cac49930077f18f79035719bdfb"
+    },
+    {
+      "path": "wiki/synthetic-graph-west.md",
+      "title": "synthetic-graph-west",
+      "original": "---\ntitle: Synthetic Graph West\ntype: concept\n---\n\n# Synthetic Graph West\n\nSynthetic western note linked to [[synthetic-graph-center]].\n",
+      "sha256": "a47dafcd64ac3b25edaa080988a59bb58e554b90c6be06430afd090d2343e69b"
+    }
+  ],
+  "expectedTargets": [
+    "synthetic-graph-east",
+    "synthetic-graph-west"
+  ],
+  "expectedSource": "wiki/synthetic-graph-center.md",
+  "limits": "Synthetic algorithm replay. Native retrieval ordering, actual selected hits and role authorization are not reproduced."
+}

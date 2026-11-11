@@ -6,6 +6,8 @@ import {
   resolveWorkstream,
   workstreamAnswer,
   workstreamChoices,
+  workstreamRecentRange,
+  workstreamSources,
   type WorkstreamFacts,
 } from "./queryWorkstreams";
 import { buildExplainQuestion } from "./guidedQuestion";
@@ -41,7 +43,7 @@ type Conversation = WorkstreamFacts["conversations"][string];
 function conversation(ledger: string, fields: Partial<Conversation>): [string, Conversation] {
   const [vendor, id] = ledger.split(":") as [Conversation["vendor"], string];
   return [ledger, {
-    fp: `fp-${id}`, vendor, id, raw: `raw/conversations/${vendor}/${vendor}-${id}-0123456789abcdef.md`,
+    fp: "0123456789abcdef", vendor, id, raw: `raw/conversations/${vendor}/${vendor}-${id}-0123456789abcdef.md`,
     first_epoch: at("2026-11-05T09:00:00Z"), last_epoch: at("2026-11-05T10:00:00Z"), key: null,
     cwd_source: "sidecar", root: ledger, subagent: false, request: null, report: null, parent_report: null, automated: false, ...fields,
   }];
@@ -59,7 +61,7 @@ function facts(): WorkstreamFacts {
     request: `Older synthetic step ${i}`, report: { epoch: at(`2026-10-0${i + 1}T10:00:00Z`), text: `Finished older step ${i}.` },
   }));
   return {
-    version: 4,
+    version: 6,
     last_record_epoch: at("2026-11-07T12:30:00Z"),
     unassigned: 3,
     workstreams: {
@@ -95,6 +97,54 @@ function facts(): WorkstreamFacts {
     ]),
   };
 }
+
+describe("workstream source selection", () => {
+  it("uses current project projections, never another project's same-named task", () => {
+    const source = facts();
+    const entries = Object.fromEntries(Object.entries(source.conversations).map(([key, value]) => [key, value.fp]));
+    const locations = Object.fromEntries(Object.keys(entries).map((key, index) => [`sessions:${key}`, `sessions/source-${index}.md`]));
+    const selected = workstreamSources("Lumen", source, JSON.stringify({entries, locations}), NOW);
+    expect(selected?.paths).toContain(locations[`sessions:${ROOT}`]);
+    expect(selected?.paths).not.toContain(locations["sessions:codex:c0ffee04-0000-7000-8000-000000000004"]);
+    expect(selected?.range).toEqual({start:"2026-10-01",end:"2026-11-08"});
+    expect(selected?.incomplete).toBe(false);
+  });
+
+  it("intersects explicit paths and dates, and exposes stale or missing project projections", () => {
+    const source = facts();
+    const selected = workstreamSources("Lumen", source, JSON.stringify({
+      entries:{[ROOT]:source.conversations[ROOT].fp,[SUBAGENT]:"changed-revision"},
+      locations:{[`sessions:${ROOT}`]:"sessions/allowed.md",[`sessions:${SUBAGENT}`]:"sessions/stale.md"},
+    }), NOW, {paths:["sessions/allowed.md","sessions/unrelated.md"],range:{start:"2026-11-06",end:"2026-11-07"}});
+    expect(selected).toMatchObject({paths:["sessions/allowed.md"],range:{start:"2026-11-06",end:"2026-11-07"},incomplete:true});
+    expect(workstreamSources("Lumen",source,"{}",NOW)?.paths).toEqual([]);
+    expect(workstreamSources("Lumen",source,"{}",NOW)?.incomplete).toBe(true);
+  });
+
+  it("does not invent a current interval when the cutoff predates the project", () => {
+    expect(workstreamSources("Lumen",facts(),"{}",NOW,{asOf:"2026-09-01"})?.range).toBeNull();
+  });
+
+  it.each(["sessions/../beta.md", "sessions/./beta.md", "sessions//beta.md", "sessions/beta.md\n", "sessions/beta\t.md", "sessions/beta\\x.md", "wiki/beta.md"])(
+    "rejects malformed or outside-session projection %s", path => {
+      const source = facts();
+      const selected = workstreamSources("Lumen",source,JSON.stringify({entries:{[ROOT]:source.conversations[ROOT].fp},
+        locations:{[`sessions:${ROOT}`]:path}}),NOW);
+      expect(selected).toMatchObject({paths:[],incomplete:true});
+    });
+
+  it("rejects a projection assigned to multiple conversation identities", () => {
+    const source = facts();
+    const selected = workstreamSources("Lumen",source,JSON.stringify({entries:{[ROOT]:source.conversations[ROOT].fp},
+      locations:{[`sessions:${ROOT}`]:"sessions/shared.md","sessions:codex:beta":"sessions/shared.md"}}),NOW);
+    expect(selected).toMatchObject({paths:[],incomplete:true});
+  });
+
+  it.each(["not-json", "null", "[]", '{"entries":[],"locations":{}}', " ".repeat(8 * 1024 * 1024 + 1)])(
+    "keeps malformed or oversized ledger snapshots incomplete", ledger => {
+      expect(workstreamSources("Lumen",facts(),ledger,NOW)).toMatchObject({paths:[],incomplete:true});
+    });
+});
 
 describe("classifyWorkstreamQuestion", () => {
   it.each([
@@ -160,7 +210,7 @@ describe("parseWorkstreamFacts", () => {
   };
   type Loose = Record<string, unknown>;
 
-  it("accepts the version 4 contract, user and derived titles, a copied report and a program's session included", () => {
+  it("accepts the version 6 contract, user and derived titles, a copied report and a program's session included", () => {
     expect(parseWorkstreamFacts(JSON.stringify(facts()))).toEqual(facts());
     const titled = facts();
     titled.workstreams.prj_lumen.title_source = "user";
@@ -179,7 +229,9 @@ describe("parseWorkstreamFacts", () => {
     ["version 2 facts", broken((value) => { (value as unknown as Loose).version = 2; })],
     // Version 3 facts had no README summary or open items; they are not read.
     ["version 3 facts", broken((value) => { (value as unknown as Loose).version = 3; })],
-    ["a later version", broken((value) => { (value as unknown as Loose).version = 5; })],
+    ["version 4 basename identities", broken((value) => { (value as unknown as Loose).version = 4; })],
+    ["version 5 malformed cwd assignments", broken((value) => { (value as unknown as Loose).version = 5; })],
+    ["a later version", broken((value) => { (value as unknown as Loose).version = 7; })],
     ["no summary field", broken((value) => { delete (value.workstreams.chart as unknown as Loose).summary; })],
     ["a non-text summary", broken((value) => { (value.workstreams.chart as unknown as Loose).summary = 7; })],
     ["a summary past 1024 characters", broken((value) => { value.workstreams.chart.summary = "x".repeat(1025); })],
@@ -212,6 +264,32 @@ describe("parseWorkstreamFacts", () => {
 });
 
 describe("resolveWorkstream", () => {
+  it("keeps equal display names ambiguous across distinct opaque project identities", () => {
+    const value = facts();
+    const first = `p5-${"a".repeat(64)}`;
+    const second = `p5-${"b".repeat(64)}`;
+    value.workstreams = {
+      [first]: { ...value.workstreams.prj_lumen, title: "Atlas" },
+      [second]: { ...value.workstreams["chart-lab"], title: "Atlas" },
+    };
+    expect(resolveWorkstream("Atlas", value)).toBeNull();
+    expect(workstreamAnswer({ kind: "progress", name: "Atlas" }, value, "en", NOW)).toBeNull();
+    expect(resolveWorkstream(first, value)).toBe(first);
+    expect(resolveWorkstream(second, value)).toBe(second);
+  });
+
+  it.each(["en", "ko", "ja"] as const)("discloses retained stale project pages in %s answers", (lang) => {
+    const value = facts();
+    value.workstreams.prj_lumen.page_refresh_pending = true;
+    const answer = workstreamAnswer({ kind: "progress", name: "Lumen" }, value, lang, NOW)!;
+    const message = { en: "page refresh pending; existing content was preserved",
+      ko: "페이지 갱신 대기: 기존 내용을 보존했습니다", ja: "ページ更新待ち：既存の内容を保持しました" }[lang];
+    expect(answer).toContain(message);
+    expect(answer).toContain(ROOT_RAW);
+    value.workstreams.prj_lumen.page_refresh_pending = false;
+    expect(workstreamAnswer({ kind: "progress", name: "Lumen" }, value, lang, NOW)).not.toContain(message);
+  });
+
   it.each([
     ["Lumen", "prj_lumen"],
     ["LUMEN 프로젝트", "prj_lumen"],
@@ -367,12 +445,19 @@ describe("workstreamAnswer progress", () => {
     expect(latest("ko")).toBe(`- **${day("2026-11-06T12:00:00Z")}** 차트 축을 고쳤습니다.${BR}요청: Sub-agent step 4 (하위 작업 4개) ${link(1)}`);
     expect(latest("ja")).toContain(`** 軸を直しました。${BR}依頼: Sub-agent step 4 (サブタスク4件) ${link(3, "ja")}`);
     expect(latest("en")).toContain(`** 軸を直しました。${BR}Asked: Sub-agent step 4 (4 sub-tasks) ${link(3, "en")}`);
-    // The missing thread's own answer, copied in by a sub-agent that forked
-    // from it, comes before every sub-agent's report, in any language.
+    // Preserve the copy, but an unseen parent's project is unconfirmed.
     const copier = value.conversations["codex:c0ffee94-0000-7000-8000-000000000094"];
     copier.parent_report = { epoch: at("2026-11-06T08:00:00Z"), text: "Plan approved." };
+    for (const lang of ["ko", "ja", "en"] as const) expect(latest(lang)).not.toContain("Plan approved.");
+    expect(copier.parent_report.text).toBe("Plan approved.");
+    // Positive same-project evidence permits reuse when the imported root
+    // has no report of its own; a different project still cannot contribute.
+    value.conversations[unseen] = conversation(unseen, { key: "chart-lab" })[1];
     for (const lang of ["ko", "ja", "en"] as const) expect(latest(lang)).toContain(`** Plan approved.${BR}`);
     expect(latest("en")).toContain(`** Plan approved.${BR}Asked: Sub-agent step 4 (4 sub-tasks) ${link(4, "en")}`);
+    value.conversations[unseen].key = "prj_lumen";
+    expect(latest("en")).not.toContain("Plan approved.");
+    delete value.conversations[unseen];
     copier.parent_report = null;
     // Without any report, the session's newest conversation is cited.
     for (const n of [1, 2, 3]) value.conversations[`codex:c0ffee9${n}-0000-7000-8000-00000000009${n}`].report = null;
@@ -429,7 +514,7 @@ describe("workstreamAnswer progress", () => {
   it("assumes the project with the most conversations in the window and says so", () => {
     const answer = workstreamAnswer({ kind: "progress", name: null }, facts(), "ko", NOW)!;
     const [assumption, summary] = answer.split("\n\n");
-    expect(assumption).toBe(`프로젝트 이름이 없어, 최근 7일(${day("2026-11-01T12:00:00Z")} – ${day("2026-11-08T12:00:00Z")}) ` +
+    expect(assumption).toBe(`프로젝트 이름이 없어, 최근 7일(${day("2026-11-02T00:00:00")} – ${day("2026-11-08T12:00:00Z")}) ` +
       "동안 대화가 가장 많은 🌙 Lumen 프로젝트로 가정했습니다. 다른 프로젝트라면 이름을 넣어 다시 물어보세요.");
     expect(summary).toMatch(/^\[\[wiki\/workstreams\/prj_lumen\|🌙 Lumen\]\] 프로젝트는 /);
   });
@@ -443,15 +528,15 @@ describe("workstreamAnswer progress", () => {
     expect(workstreamAnswer({ kind: "progress", name: null }, value, "en", NOW)).toContain("assumes Chart Lab,");
   });
 
-  it("states both ranges when the unnamed default comes from the fallback window", () => {
+  it("requires a named project or explicit period instead of assuming an older project", () => {
     const asked = new Date("2026-11-20T12:00:00Z");
     const answer = workstreamAnswer({ kind: "progress", name: null }, facts(), "en", asked)!;
     expect(answer.split("\n\n").slice(0, 2)).toEqual([
-      `No conversation from the last 7 days (${day("2026-11-13T12:00:00Z", "en", asked)} – ${day("2026-11-20T12:00:00Z", "en", asked)}) ` +
+      `No conversation from the last 7 days (${day("2026-11-14T00:00:00", "en", asked)} – ${day("2026-11-20T12:00:00Z", "en", asked)}) ` +
         "belongs to a project.",
-      "No project was named, so this assumes 🌙 Lumen, the project with the most conversations in the 7 days up to the last record " +
-        `(${day("2026-10-31T12:30:00Z", "en", asked)} – ${day("2026-11-07T12:30:00Z", "en", asked)}). Name a project to ask about another one.`,
+      "Name a project or ask with explicit dates to search older records.",
     ]);
+    expect(answer).not.toContain("Lumen");
   });
 });
 
@@ -488,7 +573,7 @@ describe("a program's sessions (automated)", () => {
 describe("workstreamAnswer recent", () => {
   it("groups the last 7 days by project with counts, the latest session and the unassigned count", () => {
     expect(workstreamAnswer({ kind: "recent" }, facts(), "ko", NOW)!.split("\n\n")).toEqual([
-      `최근 7일(${day("2026-11-01T12:00:00Z")} – ${day("2026-11-08T12:00:00Z")}) 동안 프로젝트 2개에서 대화 4건이 있었습니다.`,
+      `최근 7일(${day("2026-11-02T00:00:00")} – ${day("2026-11-08T12:00:00Z")}) 동안 프로젝트 2개에서 대화 4건이 있었습니다.`,
       `- **[[wiki/workstreams/prj_lumen|🌙 Lumen]]** 대화 3건, 세션 2개, 마지막 활동 ${day("2026-11-07T12:30:00Z")}${BR}` +
         `Implemented the reminder scheduler.${BR}요청: Add prayer reminders to the synthetic app (하위 작업 1개) ${cite(ROOT_RAW)}\n` +
         `- **[[wiki/workstreams/chart-lab|Chart Lab]]** 대화 1건, 세션 1개, 마지막 활동 ${day("2026-11-04T10:00:00Z")}${BR}` +
@@ -498,35 +583,50 @@ describe("workstreamAnswer recent", () => {
     ]);
   });
 
-  it("uses the 7 days ending at the newest record when the asked window is empty, stating both ranges", () => {
+  it("keeps an empty recent window empty and offers an explicit older-record search", () => {
     const asked = new Date("2026-11-20T12:00:00Z");
     const paragraphs = workstreamAnswer({ kind: "recent" }, facts(), "ko", asked)!.split("\n\n");
-    const [empty, summary] = paragraphs;
-    expect(empty).toBe(`최근 7일(${day("2026-11-13T12:00:00Z", "ko", asked)} – ${day("2026-11-20T12:00:00Z", "ko", asked)})` +
+    const [empty, suggestion] = paragraphs;
+    expect(empty).toBe(`최근 7일(${day("2026-11-14T00:00:00", "ko", asked)} – ${day("2026-11-20T12:00:00Z", "ko", asked)})` +
       "에는 프로젝트로 묶인 대화가 없습니다.");
-    expect(summary).toBe(`마지막 기록까지의 7일(${day("2026-10-31T12:30:00Z", "ko", asked)} – ${day("2026-11-07T12:30:00Z", "ko", asked)}) 동안 ` +
-      "프로젝트 2개에서 대화 4건이 있었습니다.");
-    expect(paragraphs.at(-1)).toBe(REPORTED_ONLY.ko);
+    expect(suggestion).toBe("이전 기록을 보려면 프로젝트 이름이나 원하는 날짜를 넣어 다시 물어보세요.");
+    expect(paragraphs).toHaveLength(2);
+    expect(paragraphs.join("\n")).not.toContain("Implemented the reminder scheduler");
   });
 
-  it("falls back the same way when the asked window holds only unassigned conversations", () => {
+  it("does not widen a period containing only unassigned conversations", () => {
     const value = facts();
     const loose = value.conversations["claude-code:bbbb2222-0000-4000-8000-000000000005"];
     [loose.first_epoch, loose.last_epoch] = [at("2026-11-14T09:00:00Z"), at("2026-11-14T10:00:00Z")];
     value.last_record_epoch = loose.last_epoch;
     const asked = new Date("2026-11-15T12:00:00Z");
-    const [empty, summary, , unassigned] = workstreamAnswer({ kind: "recent" }, value, "ko", asked)!.split("\n\n");
-    expect(empty).toBe(`최근 7일(${day("2026-11-08T12:00:00Z", "ko", asked)} – ${day("2026-11-15T12:00:00Z", "ko", asked)})` +
+    const [empty, suggestion, ...other] = workstreamAnswer({ kind: "recent" }, value, "ko", asked)!.split("\n\n");
+    expect(empty).toBe(`최근 7일(${day("2026-11-09T00:00:00", "ko", asked)} – ${day("2026-11-15T12:00:00Z", "ko", asked)})` +
       "에는 프로젝트로 묶인 대화가 없습니다.");
-    expect(summary).toMatch(/^마지막 기록까지의 7일\(.+\) 동안 프로젝트 1개에서 대화 2건이 있었습니다\./);
-    expect(unassigned).toBe("이 기간 대화 중 1건은 프로젝트를 정하지 못해 목록에서 뺐습니다(전체 미분류 3건).");
+    expect(suggestion).toContain("날짜를 넣어 다시 물어보세요");
+    expect(other).toEqual([]);
   });
 
-  it("gives null when no project was active in either window", () => {
-    expect(workstreamAnswer({ kind: "recent" }, { ...facts(), conversations: {} }, "ko", NOW)).toBeNull();
+  it("explains an empty or entirely unassigned period without falling into model generation", () => {
+    expect(workstreamAnswer({ kind: "recent" }, { ...facts(), conversations: {} }, "ko", NOW)).toContain("프로젝트로 묶인 대화가 없습니다");
     const unassigned = facts();
     for (const conversation of Object.values(unassigned.conversations)) conversation.key = null;
-    expect(workstreamAnswer({ kind: "recent" }, unassigned, "ko", NOW)).toBeNull();
+    expect(workstreamAnswer({ kind: "recent" }, unassigned, "ko", NOW)).toContain("프로젝트로 묶인 대화가 없습니다");
+  });
+
+  it("excludes outside-period words from a long conversation that overlaps the period", () => {
+    const value = facts();
+    value.conversations[ROOT].first_epoch = at("2026-10-01T00:00:00Z");
+    value.conversations[ROOT].request = "OLD_REQUEST_MUST_NOT_APPEAR";
+    value.conversations[ROOT].report = { epoch: at("2026-11-09T00:00:00Z"), text: "FUTURE_REPORT_MUST_NOT_APPEAR" };
+    const answer = workstreamAnswer({ kind: "recent" }, value, "en", NOW)!;
+    expect(answer).not.toContain("OLD_REQUEST_MUST_NOT_APPEAR");
+    expect(answer).not.toContain("FUTURE_REPORT_MUST_NOT_APPEAR");
+    expect(answer).toContain("Review found");
+  });
+
+  it("uses seven local calendar dates even across a month boundary", () => {
+    expect(workstreamRecentRange(new Date(2026, 10, 2, 0, 5))).toEqual({ start: "2026-10-27", end: "2026-11-02" });
   });
 });
 
@@ -644,10 +744,15 @@ describe("workstreamChoices", () => {
 
 describe("the native writer's facts (shared fixture)", () => {
   const facts = parseWorkstreamFacts(JSON.stringify(WRITER_FIXTURE));
+  const keyOf = (id: string): string => facts!.conversations[id].key!;
+  const labKey = (): string => keyOf("codex:00000000-0000-4000-8000-0000000000f1");
 
   it("passes the reader's contract as a whole", () => {
     expect(facts).not.toBeNull();
-    expect(Object.keys(facts!.workstreams).sort()).toEqual([".dotfiles", "a|b", "c#", "fixture-lab", "foo [old]", "노트"].sort());
+    expect(Object.keys(facts!.workstreams)).toHaveLength(7);
+    expect(Object.keys(facts!.workstreams).every(key => /^p5-[0-9a-f]{64}$/.test(key))).toBe(true);
+    expect(Object.values(facts!.workstreams).map(project => project.title.normalize("NFC")).sort())
+      .toEqual([".dotfiles", "a|b", "C Sharp Port", "Orbital", "foo [old]", "노트", "scratch"].sort());
   });
 
   it("names every project, and its answer links the page and sources as working links", () => {
@@ -665,26 +770,27 @@ describe("the native writer's facts (shared fixture)", () => {
   });
 
   it("reads the writer's derived and user titles, and one session under a parent never imported", () => {
-    const lab = facts!.workstreams["fixture-lab"];
+    const lab = facts!.workstreams[labKey()];
     expect([lab.title, lab.title_source, lab.conversations, lab.roots]).toEqual(["Orbital", "derived", 4, 2]);
-    expect([facts!.workstreams["c#"].title, facts!.workstreams["c#"].title_source]).toEqual(["C Sharp Port", "user"]);
-    expect(resolveWorkstream("Orbital", facts!)).toBe("fixture-lab");
+    expect([facts!.workstreams[keyOf("claude-code:fx-hash")].title, facts!.workstreams[keyOf("claude-code:fx-hash")].title_source]).toEqual(["C Sharp Port", "user"]);
+    expect(resolveWorkstream("Orbital", facts!)).toBe(labKey());
     const sessions = (lang: "en" | "ko") => listItems(workstreamAnswer({ kind: "progress", name: "Orbital" }, facts!, lang, NOW)!
       .split("\n\n")[1]);
     const [en, ko] = [sessions("en"), sessions("ko")];
     expect(en).toHaveLength(2);
-    // The never-imported parent's answer, which one of its sub-agents copied
-    // in, before either sub-agent's own report, in any language.
+    // The never-imported parent's copy remains source data, but its project
+    // is unconfirmed and cannot replace the sub-agents' own reports.
     const copier = "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f3-000000000000000b";
-    expect(en[0]).toContain(`** 궤도 계획을 확정했습니다.${BR}Asked: ORBITAL\\_LAB\\_GOAL.md (2 sub-tasks) ${cite(copier, "en")}`);
-    expect(ko[0]).toContain(`** 궤도 계획을 확정했습니다.${BR}요청: ORBITAL\\_LAB\\_GOAL.md (하위 작업 2개) ${cite(copier)}`);
+    expect(facts!.conversations["codex:00000000-0000-4000-8000-0000000000f3"].parent_report?.text).toBe("궤도 계획을 확정했습니다.");
+    expect(en[0]).toContain(`** Orbital checks pass${BR}Asked: ORBITAL\\_LAB\\_GOAL.md (2 sub-tasks) ${cite(copier, "en")}`);
+    expect(ko[0]).toContain(`** 궤도 점검을 마쳤습니다.${BR}요청: ORBITAL\\_LAB\\_GOAL.md (하위 작업 2개) `);
     // The lab's own thread reported before its sub-agent did.
     expect(en[1]).toContain(`** Lab ready${BR}Asked: Set up the lab from ORBITAL\\_LAB\\_GOAL.md (1 sub-tasks) `);
   });
 
   it("leaves the writer's automated helper session out of the lab's counts and rows", () => {
     const helper = facts!.conversations["claude-code:fx-helper"];
-    expect([helper.automated, helper.key, helper.request]).toEqual([true, "fixture-lab",
+    expect([helper.automated, helper.key, helper.request]).toEqual([true, labKey(),
       "당신은 Orbital 대시보드의 안내 도우미입니다. 사용자의 질문에 답하세요."]);
     const answer = workstreamAnswer({ kind: "progress", name: "Orbital" }, facts!, "ko", NOW)!;
     expect(answer).toContain("세션 2개, 대화 4건");
@@ -697,7 +803,6 @@ describe("the native writer's facts (shared fixture)", () => {
     const lab = cite("raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f1-0000000000000007", "en");
     const [, items] = workstreamAnswer({ kind: "remaining", name: "Orbital" }, facts!, "en", NOW)!.split("\n\n");
     expect(items.split("\n")).toEqual([
-      `- **${day("2026-10-27T06:40:00Z", "en")}** 궤도 시뮬레이션 실행 ${sub}`,
       `- **${day("2026-10-27T05:00:00Z", "en")}** Pending: the review of the sensors. ${lab}`,
     ]);
     expect(workstreamAnswer({ kind: "remaining", name: ".dotfiles" }, facts!, "en", NOW))
@@ -706,11 +811,11 @@ describe("the native writer's facts (shared fixture)", () => {
     expect(explained).toContain("- **README** no summary found\n");
     expect(explained).toContain("- **First request** ");
     expect(explained).toContain(`, Set up the lab from ORBITAL\\_LAB\\_GOAL.md ${lab}`);
-    expect(explained).toContain(`- **Latest report** ${day("2026-10-27T06:40:00Z", "en")}, 궤도 계획을 확정했습니다. ${sub}`);
+    expect(explained).toContain(`- **Latest report** ${day("2026-10-27T07:30:00Z", "en")}, Orbital checks pass ${sub}`);
   });
 
   it("counts a Claude Code teammate in its lead's session", () => {
-    const foo = facts!.workstreams["foo [old]"];
+    const foo = facts!.workstreams[keyOf("claude-code:fx-bracket")];
     expect([foo.conversations, foo.roots]).toEqual([2, 1]);
     const [, list] = workstreamAnswer({ kind: "progress", name: "foo [old]" }, facts!, "en", NOW)!.split("\n\n");
     expect(listItems(list)).toHaveLength(1);
@@ -728,7 +833,7 @@ describe("workstreamAnswer layout details", () => {
     const long = conversation("codex:c0ffee52-0000-7000-8000-000000000052", { key: "solo",
       first_epoch: at("2026-11-06T09:00:00Z"), last_epoch: at("2026-11-06T10:00:00Z"),
       request: "가".repeat(120), report: { epoch: at("2026-11-06T10:00:00Z"), text: "Done with the long one." } });
-    const data: WorkstreamFacts = { version: 4, last_record_epoch: at("2026-11-06T10:00:00Z"), unassigned: 0,
+    const data: WorkstreamFacts = { version: 6, last_record_epoch: at("2026-11-06T10:00:00Z"), unassigned: 0,
       workstreams: { solo: { title: "Solo", title_source: "readme", page: "wiki/workstreams/solo.md",
         first_epoch: at("2025-12-30T09:00:00Z"), last_epoch: at("2026-11-06T10:00:00Z"), conversations: 2, roots: 2,
         summary: null, open_items: [] } },

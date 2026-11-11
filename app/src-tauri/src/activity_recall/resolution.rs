@@ -431,13 +431,10 @@ pub(crate) fn read(
             break;
         }
         let confined = crate::vault::confine_path(&root, &root.join(&page).to_string_lossy())?;
-        let resolved = confined
-            .strip_prefix(&root)
-            .ok()
-            .and_then(Path::to_str)
+        let resolved = crate::vault_path::relative_key(&root, &confined)
             .ok_or("resolution path identity unavailable")?;
         if !keeps(
-            resolved,
+            &resolved,
             request.scope,
             request.paths,
             request.include_archived,

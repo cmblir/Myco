@@ -42,7 +42,7 @@ import { formatTemporalRecall } from "../lib/queryTemporal";
 import { connectionOverview, connectionScopeNotice, isConnectionOverviewQuery } from "../lib/queryConnections";
 import { ActivitySynthesisError, LocalSynthesisError, LocalSynthesisSourceError, isSynthesisReviewFailure, tryLocalSynthesis, type ActivitySynthesisFailure, type LocalSynthesisFallbackReason } from "../lib/querySynthesis";
 import { ActivityPeriodRequired, activityPeriodClarification, isNextWorkOverview, isUndatedActivityOverview, retrieveActivity } from "../lib/queryActivity";
-import { classifyWorkstreamQuestion, parseWorkstreamFacts, workstreamAnswer, type WorkstreamQuestion } from "../lib/queryWorkstreams";
+import { classifyWorkstreamQuestion, mentionsOtherWorkstream, parseWorkstreamFacts, resolveWorkstream, workstreamAnswer, workstreamRecentRange, workstreamSources, WORKSTREAM_COPY, type WorkstreamQuestion, type WorkstreamSources } from "../lib/queryWorkstreams";
 import { isMissingFile } from "../lib/sessionEvidence";
 import { activityResolution } from "../lib/queryResolution";
 import { checkedAskRole, isQueryAuthorizationError, QueryAuthorizationError } from "../lib/queryRole";
@@ -55,6 +55,13 @@ const RETRIEVE_K = 12;
 export const QUOTED_PAGES = 5;
 /** Turns the history keeps — `ask_history::CAP`. */
 const HISTORY_CAP = 500;
+
+interface ProjectSelection {
+  key: string;
+  /** Caller restrictions only; discovered candidate paths and dates are refreshed. */
+  explicitPaths?: string[];
+  explicitRange?: DateRange;
+}
 
 export interface ChatTurn {
   guidedQuestion?: GuidedQuestionSelection;
@@ -142,6 +149,9 @@ export interface ChatTurn {
   /** Keep a period-only reply tied to the user's original activity question. */
   activityPeriodNeeded?: boolean;
   activityQuestion?: string;
+  /** Retain the project question's cutoff semantics through follow-up and retry. */
+  resolutionMode?: "current_state" | "historical_as_of";
+  projectSelection?: ProjectSelection;
 }
 
 /** Localized copy ask() bakes into turns. Passed per call from the page's `t`
@@ -200,6 +210,9 @@ export interface AskOpts {
   scope?: AskScope;
   /** Captured period for retry or scope widening; ignoreRange still takes precedence. */
   range?: DateRange;
+  paths?: string[];
+  resolutionMode?: "current_state" | "historical_as_of";
+  projectSelection?: ProjectSelection;
   /** "Search again without the period": retrieve with the question's words
    *  but no date window, though it still names one. */
   ignoreRange?: boolean;
@@ -507,18 +520,39 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const isDatedActivityOverview = Boolean(tp.range && (isActivityOverviewQuery(text) ||
       (activityQuestion !== question && (isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion)))));
     if (opts?.ignoreRange) tp.range = null;
+    const hasRequestedRange = Boolean(tp.range);
+    const requestedRange = tp.range ? { ...tp.range } : undefined;
     const note = opts?.note;
     // Over one note the path set decides, so no tier is cut out of it.
     const explicitScope = opts?.scope ?? (isAskScopeExplicit ? askScope : undefined);
-    const { scope, tierWeights } = recallPolicy(activityQuestion, askScope, askTierWeights, note ? "all" : explicitScope, isDatedActivityOverview);
-    const paths = note ? noteScopePaths(note.path, vault.path, useVaultStore.getState().adjacency) : undefined;
     // The question this one may lean on (UX audit A2): "그건 왜 중요해?"
     // alone retrieves nothing its pronoun points at.
-    const context = guidedQuestion ? null : activityQuestion !== question ? activityQuestion : followUpContext(
+    const candidateContext = guidedQuestion ? null : activityQuestion !== question ? activityQuestion : followUpContext(
       get().turns,
       question,
       (q) => parseTimeQuery(q, queryTime, lang).cleaned,
     );
+    const projectContext = candidateContext && previous?.resolutionMode && !note &&
+      (!explicitScope || explicitScope === previous.scope) ? previous.activityQuestion : undefined;
+    const projectSelection = note ? undefined : opts?.projectSelection ?? (projectContext ? previous?.projectSelection : undefined);
+    let paths = note ? noteScopePaths(note.path, vault.path, useVaultStore.getState().adjacency) :
+      opts?.paths ?? projectSelection?.explicitPaths;
+    const projectRange = opts?.ignoreRange ? undefined : requestedRange ?? projectSelection?.explicitRange;
+    const samePaths = (turn: ChatTurn): boolean => {
+      const previousPaths = projectContext && turn.projectSelection ? turn.projectSelection.explicitPaths : turn.searchContext?.paths;
+      return turn.note?.path === note?.path &&
+        JSON.stringify([...(previousPaths ?? [])].sort()) === JSON.stringify([...(paths ?? [])].sort());
+    };
+    const inheritedScope = candidateContext && previous && samePaths(previous) ? previous.scope : undefined;
+    const { scope: selectedScope, tierWeights } = recallPolicy(activityQuestion, askScope, askTierWeights,
+      note ? "all" : explicitScope ?? inheritedScope, isDatedActivityOverview);
+    let scope = selectedScope;
+    const sameSources = (turn: ChatTurn): boolean =>
+      (turn.scope ? turn.scope === scope : !explicitScope && !paths) && samePaths(turn);
+    const context = candidateContext && (!previous || sameSources(previous)) ? candidateContext : null;
+    // Follow-ups retain verified dates only inside the same source context.
+    // An explicit new period or a request to remove it always takes priority.
+    if (context && !tp.range && !opts?.ignoreRange && previous?.range) tp.range = { ...previous.range };
     const followUp = context !== null;
     set((s) => ({
       turns: [
@@ -530,6 +564,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           execution:readAskExecution(execution),
           scope,
           ...(paths ? {searchContext:{version:1 as const,paths:[...paths]}} : {}),
+          ...(projectSelection ? {projectSelection:{key:projectSelection.key,
+            ...(paths ? {explicitPaths:[...paths]} : {}),...(projectRange ? {explicitRange:{...projectRange}} : {})}} : {}),
           ...(note ? { note } : {}),
           ...(opts?.ignoreRange ? { ignoreRange: true } : {}),
           ...(activityQuestion !== question ? { activityQuestion } : {}),
@@ -547,42 +583,104 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       return outcome;
     }
 
-    // Imported conversations grouped into projects (.myco/workstreams.json,
-    // written natively) answer progress, remaining work, explain and recent
-    // work without a model, so before any role check. A missing or invalid
-    // file keeps the routes below. A guided "where did we leave off" or
-    // "what is left" without a cutoff names its project in the subject
-    // (picked from the list, or typed); the explain chip asks a typed
-    // question. Other guided intents, cutoffs and a subject that names no
-    // project keep their own route.
-    const guidedProject = guidedQuestion && !guidedQuestion.asOf &&
-      (guidedQuestion.intent === "progress" || guidedQuestion.intent === "remaining") ?
-      { kind: guidedQuestion.intent, name: guidedQuestion.subject.trim() } : null;
-    const workstreamQuestion: WorkstreamQuestion | null = paths || tp.range ? null :
-      guidedQuestion ? guidedProject : classifyWorkstreamQuestion(question, lang, queryTime);
+    // Facts discover project candidates. Current/historical task state must
+    // use the same original-bound resolution flow as activity questions.
+    const projectGuidance = guidedQuestion ?? (projectContext ? previous?.guidedQuestion : undefined);
+    const guidedProject = projectGuidance &&
+      (projectGuidance.intent === "progress" || projectGuidance.intent === "remaining") ?
+      { kind: projectGuidance.intent, name: projectGuidance.subject.trim() } : null;
+    const projectQuestion = projectContext ?? activityQuestion;
+    const classified = classifyWorkstreamQuestion(projectContext ?? (tp.range ? tp.cleaned : projectQuestion), lang, queryTime);
+    const workstreamQuestion: WorkstreamQuestion | null = note || (explicitScope ?? inheritedScope) === "wiki" ? null :
+      projectGuidance ? guidedProject : classified;
+    let projectSources: WorkstreamSources | null = null;
+    let projectSnapshots: { facts: string; ledger: string } | undefined;
+    const resolutionMode = opts?.resolutionMode ?? (guidedQuestion?.asOf || hasRequestedRange ? "historical_as_of" :
+      (projectContext ? previous?.resolutionMode : undefined) ?? "current_state");
     if (workstreamQuestion) {
       let answer: string | null = null;
       try {
         const file = await Promise.race([stopped(ctrl.signal), ipc.readFile(`${vault.path}/.myco/workstreams.json`)]);
         const facts = parseWorkstreamFacts(file.raw);
-        // A file that breaks the contract falls through too, but not silently.
+        // Invalid discovery facts cannot authorize an unrestricted state query.
         if (!facts && live()) log.warn("query.workstreams_invalid");
-        answer = facts && workstreamAnswer(workstreamQuestion, facts, lang, queryTime);
+        if (workstreamQuestion.kind === "progress" || workstreamQuestion.kind === "remaining") {
+          if (!facts) {
+            finishTurn({a:"",error:copy.activityIncomplete});
+            settle();
+            return outcome;
+          }
+          if (projectContext && projectSelection && mentionsOtherWorkstream(question,projectSelection.key,facts)) {
+            finishTurn({a:WORKSTREAM_COPY[lang].projectNotFound,needsClarification:true});
+            settle();
+            return outcome;
+          }
+          if (!workstreamQuestion.name && !projectSelection) {
+            finishTurn({a:WORKSTREAM_COPY[lang].chooseProject,needsClarification:true});
+            settle();
+            return outcome;
+          }
+          const projectKey = projectSelection ?
+            (Object.hasOwn(facts.workstreams,projectSelection.key) ? projectSelection.key : null) :
+            resolveWorkstream(workstreamQuestion.name!, facts);
+          if (!projectKey) {
+            finishTurn({a:WORKSTREAM_COPY[lang].projectNotFound,needsClarification:true});
+            settle();
+            return outcome;
+          }
+          const ledger = await Promise.race([stopped(ctrl.signal), ipc.readFile(`${vault.path}/.myco/ledger.json`)]);
+          projectSources = workstreamSources(projectKey, facts, ledger.raw, queryTime,
+            {paths,range:projectRange,asOf:projectGuidance?.asOf});
+          if (!projectSources || projectSources.key !== projectKey) {
+            finishTurn({a:WORKSTREAM_COPY[lang].projectNotFound,needsClarification:true});
+            settle();
+            return outcome;
+          }
+          projectSnapshots = {facts:file.raw,ledger:ledger.raw};
+        } else if (!paths && !tp.range) {
+          answer = facts && workstreamAnswer(workstreamQuestion, facts, lang, queryTime);
+        }
       } catch (error) {
         if (live() && !isMissingFile(error)) log.warn("query.workstreams_unavailable");
+        if (workstreamQuestion.kind === "progress" || workstreamQuestion.kind === "remaining") {
+          finishTurn({a:"",error:copy.activityIncomplete});
+          settle();
+          return outcome;
+        }
       }
       if (!live()) { settle(); return outcome; }
+      if (projectSources) {
+        scope = explicitScope ?? inheritedScope ?? "sessions";
+        const selectedProject: ProjectSelection = {key:projectSources.key,
+          ...(paths ? {explicitPaths:[...paths]} : {}),...(projectRange ? {explicitRange:{...projectRange}} : {})};
+        paths = projectSources.paths;
+        tp.range = projectSources.range;
+        set(s => ({turns:patchLast(s.turns,{scope,range:tp.range ?? undefined,
+          activityQuestion:projectQuestion,resolutionMode,projectSelection:selectedProject,
+          ...(projectGuidance ? {guidedQuestion:projectGuidance} : {}),
+          searchContext:{version:1,paths:[...paths!]}})}));
+        if (!tp.range || !paths.length) {
+          finishTurn({a:copy.activityInsufficientEvidence,abstained:true,abstainExplanation:copy.activityInsufficientEvidence,
+            activityFailure:"activity_insufficient_evidence",
+            activityCoverage:{scannedPages:0,sources:0,incomplete:projectSources.incomplete}});
+          settle();
+          return outcome;
+        }
+      }
       if (answer) {
-        // Read from the imported sessions whatever scope was chosen.
-        finishTurn({ a: answer, scope: "sessions" });
+        // A workstream is a session-derived view. An explicit broader scope
+        // stays authoritative; no wiki-only request reaches this branch.
+        finishTurn({ a: answer, scope: explicitScope ?? "sessions",
+          ...(workstreamQuestion.kind === "recent" ? { range: workstreamRecentRange(queryTime) } : {}) });
         settle();
         return outcome;
       }
     }
 
     // The unrestricted recent git log cannot answer a date-restricted request,
-    // a transcript-only scope, or a question over one note.
-    if (!paths && !tp.range && scope !== "sessions" && !isMemoryQuestion(question) && isActivityQuery(question)) {
+    // an explicit wiki/transcript scope, or a question over one note.
+    if (!paths && !tp.range && scope !== "sessions" && (explicitScope ?? inheritedScope) !== "wiki" &&
+        !isMemoryQuestion(question) && isActivityQuery(question)) {
       try {
         const commits = await Promise.race([stopped(ctrl.signal), ipc.gitLog(vault.path, 20)]);
         finishTurn({ a: formatActivityAnswer(commits, lang) });
@@ -634,13 +732,19 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     }
     if (!live()) { settle(); return outcome; }
 
+    if (projectSources && (provider !== "builtin-local" || !isBuiltinChatModel(queryModel))) {
+      finishTurn({a:"",error:WORKSTREAM_COPY[lang].stateModelRequired});
+      settle();
+      return outcome;
+    }
+
     // Explicit extractive Ask quotes retrieved evidence. A selected generator
     // must produce a reviewed answer or retain an error outcome.
     if (provider === "builtin-local") {
       let localFallback: LocalSynthesisFallbackReason | undefined;
       let activityFailureCopy = copy.activityFailed;
-      const isActivityRecall = !guidedQuestion && isBuiltinChatModel(queryModel) && !opts?.ignoreRange &&
-        (isDatedActivityOverview || isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion));
+      const isActivityRecall = Boolean(projectSources) || (!guidedQuestion && isBuiltinChatModel(queryModel) && !opts?.ignoreRange &&
+        (isDatedActivityOverview || isUndatedActivityOverview(activityQuestion, lang, queryTime) || isNextWorkOverview(activityQuestion)));
       try {
         if (queryModel !== BUILTIN_MODEL && !isBuiltinChatModel(queryModel))
           throw new LocalSynthesisError("model_unavailable");
@@ -659,10 +763,11 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           });
           if (!live()) return outcome;
           set((s) => ({ turns: patchLast(s.turns, { range: activity.range }) }));
-          const coverage = { scannedPages: activity.scanned_pages, sources: 0, incomplete: activity.incomplete };
+          const coverage = { scannedPages: activity.scanned_pages, sources: 0,
+            incomplete: activity.incomplete || Boolean(projectSources?.incomplete) };
           if (!activity.hits.length) {
-            finishTurn({ a: activity.incomplete ? "" : copy.rangeEmpty,
-              ...(activity.incomplete ? { error: copy.activityIncomplete } : {}),
+            finishTurn({ a: coverage.incomplete ? "" : copy.rangeEmpty,
+              ...(coverage.incomplete ? { error: copy.activityIncomplete } : {}),
               range: activity.range, activityCoverage: coverage,
               activityFailure: "activity_insufficient_evidence" });
             return outcome;
@@ -670,14 +775,24 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           activityFailureCopy = copy.activitySummaryFailed;
           const synthesis = await Promise.race([stopped(ctrl.signal), tryLocalSynthesis({
             onExecution,
-            question: activityQuestion, lang, hits: activity.hits, expectedVault: vault.path, origin, roleSnapshot, scope, modelId: queryModel,
+            question: projectSources && context ? `${projectQuestion}\n${question}` : activityQuestion,
+            lang, hits: activity.hits, expectedVault: vault.path, origin, roleSnapshot, scope, modelId: queryModel,
             range: activity.range, paths, signal: ctrl.signal, activityOverview: true,
-            resolution: activityResolution(activity.range, queryTime, isNextWorkOverview(activityQuestion) ? "current_state" : "historical_as_of"),
+            resolution: activityResolution(activity.range, queryTime, projectSources ? resolutionMode :
+              isNextWorkOverview(activityQuestion) ? "current_state" : "historical_as_of"),
             onThinking: (stems) => { if (live()) set({ stage: { kind: "thinking", stems } }); },
             onFallback: (reason) => { if (live()) localFallback = reason; },
           })]);
           if (!synthesis) throw new Error("activity synthesis did not produce a verified answer");
-          finishTurn({ a: synthesis.answer, localModel: synthesis.model_id, extractive: false,
+          if (projectSnapshots) {
+            const [facts, ledger] = await Promise.race([stopped(ctrl.signal), Promise.all([
+              ipc.readFile(`${vault.path}/.myco/workstreams.json`), ipc.readFile(`${vault.path}/.myco/ledger.json`),
+            ])]);
+            if (facts.raw !== projectSnapshots.facts || ledger.raw !== projectSnapshots.ledger)
+              throw new LocalSynthesisSourceError("source_changed_during_generation");
+          }
+          finishTurn({ a: projectSources?.incomplete ? `${WORKSTREAM_COPY[lang].stateIncomplete}\n\n${synthesis.answer}` : synthesis.answer,
+            localModel: synthesis.model_id, extractive: false,
             activityReceipt: synthesis.activity_receipt,
             range: activity.range, activityCoverage: { ...coverage, sources: synthesis.used_sources.length,
               incomplete: coverage.incomplete || Boolean(synthesis.activity_receipt?.originalInputsIncomplete || synthesis.activity_receipt?.omittedWindows || synthesis.activity_receipt?.omittedClaims ||
@@ -906,7 +1021,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
             // request with a 400 on the next question.
             ...get()
               .turns.slice(0, guidedQuestion ? 0 : -1)
-              .filter((p) => p.a && !p.error && !p.abstained && !p.needsClarification)
+              .filter((p) => p.a && !p.error && !p.abstained && !p.needsClarification && sameSources(p) &&
+                p.range?.start === tp.range?.start && p.range?.end === tp.range?.end)
               .flatMap((p) => [
                 { role: "user" as const, content: p.q },
                 { role: "assistant" as const, content: p.a },
@@ -963,7 +1079,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       scope: turn.scope,
       ignoreRange: turn.ignoreRange,
       note: turn.note,
-      range: turn.range,
+      range: turn.projectSelection ? turn.projectSelection.explicitRange : turn.range,
+      paths: turn.projectSelection ? turn.projectSelection.explicitPaths : turn.searchContext?.paths,
+      projectSelection: turn.projectSelection,
+      resolutionMode: turn.resolutionMode,
       activityQuestion: turn.activityQuestion,
       guidedQuestion: turn.guidedQuestion,
     });

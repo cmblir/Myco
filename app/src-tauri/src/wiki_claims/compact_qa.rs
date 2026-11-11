@@ -126,7 +126,7 @@ impl Packet {
         }
         if input["independentVerificationReceipts"]
             .as_array()
-            .map_or(true, |receipts| !receipts.is_empty())
+            .is_none_or(|receipts| !receipts.is_empty())
         {
             return Err(
                 "compact QA requires explicit empty independent verification receipts".into(),
@@ -148,9 +148,9 @@ impl Packet {
                 .filter(|id| super::valid_id(id))
                 .ok_or("compact QA original span has an invalid identity")?;
             if !seen.insert(id.to_owned())
-                || span["text"].as_str().map_or(true, |text| {
-                    text.is_empty() || text.len() > super::MAX_SOURCE_BYTES
-                })
+                || span["text"]
+                    .as_str()
+                    .is_none_or(|text| text.is_empty() || text.len() > super::MAX_SOURCE_BYTES)
             {
                 return Err(
                     "compact QA original spans duplicate an identity or exceed bounds".into(),

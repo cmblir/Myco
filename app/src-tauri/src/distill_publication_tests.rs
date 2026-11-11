@@ -76,6 +76,30 @@ fn claim(receipt: &PublicationReceipt, created: bool) -> ArchivePublication {
 }
 
 #[test]
+fn generic_map_publication_requires_a_native_source_snapshot() {
+    let fixture = Fixture::new();
+    let result = publish(
+        &fixture.state,
+        &fixture.registry,
+        &fixture.origin,
+        "map-without-source-grant",
+        &ManagedArtifact::Map {
+            key: "synthetic-topic".into(),
+        },
+        "unchecked map output",
+        None,
+    );
+    assert!(
+        result.is_err(),
+        "generic publication accepted a map without native source authority"
+    );
+    assert!(!fixture.root.join("wiki/maps/synthetic-topic.md").exists());
+}
+
+#[path = "distill_publication_map_tests.rs"]
+mod map_tests;
+
+#[test]
 fn publication_native_absence_cas_issues_created_receipt_and_idempotent_retry() {
     let fixture = Fixture::new();
     let first = fixture.publish("llm-910", "native output", None).unwrap();

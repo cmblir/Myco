@@ -6,7 +6,7 @@
       "first_epoch": 1793066400,
       "fp": "0000000000000001",
       "id": "fx-bracket",
-      "key": "foo [old]",
+      "key": "p5-6366b554efadd32ed07ad808dcea7706631e6eddea13826eab9c52d5aae331ed",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-bracket-0000000000000001.md",
@@ -28,7 +28,7 @@
       "first_epoch": 1793066400,
       "fp": "0000000000000003",
       "id": "fx-dot",
-      "key": ".dotfiles",
+      "key": "p5-585ec7813d66ca0829dd8a0a4003c7b4eed0664b48a923a087d65e84ff95acd7",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-dot-0000000000000003.md",
@@ -47,7 +47,7 @@
       "first_epoch": 1793066400,
       "fp": "0000000000000002",
       "id": "fx-hash",
-      "key": "c#",
+      "key": "p5-a28b33882e4f507fbcb962997305323e283de2303b5a97c0012d4f4e838b2386",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-hash-0000000000000002.md",
@@ -66,7 +66,7 @@
       "first_epoch": 1793066400,
       "fp": "000000000000000e",
       "id": "fx-helper",
-      "key": "fixture-lab",
+      "key": "p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-helper-000000000000000e.md",
@@ -85,7 +85,7 @@
       "first_epoch": 1793066400,
       "fp": "0000000000000004",
       "id": "fx-nfd",
-      "key": "노트",
+      "key": "p5-cba23f76833d4d0cf35e7244700ab25a756d0d4ff364507b01ae6b6adf0d8300",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-nfd-0000000000000004.md",
@@ -101,7 +101,7 @@
       "first_epoch": 1793066400,
       "fp": "0000000000000005",
       "id": "fx-pipe",
-      "key": "a|b",
+      "key": "p5-ff8f364639fd4c4612d0945c80d58c6c2fadf4fa04baf253533713ce809dd40f",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-pipe-0000000000000005.md",
@@ -120,7 +120,7 @@
       "first_epoch": 1793066400,
       "fp": "000000000000000d",
       "id": "fx-teammate",
-      "key": "foo [old]",
+      "key": "p5-6366b554efadd32ed07ad808dcea7706631e6eddea13826eab9c52d5aae331ed",
       "last_epoch": 1793070000,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-teammate-000000000000000d.md",
@@ -139,7 +139,7 @@
       "first_epoch": 1793073600,
       "fp": "0000000000000006",
       "id": "fx-tmp",
-      "key": null,
+      "key": "p5-06390ef90242344407112e46c809ca81353f790fbb3879acc0e9e082813d7ff0",
       "last_epoch": 1793073600,
       "parent_report": null,
       "raw": "raw/conversations/claude-code/claude-code-fx-tmp-0000000000000006.md",
@@ -158,7 +158,7 @@
       "first_epoch": 1793073600,
       "fp": "0000000000000007",
       "id": "00000000-0000-4000-8000-0000000000f1",
-      "key": "fixture-lab",
+      "key": "p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513",
       "last_epoch": 1793077200,
       "parent_report": null,
       "raw": "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f1-0000000000000007.md",
@@ -180,7 +180,7 @@
       "first_epoch": 1793077200,
       "fp": "0000000000000008",
       "id": "00000000-0000-4000-8000-0000000000f2",
-      "key": "fixture-lab",
+      "key": "p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513",
       "last_epoch": 1793080800,
       "parent_report": {
         "epoch": 1793077200,
@@ -202,7 +202,7 @@
       "first_epoch": 1793084400,
       "fp": "000000000000000b",
       "id": "00000000-0000-4000-8000-0000000000f3",
-      "key": "fixture-lab",
+      "key": "p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513",
       "last_epoch": 1793086200,
       "parent_report": {
         "epoch": 1793083200,
@@ -227,7 +227,7 @@
       "first_epoch": 1793082600,
       "fp": "000000000000000c",
       "id": "00000000-0000-4000-8000-0000000000f4",
-      "key": "fixture-lab",
+      "key": "p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513",
       "last_epoch": 1793084400,
       "parent_report": null,
       "raw": "raw/conversations/codex/codex-00000000-0000-4000-8000-0000000000f4-000000000000000c.md",
@@ -242,65 +242,76 @@
     }
   },
   "last_record_epoch": 1793086200,
-  "unassigned": 1,
-  "version": 4,
+  "legacy_members": {
+    ".dotfiles": [
+      "claude-code:fx-dot"
+    ],
+    "a|b": [
+      "claude-code:fx-pipe"
+    ],
+    "c#": [
+      "claude-code:fx-hash"
+    ],
+    "fixture-lab": [
+      "claude-code:fx-helper",
+      "codex:00000000-0000-4000-8000-0000000000f1",
+      "codex:00000000-0000-4000-8000-0000000000f3",
+      "codex:00000000-0000-4000-8000-0000000000f4"
+    ],
+    "foo [old]": [
+      "claude-code:fx-bracket",
+      "claude-code:fx-teammate"
+    ],
+    "노트": [
+      "claude-code:fx-nfd"
+    ]
+  },
+  "unassigned": 0,
+  "version": 6,
   "workstreams": {
-    ".dotfiles": {
+    "p5-06390ef90242344407112e46c809ca81353f790fbb3879acc0e9e082813d7ff0": {
       "conversations": 1,
-      "first_epoch": 1793066400,
-      "last_epoch": 1793070000,
+      "first_epoch": 1793073600,
+      "last_epoch": 1793073600,
       "open_items": [],
-      "page": "wiki/workstreams/-dotfiles-ed436a08.md",
+      "page": "wiki/workstreams/p5-06390ef90242344407112e46c809ca81353f790fbb3879acc0e9e082813d7ff0.md",
+      "page_refresh_pending": false,
       "roots": 1,
       "summary": null,
-      "title": ".dotfiles",
-      "title_source": "key"
+      "title": "scratch",
+      "title_source": "folder"
     },
-    "a|b": {
-      "conversations": 1,
-      "first_epoch": 1793066400,
-      "last_epoch": 1793070000,
-      "open_items": [],
-      "page": "wiki/workstreams/a-b-3f29c20e.md",
-      "roots": 1,
-      "summary": null,
-      "title": "a|b",
-      "title_source": "key"
-    },
-    "c#": {
-      "conversations": 1,
-      "first_epoch": 1793066400,
-      "last_epoch": 1793070000,
-      "open_items": [],
-      "page": "wiki/workstreams/c--45d13431.md",
-      "roots": 1,
-      "summary": null,
-      "title": "C Sharp Port",
-      "title_source": "user"
-    },
-    "fixture-lab": {
+    "p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513": {
       "conversations": 4,
       "first_epoch": 1793073600,
       "last_epoch": 1793086200,
       "open_items": [
-        {
-          "conversation": "codex:00000000-0000-4000-8000-0000000000f3",
-          "epoch": 1793083200,
-          "text": "궤도 시뮬레이션 실행"
-        },
         {
           "conversation": "codex:00000000-0000-4000-8000-0000000000f1",
           "epoch": 1793077200,
           "text": "Pending: the review of the sensors."
         }
       ],
-      "page": "wiki/workstreams/fixture-lab.md",
+      "page": "wiki/workstreams/p5-2d04b6cc40f76931c4f7229430ca3c6245c404c189b94c8b45c76dd36bdc6513.md",
+      "page_refresh_pending": false,
       "roots": 2,
       "summary": null,
       "title": "Orbital",
       "title_source": "derived"
     },
-    "foo [old]": {
+    "p5-585ec7813d66ca0829dd8a0a4003c7b4eed0664b48a923a087d65e84ff95acd7": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/p5-585ec7813d66ca0829dd8a0a4003c7b4eed0664b48a923a087d65e84ff95acd7.md",
+      "page_refresh_pending": false,
+      "roots": 1,
+      "summary": null,
+      "title": ".dotfiles",
+      "title_source": "folder"
+    },
+    "p5-6366b554efadd32ed07ad808dcea7706631e6eddea13826eab9c52d5aae331ed": {
       "conversations": 2,
       "first_epoch": 1793066400,
       "last_epoch": 1793070000,
@@ -311,22 +322,48 @@
           "text": "Update the [old] links in the docs"
         }
       ],
-      "page": "wiki/workstreams/foo -old--683c5b61.md",
+      "page": "wiki/workstreams/p5-6366b554efadd32ed07ad808dcea7706631e6eddea13826eab9c52d5aae331ed.md",
+      "page_refresh_pending": false,
       "roots": 1,
       "summary": null,
       "title": "foo [old]",
-      "title_source": "key"
+      "title_source": "folder"
     },
-    "노트": {
+    "p5-a28b33882e4f507fbcb962997305323e283de2303b5a97c0012d4f4e838b2386": {
       "conversations": 1,
       "first_epoch": 1793066400,
       "last_epoch": 1793070000,
       "open_items": [],
-      "page": "wiki/workstreams/노트.md",
+      "page": "wiki/workstreams/p5-a28b33882e4f507fbcb962997305323e283de2303b5a97c0012d4f4e838b2386.md",
+      "page_refresh_pending": false,
       "roots": 1,
       "summary": null,
-      "title": "노트",
-      "title_source": "key"
+      "title": "C Sharp Port",
+      "title_source": "user"
+    },
+    "p5-cba23f76833d4d0cf35e7244700ab25a756d0d4ff364507b01ae6b6adf0d8300": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/p5-cba23f76833d4d0cf35e7244700ab25a756d0d4ff364507b01ae6b6adf0d8300.md",
+      "page_refresh_pending": false,
+      "roots": 1,
+      "summary": null,
+      "title": "노트",
+      "title_source": "folder"
+    },
+    "p5-ff8f364639fd4c4612d0945c80d58c6c2fadf4fa04baf253533713ce809dd40f": {
+      "conversations": 1,
+      "first_epoch": 1793066400,
+      "last_epoch": 1793070000,
+      "open_items": [],
+      "page": "wiki/workstreams/p5-ff8f364639fd4c4612d0945c80d58c6c2fadf4fa04baf253533713ce809dd40f.md",
+      "page_refresh_pending": false,
+      "roots": 1,
+      "summary": null,
+      "title": "a|b",
+      "title_source": "folder"
     }
   }
 }

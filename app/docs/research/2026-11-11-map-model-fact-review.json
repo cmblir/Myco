@@ -1,0 +1,53 @@
+{
+  "status": "failed",
+  "semanticAccepted": false,
+  "productionAccepted": false,
+  "controlsSha256": "5c2b8d71ef11d3a3208d67675927eb4f27da2c8bdb0dec56b5ac91deadb26af3",
+  "binarySha256": "06e174da2c3bb667251b593bb81690b2b6e67b24e05b737d5119bfd04dd20c6e",
+  "profileSha256": "bc9c59c2c0c46c99f9bd3fe9066036bb76a8d90e6337f1e2125b19b73da0c97d",
+  "networkDenied": true,
+  "runtimeDirectory": "/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-map-fact-rfs8on_1",
+  "command": [
+    "/usr/bin/sandbox-exec",
+    "-D",
+    "SCRATCH=/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-map-fact-rfs8on_1",
+    "-D",
+    "APPDATA=/Users/o/Library/Application Support/dev.cmblir.myco",
+    "-D",
+    "LEGACY=/Users/o/Library/Application Support/dev.cmblir.memex",
+    "-D",
+    "CODEX=/Users/o/.codex",
+    "-D",
+    "CLAUDE=/Users/o/.claude",
+    "-D",
+    "DOCUMENTS=/Users/o/Documents",
+    "-f",
+    "/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-map-fact-rfs8on_1/offline.sb",
+    "/Users/o/prj/karpathy/app/src-tauri/target/debug/deps/myco_lib-3dfb3868fc32d18b",
+    "local_llm::map_model_tests::cached_model_repeats_exact_map_prompts",
+    "--exact",
+    "--ignored",
+    "--nocapture",
+    "--test-threads=1"
+  ],
+  "startedAt": 1794357795.073507,
+  "limits": [
+    "Synthetic helper generation, not native role, IPC, publication or installed UI acceptance.",
+    "Fixed seed 42 repetitions measure repeatability, not independent samples."
+  ],
+  "timeout": true,
+  "exitCode": -9,
+  "wallSeconds": 601.4723918437958,
+  "records": [],
+  "actualCalls": 0,
+  "completedCalls": 0,
+  "logHashes": {
+    "stdout.log": "c66a1269b113ec1282f58ec8e9ca35eeab41eb85dcd20cb7d5af9531d43be91e",
+    "stderr.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "assessment": {
+    "status": "not_evaluated",
+    "reason": "600-second timeout before verified-model event or any inference call; concurrent frontend suite was interrupted to reduce contention. A process sample showed SHA-256 artifact verification, not generation.",
+    "sample": "/tmp/myco-map-fact.sample"
+  }
+}

@@ -30,6 +30,8 @@ mod gemma4;
 pub mod gemma_thinking_qa;
 pub mod generation_telemetry;
 mod grounded_sampling;
+#[cfg(all(test, feature = "native-index-probe"))]
+mod map_model_tests;
 mod output_guard;
 #[cfg(all(test, feature = "native-index-probe"))]
 mod quoted_claims_qa_tests;

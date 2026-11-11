@@ -34,6 +34,8 @@ jobs:
         run: npm run lint
       - name: typecheck
         run: npx tsc -b
+      - name: pinned template checkout
+        run: node --test scripts/pinned-template-checkout.test.mjs
       - name: unit tests
         run: npm test
 
@@ -124,11 +126,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
+          # Preserve compiled dependencies while the Windows safety port is red.
+          cache-on-failure: true
       # Same stand-in as the rust job; Windows sidecars carry .exe.
       - name: stand-in whisper-cli sidecar
         shell: bash
         run: |
           touch "bin/whisper-cli-$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r').exe"
+      # Keep native filesystem diagnostics visible even when other library
+      # tests fail. The full suite below still includes and gates these tests.
+      - name: Windows handle diagnostics
+        continue-on-error: true
+        env:
+          MYCO_EMBED_TEST_MANIFEST: "1"
+        run: cargo test windows_identity_tests -- --nocapture
       - name: tests
         env:
           # build.rs: embed the app manifest into the test executables too.

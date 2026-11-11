@@ -1,0 +1,299 @@
+{
+  "version": 1,
+  "date": "2026-11-10",
+  "codeCommit": "ff809a43eb937d16fda059b622dd1841de51b290",
+  "evidenceLevel": "Interactive browser with synthetic IPC; successful import screen uses an explicit synthetic store fixture",
+  "nativeInference": false,
+  "nativePublication": false,
+  "installedAcceptance": false,
+  "homeAskIngest": {
+    "widths": [
+      320,
+      375,
+      768,
+      1280
+    ],
+    "horizontalOverflowObserved": false,
+    "newButtonMinimumHeightPixels": 44,
+    "observed": [
+      "Returning Home uses the compact introduction.",
+      "Ask example fills and focuses a draft without submitting.",
+      "Success review opens the first content note, with the exact raw source route.",
+      "Partial retry remains the primary action.",
+      "Different/opening vault hides stale result links.",
+      "A browser-native capability rejection leaves pending recovery and the input draft intact."
+    ],
+    "successFixtureLimit": "The browser mock cannot issue native compilation/publication authority; success presentation was not exercised by a completed native import.",
+    "unitCoverage": [
+      "First-visit and no-vault presentation retained.",
+      "Created/updated/change labels derive from observed snapshots rather than model plans."
+    ]
+  },
+  "graph": {
+    "beforeFix": {
+      "width": 800,
+      "observedPanelHeightPixels": 4.9,
+      "toggleSizePixels": [
+        0,
+        0
+      ],
+      "reproducedOnFreshMount": true
+    },
+    "afterFix": [
+      {
+        "theme": "light",
+        "width": 768,
+        "overflow": false,
+        "panels": [],
+        "phoneBar": "⚙ Graph toolsGaps · Legend"
+      },
+      {
+        "theme": "light",
+        "width": 800,
+        "overflow": false,
+        "panels": [
+          360,
+          360
+        ],
+        "phoneBar": null
+      },
+      {
+        "theme": "light",
+        "width": 1024,
+        "overflow": false,
+        "panels": [
+          288,
+          288
+        ],
+        "phoneBar": null
+      },
+      {
+        "theme": "light",
+        "width": 1280,
+        "overflow": false,
+        "panels": [
+          628,
+          628
+        ],
+        "phoneBar": null
+      },
+      {
+        "theme": "dark",
+        "width": 768,
+        "overflow": false,
+        "panels": [],
+        "phoneBar": "⚙ Graph toolsGaps · Legend"
+      },
+      {
+        "theme": "dark",
+        "width": 800,
+        "overflow": false,
+        "panels": [
+          360,
+          360
+        ],
+        "phoneBar": null
+      },
+      {
+        "theme": "dark",
+        "width": 1024,
+        "overflow": false,
+        "panels": [
+          288,
+          288
+        ],
+        "phoneBar": null
+      },
+      {
+        "theme": "dark",
+        "width": 1280,
+        "overflow": false,
+        "panels": [
+          628,
+          628
+        ],
+        "phoneBar": null
+      }
+    ],
+    "interactionObservations": [
+      "Fold then reload retains the saved desktop preference.",
+      "Keyboard bracket keys restore stacked desktop panels and restore focus.",
+      "At 768 pixels both Gaps and Legend are reachable through the phone sheet without changing desktop folds.",
+      "Selected Open in reader reaches /myco/wiki/transformer-architecture.md."
+    ],
+    "smallTextContrastSamples": [
+      {
+        "theme": "light",
+        "text": "Type",
+        "size": "12.5px",
+        "pixelBackground": [
+          251,
+          251,
+          250
+        ],
+        "computedForeground": [
+          98,
+          97,
+          92
+        ],
+        "contrast": 5.99
+      },
+      {
+        "theme": "light",
+        "text": "attention-mechanism",
+        "size": "14px",
+        "pixelBackground": [
+          251,
+          251,
+          250
+        ],
+        "computedForeground": [
+          55,
+          53,
+          47
+        ],
+        "contrast": 11.84
+      },
+      {
+        "theme": "light",
+        "text": "colour = category · size = links · dim = already connected",
+        "size": "11px",
+        "pixelBackground": [
+          251,
+          251,
+          250
+        ],
+        "computedForeground": [
+          55,
+          53,
+          47
+        ],
+        "contrast": 11.84
+      },
+      {
+        "theme": "light",
+        "text": "28",
+        "size": "11px",
+        "pixelBackground": [
+          251,
+          251,
+          250
+        ],
+        "computedForeground": [
+          105,
+          104,
+          98
+        ],
+        "contrast": 5.4
+      },
+      {
+        "theme": "dark",
+        "text": "Type",
+        "size": "12.5px",
+        "pixelBackground": [
+          32,
+          32,
+          32
+        ],
+        "computedForeground": [
+          177,
+          176,
+          170
+        ],
+        "contrast": 7.49
+      },
+      {
+        "theme": "dark",
+        "text": "attention-mechanism",
+        "size": "14px",
+        "pixelBackground": [
+          32,
+          32,
+          32
+        ],
+        "computedForeground": [
+          212,
+          212,
+          210
+        ],
+        "contrast": 10.98
+      },
+      {
+        "theme": "dark",
+        "text": "colour = category · size = links · dim = already connected",
+        "size": "11px",
+        "pixelBackground": [
+          32,
+          32,
+          32
+        ],
+        "computedForeground": [
+          212,
+          212,
+          210
+        ],
+        "contrast": 10.98
+      },
+      {
+        "theme": "dark",
+        "text": "28",
+        "size": "11px",
+        "pixelBackground": [
+          32,
+          32,
+          32
+        ],
+        "computedForeground": [
+          163,
+          162,
+          156
+        ],
+        "contrast": 6.37
+      }
+    ],
+    "hoverContrastSamples": [
+      {
+        "theme": "light",
+        "state": "hover",
+        "text": "attention-mechanism",
+        "pixelBackground": [
+          239,
+          238,
+          236
+        ],
+        "computedForeground": [
+          24,
+          23,
+          21
+        ],
+        "contrast": 15.45
+      },
+      {
+        "theme": "dark",
+        "state": "hover",
+        "text": "attention-mechanism",
+        "pixelBackground": [
+          44,
+          44,
+          44
+        ],
+        "computedForeground": [
+          237,
+          237,
+          236
+        ],
+        "contrast": 11.92
+      }
+    ]
+  },
+  "limits": [
+    "No VoiceOver or installed native mobile certification.",
+    "No exhaustive screen/state/translation combinations or 3G measurement.",
+    "Reduced-motion media and code paths inspected; all force-layout motion was not proven stopped.",
+    "Contrast samples cover observed panel states, not every graph label or composited surface."
+  ],
+  "cleanup": {
+    "browserTaskspacesFinished": true,
+    "developmentServerStopped": true
+  }
+}

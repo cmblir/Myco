@@ -36,6 +36,11 @@ export const GUIDED_QUESTION_COPY = {
     explain: "설명해줘",
     free: "직접 질문하기",
     projects: "프로젝트 고르기",
+    projectScope: {
+      wiki: "현재 범위는 내 노트입니다. 프로젝트 대화 기록을 포함하려면 범위를 대화 또는 전체로 바꾸세요.",
+      sessions: "가져온 대화 기록에서 프로젝트의 요청과 보고를 찾습니다.",
+      all: "선택한 전체 범위를 유지하며, 프로젝트 요약은 가져온 대화 기록을 사용합니다.",
+    },
     projectFilter: "프로젝트 찾기",
     projectFilterPlaceholder: "이름으로 찾기",
     typeSubject: "다른 주제를 직접 입력",
@@ -59,6 +64,11 @@ export const GUIDED_QUESTION_COPY = {
     explain: "Explain this project",
     free: "Write a question",
     projects: "Pick a project",
+    projectScope: {
+      wiki: "The current scope is your notes. Choose Sessions or Everything to include project conversations.",
+      sessions: "Searches imported conversations for project requests and reports.",
+      all: "Keeps the Everything scope; project summaries use imported conversations.",
+    },
     projectFilter: "Find a project",
     projectFilterPlaceholder: "Search by name",
     typeSubject: "Type another subject",
@@ -82,6 +92,11 @@ export const GUIDED_QUESTION_COPY = {
     explain: "このプロジェクトを説明して",
     free: "質問を入力する",
     projects: "プロジェクトを選ぶ",
+    projectScope: {
+      wiki: "現在の範囲はノートです。プロジェクトの会話を含めるには、会話またはすべてを選んでください。",
+      sessions: "取り込んだ会話からプロジェクトの依頼と報告を探します。",
+      all: "すべての範囲を維持し、プロジェクトの要約には取り込んだ会話を使います。",
+    },
     projectFilter: "プロジェクトを探す",
     projectFilterPlaceholder: "名前で探す",
     typeSubject: "別のテーマを入力",
@@ -100,6 +115,7 @@ export const GUIDED_QUESTION_COPY = {
   explain: string;
   free: string;
   projects: string;
+  projectScope: Record<"wiki" | "sessions" | "all", string>;
   projectFilter: string;
   projectFilterPlaceholder: string;
   typeSubject: string;

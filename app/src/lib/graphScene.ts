@@ -1317,6 +1317,7 @@ export class GraphScene {
   private raf: number | null = null;
   private resizeObs: ResizeObserver;
   private reducedMotion: boolean;
+  private stopMotionObserver: (() => void) | null = null;
   // Auto-rotate yields to the user (spec A7): any orbit/zoom pauses it, and it
   // resumes only after ROTATE_IDLE_MS without interaction.
   private rotateResumeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -1869,6 +1870,37 @@ export class GraphScene {
 
     this.resizeObs = new ResizeObserver(() => this.onResize());
     this.resizeObs.observe(container);
+    this.watchMotionPreference();
+  }
+
+  private watchMotionPreference(): void {
+    const query = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const onChange = (event: MediaQueryListEvent) =>
+      this.applyMotionPreference(event.matches);
+    query.addEventListener("change", onChange);
+    this.stopMotionObserver = () => query.removeEventListener("change", onChange);
+    if (query.matches !== this.reducedMotion) this.applyMotionPreference(query.matches);
+  }
+
+  private applyMotionPreference(reducedMotion: boolean): void {
+    this.reducedMotion = reducedMotion;
+    if (reducedMotion && this.rotateResumeTimer != null) {
+      clearTimeout(this.rotateResumeTimer);
+      this.rotateResumeTimer = null;
+    }
+    this.controls.autoRotate =
+      this.autoRotateWanted() && !this.interacting && this.rotateResumeTimer == null;
+    this.pulse.points.visible =
+      this.ambientOn() && !this.perfLod && !this.settings.arrows && !this.interacting;
+    if (reducedMotion && this.targetTween) {
+      this.setOrbitTarget(this.targetTween.to);
+      this.controls.update();
+    }
+    if (reducedMotion && this.camTween) {
+      const tween = this.camTween;
+      this.camTween = null;
+      this.startCamTween(tween.p1, tween.a1, 0, tween.onDone);
+    }
   }
 
   private sizeScale(height: number): number {
@@ -2646,7 +2678,7 @@ export class GraphScene {
     const m = new THREE.Matrix4();
     const ZERO = new THREE.Vector3(0, 0, 0);
     for (let i = 0; i < this.edgePairs.length; i++) {
-      let p = this.arrowPhase[i] + this.arrowSpeed[i] * dt;
+      let p = this.arrowPhase[i] + this.arrowSpeed[i] * (this.reducedMotion ? 0 : dt);
       p -= Math.floor(p); // wrap to [0,1): reaches target, respawns at source
       this.arrowPhase[i] = p;
       const [s, t] = this.edgePairs[i];
@@ -2742,6 +2774,19 @@ export class GraphScene {
 
     this.placedBoxes.length = 0;
     const w = Math.max(1, this.container.clientWidth);
+    let labelRight = w - 8;
+    let labelBottom = h - 8;
+    const inspector = selected
+      ? this.container.parentElement?.querySelector(".graph-inspector") : null;
+    if (inspector) {
+      const canvas = this.container.getBoundingClientRect();
+      const panel = inspector.getBoundingClientRect();
+      if (panel.left < canvas.right && panel.right > canvas.left &&
+          panel.top < canvas.bottom && panel.bottom > canvas.top) {
+        if (panel.width >= w * 0.8) labelBottom = Math.min(labelBottom, panel.top - canvas.top - 8);
+        else labelRight = Math.min(labelRight, panel.left - canvas.left - 8);
+      }
+    }
     const maxClusterWidth = this.clusterLabels.setViewportWidth(w);
 
     // Community names claim their screen space FIRST — at the distance they
@@ -2789,7 +2834,7 @@ export class GraphScene {
       boxes.push({
         id,
         x: ((this.tmpVec.x + 1) / 2) * w,
-        y: ((1 - this.tmpVec.y) / 2) * h + gap,
+        y: ((1 - this.tmpVec.y) / 2) * h + gap + NODE_LABEL_LINE_PX / 2,
         w: labelWidthPx(this.graph.getNodeAttribute(id, "label"), NODE_LABEL_CHAR_PX),
         gap,
       });
@@ -2797,7 +2842,12 @@ export class GraphScene {
     // Pass 2: greedy screen-space declutter — a lower-ranked label that would
     // land on top of one already placed is simply dropped for this frame.
     for (const b of boxes) {
-      if (!this.claimLabelBox(b.x, b.y, b.w, NODE_LABEL_LINE_PX)) continue;
+      if (labelRight <= 8 || labelBottom < 8 + NODE_LABEL_LINE_PX) continue;
+      if (b.x < 0 || b.x > w || b.y - b.gap < 0 || b.y - b.gap > h) continue;
+      const width = Math.min(b.w, labelRight - 8);
+      const x = THREE.MathUtils.clamp(b.x, 8 + width / 2, labelRight - width / 2);
+      const y = THREE.MathUtils.clamp(b.y, 8 + NODE_LABEL_LINE_PX / 2, labelBottom - NODE_LABEL_LINE_PX / 2);
+      if (!this.claimLabelBox(x, y, width, NODE_LABEL_LINE_PX)) continue;
       const obj = this.ensureLabel(b.id);
       const a = this.graph.getNodeAttributes(b.id);
       obj.position.set(a.x, a.y, a.z);
@@ -2806,6 +2856,8 @@ export class GraphScene {
         obj.userData.pad = pad;
         (obj.element as HTMLElement).style.paddingTop = `${pad}px`;
       }
+      obj.element.style.width = `${width}px`;
+      obj.element.style.translate = `${x - b.x}px ${y - b.y}px`;
       obj.visible = true;
       this.shownLabels.add(b.id);
     }
@@ -2845,9 +2897,12 @@ export class GraphScene {
     if (found) return found;
     const el = document.createElement("div");
     el.className = "graph-label-3d";
-    el.textContent = this.graph.getNodeAttribute(id, "label");
+    const text = document.createElement("span");
+    text.textContent = this.graph.getNodeAttribute(id, "label");
+    el.title = text.textContent ?? "";
+    el.appendChild(text);
     el.style.color = this.theme.ink;
-    el.style.textShadow = this.darkTheme ? "" : "0 0 3px #fff, 0 0 6px #fff";
+    el.style.setProperty("--graph-label-bg", this.theme.bg);
     const obj = new CSS2DObject(el);
     obj.center.set(0.5, 0); // hang below the node, not over its body
     obj.visible = false;
@@ -4249,7 +4304,7 @@ export class GraphScene {
     this.arrowFallback = parseRGBA(theme.edgeHi).color;
     for (const obj of this.labels.values()) {
       (obj.element as HTMLElement).style.color = theme.ink;
-      (obj.element as HTMLElement).style.textShadow = this.darkTheme ? "" : "0 0 3px #fff, 0 0 6px #fff";
+      (obj.element as HTMLElement).style.setProperty("--graph-label-bg", theme.bg);
     }
     this.writeNodes();
     this.writeEdges();
@@ -4984,27 +5039,26 @@ export class GraphScene {
     const toTarget = new THREE.Vector3(a.x, a.y, a.z);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const r = Math.max(a.size * NODE_RADIUS * 4, 60);
-    let dist = (r * 1.5) / Math.tan(fovRad / 2) + 40;
     const w = this.container.clientWidth || 1;
     const h = this.container.clientHeight || 1;
     // Never more than 60 %: past that the open strip is too thin to aim at.
     const cover = Math.min(opts.coverRightPx ?? 0, w * 0.6);
+    const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, (w - cover) / h));
+    let dist = (r * 1.5) / Math.tan(halfFov) + 40;
     if (opts.neighbours) {
       const around = this.graph
         .neighbors(id)
         .map((n) => this.graph.getNodeAttributes(n))
         .filter((n) => !n.hidden);
       dist = neighbourhoodDist(a, around, this.camera.fov, (w - cover) / h, dist);
-      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
     }
     const solidBounds = this.sculpted?.nodeBounds(id);
     if (solidBounds) {
       solidBounds.getCenter(toTarget);
       const radius = solidBounds.getSize(new THREE.Vector3()).length() / 2;
-      const halfFov = Math.atan(Math.tan(fovRad / 2) * Math.min(1, this.camera.aspect));
-      dist = Math.max(40, radius * 1.15 / Math.sin(halfFov));
-      this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
+      dist = Math.max(dist, 40, radius * 1.15 / Math.sin(halfFov));
     }
+    this.controls.maxDistance = Math.max(this.controls.maxDistance, dist * 1.1);
     const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
     if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
     dir.setLength(
@@ -5286,7 +5340,8 @@ export class GraphScene {
         }
       }
       // Flying arrows: the fleet streams source→target whenever arrows are on
-      // (an explicit toggle, so it runs even with ambient motion off).
+      // (an explicit toggle, so it runs even with ambient motion off). Reduced
+      // motion keeps each arrow's phase fixed while its geometry follows layout.
       if (this.arrows.visible && !this.interacting) this.animateArrows(dt);
       // Trace comet animates regardless of the ambient-motion toggle — it's an
       // explicit interaction, not idle ambience. No-ops when no trace is active.
@@ -5310,6 +5365,8 @@ export class GraphScene {
   }
 
   dispose(): void {
+    this.stopMotionObserver?.();
+    this.stopMotionObserver = null;
     if (this.raf != null) cancelAnimationFrame(this.raf);
     this.raf = null;
     this.sculpted?.dispose();

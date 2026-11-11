@@ -1,4 +1,4 @@
-//! Historical v4/v5/v6/v7 storage must receive fresh native admission under v8.
+//! Historical v4/v5/v6/v7/v8 storage must receive fresh native admission under v9.
 //! Completed history is synthetic, never a successful model/publication gate.
 //! Partial history is produced by actual publish -> unavailable completion.
 
@@ -38,6 +38,15 @@ fn historical_v7_contract() -> CompilerContract {
     }
 }
 
+fn historical_v8_contract() -> CompilerContract {
+    CompilerContract {
+        compiler: "whole-session-compiler-v8".into(),
+        schema: "SessionStructureV1".into(),
+        prompt: "source-reading-layout-v1-structure-canonical-materialization-and-source-bound-review-v8"
+            .into(),
+    }
+}
+
 fn store_historical_checkpoint(fixture: &Fixture, old_contract: CompilerContract) {
     let plan = sources::prepare(&fixture.source, ORIGINAL, &fixture.origin, "en", |_, _| {
         Ok(800)
@@ -45,14 +54,16 @@ fn store_historical_checkpoint(fixture: &Fixture, old_contract: CompilerContract
     .unwrap();
     let mut pending = Pending::try_load(fixture.dir.path()).unwrap();
     let attempt = pending.compile_jobs[0].attempts.last_mut().unwrap();
-    let compilation_output =
-        if old_contract == historical_v6_contract() || old_contract == historical_v7_contract() {
-            super::super::structure::empty_output().unwrap()
-        } else {
-            serde_json::json!({"version":"SessionCompilationV1","title":"",
+    let compilation_output = if old_contract == historical_v6_contract()
+        || old_contract == historical_v7_contract()
+        || old_contract == historical_v8_contract()
+    {
+        super::super::structure::empty_output().unwrap()
+    } else {
+        serde_json::json!({"version":"SessionCompilationV1","title":"",
             "titleClaimIds":[],"entities":[],"summaries":[]})
-            .to_string()
-        };
+        .to_string()
+    };
     attempt.identity.contract = old_contract;
     let old_signature = signature(&attempt.identity).unwrap();
     // Fixed token counts only locate synthetic packets. This stored draft is
@@ -72,7 +83,7 @@ fn store_historical_checkpoint(fixture: &Fixture, old_contract: CompilerContract
     pending.save(fixture.dir.path()).unwrap();
 }
 
-fn assert_fresh_v8_admission(
+fn assert_fresh_v9_admission(
     fixture: &Fixture,
     old: &SessionCompileContext,
     old_state: WorkState,
@@ -117,14 +128,14 @@ fn assert_fresh_v8_admission(
     .unwrap_or_else(|error| {
         assert_eq!(fixture.queue_bytes(), queue_before);
         assert_eq!(fixture.protected_bytes(), protected_before);
-        panic!("historical {old_state:?} must receive fresh v8 admission: {error}");
+        panic!("historical {old_state:?} must receive fresh v9 admission: {error}");
     });
     assert_eq!(
         contract(),
         CompilerContract {
-            compiler: "whole-session-compiler-v8".into(),
+            compiler: "whole-session-compiler-v9".into(),
             schema: "SessionStructureV1".into(),
-            prompt: "source-reading-layout-v1-structure-canonical-materialization-and-source-bound-review-v8"
+            prompt: "source-reading-layout-v1-nonempty-structure-canonical-materialization-and-source-bound-review-v9"
                 .into(),
         }
     );
@@ -198,12 +209,12 @@ fn assert_fresh_v8_admission(
 }
 
 #[test]
-fn historical_v4_completed_re_admission_requires_a_fresh_v8_attempt() {
+fn historical_v4_completed_re_admission_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-materializer-v4-completed", |_| {
         let fixture = fixture();
         let old = seed_completed_history(&fixture, historical_v4_contract());
         store_historical_checkpoint(&fixture, historical_v4_contract());
-        assert_fresh_v8_admission(
+        assert_fresh_v9_admission(
             &fixture,
             &old,
             WorkState::Completed,
@@ -214,12 +225,12 @@ fn historical_v4_completed_re_admission_requires_a_fresh_v8_attempt() {
 }
 
 #[test]
-fn historical_v5_completed_re_admission_requires_a_fresh_v8_attempt() {
+fn historical_v5_completed_re_admission_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-materializer-v5-completed", |_| {
         let fixture = fixture();
         let old = seed_completed_history(&fixture, historical_v5_contract());
         store_historical_checkpoint(&fixture, historical_v5_contract());
-        assert_fresh_v8_admission(
+        assert_fresh_v9_admission(
             &fixture,
             &old,
             WorkState::Completed,
@@ -230,12 +241,12 @@ fn historical_v5_completed_re_admission_requires_a_fresh_v8_attempt() {
 }
 
 #[test]
-fn historical_v6_completed_re_admission_requires_a_fresh_v8_attempt() {
+fn historical_v6_completed_re_admission_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-materializer-v6-completed", |_| {
         let fixture = fixture();
         let old = seed_completed_history(&fixture, historical_v6_contract());
         store_historical_checkpoint(&fixture, historical_v6_contract());
-        assert_fresh_v8_admission(
+        assert_fresh_v9_admission(
             &fixture,
             &old,
             WorkState::Completed,
@@ -298,37 +309,37 @@ fn assert_historical_partial_re_admission(old_contract: CompilerContract) {
     .unwrap();
     store_historical_checkpoint(&fixture, old_contract.clone());
     grants().lock().unwrap().remove(&old.attempt_id);
-    assert_fresh_v8_admission(&fixture, &old, WorkState::Partial, 0, old_contract);
+    assert_fresh_v9_admission(&fixture, &old, WorkState::Partial, 0, old_contract);
 }
 
 #[test]
-fn historical_v4_unavailable_partial_re_admission_requires_a_fresh_v8_attempt() {
+fn historical_v4_unavailable_partial_re_admission_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-materializer-v4-partial", |_| {
         assert_historical_partial_re_admission(historical_v4_contract());
     });
 }
 
 #[test]
-fn historical_v5_unavailable_partial_re_admission_requires_a_fresh_v8_attempt() {
+fn historical_v5_unavailable_partial_re_admission_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-materializer-v5-partial", |_| {
         assert_historical_partial_re_admission(historical_v5_contract());
     });
 }
 
 #[test]
-fn historical_v6_unavailable_partial_re_admission_requires_a_fresh_v8_attempt() {
+fn historical_v6_unavailable_partial_re_admission_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-materializer-v6-partial", |_| {
         assert_historical_partial_re_admission(historical_v6_contract());
     });
 }
 
 #[test]
-fn source_reading_v7_completed_history_requires_a_fresh_v8_attempt() {
+fn source_reading_v7_completed_history_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-source-reading-v7-completed", |_| {
         let fixture = fixture();
         let old = seed_completed_history(&fixture, historical_v7_contract());
         store_historical_checkpoint(&fixture, historical_v7_contract());
-        assert_fresh_v8_admission(
+        assert_fresh_v9_admission(
             &fixture,
             &old,
             WorkState::Completed,
@@ -339,8 +350,31 @@ fn source_reading_v7_completed_history_requires_a_fresh_v8_attempt() {
 }
 
 #[test]
-fn source_reading_v7_unreviewed_partial_requires_a_fresh_v8_attempt() {
+fn source_reading_v7_unreviewed_partial_requires_a_fresh_v9_attempt() {
     with_isolated_data("compiler-source-reading-v7-partial", |_| {
         assert_historical_partial_re_admission(historical_v7_contract());
+    });
+}
+
+#[test]
+fn nonempty_structure_v8_completed_history_requires_a_fresh_v9_attempt() {
+    with_isolated_data("compiler-nonempty-structure-v8-completed", |_| {
+        let fixture = fixture();
+        let old = seed_completed_history(&fixture, historical_v8_contract());
+        store_historical_checkpoint(&fixture, historical_v8_contract());
+        assert_fresh_v9_admission(
+            &fixture,
+            &old,
+            WorkState::Completed,
+            1,
+            historical_v8_contract(),
+        );
+    });
+}
+
+#[test]
+fn nonempty_structure_v8_unreviewed_partial_requires_a_fresh_v9_attempt() {
+    with_isolated_data("compiler-nonempty-structure-v8-partial", |_| {
+        assert_historical_partial_re_admission(historical_v8_contract());
     });
 }

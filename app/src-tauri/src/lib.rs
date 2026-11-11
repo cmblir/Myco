@@ -40,6 +40,16 @@ pub(crate) mod local_query_plan;
 pub mod local_synthesis;
 pub mod local_transform;
 pub mod machine_session;
+mod map_content;
+#[cfg(unix)]
+mod map_creation_observation;
+mod map_custody;
+#[cfg(unix)]
+mod map_custody_record;
+mod map_recovery;
+mod map_refresh;
+mod map_source_io;
+pub(crate) mod map_sources;
 pub mod mcp_native;
 mod model_context;
 pub mod myco_pro;
@@ -91,6 +101,15 @@ pub mod validator;
 pub mod vault;
 pub mod vault_dir;
 pub mod vault_history;
+mod vault_path;
+#[cfg(windows)]
+mod windows_file_stamp;
+#[cfg(all(test, windows))]
+mod windows_identity_tests;
+#[cfg(windows)]
+mod windows_read_lease;
+#[cfg(windows)]
+mod windows_source;
 
 pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {
     #[cfg(feature = "native-index-probe")]
@@ -203,6 +222,7 @@ pub fn run() {
         .manage(audio_overview::AudioOverviewRegistry::default())
         .manage(study_deck_io::StudyDeckRegistry::default())
         .manage(distill_publication::DistillPublicationRegistry::default())
+        .manage(map_sources::MapSourceRegistry::default())
         // Embedded local model — lazily loaded on first local_* command.
     .manage(commands::LocalLlmState::default())
     .manage(local_generation::LocalChatState::default())
@@ -387,6 +407,14 @@ pub fn run() {
             commands::extend_quarantine,
             commands::digestable_session_days,
             commands::publish_distill_note,
+            map_refresh::preview_map_refresh,
+            map_refresh::apply_map_refresh,
+            map_refresh::latest_map_refresh_history,
+            map_recovery::retained_map_snapshots,
+            map_recovery::retained_map_keys,
+            commands::capture_map_sources,
+            commands::check_map_sources,
+            commands::release_map_sources,
             commands::archive_digested_sessions,
             commands::rollupable_buckets,
             commands::archive_rolled,

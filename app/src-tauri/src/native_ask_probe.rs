@@ -793,7 +793,7 @@ async fn invoke(
                         status_phase(app, Phase::PublicCancelDispatchFailed, Some(call.ordinal))
                     }
                 }
-                if public_cancel.as_ref().map_or(true, Result::is_err) {
+                if public_cancel.as_ref().is_none_or(Result::is_err) {
                     // Cleanup only; this is not evidence of public cancellation transport.
                     status_phase(app, Phase::QaCleanupCancelStarted, Some(call.ordinal));
                     crate::local_generation::cancel(request);
@@ -824,7 +824,7 @@ async fn invoke(
             records.push(json!({"case":case,"command":command,"callOrdinal":call.ordinal,"watchdogExpired":true,
                 "elapsedSeconds":started.elapsed().as_secs_f64(),"publicCancellation":public_cancel,
                 "cancellationPurpose":"qa_watchdog_cleanup",
-                "qaCleanupCancellationUsed":call.owned_request.is_some() && public_cancel.as_ref().map_or(true,Result::is_err),
+                "qaCleanupCancellationUsed":call.owned_request.is_some() && public_cancel.as_ref().is_none_or(Result::is_err),
                 "terminalDrained":terminal_reply.is_some(),"terminalReply":terminal_reply}));
             Err("native Ask QA watchdog expired; late replies cannot pass".into())
         }

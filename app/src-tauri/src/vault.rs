@@ -23,6 +23,11 @@ pub(crate) use compiler_pin::{
     CompilerPriorFilePin,
 };
 
+#[cfg(all(test, unix))]
+pub(crate) use compiler_pin::set_compiler_checkpoint;
+#[cfg(unix)]
+pub(crate) use compiler_pin::write_compiler_file_anchored_observed_locked;
+
 #[path = "vault_compiler_retirement.rs"]
 mod compiler_retirement;
 pub(crate) use compiler_retirement::{
@@ -2082,6 +2087,23 @@ pub(crate) fn read_same_native_file(
         let text = String::from_utf8(bytes).map_err(|_| "retained publication is not UTF-8")?;
         Ok((text, revision))
     }
+}
+
+/// Remove only a live map creation with its separately issued native permit.
+/// Generic compiler anchors and reopened custody never acquire this permission.
+pub(crate) fn remove_native_map_creation(
+    permit: &crate::map_custody::MapCreationUndo,
+) -> Result<(), String> {
+    let receipt = permit.receipt();
+    if !receipt.native_created {
+        return Err("map undo permit lacks native creation".into());
+    }
+    let _guard = FILE_WRITE_LOCK
+        .lock()
+        .map_err(|_| "file write lock poisoned")?;
+    verify_recorded_file_unlocked(receipt)?;
+    std::fs::remove_file(&receipt.path)
+        .map_err(|error| format!("remove native map creation: {error}"))
 }
 
 /// Delete only an unchanged file created by the recorded absence-CAS operation.

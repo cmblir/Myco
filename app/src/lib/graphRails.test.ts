@@ -73,8 +73,15 @@ describe("railKey — the [ and ] rail shortcuts", () => {
     expect(railKey(press("]", undefined, { repeat: true }))).toBeNull();
   });
 
-  it("offers no fold at 820px and under, where the stacked rails get no height", () => {
-    expect(railKey(press("[", { tagName: "BODY", ownerDocument: doc({ width: 820 }) }))).toBeNull();
+  it("keeps both panels reachable by keyboard in the stacked desktop layout", () => {
+    for (const width of [769, 800, 820]) {
+      expect(railKey(press("[", { tagName: "BODY", ownerDocument: doc({ width }) }))).toBe("gaps");
+      expect(railKey(press("]", { tagName: "BODY", ownerDocument: doc({ width }) }))).toBe("legend");
+    }
+  });
+
+  it("leaves phone panel access to the sheet instead of changing saved desktop folds", () => {
+    expect(railKey(press("[", { tagName: "BODY", ownerDocument: doc({ width: 768 }) }))).toBeNull();
     expect(railKey(press("]", { tagName: "BODY", ownerDocument: doc({ width: 400 }) }))).toBeNull();
     expect(railKey(press("[", { tagName: "BODY", ownerDocument: doc({ width: 821 }) }))).toBe("gaps");
   });

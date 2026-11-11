@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "date": "2026-11-11",
+  "case": "G6 native Graph narrow-canvas focus replay",
+  "baseRevision": "8a550479",
+  "sourceSha256": "1572b50730d554ac54ec021e43d73747a9cc5b5a6826a47029a4dde3ce2a10bf",
+  "nativeSha256": "190a6545fb0bfdad7cbe63a5b6eb91e260ccddd341ec5fe41c23d412824d33c6",
+  "profileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+  "environmentReceipt": "2026-11-11-native-ingest-cold-success.json",
+  "method": "CUA against rebuilt unsigned macOS native bundle, real synthetic vault, no graph IPC mock",
+  "observations": {
+    "searchSelectsSyntheticCenter": true,
+    "searchMagnificationReducedAfterWidthRepair": true,
+    "selectedLabelVisibleOutsideInspector": true,
+    "neighborActionReframes": true,
+    "longNeighborLabelClippedAtCanvasEdge": true,
+    "brightNodeBackgroundStillInterferesWithLabels": true,
+    "fullGraphVisualAcceptancePassed": false
+  },
+  "checks": {
+    "frontendTestsPassed": 6491,
+    "frontendFilesPassed": 405,
+    "lintErrors": 0,
+    "existingLintWarnings": 2,
+    "typeBuildPassed": true,
+    "nativeBundleBuildPassed": true,
+    "focusedTestsPassed": 9,
+    "missingDiagnosticEnvironmentRefused": true
+  },
+  "integrity": {
+    "existingSyntheticMarkdownChecked": 11,
+    "allExistingSyntheticMarkdownUnchanged": true,
+    "nativeProcessStopped": true,
+    "productionMarkerMetadataUnchangedRelativeToIncidentBaseline": true
+  },
+  "limits": [
+    "1280x800 debug macOS window only; no full viewport/accessibility matrix",
+    "Neighbor label clipping and composited contrast remain open",
+    "Prior production active-vault incident remains unresolved"
+  ]
+}

@@ -213,6 +213,7 @@ pub async fn local_query(
     vault: tauri::State<'_, VaultRoot>,
     state: tauri::State<'_, crate::local_generation::LocalChatState>,
     prompt: String,
+    system: Option<String>,
     max_tokens: Option<i32>,
     origin: Option<AgentVaultSession>,
     role_snapshot: Option<crate::role_authorization::RoleSnapshot>,
@@ -232,7 +233,7 @@ pub async fn local_query(
         state.inner().clone(),
         &snapshot.route_signature.model_id,
         &request_id,
-        "",
+        system.as_deref().unwrap_or(""),
         &prompt,
         max_tokens.unwrap_or(320),
     );
@@ -644,11 +645,16 @@ fn spawn_workstreams_backfill(app: tauri::AppHandle, origin: AgentVaultSession) 
         match import_admission::backfill_workstreams(&app.state::<VaultRoot>(), &origin) {
             Err(error) => eprintln!("workstreams backfill skipped: {error}"),
             Ok((written, plan))
-                if written + plan.unread + plan.store_failures + plan.names_ignored > 0 =>
+                if written
+                    + plan.unread
+                    + plan.store_failures
+                    + plan.names_ignored
+                    + plan.pages_pending
+                    > 0 =>
             {
                 eprintln!(
-                    "workstreams backfill: {} conversations read, {} without a raw transcript, {written} files written, {} Codex store failures, {} workstream names ignored",
-                    plan.recomputed, plan.unread, plan.store_failures, plan.names_ignored
+                    "workstreams backfill: {} conversations read, {} without a raw transcript, {written} files written, {} Codex store failures, {} workstream names ignored, {} project pages awaiting refresh",
+                    plan.recomputed, plan.unread, plan.store_failures, plan.names_ignored, plan.pages_pending
                 )
             }
             Ok(_) => {}
@@ -4982,37 +4988,81 @@ pub async fn digestable_session_days(
     .map_err(|e| format!("session days task failed: {e}"))?
 }
 
+#[tauri::command]
+pub async fn capture_map_sources(
+    app: tauri::AppHandle,
+    origin: AgentVaultSession,
+    role_snapshot: crate::role_authorization::RoleSnapshot,
+    members: Vec<String>,
+) -> Result<crate::map_sources::Snapshot, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::map_sources::capture(
+            &app.state::<VaultRoot>(),
+            &app.state::<crate::map_sources::MapSourceRegistry>(),
+            &origin,
+            &role_snapshot,
+            &members,
+        )
+    })
+    .await
+    .map_err(|error| format!("map source capture join failed: {error}"))?
+}
+
+#[tauri::command]
+pub async fn check_map_sources(
+    app: tauri::AppHandle,
+    origin: AgentVaultSession,
+    role_snapshot: crate::role_authorization::RoleSnapshot,
+    snapshot_id: String,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::map_sources::check(
+            &app.state::<VaultRoot>(),
+            &app.state::<crate::map_sources::MapSourceRegistry>(),
+            &origin,
+            &role_snapshot,
+            &snapshot_id,
+        )
+    })
+    .await
+    .map_err(|error| format!("map source check join failed: {error}"))?
+}
+
+#[tauri::command]
+pub fn release_map_sources(
+    registry: tauri::State<crate::map_sources::MapSourceRegistry>,
+    origin: AgentVaultSession,
+    snapshot_id: String,
+) -> Result<(), String> {
+    crate::map_sources::release(&registry, &origin, &snapshot_id)
+}
+
 /// Publish managed output through an origin-bound CAS and native authority issuer.
 #[tauri::command]
 #[allow(clippy::too_many_arguments)] // Flat IPC preserves the separate native role and origin fields.
 pub fn publish_distill_note(
     state: tauri::State<VaultRoot>,
     publications: tauri::State<crate::distill_publication::DistillPublicationRegistry>,
+    map_sources: tauri::State<crate::map_sources::MapSourceRegistry>,
     origin: AgentVaultSession,
     operation_id: String,
     artifact: crate::distill_publication::ManagedArtifact,
     content: String,
     expected_sha256: Option<String>,
     role_snapshot: Option<crate::role_authorization::RoleSnapshot>,
+    map_source_snapshot_id: Option<String>,
 ) -> Result<crate::distill_publication::PublicationReceipt, String> {
-    let snapshot =
-        role_snapshot.ok_or("managed publication requires its generation role snapshot")?;
-    let receipt = authorized_role(
+    let receipt = publish_distill_note_dispatch(
         &state,
+        &publications,
+        &map_sources,
         &origin,
-        &snapshot,
-        crate::role_authorization::RoleId::Organization,
-        |root| {
-            crate::distill_publication::publish_at(
-                root,
-                &publications,
-                &origin,
-                &operation_id,
-                &artifact,
-                &content,
-                expected_sha256.as_deref(),
-            )
-        },
+        &operation_id,
+        &artifact,
+        &content,
+        expected_sha256.as_deref(),
+        role_snapshot.as_ref(),
+        map_source_snapshot_id.as_deref(),
     )?;
     if let Some(updater) = crate::INDEX_UPDATER.get() {
         updater.mark_dirty(
@@ -5021,6 +5071,81 @@ pub fn publish_distill_note(
         );
     }
     Ok(receipt)
+}
+
+#[allow(clippy::too_many_arguments)] // Mirrors the typed IPC boundary for native tests.
+pub(crate) fn publish_distill_note_dispatch(
+    state: &VaultRoot,
+    publications: &crate::distill_publication::DistillPublicationRegistry,
+    map_sources: &crate::map_sources::MapSourceRegistry,
+    origin: &AgentVaultSession,
+    operation_id: &str,
+    artifact: &crate::distill_publication::ManagedArtifact,
+    content: &str,
+    expected_sha256: Option<&str>,
+    role_snapshot: Option<&crate::role_authorization::RoleSnapshot>,
+    map_source_snapshot_id: Option<&str>,
+) -> Result<crate::distill_publication::PublicationReceipt, String> {
+    use crate::distill_publication::{ManagedArtifact, MapPublication};
+    let snapshot =
+        role_snapshot.ok_or("managed publication requires its generation role snapshot")?;
+    authorized_role(
+        state,
+        origin,
+        snapshot,
+        crate::role_authorization::RoleId::Organization,
+        |root| match artifact {
+            ManagedArtifact::Map { key } => {
+                if expected_sha256.is_some() {
+                    return Err("map refresh requires durable owned-section custody".into());
+                }
+                let source_id = map_source_snapshot_id
+                    .ok_or("map publication requires its native source snapshot")?;
+                crate::map_content::validate_new_draft(content)?;
+                crate::map_sources::with_checked_publication(
+                    root,
+                    map_sources,
+                    origin,
+                    snapshot,
+                    source_id,
+                    |canonical, guard, verify| {
+                        let creation_store = crate::map_custody::MapCreationStore::open(
+                            canonical,
+                            &artifact.path()?,
+                        )?;
+                        crate::distill_publication::publish_map_locked(
+                            canonical,
+                            guard,
+                            publications,
+                            origin,
+                            MapPublication {
+                                operation: operation_id,
+                                key,
+                                content,
+                                source_snapshot_id: source_id,
+                                creation_store: Some(&creation_store),
+                            },
+                            verify,
+                        )
+                    },
+                )
+            }
+            _ => {
+                if map_source_snapshot_id.is_some() {
+                    return Err("non-map publication cannot use a map source snapshot".into());
+                }
+                crate::distill_publication::publish_at(
+                    root,
+                    publications,
+                    origin,
+                    operation_id,
+                    artifact,
+                    content,
+                    expected_sha256,
+                )
+            }
+        },
+    )
 }
 
 /// Move a digested day's `sessions/` files into `sessions/archive/`. See

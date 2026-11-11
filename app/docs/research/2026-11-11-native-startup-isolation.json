@@ -1,0 +1,45 @@
+{
+  "codeRevision": "ee06a75c",
+  "os": "macOS 26.5.1 arm64",
+  "evidenceLevel": "native process startup and synthetic OS confinement canaries",
+  "sandboxCanaries": {
+    "allowed_read_write": true,
+    "child_read_denied": true,
+    "network_bind_denied": true,
+    "protected_read_denied": true,
+    "protected_write_denied": true,
+    "symlink_read_denied": true,
+    "symlink_write_denied": true
+  },
+  "startup": {
+    "binarySha256": "d32ffe1dc586bb2db28afd07db4753cfd0ef1bcad712894ad16a35f5f4639a6d",
+    "cases": [
+      {
+        "case": "absent",
+        "exitCode": 0,
+        "stderr": "refusing diagnostic startup: acceptance binary requires diagnostic isolation"
+      },
+      {
+        "case": "only_diagnostic",
+        "exitCode": 0,
+        "stderr": "refusing diagnostic startup: acceptance binary requires diagnostic isolation"
+      },
+      {
+        "case": "only_index_flag",
+        "exitCode": 0,
+        "stderr": "refusing diagnostic startup: acceptance binary requires diagnostic isolation"
+      }
+    ],
+    "productionMarkerMetadataUnchanged": true,
+    "stateFiles": [
+      "settings.json"
+    ]
+  },
+  "limits": [
+    "Not a GUI or WebKit confinement test",
+    "Not a D1/D2 acceptance rerun",
+    "Not a release or Windows result",
+    "Production active-vault marker restoration still awaits original path",
+    "sandbox-exec is deprecated and used only as a one-off diagnostic, not a product dependency"
+  ]
+}

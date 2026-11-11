@@ -1,0 +1,66 @@
+{
+  "codeRevision": "8e705a2852251bc4e2ac47253ab03dd4f0768a95",
+  "bundleIdentifier": "dev.cmblir.myco.acceptance-20261111-2",
+  "binarySha256": "12fcc6fd024b289a5b8826e499503cf365832f5abb256c28682d65056870d3de",
+  "buildCommand": "npx tauri build --debug --features native-app-acceptance --bundles app --no-sign --config <synthetic-root>/tauri.override.json -- --offline --locked",
+  "evidenceLevel": "bundled isolated startup only; UI attachment failed",
+  "missingEnvironmentRefused": true,
+  "sandboxCanaries": {
+    "protected_read_denied": true,
+    "protected_write_denied": true,
+    "network_bind_denied": true,
+    "symlink_read_denied": true,
+    "scratch_read_write_allowed": true
+  },
+  "profileSha256": "3795cad2e3025d34004fc5dbb98e4dda5b5433deb0b79bde20d691f7acc00a73",
+  "allowedWriteLocations": [
+    "fresh synthetic fixture root",
+    "new bundle-specific WebKit, cache, app-data and Darwin cache directories",
+    "observed new bundle-specific WebKit temporary directory"
+  ],
+  "protectedReadLocations": [
+    "production and legacy application data",
+    "Codex and Claude directories",
+    "Documents",
+    "synthetic canary"
+  ],
+  "attempts": [
+    {
+      "attempt": 1,
+      "result": "WebKit temporary-directory writes refused; process explicitly stopped",
+      "exitCode": -15
+    },
+    {
+      "attempt": 2,
+      "result": "Synthetic Alpha opened but CUA could not attach by path, identifier or display name; process explicitly stopped",
+      "exitCode": -15
+    }
+  ],
+  "fixtures": {
+    "Alpha": {
+      "wikiFiles": 1,
+      "rawFiles": 0,
+      "syntheticReaderBytesUnchanged": true
+    },
+    "Beta": {
+      "wikiFiles": 1,
+      "rawFiles": 0,
+      "syntheticReaderBytesUnchanged": true
+    }
+  },
+  "isolatedActiveVaultIsAlpha": true,
+  "automaticJobsRemainDisabled": true,
+  "productionMarkerMetadataUnchanged": true,
+  "ownedAppProcessStopped": true,
+  "uiError": "Running application not found: dev.cmblir.myco.acceptance-20261111-2",
+  "D1Accepted": false,
+  "D2Accepted": false,
+  "limits": [
+    "No visible draft interaction or restart acceptance",
+    "No WebKit helper containment proof",
+    "No model inference or Windows verification",
+    "Production active-vault restoration still requires the original path; unchanged metadata is not proof of a correct original value",
+    "Deprecated sandbox-exec remains a one-off diagnostic, not a product dependency"
+  ],
+  "rawFixtureDirectory": "/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl"
+}

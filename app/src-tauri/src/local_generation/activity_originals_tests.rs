@@ -277,9 +277,20 @@ fn compiled_withdrawal_missing_from_final_answer_review_blocks_rendering() {
 }
 
 #[test]
-fn compiled_original_closure_added_after_as_of_fails_before_model_access() {
+fn compiled_original_closure_excludes_after_as_of_before_model_access() {
     let (mut source, mut index, mut request) = tests::compiled_activity_fixture();
     omit_withdrawal_hint(&mut source, &mut index, &mut request);
+    request.role_snapshot = Some(
+        serde_json::from_value(serde_json::json!({
+            "snapshotId":"synthetic-historical-role", "origin":request.origin,
+            "role":"ask", "usage":"foreground", "authorizationRevision":"synthetic",
+            "routeSignature":{"role":"ask", "providerId":"builtin-local",
+                "modelId":"qwen3.5-4b-q4_k_m", "effort":"none", "executionLocation":"in-process",
+                "artifactRevision":"synthetic", "artifactSha256":"0".repeat(64),
+                "runtimeContract":"synthetic-helper-only", "signature":"synthetic-shape-only"}
+        }))
+        .unwrap(),
+    );
     let end = crate::importers::parse_iso8601("2026-10-03T09:30:00Z").unwrap();
     let period = request.range.as_mut().unwrap();
     period.start_epoch = crate::importers::parse_iso8601("2026-10-03T00:00:00Z");
@@ -295,15 +306,14 @@ fn compiled_original_closure_added_after_as_of_fails_before_model_access() {
         &checked.evidence,
         checked.originals.as_ref().unwrap(),
         request.origin.as_ref().unwrap(),
-        |_, _| panic!("future backing context must not tokenize"),
+        |_, user| {
+            assert!(!user.contains("Withdraw the earlier completion"));
+            Err("synthetic tokenizer boundary observation".into())
+        },
         |_, _, _, _, _| panic!("future backing context must not generate"),
     );
     let failure = result.unwrap_err();
-    assert_eq!(failure.code, "source_verification_failed");
-    assert_eq!(
-        failure.detail,
-        "initial original exceeds the declared as-of cutoff"
-    );
+    assert_eq!(failure.code, "prompt_unavailable");
 }
 
 #[test]

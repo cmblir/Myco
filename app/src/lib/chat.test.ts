@@ -127,17 +127,79 @@ describe("complete() selected-source generation", () => {
       expect(opening).not.toHaveBeenCalled();
       expect(capture).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledWith(
-        supplied.map((message) => message.content).join("\n\n"),
+        supplied[1].content,
         320,
         origin,
         snapshot,
         expect.any(String),
+        supplied[0].content,
       );
       expect(seen).toEqual([{ kind: "thinking", stems: [] }]);
     },
   );
 
-  it.each(["reflect", "lint"] as const)(
+  it.each(["builtin-local", "anthropic-api"])(
+    "keeps a map's selected evidence through the real complete boundary on %s",
+    async provider => {
+      const { draftMap } = await import("./maps");
+      const { sha256 } = await import("./tidyRun");
+      const origin = { vaultPath: VAULT, openingToken: `synthetic-map-${provider}` };
+      const snapshot = roleFixture("organization", provider, BUILTIN_CHAT_MODEL, origin);
+      const raw = "Synthetic selected source: blue tiles only.";
+      vi.spyOn(ipc, "agentVaultSession").mockResolvedValue(origin);
+      const capture = vi.spyOn(ipc, "captureModelRole").mockResolvedValue(snapshot);
+      vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+      const read = vi.spyOn(ipc, "readFile").mockImplementation(async path => {
+        if (path === "/v/wiki/a.md") return { path, raw, content: raw, frontmatter: {} };
+        throw new Error("ENOENT: no such file or directory");
+      });
+      const sources = vi.spyOn(ipc, "captureMapSources").mockResolvedValue({ snapshotId: "c".repeat(64), origin, members: [{ path: "wiki/a.md", raw, revision: await sha256(raw) }] });
+      vi.spyOn(ipc, "checkMapSources").mockResolvedValue(undefined);
+      const release = vi.spyOn(ipc, "releaseMapSources").mockResolvedValue(undefined);
+      const status = vi.spyOn(ipc, "embeddingsStatus").mockRejectedValue(new Error("synthetic unavailable index"));
+      const search = vi.spyOn(ipc, "semanticSearch");
+      const context = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("UNSELECTED_SYNTHETIC_RED_TILES");
+      const answer = "Blue tiles. [[wiki/a.md|a]]";
+      const local = vi.spyOn(ipc, "localQuery").mockResolvedValue(answer);
+      const http = vi.spyOn(ipc, "chatComplete").mockResolvedValue({ content: answer, model: BUILTIN_CHAT_MODEL, provider_id: provider, usage: null });
+      const publish = vi.spyOn(ipc, "publishDistillNote").mockImplementation(async (_origin, operationId, artifact, content) => ({
+        publicationId: "b".repeat(64), operationId, path: `wiki/maps/${artifact.key}.md`, revision: await sha256(content),
+        nativeCreated: true, state: "published", fileIdentity: { device: 1, inode: 2, changedSeconds: 3, changedNanoseconds: 4 },
+      }));
+      vi.spyOn(ipc, "appendDistillManifest").mockResolvedValue(null);
+
+      await draftMap(VAULT, `source-${provider}`, ["wiki/a.md"], "llm-123");
+
+      expect(capture).toHaveBeenCalledWith(origin, "organization", "foreground");
+      expect(status).not.toHaveBeenCalled();
+      expect(search).not.toHaveBeenCalled();
+      expect(context).not.toHaveBeenCalled();
+      expect(read).not.toHaveBeenCalledWith("/v/wiki/a.md");
+      expect(sources).toHaveBeenCalledWith(origin, snapshot, ["wiki/a.md"]);
+      expect(release).toHaveBeenCalledWith(origin, "c".repeat(64));
+      const prompt = provider === "builtin-local" ? local.mock.calls[0][0]
+        : http.mock.calls[0][0].messages.map(message => message.content).join("\n");
+      expect(prompt).toContain(raw);
+      expect(prompt).toContain(await sha256(raw));
+      expect(prompt).toContain("[[wiki/a.md|a]]");
+      expect(prompt).not.toContain("UNSELECTED_SYNTHETIC_RED_TILES");
+      if (provider === "builtin-local") {
+        expect(local.mock.calls[0].slice(2, 4)).toEqual([origin, snapshot]);
+        expect(local.mock.calls[0][5]).toContain("Write a concise Markdown topic map");
+        expect(local.mock.calls[0][5]).not.toContain(raw);
+        expect(local.mock.calls[0][0]).not.toContain("Write a concise Markdown topic map");
+        expect(http).not.toHaveBeenCalled();
+      } else {
+        expect(http.mock.calls[0].slice(1, 3)).toEqual([origin, snapshot]);
+        expect(local).not.toHaveBeenCalled();
+      }
+      expect(publish.mock.calls[0][3]).toContain("[[wiki/a.md|a]]");
+      expect(publish.mock.calls[0][5]).toEqual(snapshot);
+      expect(publish.mock.calls[0][6]).toBe("c".repeat(64));
+    },
+  );
+
+  it.each(["reflect", "lint", "organization"] as const)(
     "retrieves source passages for instruction-only %s generation",
     async (role) => {
       const origin = {
@@ -189,13 +251,14 @@ describe("complete() selected-source generation", () => {
       expect(search).toHaveBeenCalledOnce();
       expect(context).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "The synthetic mosaic has blue tiles and one missing source citation.",
-        ),
+        instruction,
         320,
         origin,
         snapshot,
         expect.any(String),
+        expect.stringContaining(
+          "The synthetic mosaic has blue tiles and one missing source citation.",
+        ),
       );
       expect(generate.mock.calls[0][0]).toContain(instruction);
       expect(seen).toEqual([
@@ -344,8 +407,9 @@ describe("complete() ask stages", () => {
     await complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "SYN-4719" }], onStage });
     expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: ["id"] }]);
     expect(fallback).not.toHaveBeenCalled();
-    expect(query.mock.calls[0][0]).toContain("SYN-4719 was accepted.");
-    expect(query.mock.calls[0][0]).not.toContain("unrelated whole vault");
+    expect(query.mock.calls[0][5]).toContain("SYN-4719 was accepted.");
+    expect(query.mock.calls[0][5]).not.toContain("unrelated whole vault");
+    expect(query.mock.calls[0][0]).toBe("SYN-4719");
   });
 
   it("names no pages when retrieval finds nothing", async () => {
@@ -539,8 +603,8 @@ describe("complete() ask stages", () => {
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found(chunks));
     const readFile = vi.spyOn(ipc, "readFile");
     let seenPrompt = "";
-    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
-      seenPrompt = prompt;
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (_prompt, _maxTokens, _origin, _roleSnapshot, _requestId, system) => {
+      seenPrompt = system ?? "";
       return "an answer";
     });
 
@@ -571,8 +635,8 @@ describe("complete() ask stages", () => {
       { page: "wiki/b.md", stem: "b", section: 0, text: "BBB passage", score: 0.7, similarity: 0.7 },
     ]));
     let seenPrompt = "";
-    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
-      seenPrompt = prompt;
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (_prompt, _maxTokens, _origin, _roleSnapshot, _requestId, system) => {
+      seenPrompt = system ?? "";
       return "an answer";
     });
 
@@ -803,8 +867,8 @@ describe("complete() profile injection (Phase B, Task 6)", () => {
 
   async function askAndCapturePrompt(): Promise<string> {
     let seenPrompt = "";
-    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
-      seenPrompt = prompt;
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (_prompt, _maxTokens, _origin, _roleSnapshot, _requestId, system) => {
+      seenPrompt = system ?? "";
       return "an answer";
     });
     await complete({

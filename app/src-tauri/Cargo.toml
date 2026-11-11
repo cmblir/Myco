@@ -92,6 +92,14 @@ tauri-plugin-process = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.186"
 
+# Native Windows source identity and the real handle diagnostics.
+# This exact Microsoft binding version is already present transitively.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Threading"] }
+
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_System_Memory", "Wdk_Storage_FileSystem", "Wdk_Foundation"] }
+
 # macOS notch surface (src/notch.rs): NSScreen safe-area/auxiliary-area
 # geometry, and promoting a Tauri window to a status-level non-activating
 # NSPanel. Both crates are already in the lockfile as tao/wry dependencies, so
@@ -126,6 +134,8 @@ rerank = ["dep:llama-cpp-sys-2"]
 notch-probe = []
 # Isolated native/AppHandle index checks; absent from normal builds.
 native-index-probe = []
+# Full-app acceptance builds must refuse startup without diagnostic isolation.
+native-app-acceptance = []
 
 [[example]]
 name = "native_ask_probe"

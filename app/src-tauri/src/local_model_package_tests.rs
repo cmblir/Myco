@@ -28,6 +28,37 @@ fn write_package(dir: &Path) {
     fs::write(dir.join(ADAPTER.file), ADAPTER_BYTES).unwrap();
 }
 
+#[cfg(windows)]
+#[test]
+fn issued_package_retains_invalidation_after_verifier_cache_is_cleared() {
+    for (name, replacement) in [
+        (PACKAGE.file, b"Synthetic GGUF model bytes".as_slice()),
+        (ADAPTER.file, CHANGED_ADAPTER_BYTES),
+    ] {
+        let dir = tempfile::tempdir().unwrap();
+        write_package(dir.path());
+        let path = dir.path().join(name);
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        let mut base = Verifier::default();
+        let mut adapter = Verifier::default();
+        let package =
+            resolve_package_with_caches(dir.path(), &PACKAGE, &mut base, &mut adapter).unwrap();
+        base.entry = None;
+        adapter.entry = None;
+        package.check_unchanged().unwrap();
+        let mut writer = File::options().read(true).write(true).open(&path).unwrap();
+        writer.write_all(replacement).unwrap();
+        writer
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert!(package.check_unchanged().is_err());
+        assert!(
+            resolve_package_with_caches(dir.path(), &PACKAGE, &mut base, &mut adapter).is_err()
+        );
+        assert_eq!(fs::read(path).unwrap(), replacement);
+    }
+}
+
 #[test]
 fn base_only_package_preserves_identity_wire_and_runtime() {
     let manifest = ModelManifest {

@@ -38,6 +38,7 @@ import {
   formatRunOutcome,
   lastResurfaceOutcome,
   lastWorkflowReceipt,
+  lastMapDraftOutcome,
   WorkflowRunError,
   lastRunLabel,
   lastStopPoint,
@@ -58,6 +59,7 @@ import type { BucketUsage, DistillConfig, RunReport } from "./distill";
 import type { EmbeddingsStatus, FileNode, MycoSettings } from "./ipc";
 import { roleFixture, selectedRolesFixture } from "./modelRoles.testSupport";
 import { BUILTIN_CHAT_MODEL } from "./providers";
+import { sha256 } from "./tidyRun";
 
 let organizationChoice = { providerId: "builtin-local", modelId: "extractive-ingest" };
 function mockOrganizationAdmission(): void {
@@ -589,7 +591,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
       content: "",
       frontmatter: {},
     });
-    const writeFile = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    const writeFile = vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     draftMap.mockResolvedValue("wiki/maps/attention.md");
 
     await runDistillGuarded("/vmap");
@@ -598,13 +600,14 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
       "/vmap",
       "attention",
       ["wiki/a.md", "wiki/b.md"],
-      expect.stringMatching(/^llm-\d+$/),
+      expect.stringMatching(/^llm-\d+-\d{20}$/),
       undefined, "foreground", roleFixture("organization", "anthropic-api", "synthetic-writer",
-        { vaultPath: "/vmap", openingToken: "synthetic-organization-opening" }),
+        { vaultPath: "/vmap", openingToken: "synthetic-organization-opening" }), expect.objectContaining({ kind: "approved-proposal", recheck: expect.any(Function) }),
     );
     expect(writeFile).toHaveBeenCalledWith(
       "/vmap/work/feedback/p.md",
       expect.stringContaining("status: done"),
+      await sha256(proposal("approved")),
     );
   });
 
@@ -614,13 +617,68 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
     vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
     vi.spyOn(ipc, "readFile").mockResolvedValue({ path: "/vmap/work/feedback/p.md", raw: proposal("approved"), content: "", frontmatter: {} });
-    const write = vi.spyOn(ipc, "writeFile");
+    const write = vi.spyOn(ipc, "writeFileIfUnchanged");
     draftMap.mockRejectedValue(Object.assign(new WorkflowOperationError("pending", "unavailable", "synthetic manifest unavailable"),
       { writtenPath: "wiki/maps/attention.md" }));
     await expect(runDistillGuarded("/vmap")).rejects.toMatchObject({ receipt: { status: "partial",
       steps: expect.arrayContaining([expect.objectContaining({ step: "maps", status: "partial" })]) } });
     expect(write).not.toHaveBeenCalled();
     expect(lastWorkflowReceipt.get("/vmap")?.issues[0]).toMatchObject({ status: "pending", code: "unavailable" });
+  });
+
+  it("retains a completed map when proposal finalization loses its revision race", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ path: "/vmap/work/feedback/p.md", raw: proposal("approved"), content: "", frontmatter: {} });
+    const write = vi.spyOn(ipc, "writeFileIfUnchanged").mockRejectedValue(new Error("Synthetic proposal revision changed"));
+    draftMap.mockResolvedValue("wiki/maps/attention.md");
+    await expect(runDistillGuarded("/vmap")).rejects.toMatchObject({ receipt: { status: "partial" } });
+    expect(write).toHaveBeenCalledOnce();
+    expect(lastMapDraftOutcome.get("/vmap")).toMatchObject({
+      drafted: 0, pending: 1, publishedPending: ["wiki/maps/attention.md"], status: "partial",
+    });
+  });
+
+  it("does not finalize an approved map proposal after the vault opening changes", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ path: "/vmap/work/feedback/p.md", raw: proposal("approved"), content: "", frontmatter: {} });
+    const write = vi.spyOn(ipc, "writeFileIfUnchanged");
+    draftMap.mockImplementationOnce(async () => {
+      vi.mocked(ipc.agentVaultSession).mockResolvedValue({ vaultPath: "/vmap", openingToken: "synthetic-reopened" });
+      return "wiki/maps/attention.md";
+    });
+    await expect(runDistillGuarded("/vmap", "automatic")).rejects.toMatchObject({ receipt: { status: "stopped" } });
+    expect(write).not.toHaveBeenCalled();
+    expect(lastMapDraftOutcome.get("/vmap")).toMatchObject({
+      drafted: 0, pending: 1, publishedPending: ["wiki/maps/attention.md"], status: "stopped",
+    });
+    expect(draftMap.mock.calls[0][5]).toBe("automatic");
+    expect(draftMap.mock.calls[0][6].usage).toBe("automatic");
+    expect(draftMap.mock.calls[0][7]).toMatchObject({ kind: "approved-proposal" });
+  });
+
+  it("rechecks the exact approved proposal rather than reusing a withdrawn decision", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
+    let raw = proposal("approved");
+    vi.spyOn(ipc, "readFile").mockImplementation(async () => ({ path: "/vmap/work/feedback/p.md", raw, content: "", frontmatter: {} }));
+    const write = vi.spyOn(ipc, "writeFileIfUnchanged");
+    draftMap.mockImplementationOnce(async (...args) => {
+      raw = proposal("pending");
+      await args[7].recheck();
+      return "wiki/maps/attention.md";
+    });
+    await expect(runDistillGuarded("/vmap")).rejects.toMatchObject({ receipt: { issues: expect.arrayContaining([
+      expect.objectContaining({ code: "validation_rejected", status: "pending" }),
+    ]) } });
+    expect(write).not.toHaveBeenCalled();
   });
 
   it("leaves a pending draft-map proposal untouched", async () => {
@@ -634,7 +692,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
       content: "",
       frontmatter: {},
     });
-    const writeFile = vi.spyOn(ipc, "writeFile");
+    const writeFile = vi.spyOn(ipc, "writeFileIfUnchanged");
 
     await runDistillGuarded("/vmap");
 
@@ -660,7 +718,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
       content: "",
       frontmatter: {},
     });
-    vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     draftMap.mockResolvedValue("wiki/maps/attention.md");
 
     await runDistillGuarded("/vmap");
@@ -675,12 +733,12 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     organizationChoice = { providerId: "builtin-local", modelId: BUILTIN_CHAT_MODEL };
     vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
     vi.spyOn(ipc, "readFile").mockResolvedValue({ path: "/vmap/work/feedback/p.md", raw: proposal("approved"), content: "", frontmatter: {} });
-    vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     draftMap.mockResolvedValue("wiki/maps/attention.md");
     await runDistillGuarded("/vmap");
     const grant = roleFixture("organization", "builtin-local", BUILTIN_CHAT_MODEL,
       { vaultPath: "/vmap", openingToken: "synthetic-organization-opening" });
-    expect(draftMap).toHaveBeenCalledWith("/vmap", "attention", ["wiki/a.md", "wiki/b.md"], expect.stringMatching(/^llm-\d+$/), undefined, "foreground", grant);
+    expect(draftMap).toHaveBeenCalledWith("/vmap", "attention", ["wiki/a.md", "wiki/b.md"], expect.stringMatching(/^llm-\d+-\d{20}$/), undefined, "foreground", grant, expect.objectContaining({ kind: "approved-proposal", recheck: expect.any(Function) }));
     expect(settingsRead).not.toHaveBeenCalled();
   });
 
@@ -809,7 +867,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
         frontmatter: {},
       }),
     );
-    const writeFile = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    const writeFile = vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     draftMap.mockResolvedValue("wiki/maps/x.md");
 
     await expect(runDistillGuarded("/vmap")).rejects.toMatchObject({ receipt: { status: "partial" } });
@@ -835,14 +893,14 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
         frontmatter: {},
       }),
     );
-    vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     draftMap.mockResolvedValue("wiki/maps/x.md");
 
     await runDistillGuarded("/vmap");
 
     const ids = draftMap.mock.calls.map((c) => c[3]);
     expect(ids).toHaveLength(3);
-    expect(ids[0]).toMatch(/^llm-\d+$/);
+    expect(ids[0]).toMatch(/^llm-\d+-\d{20}$/);
     expect(new Set(ids).size).toBe(1);
   });
 
@@ -863,7 +921,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
         frontmatter: {},
       }),
     );
-    const writeFile = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    const writeFile = vi.spyOn(ipc, "writeFileIfUnchanged").mockResolvedValue(null);
     draftMap.mockResolvedValue("wiki/maps/x.md");
 
     await expect(runDistillGuarded("/vmap")).rejects.toMatchObject({ receipt: { status: "partial" } });

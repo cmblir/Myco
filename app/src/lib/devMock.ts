@@ -1858,9 +1858,17 @@ function mockInvoke(
     // Native private grants and checked compiler/publication receipts cannot
     // be established by this browser-only demo. Preserve explicit failure.
     case "capture_model_role":
+    case "capture_map_sources":
+    case "check_map_sources":
+    case "release_map_sources":
     case "select_model_role":
     case "set_role_automatic_use":
     case "publish_distill_note":
+    case "preview_map_refresh":
+    case "apply_map_refresh":
+    case "latest_map_refresh_history":
+    case "retained_map_snapshots":
+    case "retained_map_keys":
     case "session_compile_begin":
     case "session_compile_read":
     case "session_compile_publish":

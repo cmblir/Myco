@@ -546,18 +546,15 @@ fn checked_evidence_selection(
         }
         if !pages.contains_key(&hit.page) {
             let path = crate::vault::confine_path(root, &root.join(&hit.page).to_string_lossy())?;
-            let resolved = path
-                .strip_prefix(root)
-                .ok()
-                .and_then(Path::to_str)
-                .ok_or("invalid source path")?;
-            if !request.scope.keeps(resolved)
+            let resolved =
+                crate::vault_path::relative_key(root, &path).ok_or("invalid source path")?;
+            if !request.scope.keeps(&resolved)
                 || request
                     .paths
                     .as_ref()
-                    .is_some_and(|paths| !paths.iter().any(|path| path == resolved))
+                    .is_some_and(|paths| !paths.iter().any(|path| path == &resolved))
                 || crate::vector_index::is_cold_for(
-                    resolved,
+                    &resolved,
                     crate::settings::search_archived_sessions(),
                 )
             {
@@ -1031,16 +1028,24 @@ pub async fn plan_recall(
     .map_err(|error| format!("local recall planning task: {error}"))?
 }
 
+struct GenerationDeadline(tauri::async_runtime::JoinHandle<()>);
+
+impl Drop for GenerationDeadline {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 fn deadline(
     flag: Arc<AtomicBool>,
     expired: Arc<AtomicBool>,
     timeout_seconds: u64,
-) -> tauri::async_runtime::JoinHandle<()> {
-    tauri::async_runtime::spawn(async move {
+) -> GenerationDeadline {
+    GenerationDeadline(tauri::async_runtime::spawn(async move {
         tokio::time::sleep(std::time::Duration::from_secs(timeout_seconds)).await;
         expired.store(true, Ordering::Relaxed);
         flag.store(true, Ordering::Relaxed);
-    })
+    }))
 }
 
 pub async fn synthesize(
@@ -1427,7 +1432,6 @@ pub async fn transform(
         .begin(&request.request_id)?;
     let run = Run(request.request_id.clone());
     let expired = Arc::new(AtomicBool::new(false));
-    let timer = deadline(flag.clone(), expired.clone(), 45);
     let result = tauri::async_runtime::spawn_blocking(move || {
         let _run = run;
         let root = root
@@ -1450,6 +1454,9 @@ pub async fn transform(
             if !still_open(&app, &root) {
                 return Err("active vault changed".into());
             }
+            // Cold artifact verification and model loading are preparation,
+            // not generation. Keep the same budget once the model is ready.
+            let _deadline = deadline(flag.clone(), expired.clone(), 45);
             let prompt = crate::local_transform::prepare(
                 request.kind,
                 &request.lang,
@@ -1506,7 +1513,6 @@ pub async fn transform(
         }
     })
     .await;
-    timer.abort();
     result.map_err(|error| format!("local preview task: {error}"))?
 }
 
@@ -1517,6 +1523,46 @@ mod private_probe;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generation_deadline_marks_expiry_and_cancellation() {
+        let flag = Arc::new(AtomicBool::new(false));
+        let expired = Arc::new(AtomicBool::new(false));
+        let mut timer = deadline(flag.clone(), expired.clone(), 0);
+        tauri::async_runtime::block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(5), &mut timer.0)
+                .await
+                .expect("deadline task did not finish")
+                .expect("deadline task failed");
+        });
+        assert!(flag.load(Ordering::Relaxed));
+        assert!(expired.load(Ordering::Relaxed));
+    }
+
+    #[test]
+    fn leaving_generation_scope_aborts_its_timer_task() {
+        struct NotifyDrop(std::sync::mpsc::Sender<()>);
+        impl Drop for NotifyDrop {
+            fn drop(&mut self) {
+                let _ = self.0.send(());
+            }
+        }
+        let (started, ready) = std::sync::mpsc::channel();
+        let (dropped, finished) = std::sync::mpsc::channel();
+        let timer = GenerationDeadline(tauri::async_runtime::spawn(async move {
+            let _notify = NotifyDrop(dropped);
+            started.send(()).unwrap();
+            std::future::pending::<()>().await;
+        }));
+        ready
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        drop(timer);
+        finished
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("generation scope left a timer task running");
+    }
+
     #[test]
     fn early_cancel_reaches_only_its_own_later_request() {
         let mut registry = Registry::default();

@@ -30,13 +30,13 @@
 
   --ink: #181715;
   --ink-2: #37352f;
-  --ink-3: #6f6e69;
+  --ink-3: #62615c;
   /* --ink-4 is the "secondary text" tone used by nav-group labels, .kbd,
      .stat-sub, .meta, proj-meta, etc. The old #9b9a93 was only ~2.6–2.8:1 on
      the light backgrounds — below WCAG AA (4.5:1) for this small (11–12px)
      text. Darkened to ~5:1 so all of it is legible; it still reads as muted
      against the near-black --ink. (Dark theme overrides --ink-4 separately.) */
-  --ink-4: #6b6a64;
+  --ink-4: #696862;
   --ink-5: #cfcdc5;
 
   --accent: #181715;
@@ -110,8 +110,9 @@
 
   --ink: #ededec;
   --ink-2: #d4d4d2;
-  --ink-3: #9b9a93;
-  --ink-4: #6f6e69;
+  /* Supporting text stays readable even on the selected neutral surface. */
+  --ink-3: #b1b0aa;
+  --ink-4: #a3a29c;
   --ink-5: #4a4a48;
 
   --accent: #ededec;
@@ -2481,7 +2482,7 @@ select {
    starfield: the stage gets .graph-canvas-wrap's vignette (measured: the
    starfield's light stage falls to 202-219 at the corners against 255 in the
    middle, while this canvas came back a uniform #0b0a08 corner to corner), the
-   hub labels get .graph-label-3d's type and halo, and the hover tooltip gets
+   hub labels share .graph-label-3d's type with a halo, and the hover tooltip gets
    the same glass tokens the app's other floating panels use.
 
    [data-ground] is set by MyceliumView from the SUBSTRATE, not the app theme:
@@ -2568,8 +2569,8 @@ select {
   z-index: 2;
   pointer-events: none;
 }
-/* .graph-label-3d's treatment, so a note is named the same way under either
-   skin: sans token, 11px / 500, line-height 1, and a double halo rather than
+/* Shared note typography: sans token, 11px / 500, line-height 1.
+   Mycelium keeps a double halo rather than
    a drop shadow — over a bright cream strand a 1px shadow is no separation. */
 .myc-hub-label {
   position: absolute;
@@ -4263,7 +4264,7 @@ hr {
    attribute + ::after, so no DOM lands next to an IME composition. */
 .myco-editor.live .live-empty::after {
   content: attr(data-placeholder);
-  color: var(--ink-5);
+  color: var(--ink-4);
   pointer-events: none;
 }
 /* The caret's empty line holds CM's <br>, under which an inline ::after
@@ -5312,19 +5313,16 @@ body:has(.editor-toolbar) .help-widget__fab {
     transform: scaleX(-1);
   }
 }
-/* At 820px and under the frame (styles/ui.css) stacks the rails in 0px rows,
-   so a tab would expand a rail that cannot show and hand focus to a clipped
-   chevron. No fold is offered there: neither control, nor the keys (railKey). */
-@media (max-width: 820px) {
+/* Phones use the panel sheet; desktop fold controls must remain reachable
+   in the stacked 769–820px layout, including a previously folded rail. */
+@media (max-width: 768px) {
   .graph-page [data-rail-toggle] {
     display: none;
   }
 }
-/* An iPad held upright with a finger (769–820px, coarse): the rails stack
-   under the stage, where a fixed-height page squeezed each to its 40px head
-   (and to 17px before). The page scrolls instead, and each rail keeps its head
-   and a few rows (UX S53). A mouse at these widths keeps the desktop page. */
-@media (min-width: 769px) and (max-width: 820px) and (any-pointer: coarse) {
+/* Stacked rails need a scrolling page for mouse and touch alike. A fixed-height
+   frame squeezed them into inaccessible rows while the stage kept its floor. */
+@media (min-width: 769px) and (max-width: 820px) {
   .workspace-wide.u-page.graph-page {
     height: auto;
     overflow: visible;
@@ -5335,6 +5333,10 @@ body:has(.editor-toolbar) .help-widget__fab {
   }
   .u-page.graph-page .u-page__main {
     height: 62vh;
+  }
+  /* Once columns stack, keep the graph first as it is in keyboard order. */
+  .u-page.graph-page .u-page__rail:not(.u-page__rail--right) {
+    order: 0;
   }
   .u-page.graph-page .u-page__rail > .u-rail {
     min-height: 160px;
@@ -6136,10 +6138,16 @@ body:has(.editor-toolbar) .help-widget__fab {
      element's `transform` every frame, so a translateY() rule silently did
      nothing. The label hangs below its star via the CSS2DObject's `center` plus
      a padding-top sized to the sprite — see ensureLabel()/updateLabels(). */
-  text-shadow:
-    0 0 3px rgba(0, 0, 0, 0.85),
-    0 0 6px rgba(0, 0, 0, 0.6);
   user-select: none;
+}
+.graph-label-3d > span {
+  display: block;
+  box-sizing: border-box;
+  padding: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-radius: var(--r-sm);
+  background: var(--graph-label-bg, var(--bg));
 }
 /* Chronicle (strata) time-axis date labels — world-space, sit under the axis
    gridlines. Monospace-tabular so dates line up; theme-following ink. */

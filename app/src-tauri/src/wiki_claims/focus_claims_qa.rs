@@ -485,9 +485,10 @@ fn proposal_sha256(proposal: &ClaimProposal) -> Result<String, String> {
 }
 
 fn validate_question_period(input: &Value) -> Result<crate::commands::DateRange, String> {
-    if input["question"].as_str().map_or(true, |question| {
-        question.trim().is_empty() || question.chars().count() > 2000
-    }) || !matches!(input["language"].as_str(), Some("ko" | "en" | "ja"))
+    if input["question"]
+        .as_str()
+        .is_none_or(|question| question.trim().is_empty() || question.chars().count() > 2000)
+        || !matches!(input["language"].as_str(), Some("ko" | "en" | "ja"))
         || !input["recordPeriodContext"].is_object()
     {
         return Err(
