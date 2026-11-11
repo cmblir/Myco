@@ -1,0 +1,157 @@
+{
+  "codeRevision": "1d212ccd",
+  "evidenceLevel": "synthetic browser UI, not native or VoiceOver",
+  "browser": "ego lite",
+  "taskSpace": 9,
+  "viewports": [
+    {
+      "width": 320,
+      "documentWidth": 320,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Add sources"
+        },
+        {
+          "tag": "H2",
+          "text": "Turn your sources into useful notes"
+        },
+        {
+          "tag": "H2",
+          "text": "Bring in past sessions"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "ingest-title",
+          "width": 227,
+          "left": 46.5,
+          "right": 273.5
+        },
+        {
+          "id": "ingest-body",
+          "width": 227,
+          "left": 46.5,
+          "right": 273.5
+        }
+      ]
+    },
+    {
+      "width": 375,
+      "documentWidth": 375,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Add sources"
+        },
+        {
+          "tag": "H2",
+          "text": "Turn your sources into useful notes"
+        },
+        {
+          "tag": "H2",
+          "text": "Bring in past sessions"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "ingest-title",
+          "width": 282,
+          "left": 46.5,
+          "right": 328.5
+        },
+        {
+          "id": "ingest-body",
+          "width": 282,
+          "left": 46.5,
+          "right": 328.5
+        }
+      ]
+    },
+    {
+      "width": 768,
+      "documentWidth": 768,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Add sources"
+        },
+        {
+          "tag": "H2",
+          "text": "Turn your sources into useful notes"
+        },
+        {
+          "tag": "H2",
+          "text": "Bring in past sessions"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "ingest-title",
+          "width": 635,
+          "left": 66.5,
+          "right": 701.5
+        },
+        {
+          "id": "ingest-body",
+          "width": 635,
+          "left": 66.5,
+          "right": 701.5
+        }
+      ]
+    },
+    {
+      "width": 1280,
+      "documentWidth": 1280,
+      "headings": [
+        {
+          "tag": "H1",
+          "text": "Add sources"
+        },
+        {
+          "tag": "H2",
+          "text": "Turn your sources into useful notes"
+        },
+        {
+          "tag": "H2",
+          "text": "Bring in past sessions"
+        }
+      ],
+      "inputs": [
+        {
+          "id": "ingest-title",
+          "width": 811,
+          "left": 354.5,
+          "right": 1165.5
+        },
+        {
+          "id": "ingest-body",
+          "width": 811,
+          "left": 354.5,
+          "right": 1165.5
+        }
+      ]
+    }
+  ],
+  "keyboard": {
+    "titleTabTarget": "ingest-body",
+    "phoneSubmit": {
+      "name": "Organize source",
+      "width": 227,
+      "height": 44,
+      "unobscured": true,
+      "horizontalOverflow": false
+    }
+  },
+  "screenshots": [
+    "/tmp/myco-resume-ingest-320.png",
+    "/tmp/myco-resume-ingest-1280.png",
+    "/tmp/myco-resume-ingest-keyboard-320.png"
+  ],
+  "limits": [
+    "Dark theme only; no complete contrast or state/translation matrix.",
+    "Viewport emulation is not installed mobile acceptance.",
+    "Initial navigation timed out; same task space recovered after reducing concurrent work."
+  ],
+  "taskSpaceFinished": true
+}

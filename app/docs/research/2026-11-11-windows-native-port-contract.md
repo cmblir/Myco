@@ -11,8 +11,9 @@ Status: implementation and Windows execution remain incomplete.
   returned `total_count: 0` and an empty runner list. This says nothing about
   GitHub-hosted Windows availability; no workflow was dispatched and no branch
   was pushed.
-- A Windows PC/VM connection was requested from the owner. No response was
-  available when this record was written.
+- The owner subsequently confirmed that no Windows PC/VM is available.
+  Native execution therefore requires a hosted Windows runner or another
+  newly available environment; no current Windows pass is claimed.
 
 The [baseline failure inventory](2026-11-11-windows-failure-inventory.json)
 remains historical evidence, not a test result for the current revision. Its

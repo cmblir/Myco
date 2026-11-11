@@ -14,9 +14,191 @@ requirements and must not be mistaken for passing results.
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
-| G5 maps | Native refresh and latest History view implemented; recovery incomplete | Private ownership, source/revision checks, manual/approved automatic refresh and before/after observation readback are implemented. Incomplete-attempt repair/recovery, undo, full timeline and actual-model meaning remain; external editors are not atomically excluded. |
+| G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: organization inventory uses portable source keys
+
+The Windows failure audit found a remaining native-string inventory boundary in
+`distill_knowledge.rs`. On Windows, nested filesystem paths become backslash
+strings while published vector records retain slash-delimited page keys. The
+inventory therefore cannot match those current records. Historical failure
+grouping is retained; six entries now include this code-inspection evidence,
+without claiming a current Windows pass.
+
+The new Unix regression first failed at `distill_knowledge_tests.rs:79` with
+`assertion failed: read(directory.path()).is_err()`: a literal-backslash source
+name was admitted beside a distinct nested path. The inventory now reuses
+`vault_path::relative_key`, keeping native separators portable while rejecting
+literal-backslash filenames instead of aliasing them. Existing hidden-path,
+symlink, source-read and complete-section validation remain in place.
+The 17 knowledge tests pass, including nested Unicode/space keys and unchanged
+original bytes for both rejected filenames. README describes the boundary and
+retains the Windows native-publication limitation. Full-suite verification is
+recorded below. Logs:
+`/tmp/myco-knowledge-path-{before,after}.log`.
+
+Committed as `46b8df53`. The complete default Rust suite passed 2,740 tests
+(44 ignored), including 2,712 library tests and 28 integration tests.
+Strict all-target Clippy with `native-index-probe` and Rust formatting passed.
+The two feature-gated frozen map-control tests also passed. These checks do
+not execute ignored inference or establish Windows behavior. Logs:
+`/tmp/myco-resume-native-{full,clippy}.log` and
+`/tmp/myco-map-fact-controls.log`.
+
+The frontend rerun with `npm test -- --maxWorkers=1 --minWorkers=1` completed:
+405 files and 6,509 tests passed in 202.97 seconds. This supersedes the
+interrupted full-suite attempt, not the failed actual-model quality verdicts.
+Log: `/tmp/myco-resume-all-tests-serial.log`. Frozen map diagnostics and rejected
+candidates are committed as `4495f045`; production map prompts remain unchanged.
+
+## November 11: resumed goal, native scope/cancellation and heading repair
+
+The owner authorized all remaining G0–G7 work. The current thread had no runtime
+goal, so execution was reattached to this contract as an active goal. Neither
+this resumption nor the checks below complete the release acceptance matrix.
+
+Native CUA replay in the existing sandbox confirmed that explicit wiki scope
+survives selecting the remaining-work intent, with a visible instruction to
+switch scope if project conversations are wanted. The cancelled synthetic Aspen
+submission retained all 36 sections. A replacement draft survived Ask navigation
+and a new native process. All 16 preexisting synthetic Markdown files retain
+their hashes; only a new Aspen raw source appeared. The final native process was
+stopped. See `2026-11-11-native-resume-draft-scope.json` for exact input and limits.
+The submission form is hidden while running, so the attempted same-form
+older-success/newer-draft scenario was not executable as planned. Cancellation
+still occurred while preparation was displayed, not at a proven publication seam.
+This replay does not close either of those D3 gaps or Q1/Q2 generated answers.
+
+The same native accessibility tree exposed two level-one Ingest headings. A
+real-page SSR regression failed with `expected [ '<h1', '<h1' ] to have a length
+of 1 but got 2` before the fix. `1d212ccd` makes the intake Hero a level-two
+heading, preserving the shared default for other callers and existing CSS.
+The 36 related frontend tests, lint (two existing hook warnings), typecheck and
+production build passed. README describes heading navigation. The previously
+built native binary does not contain this fix yet; VoiceOver and native replay
+of the changed heading remain unverified. Logs:
+`/tmp/myco-ingest-heading-{before,after}.log`,
+`/tmp/myco-resume-all-{lint,build}.log`.
+
+The computer-use skill's selected CLI failed with `command not found: orca`.
+No alternate Orca executable was used; provided CUA tools performed the native
+inspection. The existing unsigned diagnostic bundle's mandatory sandbox wrapper
+and binary/profile checks remained intact.
+
+Windows inspection still finds no local execution tool. The latest remote CI
+result remains the baseline `121c0fa2` failure, not evidence about this branch.
+The CI workflow runs on main pushes/PRs and has no manual dispatch; the release
+workflow is not an appropriate diagnostic substitute. No release was triggered.
+The owner confirmed that no Windows PC or VM is available; G3 runtime acceptance
+therefore still requires a hosted runner or a newly available Windows environment.
+
+## November 11: reject metadata-boundary map prompt candidate
+
+The frozen `2026-11-11-map-model-candidate-controls.json` adds explicit metadata,
+trust and quoted-subject instructions without changing original sources, user
+packets, acceptance claims, model or token budget. Native control tests check
+these equalities and exact hashes. All six actual local 4B calls completed in
+the network-denying sandbox; exact results are retained in
+`2026-11-11-map-model-candidate-review.json`. Fixed-seed repetitions produced
+identical text per case, not independent statistical evidence. Overlapping
+compilation/native diagnostics make the 446.31s wall time unsuitable as a
+performance benchmark.
+
+The supported relationship retained its facts, but the withdrawal output in all
+three repetitions broadened a withdrawn reading connection into no active data
+flow, attributed Relay's quoted export instruction to Ledger, and described the
+page itself as storing events. The candidate is rejected and the production
+prompt remains unchanged. A second frozen fact-boundary candidate explicitly
+separates these subjects and limits the scope of negation. Its initial process
+timed out at 600 seconds before any inference; sampling located it in artifact
+SHA-256 verification. This is an execution timeout, not generated-answer evidence.
+The full frontend test run was interrupted with exit 130 to reduce concurrent
+resource contention and must be rerun before claiming a full-suite pass.
+
+The separate retry completed all six calls in 570.32 seconds. All three
+withdrawal outputs still misattribute the quoted Relay instruction to Ledger,
+despite preserving the withdrawn reading connection and event storage. This
+candidate is also rejected. `2026-11-11-map-model-fact-{review,retry-review}.json`
+retain the timeout and completed run separately, including every output, model
+identity, input hashes and retry peak resident memory. Production prompts and
+acceptance labels are unchanged. Both native fixture-integrity/comparison tests
+passed; actual answer quality remains failed.
+
+Browser follow-up for `1d212ccd` recovered from an initial load timeout in the
+same ego task space. Dark 320/375/768/1280px layouts had no horizontal overflow;
+the real page has one H1 and its subordinate intake H2. Keyboard Tab moves from
+title to body; at 320px the next Tab reaches the visible, unobscured 44px-high
+submit button with its focus outline. Screenshots were inspected. The task space
+was finished and its Vite server stopped. See `2026-11-11-ingest-heading-browser.json`.
+This does not establish VoiceOver, full contrast, all states/translations or
+installed native acceptance.
+
+## November 11: freeze and replay exact local map-generation inputs
+
+Resumption audit: the recorded wrapper process is absent and its log ends after
+the fourth input, without an exit receipt. Three outputs survive out of six
+planned calls; the termination cause is unknown. The review receipt now retains
+all parsed input/output events, verified model metadata and log hashes, and marks
+the run interrupted rather than running. No inference was rerun in this audit.
+
+Manual review fails the frozen no-unsupported-claim requirement. Both retained
+supported-pipeline outputs call the components themselves untrusted, confusing
+the evidence trust boundary with a property of the components. The withdrawal
+output invents partial member coverage despite the explicit false value and
+attributes the quoted export claim to Ledger rather than Relay. It does preserve
+the withdrawn reading connection and event storage, and does not follow the
+quoted instruction; those successes do not cancel the unsupported claims.
+The repeat gate is incomplete, and G5 semantic/production acceptance stays open.
+
+Resumption checks: the maps/chat frontend suites passed 173 tests, and the exact
+native frozen-original/prompt revision test passed once with
+`cargo test --offline --locked --features native-index-probe --lib
+local_llm::map_model_tests::frozen_map_prompts_have_exact_original_and_prompt_revisions
+-- --exact`. These checks verify the diagnostic inputs, not generated quality.
+Typecheck/production build, Rust formatting and diff whitespace checks passed.
+Frontend lint had zero errors and the two existing `notchDriver` hook warnings;
+the build retained its existing chunk-size warnings. Full test suites and
+installed/native inference were not rerun.
+Logs: `/tmp/myco-map-resume-{tests,native,lint,build}.log`.
+README is unchanged because this slice records diagnostic evidence without
+changing product behavior. No commit, push or release was performed.
+
+Current next actions, superseding older historical next-slice lists below:
+
+1. G5: isolate the source-trust/coverage and quoted-actor errors with unchanged
+   controls before evaluating a prompt candidate; retain failed outputs and
+   complete all three repetitions. Then verify native publication/recovery and
+   human-edit scenarios. Full timeline/undo is not an extra goal acceptance gate.
+2. G4/G0: resolve requester/performer confusion and repository-equivalence
+   evidence; repeat W1–W4 with actual models without promoting failed candidates.
+3. G1/G2: complete older-submission/newer-draft and late-cancellation native
+   scenarios, followed by scope/date/follow-up native acceptance.
+4. G3: obtain a Windows-capable runner and verify identity, custody, durable
+   publication and the full Windows suite; macOS evidence cannot close this gate.
+5. G6/G7: finish keyboard/VoiceOver, contrast, narrow-layout, state/translation
+   and installed/offline-restart checks, then repeat the full release matrix.
+
+The frozen `2026-11-11-map-model-controls.json` defines a supported reading/storage
+relationship and a withdrawn connection with a quoted malicious instruction.
+Required and forbidden claims, complete synthetic originals, source hashes,
+exact prompts, 320-token output budget and three repetitions were frozen before
+inference. Frontend tests bind both cases to the actual `draftMap` system and
+evidence messages. Existing `chat.test.ts` covers the local adapter joining those
+messages into one prompt; this replay uses no profile suffix.
+
+The feature-gated `local_llm::map_model_tests` harness calls the same
+`generate_text_cancellable` method as `local_query`, with an empty system and
+4096-token context. It does not invoke native role admission, IPC, publication or
+installed UI. The model is the existing verified cached 4B artifact. The sandbox
+denies network and production app-data/legacy/Codex/Claude/Documents reads,
+permits writes only under the fresh synthetic run directory, and a loopback
+socket attempt verified network denial. No download or remote fallback is used.
+The receipt `2026-11-11-map-model-review.json` retains runtime identity, model
+manifest, exact inputs, all outputs, timings and subsequent manual assessment.
+Fixed seed 42 establishes repeatability rather than independent statistics.
+Compilation/frontend checks overlapped startup, so wall time is not a benchmark.
 
 ## November 11: native map member-expansion and revision acceptance
 
