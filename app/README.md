@@ -284,8 +284,9 @@ because that write fails or the vault opening changes, the run retains the map
 path as published-but-pending without counting the proposal as done.
 Native map identity remains unavailable on Windows. Inbox and audio source reads
 now use retained Windows volume/file IDs and reject reparse files, additional hard
-links and deleted objects. Exact source-byte checks remain mandatory. Hosted runtime
-validation of this source-read port is pending; it does not enable publication.
+links and deleted objects. Exact source-byte checks remain mandatory. Hosted NTFS source-handle and inbox
+tests pass, including checked manual archive. Broader publication and the complete
+installed Windows workflow remain unverified.
 Organization scans use portable vault-relative keys for nested wiki folders,
 including Unicode and spaces. Nonportable filenames are rejected without
 rewriting the source; native Windows publication still requires its own port.
@@ -710,6 +711,9 @@ records the optional Qwen Ask installation, source checks and measurement limits
 Windows model verification now binds cached readiness to native file IDs and change
 time in addition to size and modification time. Changed observations require the
 pinned SHA-256 check again; hosted validation of this cache repair remains pending.
+Windows index reads also check retained file identity, change time and link count
+before returning a byte-bound snapshot. Replacement or mutation during a read is
+rejected; hosted validation of these additional guards remains pending.
 The [local role comparison](docs/research/2026-10-05-local-model-routing.md)
 records separate Ask/import model selection, organization drafts and remaining
 retrieval and generation quality limits. Local Ask checks every chunk of each

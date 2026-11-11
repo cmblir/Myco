@@ -12,11 +12,56 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | 68468259 passed 2,179 Windows tests with 208 failures and 31 ignored; the one disappearing failure is an intermittent cache test. Four isolated NTFS handle tests pass. Source identity port is in hosted validation; production custody and durable publication remain incomplete. |
+| G3 Windows | Partial; current hosted run failed | ef8b33eb passed 2,200 Windows tests with 194 failures and 31 ignored. Six source-handle and six inbox tests pass. Sixteen old failures resolve, two cache failures appear. Model/index cache repairs require hosted validation; production custody and durable publication remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: retained Windows sources pass native runtime tests
+
+[Windows job 130305090197](2026-11-11-windows-source-runtime-review.json) at
+`ef8b33eb` completed with **2,200 passed, 194 failed, 31 ignored**. All six new
+retained-source handle tests and all six inbox tests pass, including checked
+manual archive, same-path reopen rejection and same-byte replacement protection.
+Eleven previous audio failures and five inbox failures no longer occur. Two model/
+adapter cache tests fail in this run, for a net reduction of fourteen failures.
+The already committed model-cache repair is not included in this run.
+
+The remaining audio tests reach partial publication and rename-access-denied
+failures; source capture success does not prove complete publication. The Intel
+Mac job was still live when the completed Windows job log was downloaded directly
+and subsequently passed; all non-Windows jobs passed. No whole-run success or
+installed Windows acceptance is claimed. README now
+separates this verified source-read behavior from the remaining publication work.
+
+## November 11: Windows bounded index-read identity
+
+The prior Windows failures at `index_file_snapshot_tests.rs:31` and `:73` occur
+while the fixture restores timestamps through a read-only handle. The tests now
+open a writable handle for that operation, preserving their original assertions.
+[Microsoft documents the required write-attributes access](https://learn.microsoft.com/en-us/windows/win32/api/fileapi/nf-fileapi-setfiletime).
+This fixture correction alone would not close the production gap: non-Unix
+snapshot checks previously compared length and modification time without native
+file identity.
+
+Windows reads now compare native volume/file IDs, change time and link count at
+open and after the bounded read, including a separately reopened named object.
+Reparse, deleted and non-regular objects fail closed. The model observation helper
+is renamed `windows_file_stamp` and shared with the index reader; pinned model
+checks retain their existing semantics and gain link-count observation. Index
+cache revision keys still use modification time, size and the actual bytes' hash;
+metadata-only changes do not permanently invalidate an otherwise identical cache.
+
+Enabled the in-place restored-time race test on Windows and added same-byte,
+same-time replacement (Unicode/space path) and added-hard-link races. Every case
+checks that original and competing files remain intact. The exact Windows reader
+and helpers pass isolated GNU Windows cross-target Clippy; this is compile evidence,
+not full application or native runtime evidence. Mac full feature suite passes
+**3,185 / 0 failed / 77 ignored** before the final hard-link regression was added;
+the final focused suite passes **8 / 0 failed / 1 ignored**, followed by strict
+all-target Clippy. Hosted execution remains
+pending and no Windows publication or installed-flow acceptance is implied.
 
 ## November 11: Windows model-cache identity repair
 

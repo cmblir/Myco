@@ -402,7 +402,7 @@ struct FileIdentity {
     #[cfg(unix)]
     changed: (i64, i64),
     #[cfg(windows)]
-    native: crate::windows_model_stamp::Stamp,
+    native: crate::windows_file_stamp::Stamp,
 }
 
 impl FileIdentity {
@@ -417,7 +417,7 @@ impl FileIdentity {
                 modified: metadata
                     .modified()
                     .map_err(|error| format!("local model modification time: {error}"))?,
-                native: crate::windows_model_stamp::Stamp::read(file)?,
+                native: crate::windows_file_stamp::Stamp::read(file)?,
             })
         }
         #[cfg(not(windows))]
@@ -507,7 +507,7 @@ fn file_identity(path: &Path) -> Result<FileIdentity, String> {
     }
     #[cfg(windows)]
     {
-        FileIdentity::from_file(&crate::windows_model_stamp::open(path)?)
+        FileIdentity::from_file(&crate::windows_file_stamp::open(path)?)
     }
     #[cfg(not(windows))]
     FileIdentity::from_metadata(&metadata)
@@ -553,7 +553,7 @@ fn resolve_file_with_cache(
         cache.hash_reads += 1;
     }
     #[cfg(windows)]
-    let file = crate::windows_model_stamp::open(&path)?;
+    let file = crate::windows_file_stamp::open(&path)?;
     #[cfg(not(windows))]
     let file =
         File::open(&path).map_err(|error| format!("open local model for verification: {error}"))?;

@@ -102,10 +102,10 @@ pub mod vault;
 pub mod vault_dir;
 pub mod vault_history;
 mod vault_path;
+#[cfg(windows)]
+mod windows_file_stamp;
 #[cfg(all(test, windows))]
 mod windows_identity_tests;
-#[cfg(windows)]
-mod windows_model_stamp;
 #[cfg(windows)]
 mod windows_source;
 
