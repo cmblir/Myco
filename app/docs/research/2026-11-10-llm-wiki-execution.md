@@ -18,6 +18,37 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: native map member-expansion and revision acceptance
+
+The G5 acceptance audit found that existing native tests covered repeated
+refreshes, human annotations and stale source rejection, but did not combine an
+added member with a later fresh-source retry in one canonical map. The new
+`map_refresh_member_revision_tests.rs` scenario uses the real native source
+registry, role/origin validation, preview, custody-backed apply and filesystem
+inside `with_isolated_data`. It adds a synthetic second source, records both
+actual source revisions in the candidate metadata, refreshes the same map,
+repeats the update as a no-op, changes the added source, rejects the stale grant,
+and retries with a fresh source snapshot. At each successful update it checks
+that only one canonical map exists and the human title/annotation survive.
+Final reads check both synthetic source contents remain as authored by the test.
+
+The candidate prose is authored synthetic input, not model output. This scenario
+cannot establish explanation quality, UI routing, Windows or installed-app
+acceptance. The current recovery UI exposes retained before/after observations
+without granting automatic restore or deletion authority. Full timeline/undo
+features mentioned in earlier status notes are not additional G5 acceptance
+criteria; the original goal requires safe refresh and visible retryable failures.
+
+Initial test-file creation used the wrong working directory and failed with
+`FileNotFoundError`; the path was corrected before the crate test compilation.
+The first Cargo process completed successfully and executed the new named test
+(1 passed). The full `map_refresh::` filter then passed 10 tests; its one ignored
+child entry is exercised by the parent multi-process cases. Formatting and
+`cargo clippy --offline --locked --all-targets -- -D warnings` passed.
+Logs: `/tmp/myco-map-members-{native,refresh,clippy}.log`.
+README is unchanged because this slice adds acceptance coverage rather than
+product behavior. Frontend gates were not rerun for this Rust-test-only change.
+
 ## November 11: retain completed map output when source cleanup fails
 
 A successful map consumer could still reject when releasing its native source

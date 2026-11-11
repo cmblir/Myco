@@ -192,6 +192,13 @@ native publication checks.
   producing duplicates. Changed evidence before publication rejects stale output.
 - [ ] Missing/unreadable sources and partial coverage remain visible and retryable.
 
+Native structural evidence (November 11): a real-filesystem scenario now covers
+member expansion, rejection of an old source grant, a fresh-revision retry,
+no-op repetition and preservation of one canonical map with human title/notes.
+This does not close the above checkboxes: generated explanation quality and the
+complete user-facing/native failure matrix remain unverified. See the execution
+record for commands and scope.
+
 ### G6 Improve visual hierarchy and review flow
 
 Use `docs/design/design-system.md`, the shared UI kit and graph visual rules.

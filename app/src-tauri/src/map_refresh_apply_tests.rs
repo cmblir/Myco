@@ -3,6 +3,9 @@ use crate::role_authorization::{capture_role_at, RoleUsage};
 use crate::settings::test_support::with_isolated_data;
 use std::path::Path;
 
+#[path = "map_refresh_member_revision_tests.rs"]
+mod member_revision_tests;
+
 fn create(root: &Path) -> (String, crate::map_custody::MapCreationUndo) {
     std::fs::create_dir_all(root.join("wiki/maps")).unwrap();
     std::fs::write(root.join("wiki/synthetic.md"), "Synthetic source.").unwrap();
