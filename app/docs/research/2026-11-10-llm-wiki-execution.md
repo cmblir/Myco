@@ -12,7 +12,7 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | b8f38eeb passed 2,171 Windows tests with 209 failures and 31 ignored. Original-source closure fixed 38 additional failures after the first hosted run. Windows handle identity, custody and durable publication remain incomplete; isolated handle tests prepared. |
+| G3 Windows | Partial; current hosted run failed | aa1a225b passed 2,174 Windows tests with 210 failures and 31 ignored. Original-source closure fixed 38 failures in the prior run. Three of four isolated NTFS handle tests pass; sharing-error assertion correction awaits rerun. Production custody and durable publication remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
@@ -29,9 +29,17 @@ hash are in `2026-11-11-windows-source-closure-review.json`. This verifies
 `8573f98f` on Windows without claiming complete native support.
 
 The Windows-only binding and handle experiments were committed separately as
-`3cb2e137` and `aa1a225b`. Run 42944413390 is in progress and includes the native
-diagnostic step plus the unchanged full test gate. These tests do not enable
-production authority. Their compiled/runtime behavior is still unverified.
+`3cb2e137` and `aa1a225b`. Run 42944413390 completed: all non-Windows jobs pass;
+Windows reports 2,174 passed, 210 failed and 31 ignored. The isolated NTFS
+diagnostic passes three handle tests and fails the sharing-denial assertion:
+Rust reports `Uncategorized`, not the assumed `PermissionDenied`. The raw log
+overrides GitHub's `success` step conclusion, normalized by `continue-on-error`;
+an initial progress report based on that conclusion was corrected. The full
+suite still gates this test. All previous 209 failures remain, with only this
+new diagnostic failure added. Receipt: `2026-11-11-windows-handle-review.json`.
+The follow-up checks the exact native sharing-violation code and adds successful
+deletion after handle release; its Windows runtime result remains pending.
+No production native authority is enabled by these experiments.
 
 Two new regressions against the actual incremental output guard failed before
 its repair: repeated nonconsecutive subjects and three member citations with
@@ -45,9 +53,17 @@ repair; the implementation now retains the completed first paragraph. Existing
 dialogue stops and output budgets remain. The feature-enabled `local_llm` suite
 passes 145 tests with 28 explicitly ignored and no failures, including all 15
 output-guard tests. Strict feature-enabled all-target Clippy also passed.
-The repair and README update are committed as `7f42f3a0`. An isolated offline
-actual-model replay is running with the unchanged native-roles-v1 controls;
-its semantic result remains unverified. Green logs:
+The repair and README update are committed as `7f42f3a0`. The isolated offline
+actual-model replay completed all six calls in 352.75 seconds with unchanged
+native-roles-v1 controls, cached weights, role transport, fixed seed and budgets.
+Manual review of every output passes the two frozen helper claim/link cases:
+the withdrawn relationship and missing event-storage fact now appear with
+complete member links in all three repetitions. Each case repeats identical
+text; these are not independent samples. The withdrawal output unnecessarily
+paraphrases the malicious quotation, and the supported output omits the requested
+grouped-list layout. Production transport is unchanged; native UI, publication,
+broader quality and G5 acceptance remain incomplete. Exact outputs, hashes and
+review are in `2026-11-11-map-model-role-guard-review.json`. Green logs:
 `/tmp/myco-map-repetition-full.log`, `/tmp/myco-map-repetition-clippy.log`. Red log:
 `/tmp/myco-map-repetition-before.log` (two failures, exit 101).
 

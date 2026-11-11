@@ -110,5 +110,14 @@ retrieved the archive successfully. No version was upgraded.
 
 The CI diagnostic step runs the filtered tests with output visible, then always
 continues to the unchanged full Windows suite, which includes and gates the same
-tests. Native compile and execution results remain pending. The added tests grant
-no production authority and do not change any non-Unix rejection gate.
+tests. Run 42944413390 compiled and executed them on NTFS: identity/replacement,
+hard links and directory replacement passed; sharing denial failed because the
+Rust error kind is `Uncategorized`, not `PermissionDenied`. The step's displayed
+`success` is normalized by `continue-on-error`; its raw log records 3 passed and
+1 failed. The full suite reports 2,174 passed, 210 failed and 31 ignored. See
+`2026-11-11-windows-handle-review.json` for the preserved evidence.
+
+The follow-up asserts native `ERROR_SHARING_VIOLATION` and tests that deletion
+succeeds after release, retaining the byte-preservation assertions. Its runtime
+result remains pending. The added tests grant no production authority and do not
+change any non-Unix rejection gate.
