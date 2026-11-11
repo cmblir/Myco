@@ -18,6 +18,39 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retained-target Windows rename experiment
+
+The remaining audio mutation failures reach `vault::atomic_persist_file`, whose
+locked `tempfile` 3.27.0 Windows implementation calls `MoveFileExW` for replacement.
+Source handles now explicitly share deletion, so dropping retained evidence or
+switching to in-place writes would not be an acceptable workaround. Added six
+Windows-only native experiments under the existing handle-diagnostic filter:
+
+- `FileRenameInfoEx` replacement with a retained original reader, checking both
+  original bytes and the published staged file ID (Unicode/space name).
+- No-replace rejection when a target already exists, preserving both files.
+- Rejection of a read-only target without an ignore-readonly flag.
+- Rejection while an exclusive target handle is retained.
+- Absent-target publication retaining the staged object's file ID.
+- The actual legacy `tempfile::persist` outcome with a retained reader, logging
+  success or the native error while checking preserved original-handle bytes.
+
+The proposed helper is test-only, uses a retained destination-directory handle and
+an aligned bounded UTF-16 `FILE_RENAME_INFO` buffer. Its native values and layouts
+were checked against the locked binding and
+[Microsoft's rename documentation](https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_rename_information).
+Cross-target Windows GNU Clippy passes for the exact diagnostic module and source
+reader. Native execution, crash durability and production integration remain
+pending. No production write guard, permission, deletion or fallback changed.
+
+The `ef8b33eb` Windows log measured 7m29s building diagnostics, followed by another
+2m55s test build; the failing job skipped dependency-cache publication. Enabled
+only the documented [`cache-on-failure` option](https://github.com/Swatinem/rust-cache)
+for the Windows job. Default cache keys and the mandatory complete `cargo test`
+gate are unchanged. Workflow YAML syntax and Rust formatting pass. The effect on
+subsequent CI duration is unmeasured. README is unchanged for this tests/CI-only
+slice; the Windows release gate stays open.
+
 ## November 11: retained Windows sources pass native runtime tests
 
 [Windows job 130305090197](2026-11-11-windows-source-runtime-review.json) at

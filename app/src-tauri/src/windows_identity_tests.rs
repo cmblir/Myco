@@ -181,3 +181,6 @@ fn windows_sharing_denial_preserves_source_until_handle_release() {
     fs::remove_file(&path).unwrap();
     assert!(!path.exists());
 }
+
+#[path = "windows_rename_tests.rs"]
+mod rename;
