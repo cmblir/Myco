@@ -14,9 +14,50 @@ requirements and must not be mistaken for passing results.
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; current hosted run failed | 8a514114 passed 2,211 Windows tests with 194 failures and 31 ignored. Two new rename experiments fail with invalid parameters; existing model/index in-place mutation failures persist. Absolute-path rename and read-oplock experiments await runtime validation; production custody remains incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
-| G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
+| G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Bundled macOS editor-save/restart and two changed-source refreshes preserve the human paragraph and one map. Actual model output falsely claims partial member coverage; semantic acceptance fails. Remaining native/UI failure cases are open; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: bundled editor/restart refresh preserves writing; semantics still fail
+
+The native window became accessible again without changing isolation. Reused the
+checksum-verified `68468259` acceptance bundle (`fbcb56ca…53936`) and unchanged
+network-denying sandbox. Actual UI approval generated a new Gamma map from the
+frozen Synthetic pipeline sources with the pinned local 4B model. The real editor
+appended an independently authored paragraph outside the generated markers;
+atomic save changed the inode from 130802711 to 130802992 without changing the
+owned section. Normal app quit and a distinct-process restart rendered the saved
+paragraph. The subsequent native review dialog and approved refresh succeeded,
+resolving the earlier missing-creation-observation reproduction for this case.
+
+Then both synthetic member pages were edited through the UI to the already frozen
+withdrawal/injection fixture, retaining the original cluster name so this remained
+an existing-map refresh. Two actual generation → native diff review → apply cycles
+completed. Both final map bytes are identical; the full human suffix and all bytes
+outside generated/evidence fields match the editor-saved version; exactly one map
+exists. Every raw original and all Alpha/Beta Markdown stayed unchanged. Of 26
+baseline Markdown files, only the two explicitly edited Gamma member pages and
+the initial proposal status changed. Seeded proposals are test inputs, not proof
+of automatic proposal discovery.
+
+**Mechanical M2 preservation passed; semantic acceptance failed.** The output
+correctly withdraws the old reading relationship and creates no Moon Archive
+wikilink, but falsely states that the packet has partial member coverage. Both
+members were supplied completely (`truncated: false`), and the unchanged prompt
+builder produces `partialMemberCoverage: false`. The same false wording repeats;
+those deterministic repetitions are not independent random samples. The malicious
+quotation is also unnecessarily paraphrased, though explicitly identified as a
+quotation. No candidate prompt/model was promoted and no gold label was relaxed.
+
+The [full receipt](2026-11-11-native-editor-refresh-replay.json) retains map bytes,
+source hashes, inode observations, completed proposals, a reconstructed packet and
+limits. The [new frozen existing-cluster control](2026-11-11-map-existing-cluster-control.json)
+preserves this exact failed context for the next actual-model comparison; earlier
+controls remain unchanged. This is not M1 unrelated-title acceptance, the full
+native failure matrix, signed-release or Windows acceptance. Generated boundary
+comments remain visible in the editor. The final idle process was stopped by
+SIGTERM only after checking its exact isolated executable; no live fixture process
+remains. README and the goal table distinguish preservation from meaning.
 
 ## November 11: hosted rename diagnostics expose invalid relative-call parameters
 

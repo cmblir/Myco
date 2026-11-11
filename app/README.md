@@ -171,8 +171,11 @@ baseline. Human edits inside generated sections still prevent automatic refresh.
 Previously detached maps and external replacements are not adopted from public
 markers or matching bytes. Manual proposal errors explain in the selected language
 when an update record cannot be verified and direct you to review and edit the
-preserved map manually. This repair passes native regression and interruption
-tests; the bundled editor-to-refresh workflow still requires a fresh UI replay.
+preserved map manually. Native regression/interruption tests and a bundled macOS
+editor → restart → two changed-source refresh replay preserve the human paragraph
+byte-for-byte with one map. The same replay still produces an unsupported partial-
+coverage claim, so map explanation quality is not accepted; see the
+[native replay receipt](docs/research/2026-11-11-native-editor-refresh-replay.json).
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.
 Creation observations also validate their schema, vault/target scope, baseline
