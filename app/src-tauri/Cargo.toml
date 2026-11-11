@@ -92,9 +92,9 @@ tauri-plugin-process = "2"
 [target.'cfg(unix)'.dependencies]
 libc = "=0.2.186"
 
-# Exercise native Windows handle identity before enabling publication there.
+# Native Windows source identity and the real handle diagnostics.
 # This exact Microsoft binding version is already present transitively.
-[target.'cfg(windows)'.dev-dependencies]
+[target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
 
 # macOS notch surface (src/notch.rs): NSScreen safe-area/auxiliary-area
