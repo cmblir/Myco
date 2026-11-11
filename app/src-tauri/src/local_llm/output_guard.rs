@@ -11,7 +11,7 @@ pub(super) fn apply(out: &mut String, schema: Option<GenerationSchema>) -> bool 
     apply_with_reason(out, schema).is_some()
 }
 
-/// Preserve the existing cutoff while identifying its observed termination.
+/// Identify dialogue fabrication or a consecutive repetition loop.
 pub(super) fn apply_with_reason(
     out: &mut String,
     schema: Option<GenerationSchema>,
@@ -27,7 +27,8 @@ pub(super) fn apply_with_reason(
             return Some(LoopStop::LegacyDialogueMarker);
         }
     }
-    // Legacy free-form repetition guard; preserve its first-occurrence cutoff.
+    // Reusing a citation or subject is normal. Only an actually repeated
+    // consecutive suffix is a loop; never rewind unrelated earlier facts.
     if out.chars().count() > 120 {
         let tail: String = out
             .chars()
@@ -37,11 +38,45 @@ pub(super) fn apply_with_reason(
             .into_iter()
             .rev()
             .collect();
-        if !tail.trim().is_empty() && out.matches(&tail).count() >= 3 {
-            if let Some(index) = out.find(&tail) {
-                out.truncate(index + tail.len());
+        if !tail.trim().is_empty() {
+            let mut positions = out.rmatch_indices(&tail).map(|(index, _)| index);
+            if let (Some(last), Some(previous), Some(first)) =
+                (positions.next(), positions.next(), positions.next())
+            {
+                let period = last - previous;
+                if previous - first == period {
+                    let end = out.len();
+                    let start = end.checked_sub(period.checked_mul(3)?)?;
+                    let unit = out.get(end - period..)?;
+                    if out.get(start..)? == unit.repeat(3) {
+                        // Incremental decoding can detect a rotated suffix before
+                        // the third copy ends. Recover the run's actual beginning
+                        // so the retained first copy includes its punctuation.
+                        let bytes = out.as_bytes();
+                        let mut run_start = start;
+                        while run_start > 0 && bytes[run_start - 1] == bytes[run_start - 1 + period]
+                        {
+                            run_start -= 1;
+                        }
+                        while !out.is_char_boundary(run_start)
+                            || !out.is_char_boundary(run_start + period)
+                        {
+                            run_start += 1;
+                        }
+                        // A preceding sentence can share the run's terminal
+                        // punctuation and spacing. Keep that boundary with the
+                        // completed copy instead of ending just before it.
+                        let boundary_len: usize = out[run_start..run_start + period]
+                            .chars()
+                            .take_while(|c| c.is_whitespace() || matches!(c, '.' | '!' | '?'))
+                            .map(char::len_utf8)
+                            .sum();
+                        run_start += boundary_len;
+                        out.truncate(run_start + period);
+                        return Some(LoopStop::LegacyRepetition);
+                    }
+                }
             }
-            return Some(LoopStop::LegacyRepetition);
         }
     }
     None
@@ -376,5 +411,47 @@ mod tests {
         let (actual, stopped) = decode_prefixes(&original, None);
         assert!(stopped);
         assert_eq!(actual, format!("{prefix}{sentence}"));
+    }
+
+    #[test]
+    fn free_form_retains_repeated_member_links_with_distinct_facts() {
+        let link = "[[wiki/synthetic-ledger.md|synthetic-ledger]]";
+        let original = format!(
+            "The original reading connection to {link} was withdrawn.\n\n\
+             Member details: {link} stores events.\n\n\
+             The withdrawal does not establish any additional relationships for {link}."
+        );
+        let (actual, stopped) = decode_prefixes(&original, None);
+        assert!(
+            !stopped,
+            "normal citation reuse is not a generation loop: {actual}"
+        );
+        assert_eq!(actual, original);
+    }
+
+    #[test]
+    fn free_form_retains_nonconsecutive_repeated_subjects() {
+        let subject = "The synthetic source inventory";
+        let original = format!(
+            "{subject} records the original documents. Another section describes missing dates. \
+             {subject} preserves the selected scope. A separate annotation marks an unresolved task. \
+             {subject} does not prove that task was completed."
+        );
+        let (actual, stopped) = decode_prefixes(&original, None);
+        assert!(
+            !stopped,
+            "separate supported statements are not a generation loop"
+        );
+        assert_eq!(actual, original);
+    }
+
+    #[test]
+    fn free_form_stops_consecutive_long_paragraph_loop_without_losing_its_first_copy() {
+        let prefix = "Synthetic overview with a separate supported fact. ";
+        let paragraph = "The synthetic ledger stores events. The relay reads those events without writing back. ";
+        let original = format!("{prefix}{}", paragraph.repeat(5));
+        let (actual, stopped) = decode_prefixes(&original, None);
+        assert!(stopped, "a consecutive paragraph loop must still stop");
+        assert_eq!(actual, format!("{prefix}{paragraph}"));
     }
 }

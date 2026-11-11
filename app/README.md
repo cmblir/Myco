@@ -130,6 +130,9 @@ question. The current document-specific control is the selected-note scope; a
 general checked-document selector is not available in this build.
 Original-source rechecks use portable vault-relative paths, including nested
 folders with Unicode and spaces, while retaining the exact selected-note limit.
+Free-form local answers retain recurring source links and subjects across distinct
+statements. The repetition guard stops consecutive repeated text while preserving
+its first complete copy; token limits and cancellation still bound generation.
 
 Workstream facts v6 group source-recorded absolute working folders with opaque
 keys, rather than merging matching folder names. Ambiguous folders stay
