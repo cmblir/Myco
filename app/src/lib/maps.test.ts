@@ -41,6 +41,7 @@ vi.mock("./ipc", () => ({
 }));
 
 import { draftMap } from "./maps";
+import modelControls from "../../docs/research/2026-11-11-map-model-controls.json";
 import { sha256 } from "./tidyRun";
 import { resolveStem } from "./wikilinks";
 
@@ -94,6 +95,21 @@ beforeEach(() => {
 });
 
 describe("draftMap", () => {
+  it.each(modelControls.cases)("keeps the frozen actual-model prompt for $id", async fixture => {
+    sourceRead.mockImplementation(async (path: string) => {
+      const document = fixture.documents.find(document => `/v/${document.path}` === path);
+      if (!document) throw new Error("Unexpected synthetic source");
+      expect(await sha256(document.raw)).toBe(document.sha256);
+      return { raw: document.raw };
+    });
+    complete.mockResolvedValue("Synthetic prompt-capture body.");
+    await draftMap("/v", fixture.cluster, fixture.documents.map(document => document.path));
+    expect(complete.mock.calls[0][0]).toMatchObject({ task: "generate", sourceContext: "supplied",
+      messages: [{ role: "system", content: modelControls.system }, { role: "user", content: fixture.user }] });
+    expect(`${modelControls.system}\n\n${fixture.user}`).toBe(fixture.localPrompt);
+    expect(await sha256(fixture.localPrompt)).toBe(fixture.localPromptSha256);
+  });
+
   it("retains a successfully created map when source cleanup fails", async () => {
     complete.mockResolvedValue("Synthetic relationship.");
     const cleanup = new Error("Synthetic source cleanup failed");
