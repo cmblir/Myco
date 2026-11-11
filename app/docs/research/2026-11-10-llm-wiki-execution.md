@@ -18,6 +18,29 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: retain completed map output when source cleanup fails
+
+A successful map consumer could still reject when releasing its native source
+snapshot. `withMapEvidence` correctly surfaced the cleanup failure but its
+successful result was lost, so `draftMap` supplied no retained-output path.
+Synthetic creation and refresh cases both reproduced this as an unstructured
+`AggregateError: Topic map source cleanup failed` (30 tests passed, 2 failed).
+
+`draftMap` now remembers the path only after its creation or refresh consumer
+completes. A later cleanup rejection becomes a pending workflow error carrying
+that path and the original error as its cause. The existing runner can record
+published-pending output; proposal completion still does not run. Failed
+generation plus failed cleanup retains both failures without claiming a write.
+No additional write or cleanup retry is introduced. Native source identity,
+publication custody and raw files are unchanged. README documents the behavior.
+
+The 137 focused map/refresh/evidence/distill tests and all 6,506 frontend tests
+in 405 files passed. Typecheck/build passed; lint reported zero errors and the
+same two existing notchDriver hook warnings. Logs:
+`/tmp/myco-map-cleanup-{before,focused,lint,build,tests}.log`. These synthetic IPC
+regressions cover new-map and existing-map cleanup outcomes, not actual native
+fault injection or model quality. G5 recovery and the full goal remain incomplete.
+
 ## November 11: preserve completed maps when proposal finalization fails
 
 The approved-map runner discarded the successful `draftMap` return value. A

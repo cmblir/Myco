@@ -94,6 +94,29 @@ beforeEach(() => {
 });
 
 describe("draftMap", () => {
+  it("retains a successfully created map when source cleanup fails", async () => {
+    complete.mockResolvedValue("Synthetic relationship.");
+    const cleanup = new Error("Synthetic source cleanup failed");
+    releaseSources.mockRejectedValue(cleanup);
+    await expect(draftMap("/v", "synthetic-cleanup", ["wiki/x.md"]))
+      .rejects.toMatchObject({ status: "pending", code: "unavailable",
+        writtenPath: "wiki/maps/synthetic-cleanup.md", cause: { errors: [cleanup] } });
+    expect(publishDistillNote).toHaveBeenCalledOnce();
+    expect(appendDistillManifest).toHaveBeenCalledOnce();
+    expect(releaseSources).toHaveBeenCalledOnce();
+  });
+
+  it("does not claim a written map when generation and cleanup both fail", async () => {
+    const generation = new Error("Synthetic generation failed");
+    const cleanup = new Error("Synthetic source cleanup failed");
+    complete.mockRejectedValue(generation);
+    releaseSources.mockRejectedValue(cleanup);
+    const failure = await draftMap("/v", "synthetic-no-write", ["wiki/x.md"]).catch(error => error);
+    expect(failure).toMatchObject({ errors: [generation, cleanup] });
+    expect(failure).not.toHaveProperty("writtenPath");
+    expect(publishDistillNote).not.toHaveBeenCalled();
+  });
+
   it.each([["first", "second"], ["second", "first"]])(
     "preserves ambiguous matching maps regardless of directory order (%s, %s)",
     async (first, second) => {
@@ -119,7 +142,7 @@ describe("draftMap", () => {
     },
   );
 
-  it("refreshes an already-approved automatic map in place under its captured automatic role", async () => {
+  it.each([false, true])("refreshes an approved map and retains its result on cleanup failure: %s", async (cleanupFails) => {
     complete.mockResolvedValue("Synthetic old relationship.");
     await draftMap("/v", "synthetic-auto", ["wiki/x.md"], "llm-100", undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined });
     const before = writeFile.mock.calls[0][1] as string;
@@ -141,8 +164,10 @@ describe("draftMap", () => {
       expect(expected).toBe(await sha256(before));
       return { path: `wiki/maps/${key}.md`, revision: await sha256(candidate), changed: true };
     });
-    await expect(draftMap("/v", "synthetic-auto", ["wiki/x.md"], "llm-200", undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined }))
-      .resolves.toBe("wiki/maps/synthetic-auto.md");
+    if (cleanupFails) releaseSources.mockRejectedValue(new Error("Synthetic refresh cleanup failed"));
+    const result = draftMap("/v", "synthetic-auto", ["wiki/x.md"], "llm-200", undefined, "automatic", undefined, { kind: "approved-proposal", recheck: async () => undefined });
+    if (cleanupFails) await expect(result).rejects.toMatchObject({ status: "pending", code: "unavailable", writtenPath: "wiki/maps/synthetic-auto.md" });
+    else await expect(result).resolves.toBe("wiki/maps/synthetic-auto.md");
     expect(applyMapRefresh).toHaveBeenCalledOnce();
     expect(publishDistillNote).toHaveBeenCalledOnce();
     expect(appendDistillManifest).toHaveBeenCalledOnce();

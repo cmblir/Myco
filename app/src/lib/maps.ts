@@ -214,6 +214,7 @@ export async function draftMap(
   assertCurrent();
   if (existing && !reviewRefresh) throw new WorkflowOperationError("pending", "unavailable", `Existing map ${existing} requires an interactive refresh review`);
 
+  let completedPath: string | null = null;
   return withMapEvidence(origin, roleSnapshot, members, assertCurrent, async (evidence, snapshotId, recheck) => {
     assertCurrent();
     if (reviewRefresh && typeof reviewRefresh !== "function") await reviewRefresh.recheck();
@@ -246,7 +247,8 @@ export async function draftMap(
 
     assertCurrent();
     if (existing && reviewRefresh) {
-      return refreshExistingMap(origin, roleSnapshot, existing, content, snapshotId, reviewRefresh, assertCurrent, recheck);
+      completedPath = await refreshExistingMap(origin, roleSnapshot, existing, content, snapshotId, reviewRefresh, assertCurrent, recheck);
+      return completedPath;
     }
     const path = await freeMapPath(vaultPath, slugify(cluster), assertCurrent);
     assertCurrent();
@@ -260,6 +262,13 @@ export async function draftMap(
     assertCurrent();
     await recordPublication(vaultPath, origin, { manifestId, publication });
     assertCurrent();
-    return rel;
+    completedPath = rel;
+    return completedPath;
+  }).catch(error => {
+    // The consumer completed; only source cleanup remains outside its lifetime.
+    if (completedPath) throw Object.assign(new WorkflowOperationError("pending", "unavailable",
+      `Topic map ${completedPath} is retained; source cleanup failed: ${String(error)}`),
+    { writtenPath: completedPath, cause: error });
+    throw error;
   });
 }

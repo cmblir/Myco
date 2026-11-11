@@ -250,6 +250,9 @@ writing retains the output for manual recovery without publication/undo authorit
 A verified existing-map refresh receipt also retains its original-vault output
 path if the vault opening changes before frontend finalization; an invalid
 receipt does not establish that output was saved.
+If source-snapshot cleanup fails after a successful creation or refresh, the
+operation retains the completed map path and reports the cleanup failure as
+pending; it does not complete the proposal or silently retry the write.
 Existing maps without native custody remain pending for manual recovery. Automatic
 organization can refresh existing maps only from already-approved proposals,
 within its shared model budget and original organization-role authorization.
