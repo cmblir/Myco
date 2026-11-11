@@ -104,6 +104,8 @@ pub mod vault_history;
 mod vault_path;
 #[cfg(all(test, windows))]
 mod windows_identity_tests;
+#[cfg(windows)]
+mod windows_source;
 
 pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {
     #[cfg(feature = "native-index-probe")]

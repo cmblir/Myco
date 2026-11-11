@@ -95,10 +95,23 @@ fn verify_identity(file: &std::fs::File, named: &Path) -> Result<(), String> {
             return Err("inbox source identity changed or has unowned hard links".into());
         }
     }
-    #[cfg(not(unix))]
+    #[cfg(windows)]
+    crate::windows_source::verify(file, named)?;
+    #[cfg(not(any(unix, windows)))]
     return Err("native inbox source identity is unsupported on this platform".into());
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     Ok(())
+}
+
+fn open_source(path: &Path) -> Result<std::fs::File, String> {
+    #[cfg(windows)]
+    {
+        crate::windows_source::open(path)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::File::open(path).map_err(|error| format!("open inbox source: {error}"))
+    }
 }
 
 fn read_bounded(file: &std::fs::File) -> Result<String, String> {
@@ -136,9 +149,9 @@ fn authenticate(snapshot: &Snapshot, grant: &Grant) -> Result<(), String> {
 fn verify_source(root: &Path, grant: &Grant) -> Result<(), String> {
     let named = path(root, &grant.inbox_rel)?;
     verify_identity(&grant.file, &named)?;
-    let fresh =
-        std::fs::File::open(&named).map_err(|error| format!("reread inbox source: {error}"))?;
+    let fresh = open_source(&named)?;
     let actual = read_bounded(&fresh)?;
+    verify_identity(&fresh, &named)?;
     verify_identity(&grant.file, &named)?;
     if digest(actual.as_bytes()) != grant.revision {
         return Err("inbox source revision changed; the source remains pending".into());
@@ -162,7 +175,7 @@ pub(crate) fn capture(
         registry.retain(|_, grant| grant.origin.vault_path != origin.vault_path || same_origin(&grant.origin, origin));
         crate::vault::with_root_mutation(root, |root, _guard| {
         let named = path(root, rel)?;
-        let file = std::fs::File::open(&named).map_err(|error| format!("open inbox source: {error}"))?;
+        let file = open_source(&named)?;
         verify_identity(&file, &named)?;
         let original = read_bounded(&file)?;
         verify_identity(&file, &named)?;

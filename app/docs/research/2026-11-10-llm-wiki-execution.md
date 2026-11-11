@@ -18,6 +18,39 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: Windows retained source-read port
+
+The `cc30681f` Windows failure log shows explicit unsupported identity failures
+in audio and inbox source capture. Added a Windows-only retained source reader
+shared by those two paths: final-component reparse-point opening, volume plus
+128-bit file-ID comparison, regular-file checks, single-link checks and rejection
+of delete-pending handles. All information-query errors fail closed. Handles
+share read/write/delete so normal edits and replacements remain possible and are
+observed by the existing exact-byte and identity rechecks. The inbox fresh reread
+now checks its own identity as well as the original retained handle.
+
+The already locked Microsoft `windows-sys` 0.61.2 dependency moved from Windows
+dev-only to production dependencies in a separate build commit; no package
+version changed. API layouts were checked against the installed crate and
+[Microsoft's standard-information reference](https://learn.microsoft.com/windows/win32/api/winbase/ns-winbase-file_standard_info).
+An isolated scratch crate imports the exact production source module and its six
+Windows tests. Windows GNU cross-target compile and strict Clippy pass; an initial
+boolean-versus-integer field mismatch was found and corrected. Cross-compilation
+is not execution or a complete Windows app build.
+
+The actual inbox regression now covers same-byte replacement on both supported
+platforms. Mac feature library tests pass **3,183 / 0 failed / 77 ignored**.
+Windows source tests cover Unicode/spaces, reopen, in-place edits, same-byte
+replacement, added hard links, missing/directory paths, sharing denial and deleted
+sources. They still require hosted execution. This port does not enable Windows
+map custody, transcript publication, inbox archival or archive directory handling.
+README keeps that limitation explicit.
+
+[First-panic triage](2026-11-11-windows-role-first-causes.json) covers all 209 prior
+failures: 67 explicitly unsupported-platform errors, 27 access-denied/directory-open
+errors, 44 poisoned-lock secondary errors, and 71 cases requiring individual review.
+These are conservative log categories, not a claim that every root cause is known.
+
 ## November 11: preserve map custody across real editor saves
 
 Reproduced the bundled failure using `editor_io::write`: the pre-fix test failed

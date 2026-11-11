@@ -282,7 +282,10 @@ so cancellation cannot leave an automatic approval behind. Proposal completion
 uses a revision-checked write. If a completed map cannot finalize its proposal
 because that write fails or the vault opening changes, the run retains the map
 path as published-but-pending without counting the proposal as done.
-Native map identity remains unavailable on Windows.
+Native map identity remains unavailable on Windows. Inbox and audio source reads
+now use retained Windows volume/file IDs and reject reparse files, additional hard
+links and deleted objects. Exact source-byte checks remain mandatory. Hosted runtime
+validation of this source-read port is pending; it does not enable publication.
 Organization scans use portable vault-relative keys for nested wiki folders,
 including Unicode and spaces. Nonportable filenames are rejected without
 rewriting the source; native Windows publication still requires its own port.
