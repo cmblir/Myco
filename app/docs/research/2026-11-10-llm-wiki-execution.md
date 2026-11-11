@@ -18,6 +18,53 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: native map creation passes; editor-save refresh fails
+
+Built the unsigned isolated macOS ARM acceptance bundle from `f8188592` with
+`native-app-acceptance`, locked offline dependencies and the existing unique app
+identifier. Restored the SHA-bound launcher; the new native binary SHA-256 is
+`d81f5408df67aa759a2bf75034a716ff7306bfb60833c7b246741dc1fbab688d`.
+The sandbox profile is unchanged. Startup without isolation still refuses, and
+a sandboxed socket probe is denied. All preexisting synthetic Markdown hashes
+were unchanged by the build and both observed workflows.
+
+Seeded the two exact frozen M1 source bodies and a pending proposal in the
+synthetic Alpha vault. The proposal is a fixture, not automatic detection
+evidence. Through the actual UI, expanded the proposal, approved it and confirmed
+the dialog. The cold process spent time in `status_in_dir` artifact SHA-256
+verification (confirmed by a process sample), then generated and published one
+`wiki/maps/synthetic-pipeline.md`. The native run manifest records its created
+revision, the proposal became done, and the body exactly matches the accepted
+frozen helper output. Required reading/storage facts and selected links pass;
+the one-paragraph layout limitation remains.
+
+The newly created file did not appear in immediate exact-name search/sidebar.
+After normal quit and relaunch it appeared and rendered correctly. The diagnostic
+index updater was disabled, so this does not isolate normal-app index behavior.
+The editor visibly renders generated-section marker comments. Added a synthetic
+human annotation through the real editor, observed Saved, quit normally and
+relaunched. The annotation survived, and the owned body/hash remained unchanged.
+
+Changed only the two new synthetic source files to the frozen withdrawal case,
+keeping the cluster label stable for the same-map refresh. Seeded another pending
+proposal and approved it in the UI. After real model preparation/generation, the
+app displayed `no creation observation matches the current map object`. The map
+and human annotation stayed byte-identical, the proposal stayed pending and no
+duplicate map appeared. The app was quit and process absence verified.
+
+Inspection shows the private creation observation still names the original inode,
+while the editor-saved map has a different inode. `editor_io::write_impl` uses the
+recorded atomic replacement writer but does not transfer map custody;
+`discover_creation` correctly refuses the unmatched object. Preserve that guard:
+the repair needs a privately verified editor-save transition that retains the
+original generated baseline, rather than trusting public markers or treating a
+same-path replacement as owned. Native tests must exercise the actual editor save,
+restart discovery, generated-section edits, replacement attacks and interruption.
+The raw English error also needs a localized recovery explanation.
+
+Receipt: `2026-11-11-native-map-role-bridge-review.json`. M1 creation is verified
+for this synthetic bundle; M2 refresh and G5/G7 acceptance remain failed/incomplete.
+
 ## November 11: Windows sharing correction verified
 
 Run 42947471200 at `83eaf754` completed with all non-Windows jobs passing.

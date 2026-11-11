@@ -165,6 +165,9 @@ app data to support hard links on the same filesystem. Conflicting or failed
 records preserve output for recovery instead of confirming publication. These
 records support freshly authorized native refreshes. Custody cleanup remains
 incomplete.
+Current native acceptance gap: an ordinary editor save replaces the map's file
+object without transferring its retained custody. A subsequent refresh is rejected;
+the map and human annotations remain intact, but the generated content stays stale.
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.
 Creation observations also validate their schema, vault/target scope, baseline

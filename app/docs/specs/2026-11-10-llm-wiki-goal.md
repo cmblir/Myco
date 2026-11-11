@@ -81,7 +81,7 @@ after G1. Run actual-model/native scenarios throughout, not only in G7.
 | G2 | Make Ask scope and period consistent | G0 cases | Implemented; native acceptance pending |
 | G3 | Restore Windows native safety and functionality | G0 inventory | Hosted Windows run at 83eaf754: 2,178 passed, 209 failed, 31 ignored; all four isolated NTFS handle tests pass; production identity/custody incomplete |
 | G4 | Resolve current project work state | G2 contract | Source-bound route and opaque folder identities implemented; facts v6 rebuild malformed cwd assignments; repository equivalence and actual meaning gates remain |
-| G5 | Refresh evidence-based topic maps | G0 evidence contract | Native refresh, durable preparation, manual/approved automatic flow, latest History and read-only retained-record discovery implemented; complete native/UI failure acceptance and actual-model meaning remain. Full timeline/undo is not an additional acceptance gate. |
+| G5 | Refresh evidence-based topic maps | G0 evidence contract | Frozen helper claim/link cases pass after repetition repair; bundled M1 creation passes. M2 after actual editor annotation and restart fails custody discovery; map/human text preserved. Repair editor-save custody transfer and complete remaining native/semantic acceptance. Full timeline/undo is not an additional acceptance gate. |
 | G6 | Improve capture, review and reading screens | G1; G2 for Ask | Main screens improved; native Graph navigation/restart and dark label repair checked; 800px graph-first layout verified in light/dark, with 1024/1280px checks; full accessibility/state and phone review incomplete |
 | G7 | Complete native acceptance and documentation | G1–G6 | In progress; not release-accepted |
 
