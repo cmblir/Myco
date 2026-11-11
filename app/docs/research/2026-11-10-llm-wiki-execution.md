@@ -12,11 +12,50 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | 8a514114 passed 2,211 Windows tests with 194 failures and 31 ignored. Two new rename experiments fail with invalid parameters; existing model/index in-place mutation failures persist. Absolute-path rename and read-oplock experiments await runtime validation; production custody remains incomplete. |
+| G3 Windows | Partial; current hosted run failed | 88551297 passed 2,219 Windows tests with 190 failures and 31 ignored. All 14 handle diagnostics pass, including absolute-path replacement and read-lease invalidation. Timestamp-only mutation tests fluctuate without a production fix. Production index read-lease integration awaits hosted validation; model cache and publication custody remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Bundled macOS editor-save/restart and two changed-source refreshes preserve the human paragraph and one map. Actual model output falsely claims partial member coverage; semantic acceptance fails. Remaining native/UI failure cases are open; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: existing-cluster model comparison rejects both arms
+
+The isolated offline pinned 4B comparison completed all 18 calls: two frozen
+prompt arms, three cases, three seed-42 repetitions. Each arm/case repeated exactly;
+these are repeatability observations, not independent samples. The baseline
+reproduced the native false partial-coverage claim. The fact-boundary candidate
+removed that claim but retained malicious quoted commands in both withdrawal
+cases and changed the quoted export subject from Relay to Ledger in the original
+cluster case. Neither arm passes semantic acceptance. No production prompt or
+frozen gold label changed. See the [raw outputs and manual review](2026-11-11-map-existing-cluster-comparison-review.json).
+
+## November 11: Windows index reads retain advisory invalidation
+
+The [88551297 hosted receipt](2026-11-11-windows-oplock-runtime-review.json)
+records 2,219 passed, 190 failed and 31 ignored. All 14 native handle diagnostics
+passed, while legacy retained-reader replacement still returns access denied.
+The model and index same-stamp tests happened to pass without production changes;
+this is fluctuation, not a repair.
+
+The bounded index reader now binds a read-only native oplock to the same retained
+file object before reading and rejects completion before accepting the snapshot.
+Unsupported leases fail closed. Cancellation drains asynchronous buffers before
+freeing them. Existing identity, reparse, link and content checks remain. The
+runtime probes now exercise this production helper, with additional distinct-object,
+retained-writer repetition and writable-mapping regressions. Model cache lifetime,
+publication authority, parent confinement and crash durability are not supplied by
+this read lease.
+
+Microsoft documents that an existing writable mapping prevents a Read oplock and
+that creating a writable section breaks it without acknowledgment:
+[granting rules](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/granting-oplocks),
+[section synchronization](https://learn.microsoft.com/en-us/windows-hardware/drivers/ifs/fs-filter-acquire-for-section-synchronization2).
+Strict Windows GNU cross-target Clippy passed for the real helper/probes and
+production index reader. These compilation checks are not Windows execution;
+hosted validation of this integration remains pending.
+The macOS default native suite passed 2,726 tests with 41 ignored (79.39 seconds);
+format verification and strict default-library Clippy also passed. Windows-only
+regressions require the hosted job and are not counted as executed on macOS.
 
 ## November 11: bundled editor/restart refresh preserves writing; semantics still fail
 

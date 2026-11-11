@@ -106,6 +106,32 @@ fn snapshot_rejects_same_stamp_write_during_held_read() {
     assert_eq!(std::fs::read(&path).unwrap(), b"bravo");
 }
 
+#[cfg(windows)]
+#[test]
+fn snapshot_rejects_repeated_same_stamp_writes_from_one_retained_writer() {
+    use std::io::{Seek, SeekFrom, Write};
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("Synthetic 한글 index.mxb");
+    std::fs::write(&path, b"alpha").unwrap();
+    let modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+    let mut writer = File::options().read(true).write(true).open(&path).unwrap();
+    for replacement in [b"bravo", b"alpha"].into_iter().cycle().take(16) {
+        let result = read_snapshot_after_open(&path, |_| {
+            writer.seek(SeekFrom::Start(0)).unwrap();
+            writer.write_all(replacement).unwrap();
+            writer
+                .set_times(std::fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+        });
+        assert!(result.is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), replacement);
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            modified
+        );
+    }
+}
+
 #[test]
 #[ignore = "explicit synthetic cache cost measurement; not a latency gate"]
 fn snapshot_cache_cost_measurement() {

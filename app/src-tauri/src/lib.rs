@@ -107,6 +107,8 @@ mod windows_file_stamp;
 #[cfg(all(test, windows))]
 mod windows_identity_tests;
 #[cfg(windows)]
+mod windows_read_lease;
+#[cfg(windows)]
 mod windows_source;
 
 pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {

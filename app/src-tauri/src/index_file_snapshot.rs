@@ -97,6 +97,9 @@ fn read_snapshot_after_open(
     let mut file = options
         .open(path)
         .map_err(|error| format!("open index file: {error}"))?;
+    #[cfg(windows)]
+    let read_lease = crate::windows_read_lease::ReadLease::acquire(path, &file)
+        .map_err(|error| format!("protect native index read: {error}"))?;
     let before = file
         .metadata()
         .map_err(|error| format!("inspect opened index file: {error}"))?;
@@ -138,6 +141,13 @@ fn read_snapshot_after_open(
     if crate::windows_file_stamp::Stamp::read(&file)? != held_stamp
         || crate::windows_file_stamp::Stamp::read(&crate::windows_file_stamp::open(path)?)?
             != held_stamp
+    {
+        return Err("index file changed during read".into());
+    }
+    #[cfg(windows)]
+    if !read_lease
+        .is_valid()
+        .map_err(|error| format!("verify native index read lease: {error}"))?
     {
         return Err("index file changed during read".into());
     }
