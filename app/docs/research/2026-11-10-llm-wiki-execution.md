@@ -18,6 +18,37 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: model verification retains invalidation through cache and loading
+
+Windows model verification now acquires an object-bound read lease before hashing,
+checks it before caching, and requires it to remain valid for cache reuse. Both
+successful and corrupt-file cache entries retain their lease. Issued base/adapter
+packages retain shared leases independently of verifier-cache eviction and check
+invalidation before and after native loading. Published downloads are rehashed
+under a new lease rather than retroactively treating their earlier stream hash as
+protected. Stale verifier readers are released before the existing publication
+operation; no production rename or custody port is implied.
+
+ReadLease is movable between threads, with stable heap buffers and process-owned
+handles, no thread-local callback, and exact-request cancellation/draining. Shared
+consumers serialize access through a mutex; ReadLease is not Sync. The
+[CancelIoEx contract](https://learn.microsoft.com/en-us/windows/win32/api/ioapiset/nf-ioapiset-cancelioex)
+permits another thread to cancel the request but requires completion before buffer
+reuse. Added Windows regressions cover cross-thread cancellation, 16 retained-writer
+same-size/restored-time changes alternating valid and corrupt bytes, unchanged cache
+reuse, and issued base/adapter packages after clearing both caches. The macOS
+local-model suite passed 38 tests; strict macOS library Clippy and Windows GNU
+helper/probe Clippy passed. Full-app Windows cross-check stopped in native dependency
+compilation because `x86_64-w64-mingw32-gcc` is unavailable on this Mac; it did not
+verify the Windows model module. Windows runtime acceptance remains pending.
+The full macOS default suite then passed 2,726 tests with 41 ignored in 73.36 seconds.
+
+The [security scan review](2026-11-11-security-scan-review.json) classifies all 17
+reported locations in older synthetic test receipts using their generating code
+and terminated native-test commands. They contain ephemeral runtime identifiers
+and content digests, not external-service credentials. The external GitGuardian
+check remains failed; no dismissal, bypass or history rewrite was performed.
+
 ## November 11: existing-cluster model comparison rejects both arms
 
 The isolated offline pinned 4B comparison completed all 18 calls: two frozen

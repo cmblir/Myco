@@ -39,6 +39,8 @@ pub struct VerifiedModelPackage {
     adapter_path: Option<PathBuf>,
     model_file_identity: FileIdentity,
     adapter_file_identity: Option<FileIdentity>,
+    #[cfg(windows)]
+    read_leases: Vec<Arc<Mutex<crate::windows_read_lease::ReadLease>>>,
     identity: String,
 }
 
@@ -64,10 +66,22 @@ impl VerifiedModelPackage {
             return Err("local model package changed after verification".into());
         }
         match (&self.adapter_path, &self.adapter_file_identity) {
-            (Some(path), Some(identity)) if file_identity(path)? == *identity => Ok(()),
-            (None, None) => Ok(()),
-            _ => Err("local adapter package changed after verification".into()),
+            (Some(path), Some(identity)) if file_identity(path)? == *identity => {}
+            (None, None) => {}
+            _ => return Err("local adapter package changed after verification".into()),
         }
+        #[cfg(windows)]
+        for lease in &self.read_leases {
+            if !lease
+                .lock()
+                .map_err(|_| "local model read lease lock is poisoned")?
+                .is_valid()
+                .map_err(|error| format!("verify local model read lease: {error}"))?
+            {
+                return Err("local model package changed after verification".into());
+            }
+        }
+        Ok(())
     }
 }
 
@@ -242,6 +256,17 @@ fn resolve_package_with_caches(
             .ok_or_else(|| "local package verification identity is missing".to_string())
     };
     let package = VerifiedModelPackage {
+        #[cfg(windows)]
+        read_leases: std::iter::once(&*cache)
+            .chain(adapter_path.as_ref().map(|_| &*adapter_cache))
+            .map(|cache| {
+                cache
+                    .entry
+                    .as_ref()
+                    .map(|entry| Arc::clone(&entry.read_lease))
+                    .ok_or_else(|| "local package verification lease is missing".to_string())
+            })
+            .collect::<Result<_, _>>()?,
         model_path,
         model_file_identity: verified_identity(cache)?,
         adapter_file_identity: adapter_path
@@ -389,6 +414,23 @@ struct FileVerification {
     identity: FileIdentity,
     sha256: &'static str,
     error: Option<String>,
+    #[cfg(windows)]
+    read_lease: Arc<Mutex<crate::windows_read_lease::ReadLease>>,
+}
+
+impl FileVerification {
+    fn is_valid(&self) -> Result<bool, String> {
+        #[cfg(windows)]
+        {
+            self.read_lease
+                .lock()
+                .map_err(|_| "local model read lease lock is poisoned".to_string())?
+                .is_valid()
+                .map_err(|error| format!("verify local model read lease: {error}"))
+        }
+        #[cfg(not(windows))]
+        Ok(true)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -541,9 +583,15 @@ fn resolve_file_with_cache(
             identity.bytes, expected_bytes
         ));
     }
-    if previous.as_ref().is_some_and(|entry| {
-        entry.path == path && entry.identity == identity && entry.sha256 == expected_sha256
-    }) {
+    let reusable = previous
+        .as_ref()
+        .filter(|entry| {
+            entry.path == path && entry.identity == identity && entry.sha256 == expected_sha256
+        })
+        .map(FileVerification::is_valid)
+        .transpose()?
+        .unwrap_or(false);
+    if reusable {
         let error = previous.as_ref().and_then(|entry| entry.error.clone());
         cache.entry = previous;
         return error.map_or(Ok(path), Err);
@@ -557,6 +605,9 @@ fn resolve_file_with_cache(
     #[cfg(not(windows))]
     let file =
         File::open(&path).map_err(|error| format!("open local model for verification: {error}"))?;
+    #[cfg(windows)]
+    let read_lease = crate::windows_read_lease::ReadLease::acquire(&path, &file)
+        .map_err(|error| format!("protect local model verification: {error}"))?;
     if FileIdentity::from_file(&file)? != identity {
         return Err("local model changed before verification".into());
     }
@@ -577,6 +628,15 @@ fn resolve_file_with_cache(
     if bytes != expected_bytes || file_identity(&path)? != identity {
         return Err("local model changed during verification".into());
     }
+    #[cfg(windows)]
+    if !read_lease
+        .is_valid()
+        .map_err(|error| format!("verify local model read lease: {error}"))?
+    {
+        return Err("local model changed during verification".into());
+    }
+    #[cfg(windows)]
+    let read_lease = Arc::new(Mutex::new(read_lease));
     if format!("{:x}", digest.finalize()) != expected_sha256 {
         let error = "local model SHA256 mismatch; install the pinned artifact again".to_string();
         // A stable corrupt file is never ready, but repeated status/Ask checks
@@ -586,6 +646,8 @@ fn resolve_file_with_cache(
             identity,
             sha256: expected_sha256,
             error: Some(error.clone()),
+            #[cfg(windows)]
+            read_lease,
         });
         return Err(error);
     }
@@ -594,6 +656,8 @@ fn resolve_file_with_cache(
         identity,
         sha256: expected_sha256,
         error: None,
+        #[cfg(windows)]
+        read_lease,
     });
     Ok(path)
 }
@@ -716,6 +780,12 @@ impl StagedDownload {
             return Ok(existing);
         }
         check_cancelled(cancel)?;
+        // Release a stale cache reader before the existing publication operation.
+        // Packages already issued to another consumer retain their own lease.
+        #[cfg(windows)]
+        {
+            cache.entry = None;
+        }
         let published = self
             .file
             .persist(&path)
@@ -725,13 +795,22 @@ impl StagedDownload {
         if identity != opened || !before.same_content_instance(&identity) {
             return Err("local model changed during publication; verify before use".into());
         }
-        cache.entry = Some(FileVerification {
-            path: path.clone(),
-            identity,
-            sha256: self.manifest.sha256,
-            error: None,
-        });
-        Ok(path)
+        #[cfg(windows)]
+        {
+            // The stream hash predates publication and cannot establish a new
+            // lease retroactively. Hash the published object under its own lease.
+            resolve_with_cache(&dir, &self.manifest, cache)
+        }
+        #[cfg(not(windows))]
+        {
+            cache.entry = Some(FileVerification {
+                path: path.clone(),
+                identity,
+                sha256: self.manifest.sha256,
+                error: None,
+            });
+            Ok(path)
+        }
     }
 }
 
@@ -1061,6 +1140,43 @@ mod tests {
         fs::write(&path, b"Synthetic GGUF model bytes").unwrap();
         assert!(resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).is_err());
         assert_eq!(cache.hash_reads, 2);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn retained_writer_same_stamp_changes_invalidate_valid_and_corrupt_cache() {
+        use std::io::{Seek, SeekFrom};
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(SYNTHETIC.file);
+        fs::write(&path, CONTENT).unwrap();
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        let mut writer = File::options().read(true).write(true).open(&path).unwrap();
+        let mut cache = Verifier::default();
+        resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).unwrap();
+        for round in 0..16 {
+            let replacement = if round % 2 == 0 {
+                b"Synthetic GGUF model bytes"
+            } else {
+                CONTENT
+            };
+            writer.seek(SeekFrom::Start(0)).unwrap();
+            writer.write_all(replacement).unwrap();
+            writer
+                .set_times(fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+            let expected_ready = round % 2 != 0;
+            assert_eq!(
+                resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).is_ok(),
+                expected_ready
+            );
+            assert_eq!(cache.hash_reads, round + 2);
+            assert_eq!(
+                resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).is_ok(),
+                expected_ready
+            );
+            assert_eq!(cache.hash_reads, round + 2);
+            assert_eq!(fs::read(&path).unwrap(), replacement);
+        }
     }
 
     #[test]

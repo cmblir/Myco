@@ -8,6 +8,30 @@ use windows_sys::Win32::System::Memory::{
     PAGE_READWRITE,
 };
 
+#[test]
+fn read_lease_can_be_observed_and_cancelled_on_another_thread() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("Synthetic cross-thread index.mxb");
+    fs::write(&path, b"alpha").unwrap();
+    let lease = ReadLease::acquire(&path, &open_shared(&path).unwrap()).unwrap();
+    std::thread::spawn(move || {
+        assert!(lease.is_valid().unwrap());
+        drop(lease);
+    })
+    .join()
+    .unwrap();
+    fs::write(&path, b"bravo").unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"bravo");
+    let lease = ReadLease::acquire(&path, &open_shared(&path).unwrap()).unwrap();
+    fs::write(&path, b"alpha").unwrap();
+    std::thread::spawn(move || {
+        lease.assert_broken_without_ack();
+        drop(lease);
+    })
+    .join()
+    .unwrap();
+}
+
 struct WritableView {
     view: MEMORY_MAPPED_VIEW_ADDRESS,
     _mapping: OwnedHandle,

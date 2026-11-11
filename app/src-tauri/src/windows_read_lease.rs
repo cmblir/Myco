@@ -31,6 +31,19 @@ pub(crate) struct ReadLease {
     is_pending: bool,
 }
 
+// SAFETY: moving ownership leaves all OS buffers at stable Box addresses. The
+// only embedded handle is process-wide, and CancelIoEx targets this exact request
+// from any thread. No thread-local callbacks/APCs are used. Drop drains completion
+// before freeing buffers. This deliberately does not implement Sync; shared
+// consumers must serialize access with a mutex.
+unsafe impl Send for ReadLease {}
+
+impl std::fmt::Debug for ReadLease {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("ReadLease").finish_non_exhaustive()
+    }
+}
+
 impl ReadLease {
     /// Bind a read-only lease to the exact retained object supplying the bytes.
     /// Refuse unsupported or immediately broken leases instead of trusting timestamps.
