@@ -18,6 +18,35 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: preserve local system/user roles through the product bridge
+
+The six-call `native-roles-v1` replay passed its frozen claim/link criteria after
+the repetition-guard repair, but inspection found product `chat.ts` still merged
+system and user content before `local_query`, whose native adapter supplied an
+empty system message. A new real `draftMap` → `complete` regression and an IPC
+serialization regression both failed before the change (two failures, one HTTP
+comparison pass). Log: `/tmp/myco-local-roles-before.log`.
+
+The bridge now carries an optional separate system field to the existing
+`local_generation::generate_text` arguments. Existing callers without that field
+retain an empty system message. Native opening/role checks, model selection,
+cancellation identity and combined input/output limits are unchanged. Existing
+retrieval/profile tests now inspect the system field rather than a flattened
+string; their source/privacy assertions remain. The map case also requires its
+selected source body to stay outside the system instructions.
+
+Five focused frontend suites pass 222 tests. Frontend build, formatting and
+strict feature-enabled all-target Clippy pass; lint reports zero errors and the
+two pre-existing `notchDriver.ts` hook-dependency warnings. The full frontend
+suite passes 406 files and 6,510 tests. README documents the boundary. Logs:
+`/tmp/myco-local-roles-after.log`, `/tmp/myco-local-roles-build.log`,
+`/tmp/myco-local-roles-lint.log`, `/tmp/myco-local-roles-native-check.log`,
+`/tmp/myco-local-roles-frontend.log`.
+This connects the production transport to the tested message separation, but
+does not substitute mocked IPC or compile evidence for a newly bundled native
+map generation/publication run. That acceptance remains open, as do the recorded
+layout and unnecessary quoted-instruction paraphrase limitations.
+
 ## November 11: selected-document recall catalog path repair
 
 The previous goal turn made implementation and verified model progress. Run

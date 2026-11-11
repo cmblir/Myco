@@ -136,6 +136,9 @@ the planning prompt.
 Free-form local answers retain recurring source links and subjects across distinct
 statements. The repetition guard stops consecutive repeated text while preserving
 its first complete copy; token limits and cancellation still bound generation.
+Local text previews pass system instructions separately from user messages through
+the native bridge. Map evidence therefore keeps its user-message boundary rather
+than being flattened together with the map's system instructions.
 
 Workstream facts v6 group source-recorded absolute working folders with opaque
 keys, rather than merging matching folder names. Ambiguous folders stay

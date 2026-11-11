@@ -127,11 +127,12 @@ describe("complete() selected-source generation", () => {
       expect(opening).not.toHaveBeenCalled();
       expect(capture).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledWith(
-        supplied.map((message) => message.content).join("\n\n"),
+        supplied[1].content,
         320,
         origin,
         snapshot,
         expect.any(String),
+        supplied[0].content,
       );
       expect(seen).toEqual([{ kind: "thinking", stems: [] }]);
     },
@@ -184,6 +185,9 @@ describe("complete() selected-source generation", () => {
       expect(prompt).not.toContain("UNSELECTED_SYNTHETIC_RED_TILES");
       if (provider === "builtin-local") {
         expect(local.mock.calls[0].slice(2, 4)).toEqual([origin, snapshot]);
+        expect(local.mock.calls[0][5]).toContain("Write a topic map");
+        expect(local.mock.calls[0][5]).not.toContain(raw);
+        expect(local.mock.calls[0][0]).not.toContain("Write a topic map");
         expect(http).not.toHaveBeenCalled();
       } else {
         expect(http.mock.calls[0].slice(1, 3)).toEqual([origin, snapshot]);
@@ -247,13 +251,14 @@ describe("complete() selected-source generation", () => {
       expect(search).toHaveBeenCalledOnce();
       expect(context).not.toHaveBeenCalled();
       expect(generate).toHaveBeenCalledWith(
-        expect.stringContaining(
-          "The synthetic mosaic has blue tiles and one missing source citation.",
-        ),
+        instruction,
         320,
         origin,
         snapshot,
         expect.any(String),
+        expect.stringContaining(
+          "The synthetic mosaic has blue tiles and one missing source citation.",
+        ),
       );
       expect(generate.mock.calls[0][0]).toContain(instruction);
       expect(seen).toEqual([
@@ -402,8 +407,9 @@ describe("complete() ask stages", () => {
     await complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "SYN-4719" }], onStage });
     expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: ["id"] }]);
     expect(fallback).not.toHaveBeenCalled();
-    expect(query.mock.calls[0][0]).toContain("SYN-4719 was accepted.");
-    expect(query.mock.calls[0][0]).not.toContain("unrelated whole vault");
+    expect(query.mock.calls[0][5]).toContain("SYN-4719 was accepted.");
+    expect(query.mock.calls[0][5]).not.toContain("unrelated whole vault");
+    expect(query.mock.calls[0][0]).toBe("SYN-4719");
   });
 
   it("names no pages when retrieval finds nothing", async () => {
@@ -597,8 +603,8 @@ describe("complete() ask stages", () => {
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue(found(chunks));
     const readFile = vi.spyOn(ipc, "readFile");
     let seenPrompt = "";
-    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
-      seenPrompt = prompt;
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (_prompt, _maxTokens, _origin, _roleSnapshot, _requestId, system) => {
+      seenPrompt = system ?? "";
       return "an answer";
     });
 
@@ -629,8 +635,8 @@ describe("complete() ask stages", () => {
       { page: "wiki/b.md", stem: "b", section: 0, text: "BBB passage", score: 0.7, similarity: 0.7 },
     ]));
     let seenPrompt = "";
-    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
-      seenPrompt = prompt;
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (_prompt, _maxTokens, _origin, _roleSnapshot, _requestId, system) => {
+      seenPrompt = system ?? "";
       return "an answer";
     });
 
@@ -861,8 +867,8 @@ describe("complete() profile injection (Phase B, Task 6)", () => {
 
   async function askAndCapturePrompt(): Promise<string> {
     let seenPrompt = "";
-    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
-      seenPrompt = prompt;
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (_prompt, _maxTokens, _origin, _roleSnapshot, _requestId, system) => {
+      seenPrompt = system ?? "";
       return "an answer";
     });
     await complete({

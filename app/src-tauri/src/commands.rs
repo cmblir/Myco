@@ -213,6 +213,7 @@ pub async fn local_query(
     vault: tauri::State<'_, VaultRoot>,
     state: tauri::State<'_, crate::local_generation::LocalChatState>,
     prompt: String,
+    system: Option<String>,
     max_tokens: Option<i32>,
     origin: Option<AgentVaultSession>,
     role_snapshot: Option<crate::role_authorization::RoleSnapshot>,
@@ -232,7 +233,7 @@ pub async fn local_query(
         state.inner().clone(),
         &snapshot.route_signature.model_id,
         &request_id,
-        "",
+        system.as_deref().unwrap_or(""),
         &prompt,
         max_tokens.unwrap_or(320),
     );

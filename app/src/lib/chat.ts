@@ -521,7 +521,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
       // A string reply supplies no separately reported model identifier.
       out = await traceGenerationRequest({ requested: { providerId: provider, modelId: model },
         purpose: "answer", signal: args.signal, onExecution: args.onExecution }, () =>
-        ipc.localQuery(system ? `${system}\n\n${user}` : user, 320, origin, snapshot, requestId));
+        ipc.localQuery(user, 320, origin, snapshot, requestId, system));
       stopIfAborted(args.signal);
     } finally { args.signal?.removeEventListener("abort", cancel); }
     if (args.task === "query") verifyAnswerCitations(out, sourcePaths, Boolean(args.guidedQuestion));

@@ -2074,10 +2074,10 @@ export const ipc = {
    *  `.myco/plugins/` (lib/plugins.ts validates them). */
   listPlugins: () => invoke<PluginFile[]>("list_plugins"),
   mcpConnect: () => invoke<string>("mcp_connect"),
-  // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
-  // lazily loads the weights, so it can take a few extra seconds.
-  localQuery: (prompt: string, maxTokens?: number, origin?: AgentVaultSession, roleSnapshot?: RoleSnapshot, requestId?: string) =>
-    invoke<string>("local_query", { prompt, maxTokens, origin, roleSnapshot, requestId }),
+  // Bounded preview through the selected local role and separately installed
+  // weights. Keep trusted instructions separate from quoted user evidence.
+  localQuery: (prompt: string, maxTokens?: number, origin?: AgentVaultSession, roleSnapshot?: RoleSnapshot, requestId?: string, system?: string) =>
+    invoke<string>("local_query", { prompt, maxTokens, origin, roleSnapshot, requestId, system }),
   // Cheap `is_file()` check (no model load) — no chat GGUF has shipped since
   // Ask went extractive, so this is normally always false.
   localChatModelAvailable: () => invoke<boolean>("local_chat_model_available"),
