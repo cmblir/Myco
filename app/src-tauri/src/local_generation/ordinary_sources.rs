@@ -68,21 +68,18 @@ pub(super) fn complete_backing(
         // Backing raw/proof paths still require exact named-file custody.
         let source = if source == selection {
             let path = crate::vault::confine_path(root, &root.join(&source).to_string_lossy())?;
-            let resolved = path
-                .strip_prefix(root)
-                .ok()
-                .and_then(Path::to_str)
+            let resolved = crate::vault_path::relative_key(root, &path)
                 .ok_or("ordinary resolved source is outside its vault")?;
-            if !scope.keeps(resolved)
-                || paths.is_some_and(|paths| !paths.iter().any(|path| path == resolved))
+            if !scope.keeps(&resolved)
+                || paths.is_some_and(|paths| !paths.iter().any(|path| path == &resolved))
                 || crate::vector_index::is_cold_for(
-                    resolved,
+                    &resolved,
                     crate::settings::search_archived_sessions(),
                 )
             {
                 return Err("ordinary resolved source is outside the requested scope".into());
             }
-            resolved.to_owned()
+            resolved
         } else {
             source
         };
@@ -198,4 +195,55 @@ fn selected_notes(page: &str, content: &str) -> Result<Option<SourceDocument>, S
     )?
     .with_turn_phases(&phases)
     .map(Some)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_nested_original_retains_portable_scope_and_exact_allowlist() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let page = "sessions/한글 folder/synthetic source.md";
+        let text = "**User:**\n\nPlease review the synthetic draft.\n";
+        let path = root.join(page);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, text).unwrap();
+        let revision = format!("{:x}", Sha256::digest(text.as_bytes()));
+        let origin = AgentVaultSession {
+            vault_path: root.to_string_lossy().into_owned(),
+            opening_token: "synthetic-source-closure".into(),
+        };
+        let selected = SourceSet::new(
+            origin.clone(),
+            Scope::Sessions,
+            vec![bind_all_originals(page, page, text, &revision).unwrap()],
+            vec![],
+        )
+        .unwrap();
+        let closed = complete_backing(
+            &root,
+            &selected,
+            &origin,
+            Scope::Sessions,
+            Some(&[page.into()]),
+            &mut 0,
+        )
+        .unwrap();
+        assert!(closed.spans().all(|span| span.source_path() == page
+            && span.selection_path() == page
+            && span.source_revision() == revision));
+        assert_eq!(closed.spans().count(), 1);
+        assert!(complete_backing(
+            &root,
+            &selected,
+            &origin,
+            Scope::Sessions,
+            Some(&["sessions/unselected.md".into()]),
+            &mut 0,
+        )
+        .is_err());
+        assert_eq!(std::fs::read_to_string(path).unwrap(), text);
+    }
 }

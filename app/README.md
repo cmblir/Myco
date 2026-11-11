@@ -128,6 +128,8 @@ selected-note context. An explicitly supplied new date takes priority. Switching
 scope or note does not carry the previous answer's topic or evidence into the new
 question. The current document-specific control is the selected-note scope; a
 general checked-document selector is not available in this build.
+Original-source rechecks use portable vault-relative paths, including nested
+folders with Unicode and spaces, while retaining the exact selected-note limit.
 
 Workstream facts v6 group source-recorded absolute working folders with opaque
 keys, rather than merging matching folder names. Ambiguous folders stay
