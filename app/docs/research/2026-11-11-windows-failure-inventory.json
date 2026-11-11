@@ -436,32 +436,38 @@
     {
       "test": "distill::knowledge::tests::knowledge_complete_inventory_detects_added_deleted_and_path_replaced_sources",
       "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/distill_knowledge_tests.rs:227:5"
+      "panicLocation": "src/distill_knowledge_tests.rs:227:5",
+      "causeEvidence": "Current code inspection found native separator strings in the wiki inventory while VectorStore uses portable slash keys. Inventory now uses vault_path::relative_key; nested Unicode/space and literal-backslash regressions cover the boundary on macOS. Windows rerun remains unverified; historical grouping is unchanged."
     },
     {
       "test": "distill::knowledge::tests::knowledge_inactive_projection_cannot_hide_malformed_vectors",
       "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/distill_knowledge_tests.rs:209:5"
+      "panicLocation": "src/distill_knowledge_tests.rs:209:5",
+      "causeEvidence": "Current code inspection found native separator strings in the wiki inventory while VectorStore uses portable slash keys. Inventory now uses vault_path::relative_key; nested Unicode/space and literal-backslash regressions cover the boundary on macOS. Windows rerun remains unverified; historical grouping is unchanged."
     },
     {
       "test": "distill::knowledge::tests::knowledge_repeated_text_keeps_every_current_section_occurrence",
       "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/distill_knowledge_tests.rs:159:50"
+      "panicLocation": "src/distill_knowledge_tests.rs:159:50",
+      "causeEvidence": "Current code inspection found native separator strings in the wiki inventory while VectorStore uses portable slash keys. Inventory now uses vault_path::relative_key; nested Unicode/space and literal-backslash regressions cover the boundary on macOS. Windows rerun remains unverified; historical grouping is unchanged."
     },
     {
       "test": "distill::knowledge::tests::knowledge_ordinary_draft_is_eligible_and_inactive_pages_are_excluded",
       "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/distill_knowledge_tests.rs:129:5"
+      "panicLocation": "src/distill_knowledge_tests.rs:129:5",
+      "causeEvidence": "Current code inspection found native separator strings in the wiki inventory while VectorStore uses portable slash keys. Inventory now uses vault_path::relative_key; nested Unicode/space and literal-backslash regressions cover the boundary on macOS. Windows rerun remains unverified; historical grouping is unchanged."
     },
     {
       "test": "distill::knowledge::tests::knowledge_uses_the_publishers_hidden_target_and_node_modules_policy",
       "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/distill_knowledge_tests.rs:292:5"
+      "panicLocation": "src/distill_knowledge_tests.rs:292:5",
+      "causeEvidence": "Current code inspection found native separator strings in the wiki inventory while VectorStore uses portable slash keys. Inventory now uses vault_path::relative_key; nested Unicode/space and literal-backslash regressions cover the boundary on macOS. Windows rerun remains unverified; historical grouping is unchanged."
     },
     {
       "test": "distill::knowledge::tests::knowledge_status_gate_count_matches_the_actual_eligible_wiki_inventory",
       "group": "assertion_or_other_unresolved",
-      "panicLocation": "src/distill_knowledge_tests.rs:347:54"
+      "panicLocation": "src/distill_knowledge_tests.rs:347:54",
+      "causeEvidence": "Current code inspection found native separator strings in the wiki inventory while VectorStore uses portable slash keys. Inventory now uses vault_path::relative_key; nested Unicode/space and literal-backslash regressions cover the boundary on macOS. Windows rerun remains unverified; historical grouping is unchanged."
     },
     {
       "test": "distill::tests::a_run_keeps_raw_byte_identical_and_still_sweeps_the_rest",

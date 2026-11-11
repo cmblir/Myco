@@ -101,12 +101,8 @@ pub(super) fn read(root: &Path) -> Result<Snapshot, String> {
                 continue;
             }
             let path = entry.path();
-            let relative = path
-                .strip_prefix(root)
-                .map_err(|_| "organization wiki path escaped vault")?
-                .to_str()
-                .ok_or("organization wiki path is not UTF-8")?
-                .to_string();
+            let relative = crate::vault_path::relative_key(root, &path)
+                .ok_or("organization wiki path has no portable vault key")?;
             let kind = entry
                 .file_type()
                 .map_err(|error| format!("inspect organization wiki entry: {error}"))?;

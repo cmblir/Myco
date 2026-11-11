@@ -266,6 +266,9 @@ uses a revision-checked write. If a completed map cannot finalize its proposal
 because that write fails or the vault opening changes, the run retains the map
 path as published-but-pending without counting the proposal as done.
 Native map identity remains unavailable on Windows.
+Organization scans use portable vault-relative keys for nested wiki folders,
+including Unicode and spaces. Nonportable filenames are rejected without
+rewriting the source; native Windows publication still requires its own port.
 Generated explanations require review; link validation is not semantic validation.
 
 Ingest exposes one primary page heading and a subordinate intake heading for
