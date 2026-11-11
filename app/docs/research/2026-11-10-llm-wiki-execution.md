@@ -12,11 +12,24 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | aa1a225b passed 2,174 Windows tests with 210 failures and 31 ignored. Original-source closure fixed 38 failures in the prior run. Three of four isolated NTFS handle tests pass; sharing-error assertion correction awaits rerun. Production custody and durable publication remain incomplete. |
+| G3 Windows | Partial; current hosted run failed | 83eaf754 passed 2,178 Windows tests with 209 failures and 31 ignored. All four isolated NTFS handle tests pass, including exact sharing violation and deletion after release. Production custody and durable publication remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: Windows sharing correction verified
+
+Run 42947471200 at `83eaf754` completed with all non-Windows jobs passing.
+The raw NTFS diagnostic log reports four passing handle tests, and all four also
+pass in the full suite. Exact native sharing violation, preserved bytes and
+write/deletion after release are now observed. The full suite reports 2,178
+passed, 209 failed and 31 ignored; the prior sharing test is the only removed
+failure, with no new failed names. The three added repetition-guard regressions
+also pass. Receipt: `2026-11-11-windows-sharing-review.json`.
+Production identity, confinement, custody and durable publication remain open.
+This head predates `74d211f5` (recall catalog paths) and `f8188592` (system roles),
+so it does not provide their hosted validation.
 
 ## November 11: preserve local system/user roles through the product bridge
 
