@@ -8,19 +8,39 @@ const CANDIDATE: &str =
     include_str!("../../../docs/research/2026-11-11-map-model-candidate-controls.json");
 const FACT_CANDIDATE: &str =
     include_str!("../../../docs/research/2026-11-11-map-model-fact-controls.json");
+const EXAMPLE_CANDIDATE: &str =
+    include_str!("../../../docs/research/2026-11-11-map-model-example-controls.json");
+const ROLE_CANDIDATE: &str =
+    include_str!("../../../docs/research/2026-11-11-map-model-role-controls.json");
 
 #[test]
 fn frozen_map_prompts_have_exact_original_and_prompt_revisions() {
-    for source in [CONTROLS, CANDIDATE, FACT_CANDIDATE] {
+    for source in [
+        CONTROLS,
+        CANDIDATE,
+        FACT_CANDIDATE,
+        EXAMPLE_CANDIDATE,
+        ROLE_CANDIDATE,
+    ] {
         check_frozen_controls(source);
     }
 }
 
 #[test]
 fn map_candidate_preserves_sources_and_acceptance_controls() {
-    for source in [CANDIDATE, FACT_CANDIDATE] {
+    for source in [CANDIDATE, FACT_CANDIDATE, EXAMPLE_CANDIDATE, ROLE_CANDIDATE] {
         check_comparison_controls(source);
     }
+}
+
+#[test]
+fn role_candidate_changes_only_message_transport() {
+    let baseline: Value = serde_json::from_str(CONTROLS).unwrap();
+    let mut candidate: Value = serde_json::from_str(ROLE_CANDIDATE).unwrap();
+    let fields = candidate.as_object_mut().unwrap();
+    assert_eq!(fields.remove("separateRoles"), Some(json!(true)));
+    assert_eq!(fields.remove("candidate"), Some(json!("native-roles-v1")));
+    assert_eq!(candidate, baseline);
 }
 
 fn check_comparison_controls(source: &str) {
@@ -83,6 +103,8 @@ fn cached_model_repeats_exact_map_prompts() {
     let source = match std::env::var("MYCO_MAP_QA_VARIANT").as_deref() {
         Ok("metadata-boundary-v1") => CANDIDATE,
         Ok("fact-boundary-v2") => FACT_CANDIDATE,
+        Ok("example-boundary-v3") => EXAMPLE_CANDIDATE,
+        Ok("native-roles-v1") => ROLE_CANDIDATE,
         Ok("baseline") | Err(_) => CONTROLS,
         Ok(other) => panic!("unknown map QA variant: {other}"),
     };
@@ -103,23 +125,31 @@ fn cached_model_repeats_exact_map_prompts() {
     host.ensure_chat_model(&artifact).unwrap();
     for repetition in 1..=controls["repeats"].as_u64().unwrap() {
         for case in controls["cases"].as_array().unwrap() {
-            let prompt = case["localPrompt"].as_str().unwrap();
-            let tokens = host.chat_token_count("", prompt).unwrap();
+            let (system, user) = if controls["separateRoles"] == true {
+                (
+                    controls["system"].as_str().unwrap(),
+                    case["user"].as_str().unwrap(),
+                )
+            } else {
+                ("", case["localPrompt"].as_str().unwrap())
+            };
+            let tokens = host.chat_token_count(system, user).unwrap();
             let budget = controls["outputTokens"].as_i64().unwrap() as i32;
             assert!(tokens + budget as usize + 8 <= 4096);
             println!(
                 "{}",
                 json!({"phase":"map_model_input", "case":case["id"], "repetition":repetition,
-                "system":"", "user":prompt, "promptTokens":tokens, "outputTokens":budget, "contextTokens":4096})
+                "system":system, "user":user, "promptTokens":tokens, "outputTokens":budget, "contextTokens":4096})
             );
             let started = std::time::Instant::now();
             let result =
-                host.generate_text_cancellable("", prompt, budget, &AtomicBool::new(false));
+                host.generate_text_cancellable(system, user, budget, &AtomicBool::new(false));
             println!(
                 "{}",
                 json!({"phase":"map_model_output", "case":case["id"], "repetition":repetition,
                 "result":result, "seconds":started.elapsed().as_secs_f64(), "semanticAccepted":false})
             );
+            assert!(result.is_ok(), "local map generation failed: {result:?}");
         }
     }
 }
