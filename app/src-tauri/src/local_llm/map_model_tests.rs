@@ -15,14 +15,11 @@ const ROLE_CANDIDATE: &str =
 const EXISTING_CLUSTER: &str =
     include_str!("../../../docs/research/2026-11-11-map-existing-cluster-control.json");
 
-fn existing_cluster_comparison() -> Vec<Value> {
+fn existing_cluster_comparison(candidate: &str, candidate_name: &str) -> Vec<Value> {
     let supplemental: Value = serde_json::from_str(EXISTING_CLUSTER).unwrap();
-    [ROLE_CANDIDATE, FACT_CANDIDATE]
+    [ROLE_CANDIDATE, candidate]
         .into_iter()
-        .zip([
-            "existing-cluster-baseline",
-            "existing-cluster-fact-boundary",
-        ])
+        .zip(["existing-cluster-baseline", candidate_name])
         .map(|(source, arm)| {
             check_frozen_controls(source);
             check_comparison_controls(source);
@@ -49,7 +46,19 @@ fn existing_cluster_comparison() -> Vec<Value> {
 
 #[test]
 fn existing_cluster_comparison_preserves_frozen_sources_and_labels() {
-    let groups = existing_cluster_comparison();
+    for (candidate, name) in [
+        (FACT_CANDIDATE, "existing-cluster-fact-boundary"),
+        (EXAMPLE_CANDIDATE, "existing-cluster-example-native-roles"),
+    ] {
+        let groups = existing_cluster_comparison(candidate, name);
+        let frozen: Value = serde_json::from_str(candidate).unwrap();
+        assert_eq!(groups[1]["system"], frozen["system"]);
+        check_existing_cluster_comparison(&groups);
+    }
+}
+
+fn check_existing_cluster_comparison(groups: &[Value]) {
+    assert_eq!(groups[0]["separateRoles"], true);
     let supplemental: Value = serde_json::from_str(EXISTING_CLUSTER).unwrap();
     assert_eq!(
         source_revision(&format!(
@@ -104,8 +113,24 @@ fn existing_cluster_comparison_preserves_frozen_sources_and_labels() {
 #[test]
 #[ignore = "requires explicit offline synthetic QA and verified cached local weights"]
 fn cached_model_compares_existing_map_prompts() {
+    run_existing_cluster_comparison(existing_cluster_comparison(
+        FACT_CANDIDATE,
+        "existing-cluster-fact-boundary",
+    ));
+}
+
+#[test]
+#[ignore = "requires explicit offline synthetic QA and verified cached local weights"]
+fn cached_model_compares_existing_map_example_with_native_roles() {
+    run_existing_cluster_comparison(existing_cluster_comparison(
+        EXAMPLE_CANDIDATE,
+        "existing-cluster-example-native-roles",
+    ));
+}
+
+fn run_existing_cluster_comparison(groups: Vec<Value>) {
     assert_eq!(std::env::var("MYCO_QA_GENERATION").as_deref(), Ok("1"));
-    let groups = existing_cluster_comparison();
+    check_existing_cluster_comparison(&groups);
     let manifest = crate::local_model::manifest_for(groups[0]["modelId"].as_str()).unwrap();
     let directory = std::env::var_os("MYCO_SESSION_PACKET_MODEL_DIR")
         .expect("explicit cached artifact directory");

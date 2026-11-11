@@ -18,6 +18,25 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: re-evaluate the frozen example prompt with separate native roles
+
+The earlier `map-model-example-review.json` completed six calls with an empty
+system role and the concatenated system/user prompt in the user role. Its supported
+case incorrectly strengthened “No source describes an archive” into “no archive
+exists.” That failure is retained. The frozen example prompt has not yet been
+compared after the separate-role transport repair on the original existing-cluster
+failure case.
+
+The QA runner now supports a baseline-versus-example comparison across the same
+three frozen cases, three repetitions, seed 42, pinned local 4B model, 4,096-token
+context and 320-token output budget. Original sources, user packets, required and
+forbidden claims are unchanged. Control tests require separate roles and the exact
+frozen candidate system text. This is a transport-controlled re-evaluation, not a
+new production prompt or a relaxed acceptance label. Actual inference and manual
+semantic review are pending.
+The final comparison control suite passed four tests (three explicit model tests
+ignored); strict feature-enabled test Clippy and formatting passed.
+
 ## November 11: hosted index invalidation passes; model cache failure reproduced
 
 [Windows run 42963329351](2026-11-11-windows-index-lease-runtime-review.json)
