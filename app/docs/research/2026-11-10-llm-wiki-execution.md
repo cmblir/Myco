@@ -12,11 +12,37 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | 83eaf754 passed 2,178 Windows tests with 209 failures and 31 ignored. All four isolated NTFS handle tests pass, including exact sharing violation and deletion after release. Production custody and durable publication remain incomplete. |
+| G3 Windows | Partial; current hosted run failed | 68468259 passed 2,179 Windows tests with 208 failures and 31 ignored; the one disappearing failure is an intermittent cache test. Four isolated NTFS handle tests pass. Source identity port is in hosted validation; production custody and durable publication remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: Windows model-cache identity repair
+
+The completed [editor-custody CI receipt](2026-11-11-windows-editor-custody-review.json)
+records **2,179 passed, 208 failed, 31 ignored** on Windows and all non-Windows jobs
+passing. The only failure absent from the prior run is
+`same_size_changed_bytes_invalidate_readiness`. That head contains no model-cache
+fix; this is intermittent timestamp-sensitive behavior, not evidence of repair.
+The source-read port at `ef8b33eb` was then pushed for separate hosted execution
+in [run 42954135009](https://github.com/cmblir/Myco/actions/runs/42954135009).
+
+The model cache previously had only byte length and modification time on Windows.
+The new implementation observes file IDs and native change time through the live
+handle, rather than trusting a path-metadata cache. Cache reuse and verified-package
+rechecks include both observations. Hashing opens the final component without
+following reparse targets. Download publication compares the retained staging and
+published object IDs while permitting the metadata change caused by rename;
+pinned SHA-256 and exact-size requirements remain unchanged.
+
+The existing modification-time-restoration regression is enabled for Windows;
+a separate same-size replacement regression retains the original file and restores
+the new file's modification time. Neither uses sleeps or weaker assertions. Mac feature tests pass **3,184 / 0 failed / 77 ignored**, including both restored-time
+regressions. Native helper cross-target Clippy passes with the exact locked Windows
+binding. Full
+Windows application execution of this repair remains pending. The native API fields
+were checked against [Microsoft's FILE_BASIC_INFO reference](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-file_basic_info).
 
 ## November 11: Windows retained source-read port
 

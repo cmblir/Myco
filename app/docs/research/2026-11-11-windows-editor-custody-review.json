@@ -1,0 +1,19 @@
+{
+  "head": "6846825974560c57cec469c9a1efd9562cc028e3",
+  "runUrl": "https://github.com/cmblir/Myco/actions/runs/42952078083",
+  "logSha256": "ce6b6ea49c1aa5791e40d0804ee54dc46bf0ff3e60aee73aae18d6fa33dbed39",
+  "diagnostic": {
+    "passed": 4,
+    "failed": 0
+  },
+  "fullSuite": {
+    "passed": 2179,
+    "failed": 208,
+    "ignored": 31
+  },
+  "noLongerFailed": [
+    "local_model::tests::same_size_changed_bytes_invalidate_readiness"
+  ],
+  "newFailures": [],
+  "interpretation": "The only disappearing failure is an intermittent timestamp-sensitive model cache test; no Windows model-cache repair is included in this head. All non-Windows jobs passed. The later retained source-read port is not in this run."
+}

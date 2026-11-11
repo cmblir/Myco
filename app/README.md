@@ -707,6 +707,9 @@ runtime, vector migration and Korean measurement prerequisites. It does not
 replace Qwen's generated wording; no candidate weights were installed or tested.
 The [local generation verification](docs/research/2026-10-05-local-generation-verification.md)
 records the optional Qwen Ask installation, source checks and measurement limits.
+Windows model verification now binds cached readiness to native file IDs and change
+time in addition to size and modification time. Changed observations require the
+pinned SHA-256 check again; hosted validation of this cache repair remains pending.
 The [local role comparison](docs/research/2026-10-05-local-model-routing.md)
 records separate Ask/import model selection, organization drafts and remaining
 retrieval and generation quality limits. Local Ask checks every chunk of each

@@ -10,7 +10,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_SHARE_WRITE, FILE_STANDARD_INFO,
 };
 
-fn identity(file: &File) -> io::Result<(u64, [u8; 16])> {
+/// Read native object identity only; this does not establish content or custody.
+pub(crate) fn identity(file: &File) -> io::Result<(u64, [u8; 16])> {
     let mut value = MaybeUninit::<FILE_ID_INFO>::uninit();
     // SAFETY: the borrowed live handle, information class and output layout match.
     let success = unsafe {

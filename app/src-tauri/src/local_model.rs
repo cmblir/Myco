@@ -2,7 +2,9 @@
 
 use serde::Serialize;
 use sha2::{Digest, Sha256};
-use std::fs::{File, Metadata};
+use std::fs::File;
+#[cfg(not(windows))]
+use std::fs::Metadata;
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -399,9 +401,30 @@ struct FileIdentity {
     inode: u64,
     #[cfg(unix)]
     changed: (i64, i64),
+    #[cfg(windows)]
+    native: crate::windows_model_stamp::Stamp,
 }
 
 impl FileIdentity {
+    fn from_file(file: &File) -> Result<Self, String> {
+        let metadata = file
+            .metadata()
+            .map_err(|error| format!("local model opened metadata: {error}"))?;
+        #[cfg(windows)]
+        {
+            Ok(Self {
+                bytes: metadata.len(),
+                modified: metadata
+                    .modified()
+                    .map_err(|error| format!("local model modification time: {error}"))?,
+                native: crate::windows_model_stamp::Stamp::read(file)?,
+            })
+        }
+        #[cfg(not(windows))]
+        Self::from_metadata(&metadata)
+    }
+
+    #[cfg(not(windows))]
     fn from_metadata(metadata: &Metadata) -> Result<Self, String> {
         #[cfg(unix)]
         use std::os::unix::fs::MetadataExt as _;
@@ -425,7 +448,11 @@ impl FileIdentity {
             {
                 self.device == other.device && self.inode == other.inode
             }
-            #[cfg(not(unix))]
+            #[cfg(windows)]
+            {
+                self.native.object == other.native.object
+            }
+            #[cfg(not(any(unix, windows)))]
             {
                 true
             }
@@ -478,6 +505,11 @@ fn file_identity(path: &Path) -> Result<FileIdentity, String> {
     if crate::vault::is_dataless(&metadata) {
         return Err("local model is an unavailable cloud placeholder".into());
     }
+    #[cfg(windows)]
+    {
+        FileIdentity::from_file(&crate::windows_model_stamp::open(path)?)
+    }
+    #[cfg(not(windows))]
     FileIdentity::from_metadata(&metadata)
 }
 
@@ -520,14 +552,12 @@ fn resolve_file_with_cache(
     {
         cache.hash_reads += 1;
     }
+    #[cfg(windows)]
+    let file = crate::windows_model_stamp::open(&path)?;
+    #[cfg(not(windows))]
     let file =
         File::open(&path).map_err(|error| format!("open local model for verification: {error}"))?;
-    if FileIdentity::from_metadata(
-        &file
-            .metadata()
-            .map_err(|error| format!("local model opened metadata: {error}"))?,
-    )? != identity
-    {
+    if FileIdentity::from_file(&file)? != identity {
         return Err("local model changed before verification".into());
     }
     let mut reader = file.take(expected_bytes.saturating_add(1));
@@ -668,13 +698,7 @@ impl StagedDownload {
             .as_file()
             .sync_all()
             .map_err(|error| format!("sync local model staging file: {error}"))?;
-        let before = FileIdentity::from_metadata(
-            &self
-                .file
-                .as_file()
-                .metadata()
-                .map_err(|error| format!("local model staging metadata: {error}"))?,
-        )?;
+        let before = FileIdentity::from_file(self.file.as_file())?;
         let dir = self
             .file
             .path()
@@ -697,11 +721,7 @@ impl StagedDownload {
             .persist(&path)
             .map_err(|error| format!("publish verified local model: {}", error.error))?;
         let identity = file_identity(&path)?;
-        let opened = FileIdentity::from_metadata(
-            &published
-                .metadata()
-                .map_err(|error| format!("published local model metadata: {error}"))?,
-        )?;
+        let opened = FileIdentity::from_file(&published)?;
         if identity != opened || !before.same_content_instance(&identity) {
             return Err("local model changed during publication; verify before use".into());
         }
@@ -1218,7 +1238,7 @@ mod tests {
         }
     }
 
-    #[cfg(unix)]
+    #[cfg(any(unix, windows))]
     #[test]
     fn same_size_modified_time_preserved_edit_still_rehashes() {
         let dir = tempfile::tempdir().unwrap();
@@ -1237,6 +1257,32 @@ mod tests {
         assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
         assert!(resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).is_err());
         assert_eq!(cache.hash_reads, 2);
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn same_size_replacement_with_preserved_modified_time_rehashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(SYNTHETIC.file);
+        fs::write(&path, CONTENT).unwrap();
+        let modified = fs::metadata(&path).unwrap().modified().unwrap();
+        let mut cache = Verifier::default();
+        resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).unwrap();
+        fs::rename(&path, dir.path().join("retained-synthetic.gguf")).unwrap();
+        fs::write(&path, b"Synthetic GGUF model bytes").unwrap();
+        File::options()
+            .write(true)
+            .open(&path)
+            .unwrap()
+            .set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert_eq!(fs::metadata(&path).unwrap().modified().unwrap(), modified);
+        assert!(resolve_with_cache(dir.path(), &SYNTHETIC, &mut cache).is_err());
+        assert_eq!(cache.hash_reads, 2);
+        assert_eq!(
+            fs::read(dir.path().join("retained-synthetic.gguf")).unwrap(),
+            CONTENT
+        );
     }
 
     #[cfg(unix)]

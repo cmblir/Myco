@@ -105,6 +105,8 @@ mod vault_path;
 #[cfg(all(test, windows))]
 mod windows_identity_tests;
 #[cfg(windows)]
+mod windows_model_stamp;
+#[cfg(windows)]
 mod windows_source;
 
 pub(crate) fn app_context() -> tauri::Context<tauri::Wry> {
