@@ -195,15 +195,16 @@ export function settingsNeedWriter(s: MycoSettings | null): boolean {
   return !canGenerate(selected.provider, selected.model);
 }
 
-/** An apply failure as the card's page shows it. The backend's
- *  CHAT_MODEL_MISSING is an English sentence about bundled chat models, so it
- *  becomes the localized needs-writer line, as `audioStore` does; any other
- *  error shows as it is. */
+/** Localize recognized recovery conditions; preserve other failure details. */
 function applyErrorText(err: unknown): string {
   const msg = String(err);
-  if (!msg.includes("no local chat model is bundled")) return msg;
+  const detail = err instanceof Error ? err.message : msg;
   const t = STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
-  return t.pf_map_needs_writer ?? "Writing a topic map needs a model that can write";
+  if (detail === "no creation observation matches the current map object") {
+    return t.map_refresh_needs_manual_review;
+  }
+  if (msg.includes("no local chat model is bundled")) return t.pf_map_needs_writer;
+  return msg;
 }
 
 export interface DistillState {

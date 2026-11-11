@@ -18,6 +18,25 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: localized map custody recovery guidance
+
+The actual native M2 failure exposed `no creation observation matches the current
+map object` directly in the proposal UI. Added a narrowly matched localized
+recovery message in English, Korean and Japanese: the update record cannot be
+verified, the map is preserved, and the user can open it for manual review/editing.
+Unknown errors and partial-publication details keep their original diagnostics;
+this does not adopt old maps, bypass custody, or mark a proposal complete.
+
+Three regressions failed with the raw native string before the change and pass
+with the localized message afterward. They exercise the real proposal runner and
+map routing with synthetic model/IPC boundaries, and assert no apply, publication,
+file write or completion CAS occurs. The focused store and translation suites
+pass **70 tests**. Full frontend: **406 files / 6,513 tests passed**; build passed;
+lint passed with the same two existing `notchDriver.ts` hook warnings. These are
+frontend boundary tests, not a new installed UI or
+model acceptance run. README documents the recovery guidance; broader G6
+accessibility/state/translation acceptance remains open.
+
 ## November 11: retained-target Windows rename experiment
 
 The remaining audio mutation failures reach `vault::atomic_persist_file`, whose

@@ -620,6 +620,38 @@ describe("useDistillStore", () => {
     expect(write).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["en", "This map's update record could not be verified. The existing map is preserved. Open the map to review and edit it manually."],
+    ["ko", "이 지도의 갱신 기록을 확인할 수 없어요. 기존 지도는 보존했어요. 지도를 열어 직접 검토하고 수정하세요."],
+    ["ja", "このマップの更新記録を確認できません。既存のマップは保持されています。マップを開き、内容を確認して手動で編集してください。"],
+  ] as const)("explains missing map custody in %s without publishing or completing the proposal", async (lang, message) => {
+    const proposalPath = "/v/work/feedback/synthetic-refresh.md";
+    const mapPath = "/v/wiki/maps/attention.md";
+    const raw = '---\ntype: distill-proposal\naction: draft-map\nstatus: pending\ncreated: 2026-11-11\npayload: {"cluster":"attention","members":["wiki/a.md"]}\n---\n\n# Synthetic map update\n';
+    const before = await renderMapDraft("attention", "Synthetic old body.", [], "2026-11-11");
+    mockMapSources();
+    complete.mockResolvedValue("Synthetic new body.");
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([{ kind: "directory", name: "wiki", path: "/v/wiki", children: [
+      { kind: "directory", name: "maps", path: "/v/wiki/maps", children: [{ kind: "file", name: "attention.md", path: mapPath }] },
+    ] }]);
+    vi.spyOn(ipc, "readFile").mockImplementation(async path => ({ path, raw: path === proposalPath ? raw : before,
+      content: "", frontmatter: path === proposalPath ? null : { cluster: "attention" } }));
+    vi.spyOn(ipc, "previewMapRefresh").mockRejectedValue("no creation observation matches the current map object");
+    const apply = vi.spyOn(ipc, "applyMapRefresh");
+    const publish = vi.spyOn(ipc, "publishDistillNote");
+    const write = vi.spyOn(ipc, "writeFile");
+    const priorLang = useUIStore.getState().lang;
+    useUIStore.setState({ lang });
+    try {
+      await expect(useDistillStore.getState().apply("work/feedback/synthetic-refresh.md")).resolves.toBeNull();
+      expect(useDistillStore.getState().error).toBe(message);
+      expect(apply).not.toHaveBeenCalled();
+      expect(publish).not.toHaveBeenCalled();
+      expect(write).not.toHaveBeenCalled();
+      expect(ipc.writeFileIfUnchanged).not.toHaveBeenCalled();
+    } finally { useUIStore.setState({ lang: priorLang }); }
+  });
+
   it("returns an already-mapped legacy proposal to pending for manual recovery", async () => {
     // Existing bytes and a matching cluster do not prove native ownership.
     const draftMapProposalRaw = [

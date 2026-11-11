@@ -169,7 +169,9 @@ On supported Unix filesystems, foreground editor saves transfer verified private
 map custody to the atomically replaced file while retaining the original generated
 baseline. Human edits inside generated sections still prevent automatic refresh.
 Previously detached maps and external replacements are not adopted from public
-markers or matching bytes. This repair passes native regression and interruption
+markers or matching bytes. Manual proposal errors explain in the selected language
+when an update record cannot be verified and direct you to review and edit the
+preserved map manually. This repair passes native regression and interruption
 tests; the bundled editor-to-refresh workflow still requires a fresh UI replay.
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.

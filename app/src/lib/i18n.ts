@@ -1712,6 +1712,7 @@ export interface Strings extends EverydayStrings {
   map_refresh_title: string;
   map_refresh_message: string;
   map_refresh_apply: string;
+  map_refresh_needs_manual_review: string;
   pf_retry: string;
   pf_apply_failed: string;
   pf_map_needs_writer: string;
@@ -4345,6 +4346,7 @@ export const STRINGS: Record<Lang, Strings> = {
     map_refresh_title: "Review map update",
     map_refresh_message: "Review the generated section changes. Your title and outside notes are preserved. History undo is not available for this update.",
     map_refresh_apply: "Update map",
+    map_refresh_needs_manual_review: "This map's update record could not be verified. The existing map is preserved. Open the map to review and edit it manually.",
     pf_retry: "Retry",
     pf_apply_failed: "Apply failed — retry",
     pf_map_needs_writer: "Writing a topic map needs a model that can write",
@@ -6962,6 +6964,7 @@ export const STRINGS: Record<Lang, Strings> = {
     map_refresh_title: "지도 변경 검토",
     map_refresh_message: "생성 영역의 변경 내용을 확인하세요. 제목과 영역 밖에 작성한 내용은 보존됩니다. 이 갱신은 히스토리에서 되돌릴 수 없습니다.",
     map_refresh_apply: "지도 갱신",
+    map_refresh_needs_manual_review: "이 지도의 갱신 기록을 확인할 수 없어요. 기존 지도는 보존했어요. 지도를 열어 직접 검토하고 수정하세요.",
     pf_retry: "재시도",
     pf_apply_failed: "적용 실패 — 재시도",
     pf_map_needs_writer: "주제 지도를 쓰려면 글을 쓰는 모델이 필요해요",
@@ -9372,6 +9375,7 @@ export const STRINGS: Record<Lang, Strings> = {
     map_refresh_title: "マップの変更を確認",
     map_refresh_message: "生成部分の変更を確認してください。タイトルと範囲外のメモは保持されます。この更新は履歴から元に戻せません。",
     map_refresh_apply: "マップを更新",
+    map_refresh_needs_manual_review: "このマップの更新記録を確認できません。既存のマップは保持されています。マップを開き、内容を確認して手動で編集してください。",
     pf_retry: "再試行",
     pf_apply_failed: "適用に失敗しました — 再試行",
     pf_map_needs_writer: "トピックマップを書くには、文章を書けるモデルが必要です",
