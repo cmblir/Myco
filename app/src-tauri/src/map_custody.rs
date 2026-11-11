@@ -37,6 +37,125 @@ mod platform {
     }
 
     impl MapCreationStore {
+        /// Transfer only verified private custody during a foreground editor CAS.
+        /// Unknown maps remain ordinary notes and acquire no ownership record.
+        pub(crate) fn try_editor_write(
+            root: &Path,
+            path: &Path,
+            content: &str,
+            expected: &str,
+            guard: &MutexGuard<'_, ()>,
+        ) -> Result<Option<RecordedWriteReceipt>, String> {
+            let Some(relative) = crate::vault_path::relative_key(root, path) else {
+                return Ok(None);
+            };
+            let Some(key) = relative
+                .strip_prefix("wiki/maps/")
+                .and_then(|p| p.strip_suffix(".md"))
+            else {
+                return Ok(None);
+            };
+            if (crate::distill_publication::ManagedArtifact::Map { key: key.into() })
+                .path()
+                .as_deref()
+                != Ok(relative.as_str())
+            {
+                return Ok(None);
+            }
+            let private = crate::settings::settings_dir()?
+                .canonicalize()
+                .map_err(|error| error.to_string())?
+                .join("map-creation-custody");
+            match std::fs::symlink_metadata(&private) {
+                Ok(_) => (),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+                Err(error) => return Err(format!("inspect map editor custody: {error}")),
+            }
+            let directory = crate::vault::open_compiler_pin_directory(&private)?;
+            let Some(observation) = crate::map_creation_observation::discover_if_owned(
+                &directory, root, &relative, guard,
+            )?
+            else {
+                return Ok(None);
+            };
+            if expected != format!("{:x}", Sha256::digest(observation.current.as_bytes())) {
+                return Err(
+                    "map revision changed before editor save; current content preserved".into(),
+                );
+            }
+            let store = Self::open(root, &relative)?;
+            let record_bytes = |identity| -> Result<Vec<u8>, String> {
+                let mut record: serde_json::Value =
+                    serde_json::from_slice(&store.observation_bytes(
+                        &observation.baseline,
+                        Some(&observation.current),
+                        identity,
+                    )?)
+                    .map_err(|error| error.to_string())?;
+                record["version"] = serde_json::json!(5);
+                record["state"] = serde_json::json!("editorSavePrepared");
+                record["edited"] = serde_json::json!({
+                    "revision": format!("{:x}", Sha256::digest(content.as_bytes())),
+                    "content": content,
+                });
+                let bytes = serde_json::to_vec(&record).map_err(|error| error.to_string())?;
+                if bytes.len() > crate::map_custody_record::MAX_BYTES {
+                    return Err("map editor custody exceeds its byte budget".into());
+                }
+                Ok(bytes)
+            };
+            record_bytes(serde_json::json!({
+                "device": u64::MAX, "inode": u64::MAX,
+                "changedSeconds": i64::MIN, "changedNanoseconds": i64::MIN,
+            }))?;
+            let mut prepared = None;
+            let written = crate::vault::write_compiler_file_anchored_observed_locked(
+                guard,
+                path.to_str().ok_or("map editor path is not UTF-8")?,
+                content,
+                Some(observation.checked_editor_prior(guard)?),
+                Some(expected),
+                &store.directory,
+                &format!("{}.anchor", store.key),
+                |identity| {
+                    let bytes =
+                        record_bytes(serde_json::to_value(identity).map_err(|e| e.to_string())?)?;
+                    let file = store.persist_observation(&bytes)?;
+                    prepared = Some((file, bytes));
+                    Ok(())
+                },
+            )?;
+            let retained = |error| {
+                format!("editor bytes persisted but map custody verification failed: {error}")
+            };
+            let (held, bytes) =
+                prepared.ok_or_else(|| retained("preparation missing".to_string()))?;
+            crate::map_custody_record::verify_held_record(
+                &store.directory,
+                &format!("{}.json", store.key),
+                &held,
+                &bytes,
+            )
+            .map_err(retained)?;
+            let reopened = crate::map_creation_observation::discover_creation(
+                &store.directory,
+                root,
+                &relative,
+                guard,
+            )
+            .map_err(retained)?;
+            if reopened.baseline != observation.baseline
+                || reopened.current != content
+                || written.native_created
+            {
+                return Err(retained(
+                    "editor transition differs from native persisted bytes".into(),
+                ));
+            }
+            crate::vault::verify_recorded_file_unlocked(&written).map_err(retained)?;
+            Ok(Some(written))
+        }
+
         pub(crate) fn open(root: &Path, relative: &str) -> Result<Self, String> {
             let key = relative
                 .strip_prefix("wiki/maps/")

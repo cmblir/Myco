@@ -18,6 +18,34 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: preserve map custody across real editor saves
+
+Reproduced the bundled failure using `editor_io::write`: the pre-fix test failed
+with `no creation observation matches the current map object`. Supported Unix
+editor saves now persist a bounded private v5 `editorSavePrepared` observation
+before atomic replacement, retaining the original generated baseline separately
+from previous and edited snapshots. Reopening requires the current retained file
+object and stable private evidence; public markers and byte equality confer no
+ownership. Generated-section human edits remain detectable and block refresh.
+Unknown maps keep the ordinary editor path; corrupt private custody fails closed.
+
+Regression coverage uses the actual editor and refresh writer, including multiple
+saves, outside annotations, owned-section edits, same-byte external replacement,
+corrupt records, and recovery display. Separate child processes terminate before
+and after canonical persistence, without successful receipts, then reopen only
+the matching current object. Full native feature library: **3,182 passed, 0 failed,
+77 ignored**. Strict all-target Clippy passed. Logs are local
+`/tmp/myco-map-editor-{before,full,clippy}.log`. This does not establish bundled UI,
+Windows, model semantics, or recovery authority. Previously detached maps are not
+automatically adopted. A fresh native creation/edit/restart/refresh replay remains.
+
+Hosted Windows run [42950000035](https://github.com/cmblir/Myco/actions/runs/42950000035)
+at `cc30681f` completed: the four NTFS handle diagnostics passed; the full suite
+remains **2,178 passed, 209 failed, 31 ignored**. All other jobs passed. This run
+includes role transport and selected-note date-catalog fixes but predates the
+editor custody repair. No available personal Windows environment is required to
+continue hosted verification; production Windows custody remains unfinished.
+
 ## November 11: native map creation passes; editor-save refresh fails
 
 Built the unsigned isolated macOS ARM acceptance bundle from `f8188592` with

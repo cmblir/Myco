@@ -47,6 +47,8 @@ struct Observation {
     baseline: String,
     #[serde(default)]
     previous: Option<PreviousContent>,
+    #[serde(default)]
+    edited: Option<PreviousContent>,
 }
 
 pub(crate) struct CreationContent {
@@ -68,6 +70,17 @@ impl CreationContent {
         &self,
         guard: &MutexGuard<'_, ()>,
     ) -> Result<&crate::vault::CompilerPriorFilePin, String> {
+        if self.has_owned_content_edits {
+            return Err("map changed after refresh preparation; current content preserved".into());
+        }
+        self.checked_editor_prior(guard)
+    }
+
+    /// An editor may change owned text, but that never changes its model baseline.
+    pub(crate) fn checked_editor_prior(
+        &self,
+        guard: &MutexGuard<'_, ()>,
+    ) -> Result<&crate::vault::CompilerPriorFilePin, String> {
         crate::map_custody_record::verify_held_record(
             &self.directory,
             &self.record_leaf,
@@ -75,7 +88,7 @@ impl CreationContent {
             &self.record_bytes,
         )?;
         let (current, _) = crate::vault::read_compiler_prior_file_pin_locked(guard, &self.pin)?;
-        if current != self.current || self.has_owned_content_edits {
+        if current != self.current {
             return Err("map changed after refresh preparation; current content preserved".into());
         }
         Ok(&self.pin)
@@ -90,6 +103,17 @@ pub(crate) fn discover_creation(
     relative: &str,
     guard: &MutexGuard<'_, ()>,
 ) -> Result<CreationContent, String> {
+    discover_if_owned(directory, root, relative, guard)?
+        .ok_or_else(|| "no creation observation matches the current map object".into())
+}
+
+/// Absence is not ownership; malformed or unstable evidence remains an error.
+pub(crate) fn discover_if_owned(
+    directory: &CompilerPinDirectory,
+    root: &Path,
+    relative: &str,
+    guard: &MutexGuard<'_, ()>,
+) -> Result<Option<CreationContent>, String> {
     let key = relative
         .strip_prefix("wiki/maps/")
         .and_then(|name| name.strip_suffix(".md"))
@@ -168,7 +192,7 @@ pub(crate) fn discover_creation(
     ) {
         return Err("map creation store changed during discovery".into());
     }
-    found.ok_or_else(|| "no creation observation matches the current map object".into())
+    Ok(found)
 }
 
 /// Reopen stable private evidence and its exact file object. This function never
@@ -276,7 +300,12 @@ fn validate_observation(bytes: &[u8], expected: &Scope, leaf: &str) -> Result<Ob
     let is_prepared = observation.version == 4
         && observation.state == "refreshPrepared"
         && observation.previous.is_some();
-    if (!is_creation && !is_refresh && !is_prepared)
+    let is_editor = observation.version == 5
+        && observation.state == "editorSavePrepared"
+        && observation.previous.is_some()
+        && observation.edited.is_some();
+    if (!is_creation && !is_refresh && !is_prepared && !is_editor)
+        || (!is_editor && observation.edited.is_some())
         || &observation.scope != expected
         || !leaf.starts_with(&format!("{scope_hash}."))
         || observation.anchor != expected_anchor
@@ -294,9 +323,18 @@ fn validate_observation(bytes: &[u8], expected: &Scope, leaf: &str) -> Result<Ob
     }
     if let Some(previous) = &observation.previous {
         if previous.revision != format!("{:x}", Sha256::digest(previous.content.as_bytes()))
-            || !crate::map_content::owned_sections_unchanged(&previous.content, &previous.content)
+            || (!is_editor
+                && !crate::map_content::owned_sections_unchanged(
+                    &previous.content,
+                    &previous.content,
+                ))
         {
             return Err("map refresh previous snapshot is invalid".into());
+        }
+    }
+    if let Some(edited) = &observation.edited {
+        if edited.revision != format!("{:x}", Sha256::digest(edited.content.as_bytes())) {
+            return Err("map editor snapshot revision differs".into());
         }
     }
     Ok(observation)

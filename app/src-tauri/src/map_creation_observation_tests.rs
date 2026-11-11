@@ -5,6 +5,9 @@ use std::path::PathBuf;
 
 const RELATIVE: &str = "wiki/maps/synthetic.md";
 
+#[path = "map_editor_custody_tests.rs"]
+mod editor;
+
 fn create(data: &Path) -> (PathBuf, CompilerPinDirectory, String, String) {
     let root = data.join("vault");
     std::fs::create_dir_all(root.join("wiki/maps")).unwrap();
@@ -289,9 +292,9 @@ fn synthetic_discovery_child() {
     match std::env::var("MYCO_MAP_DISCOVERY_PHASE").unwrap().as_str() {
         "create" => {
             let (root, _, _, baseline) = create(&data);
-            std::fs::write(
-                root.join(RELATIVE),
-                format!("{baseline}\nSynthetic restart annotation.\n"),
+            editor::save(
+                &root,
+                &format!("{baseline}\nSynthetic restart annotation.\n"),
             )
             .unwrap();
         }

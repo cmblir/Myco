@@ -144,7 +144,11 @@ pub(super) fn inspect_at(
                 Evidence::PublicationUnknown
             };
             result.before = observation.previous.map(|previous| previous.content);
-            result.after = Some(observation.baseline);
+            result.after = Some(
+                observation
+                    .edited
+                    .map_or(observation.baseline, |edited| edited.content),
+            );
             anchors.push((anchor_path, anchor));
         }
         retained.push((leaf.to_owned(), held, bytes));
