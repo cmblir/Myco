@@ -97,6 +97,9 @@ libc = "=0.2.186"
 [target.'cfg(windows)'.dependencies]
 windows-sys = { version = "=0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_Threading"] }
 
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "=0.61.2", features = ["Win32_System_Memory"] }
+
 # macOS notch surface (src/notch.rs): NSScreen safe-area/auxiliary-area
 # geometry, and promoting a Tauri window to a status-level non-activating
 # NSPanel. Both crates are already in the lockfile as tao/wry dependencies, so
