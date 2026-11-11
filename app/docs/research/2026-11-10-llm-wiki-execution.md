@@ -18,6 +18,31 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: native read-cache invalidation experiments
+
+The Windows in-place write failures remain unresolved. The NTFS USN journal is
+not a sufficient replacement for timestamps: Microsoft documents that repeated
+writes while a file remains open can share one journal record. Added four real
+Windows read-oplock experiments under `windows_identity_tests`, using the existing
+locked `windows-sys` 0.61.2 with test-only IO/Ioctl/Threading/Security features:
+read-only access retains the lease, cancellation drains the pending request,
+sixteen alternating same-size/restored-time writes each invalidate a new lease,
+two simultaneous readers both invalidate, and an already-open writer cannot
+change bytes under an unbroken lease. The tests require read-only advisory breaks
+without acknowledgment and preserve resulting file bytes. They neither create a
+journal nor grant product cache/publication authority.
+
+Asynchronous buffers have stable heap addresses with interior mutability; cleanup
+cancels and drains the exact request before releasing them, including assertion
+unwinding. The actual source/test modules pass Windows GNU cross-compilation and
+strict Clippy in the isolated harness. Hosted execution is still pending; no
+production cache or snapshot behavior changed, and the existing failing mutation
+tests remain unchanged. README needs no change for this test-only slice.
+
+Primary API references: [journal record coalescing](https://learn.microsoft.com/en-us/windows/win32/fileio/change-journal-records),
+[requesting oplocks](https://learn.microsoft.com/en-us/windows/win32/fileio/how-to-request-an-opportunistic-lock),
+and [FSCTL_REQUEST_OPLOCK](https://learn.microsoft.com/windows/win32/api/winioctl/ni-winioctl-fsctl_request_oplock).
+
 ## November 11: hosted model/index cache repair remains incomplete
 
 [Run 42955565390](https://github.com/cmblir/Myco/actions/runs/42955565390)

@@ -184,3 +184,6 @@ fn windows_sharing_denial_preserves_source_until_handle_release() {
 
 #[path = "windows_rename_tests.rs"]
 mod rename;
+
+#[path = "windows_oplock_tests.rs"]
+mod oplock;
