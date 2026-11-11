@@ -223,6 +223,20 @@ mod tests {
     }
 
     #[test]
+    fn map_prompt_revision_keeps_historical_and_current_machine_sessions() {
+        for prompt in [
+            "Write a topic map (Map of Content) for the 'synthetic' topic.",
+            "Write a concise Markdown topic map from the factual sentences in the supplied member excerpts. Start with one short overview.",
+        ] {
+            let document = doc(&[("User", prompt), ("Assistant", "Synthetic map.")]);
+            assert_eq!(kind_of(&first_human_turn(&document).unwrap()), Some(MachineKind::Myco));
+        }
+        assert!(!is_myco_prompt(
+            "Please review the topic map and tell me what changed."
+        ));
+    }
+
+    #[test]
     fn harness_blocks_are_stripped_before_the_first_turn_is_read() {
         let preamble = "# AGENTS.md instructions for /tmp/proj\n\n<INSTRUCTIONS>\nbe careful\n</INSTRUCTIONS>\n<environment_context>\n  <cwd>/tmp</cwd>\n</environment_context>";
         let d = doc(&[

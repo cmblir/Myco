@@ -185,9 +185,9 @@ describe("complete() selected-source generation", () => {
       expect(prompt).not.toContain("UNSELECTED_SYNTHETIC_RED_TILES");
       if (provider === "builtin-local") {
         expect(local.mock.calls[0].slice(2, 4)).toEqual([origin, snapshot]);
-        expect(local.mock.calls[0][5]).toContain("Write a topic map");
+        expect(local.mock.calls[0][5]).toContain("Write a concise Markdown topic map");
         expect(local.mock.calls[0][5]).not.toContain(raw);
-        expect(local.mock.calls[0][0]).not.toContain("Write a topic map");
+        expect(local.mock.calls[0][0]).not.toContain("Write a concise Markdown topic map");
         expect(http).not.toHaveBeenCalled();
       } else {
         expect(http.mock.calls[0].slice(1, 3)).toEqual([origin, snapshot]);

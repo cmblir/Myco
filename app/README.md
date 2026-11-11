@@ -173,9 +173,14 @@ markers or matching bytes. Manual proposal errors explain in the selected langua
 when an update record cannot be verified and direct you to review and edit the
 preserved map manually. Native regression/interruption tests and a bundled macOS
 editor → restart → two changed-source refresh replay preserve the human paragraph
-byte-for-byte with one map. The same replay still produces an unsupported partial-
-coverage claim, so map explanation quality is not accepted; see the
-[native replay receipt](docs/research/2026-11-11-native-editor-refresh-replay.json).
+byte-for-byte with one map. That earlier replay produced an unsupported partial-
+coverage claim; see the [native replay receipt](docs/research/2026-11-11-native-editor-refresh-replay.json).
+Map generation now uses an example that excludes quoted commands while preserving
+source subjects and the scope of negation. The exact prompt passes three frozen
+offline cases across nine candidate outputs, including the existing-cluster failure.
+Historical map prompt prefixes remain recognized as machine-generated sessions.
+Rebuilt native/UI replay and broader explanation quality remain unverified; see the
+[controlled comparison](docs/research/2026-11-11-map-example-native-role-comparison-review.json).
 Before publication completes, the native writer re-reads the private record and
 checks its exact bytes and file identity; unstable or unsafe records stop completion.
 Creation observations also validate their schema, vault/target scope, baseline

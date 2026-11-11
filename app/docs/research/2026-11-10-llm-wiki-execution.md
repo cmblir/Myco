@@ -14,9 +14,38 @@ requirements and must not be mistaken for passing results.
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
 | G3 Windows | Partial; current hosted run failed | 868c7b67 passed 2,228 Windows tests with 190 failures and 31 ignored. All 20 handle diagnostics, production model/index invalidation regressions and parent-handle rename probes pass. Relative creation/cleanup awaits hosted validation; production publication custody and installed flow remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
-| G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Bundled macOS editor-save/restart and two changed-source refreshes preserve the human paragraph and one map. Actual model output falsely claims partial member coverage; semantic acceptance fails. Remaining native/UI failure cases are open; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
+| G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Bundled macOS editor-save/restart and two changed-source refreshes preserve the human paragraph and one map. The old prompt fails semantic acceptance. The promoted example prompt passes three frozen cases across nine actual outputs; rebuilt native/UI replay and the remaining failure cases are open. External editors are not atomically excluded. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: promote the separately-role-tested example map prompt
+
+The [actual comparison](2026-11-11-map-example-native-role-comparison-review.json)
+finished all 18 offline calls in 516.03 seconds. Each arm/case repeated identically
+at seed 42; these are not independent samples. The baseline repeats its false
+partial-coverage and quoted-command descriptions. The candidate's nine outputs
+pass all three frozen cases: supported reading/storage, withdrawn reading and
+storage, and the unchanged cluster label that previously triggered false coverage.
+There are no copied example entities, malicious quoted commands, undeclared links,
+false coverage labels or unsupported assertions of an archive's absence.
+
+The accepted arm is frozen in [production controls v2](2026-11-11-map-production-controls-v2.json).
+Frontend source-to-prompt regressions failed 3/35 tests against the old implementation,
+then passed after promoting that exact text. `mapPrompt.ts` holds the prompt; both
+new maps and refreshes use it with separate system/user messages. The new
+`mapEvidence` prompt head is registered while the original `map` head remains for
+historical machine-session quarantine. A native regression explicitly recognizes
+both, preventing older generated sessions from becoming human work evidence.
+
+Validation: 218 targeted frontend tests; all 6,514 frontend tests in 406 files;
+TypeScript/production build; lint with zero errors and the two pre-existing
+`notchDriver.ts` hook warnings; all 2,727 macOS native tests with 41 ignored;
+strict library Clippy and formatting. The initial test command was accidentally
+run from the repository root without package.json; it was rerun from `app` to
+obtain the actual three failing regressions before the fix. No failed command is
+counted as a passing check. This is a bounded semantic repair, not general accuracy
+or native installed acceptance. A separately named isolated bundle is configured
+for replay; the earlier acceptance bundle and synthetic vault originals remain.
 
 ## November 11: hosted model invalidation and parent-bound rename pass
 

@@ -78,7 +78,7 @@ describe("myco's prompt heads", () => {
     const beforeMap = complete.mock.calls.length;
     await settle(draftMap("/v", "rope", ["wiki/a.md"]));
     expect(complete).toHaveBeenCalledTimes(beforeMap + 1);
-    expect(complete.mock.calls[beforeMap][0].messages[0].content.startsWith(HEADS.map)).toBe(true);
+    expect(complete.mock.calls[beforeMap][0].messages[0].content.startsWith(HEADS.mapEvidence)).toBe(true);
     expect(mapSources).toHaveBeenCalledWith(
       { vaultPath: "/v", openingToken: "native-test" }, expect.objectContaining({ role: "organization" }), ["wiki/a.md"],
     );
@@ -109,9 +109,10 @@ describe("myco's prompt heads", () => {
     }
     // `digest` has no sender any more (its writer was removed as unused); the
     // head stays so the sessions it wrote are still told apart as myco's.
+    // `map` is likewise a historical sender; current maps use `mapEvidence`.
     // Audio is still a live sender, now owned by audio_overview/generation.rs.
     // Its native generation tests assert the effective SYSTEM prompt head.
-    expect([...used].sort()).toEqual(Object.keys(HEADS).filter((k) => k !== "digest" && k !== "audioOverview").sort());
+    expect([...used].sort()).toEqual(Object.keys(HEADS).filter((k) => k !== "digest" && k !== "audioOverview" && k !== "map").sort());
   });
 
   it("retains the live native Audio head for importer recognition", () => {

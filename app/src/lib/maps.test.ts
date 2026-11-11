@@ -41,7 +41,7 @@ vi.mock("./ipc", () => ({
 }));
 
 import { draftMap } from "./maps";
-import modelControls from "../../docs/research/2026-11-11-map-model-controls.json";
+import modelControls from "../../docs/research/2026-11-11-map-production-controls-v2.json";
 import { sha256 } from "./tidyRun";
 import { resolveStem } from "./wikilinks";
 

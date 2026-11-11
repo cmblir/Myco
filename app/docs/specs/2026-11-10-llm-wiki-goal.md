@@ -81,7 +81,7 @@ after G1. Run actual-model/native scenarios throughout, not only in G7.
 | G2 | Make Ask scope and period consistent | G0 cases | Implemented; native acceptance pending |
 | G3 | Restore Windows native safety and functionality | G0 inventory | Hosted Windows run at 868c7b67: 2,228 passed, 190 failed, 31 ignored; all 20 handle diagnostics pass. Production model/index read-lease regressions and parent-handle rename probes pass. Relative creation/cleanup probes await runtime validation; production custody/publication and installed flow incomplete |
 | G4 | Resolve current project work state | G2 contract | Source-bound route and opaque folder identities implemented; facts v6 rebuild malformed cwd assignments; repository equivalence and actual meaning gates remain |
-| G5 | Refresh evidence-based topic maps | G0 evidence contract | Bundled macOS editor-save/restart and two changed-source refreshes preserve the complete human suffix with one map. Actual generated output falsely claims partial member coverage, so semantic acceptance still fails. Remaining native failure matrix and model cases are open; full timeline/undo is not an additional gate. |
+| G5 | Refresh evidence-based topic maps | G0 evidence contract | Bundled macOS editor-save/restart and two changed-source refreshes preserve the complete human suffix with one map. The old prompt falsely claims partial member coverage; the promoted example prompt passes three frozen cases across nine actual outputs. Rebuilt native replay, the remaining failure matrix and broader model cases are open; full timeline/undo is not an additional gate. |
 | G6 | Improve capture, review and reading screens | G1; G2 for Ask | Main screens improved; native Graph navigation/restart and dark label repair checked; 800px graph-first layout verified in light/dark, with 1024/1280px checks; full accessibility/state and phone review incomplete |
 | G7 | Complete native acceptance and documentation | G1–G6 | In progress; not release-accepted |
 
@@ -197,8 +197,10 @@ member expansion, rejection of an old source grant, a fresh-revision retry,
 no-op repetition and preservation of one canonical map with human title/notes.
 A subsequent bundled macOS replay also preserves a real editor-authored paragraph
 through atomic save, process restart and two changed-source refreshes, with one
-map and unchanged bytes outside generated/evidence fields. Its actual model
-output falsely claims partial member coverage, so semantic acceptance fails.
+map and unchanged bytes outside generated/evidence fields. Its original model
+output falsely claims partial member coverage. A later separately-role-tested
+example prompt passes all three frozen cases across nine actual candidate outputs
+and is promoted; rebuilt native replay and broader semantic acceptance are pending.
 This does not close the above checkboxes: generated explanation quality and the
 complete user-facing/native failure matrix remain incomplete. See the execution
 record for commands and scope.
