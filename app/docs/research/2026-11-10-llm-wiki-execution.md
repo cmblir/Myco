@@ -18,6 +18,21 @@ requirements and must not be mistaken for passing results.
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
 
+## November 11: proposal action progress matches the active store operation
+
+The isolated native map replay showed that Approve and Dismiss stayed enabled
+while the toolbar reported an active proposal. The existing store already tracks
+`applying` per proposal and refuses duplicate applies; PageFeedback now subscribes
+to that state, marks the active card busy, disables both controls and uses the
+existing localized progress label. Other proposals retain their independent
+controls. No publication or cancellation authority changed.
+
+Build/typecheck passed; lint has zero errors and the same two existing
+`notchDriver.ts` warnings. The 59 proposal-store tests pass. This is a narrow
+presentation change; the running native acceptance bundle predates it, so those
+screenshots do not verify the new disabled controls. README records the behavior;
+installed accessibility and complete G6 acceptance remain open.
+
 ## November 11: native read-cache invalidation experiments
 
 The Windows in-place write failures remain unresolved. The NTFS USN journal is

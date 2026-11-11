@@ -237,7 +237,9 @@ descendants below the first missing parent and checks that it remains absent.
 It creates no folders or files. Reappearing paths, including symlinks, abort the
 read. Corrupt-record repair and restoring deleted maps remain incomplete.
 Refresh issues no creation/undo receipt. Manual map proposals show the native
-merged diff before applying an existing-map update. Cancelling or switching vaults
+merged diff before applying an existing-map update. While a proposal is applying,
+its approval and dismissal controls are disabled and show localized progress.
+Cancelling or switching vaults
 stops the update; sources and the target revision are rechecked after approval.
 If multiple existing maps match the topic or its member-based label history,
 drafting stops before generation or publication and asks for map review. It does

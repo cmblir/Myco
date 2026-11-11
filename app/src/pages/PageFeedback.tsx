@@ -202,6 +202,7 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const refresh = useDistillStore((s) => s.refresh);
   const apply = useDistillStore((s) => s.apply);
+  const applying = useDistillStore((s) => s.applying);
   const dismiss = useDistillStore((s) => s.dismiss);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [result, setResult] = useState<{ path: string; summary: string } | null>(null);
@@ -276,6 +277,7 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
         <div className="col" style={{ gap: 12, marginTop: 16 }}>
           {proposals.map((p) => {
             const isOpen = expanded === p.path;
+            const isApplying = applying.has(p.path);
             const notice = proposalNotice(p, needsWriter);
             const failedApply = notice === "failed";
             const bodyId = `pf-body-${p.path}`;
@@ -283,7 +285,7 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
             // The whole head opens the card, and the decision only shows once
             // it is open: you see what you approve before you can (UX S20).
             return (
-              <div key={p.path} className="card pf-card">
+              <div key={p.path} className="card pf-card" aria-busy={isApplying}>
                 <button
                   type="button"
                   className="pf-card__head"
@@ -354,9 +356,10 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
                             <button
                               type="button"
                               className="btn btn-primary"
+                              disabled={isApplying}
                               onClick={() => void handleApprove(p)}
                             >
-                              {failedApply ? (t.pf_retry ?? "Retry") : (t.pf_approve ?? "Approve")}
+                              {isApplying ? t.tb_activity_applying : failedApply ? (t.pf_retry ?? "Retry") : (t.pf_approve ?? "Approve")}
                             </button>
                             <span className="muted" style={{ fontSize: 12.5 }}>
                               {outcome}
@@ -366,6 +369,7 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
                         <button
                           type="button"
                           className="btn-ghost btn"
+                          disabled={isApplying}
                           onClick={() => void dismiss(p.path)}
                         >
                           {t.pf_dismiss ?? "Dismiss"}
