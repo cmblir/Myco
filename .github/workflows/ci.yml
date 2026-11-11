@@ -131,6 +131,13 @@ jobs:
         shell: bash
         run: |
           touch "bin/whisper-cli-$(rustc -vV | sed -n 's/^host: //p' | tr -d '\r').exe"
+      # Keep native filesystem diagnostics visible even when other library
+      # tests fail. The full suite below still includes and gates these tests.
+      - name: Windows handle diagnostics
+        continue-on-error: true
+        env:
+          MYCO_EMBED_TEST_MANIFEST: "1"
+        run: cargo test windows_identity_tests -- --nocapture
       - name: tests
         env:
           # build.rs: embed the app manifest into the test executables too.

@@ -91,3 +91,24 @@ app's retained-handle invariants, not an already-verified Windows solution.
 
 No production guard, dependency, supported-platform claim or native receipt
 format was changed in this audit. No Windows build or runtime pass is claimed.
+
+## Isolated native handle tests prepared after the hosted run
+
+`windows_identity_tests.rs` adds four Windows-only tests before production
+integration. They compare the full volume/128-bit pair from `FILE_ID_INFO`,
+distinguish same-byte replacement from in-place edits, reopen a retained path,
+observe hard-link count changes, retain directory identity across replacement,
+and verify sharing-denied writes/deletion preserve source bytes. The diagnostic
+prints the actual filesystem name. These tests do not establish process-restart
+custody, reparse/ancestor confinement, ACL behavior or durable publication.
+
+The exact already-locked Microsoft `windows-sys` 0.61.2 bindings are connected
+only as a Windows dev-dependency. Their source archive checksum was verified
+against Cargo.lock before inspecting the API declarations. Normal certificate
+verification remains enabled; Python's TLS request failed, while system curl
+retrieved the archive successfully. No version was upgraded.
+
+The CI diagnostic step runs the filtered tests with output visible, then always
+continues to the unchanged full Windows suite, which includes and gates the same
+tests. Native compile and execution results remain pending. The added tests grant
+no production authority and do not change any non-Unix rejection gate.
