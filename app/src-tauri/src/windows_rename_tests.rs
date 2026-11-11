@@ -24,19 +24,22 @@ fn rename_by_handle(file: &File, parent: &Path, name: &str, replace: bool) -> io
     const REPLACE_IF_EXISTS: u32 = 0x00000001;
     const POSIX_SEMANTICS: u32 = 0x00000002;
     assert!(!name.contains(['/', '\\', '\0', ':']));
-    let name: Vec<u16> = std::ffi::OsStr::new(name).encode_wide().collect();
+    // The hosted Win32 call rejected the root-handle/relative-name form with
+    // ERROR_INVALID_PARAMETER. Probe the documented absolute-path form instead;
+    // this is not production parent-directory confinement authority.
+    let destination = parent.canonicalize()?.join(name);
+    let name: Vec<u16> = destination.as_os_str().encode_wide().collect();
     assert!(!name.is_empty() && name.len() <= 1024);
-    let directory = open_shared(parent)?;
     let bytes = size_of::<FILE_RENAME_INFO>()
         .max(offset_of!(FILE_RENAME_INFO, FileName) + (name.len() + 1) * 2);
     // usize storage has the native pointer alignment required by this structure.
     let mut storage = vec![0usize; bytes.div_ceil(size_of::<usize>())];
     let request = storage.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     // SAFETY: the zeroed aligned buffer covers the header and complete UTF-16
-    // tail. The directory and source handles remain live through the call.
+    // tail. The source handle remains live through the call.
     let success = unsafe {
         (*request).Anonymous.Flags = POSIX_SEMANTICS | if replace { REPLACE_IF_EXISTS } else { 0 };
-        (*request).RootDirectory = directory.as_raw_handle();
+        (*request).RootDirectory = std::ptr::null_mut();
         (*request).FileNameLength = (name.len() * 2) as u32;
         std::ptr::copy_nonoverlapping(
             name.as_ptr(),
@@ -91,7 +94,8 @@ fn no_replace_preserves_existing_target_and_staging_file() {
     fs::write(&target, b"Synthetic original.").unwrap();
     let mut replacement = stage(&staged);
     std::io::Write::write_all(&mut replacement, b"Synthetic replacement.").unwrap();
-    assert!(rename_by_handle(&replacement, root.path(), "target.md", false).is_err());
+    let error = rename_by_handle(&replacement, root.path(), "target.md", false).unwrap_err();
+    assert!(matches!(error.raw_os_error(), Some(80 | 183)), "{error}");
     assert_eq!(fs::read(&target).unwrap(), b"Synthetic original.");
     assert_eq!(fs::read(&staged).unwrap(), b"Synthetic replacement.");
 }
@@ -110,7 +114,8 @@ fn readonly_target_is_not_overridden_by_posix_replacement() {
     std::io::Write::write_all(&mut replacement, b"Synthetic replacement.").unwrap();
     let outcome = rename_by_handle(&replacement, root.path(), "target.md", true);
     fs::set_permissions(&target, original_permissions).unwrap();
-    assert!(outcome.is_err());
+    let error = outcome.unwrap_err();
+    assert_eq!(error.raw_os_error(), Some(5), "{error}");
     assert_eq!(fs::read(&target).unwrap(), b"Synthetic original.");
     assert_eq!(fs::read(&staged).unwrap(), b"Synthetic replacement.");
 }
@@ -160,7 +165,8 @@ fn replacement_respects_exclusive_target_handle() {
     std::io::Write::write_all(&mut replacement, b"Synthetic replacement.").unwrap();
     let outcome = rename_by_handle(&replacement, root.path(), "target.md", true);
     drop(exclusive);
-    assert!(outcome.is_err());
+    let error = outcome.unwrap_err();
+    assert!(matches!(error.raw_os_error(), Some(5 | 32)), "{error}");
     assert_eq!(fs::read(&target).unwrap(), b"Synthetic original.");
     assert_eq!(fs::read(&staged).unwrap(), b"Synthetic replacement.");
 }

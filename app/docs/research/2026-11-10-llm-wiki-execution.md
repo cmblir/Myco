@@ -12,11 +12,31 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | 6a09d150 passed 2,207 Windows tests with 192 failures and 31 ignored. Four previous failures resolve; same-size model overwrite and newly enabled same-stamp index mutation fail. Replacement guards pass; in-place mutation, production custody and durable publication remain incomplete. |
+| G3 Windows | Partial; current hosted run failed | 8a514114 passed 2,211 Windows tests with 194 failures and 31 ignored. Two new rename experiments fail with invalid parameters; existing model/index in-place mutation failures persist. Absolute-path rename and read-oplock experiments await runtime validation; production custody remains incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: hosted rename diagnostics expose invalid relative-call parameters
+
+[Run 42957554008](https://github.com/cmblir/Myco/actions/runs/42957554008)
+at `8a514114` completed with **2,211 passed, 194 failed, 31 ignored** on Windows;
+all other jobs passed. [The receipt](2026-11-11-windows-rename-runtime-review.json)
+records the complete failure list. Both positive relative-name/root-handle
+`FileRenameInfoEx` experiments failed with `ERROR_INVALID_PARAMETER (87)`;
+legacy `tempfile::persist` with a retained reader reproduced access denied (5).
+The diagnostic's continue-on-error step status does not override its actual
+**8 passed / 2 failed** result. Three negative rename checks merely saw an error
+and preserved bytes; they cannot distinguish policy rejection from an invalid call.
+
+The next experiment uses Microsoft's documented absolute-path/NULL-root form,
+while keeping the staged handle and POSIX replacement flags. The rejection tests
+now demand collision/access/sharing error codes rather than accepting parameter
+errors. Exact Windows source/test modules pass strict cross-target Clippy; hosted
+execution remains pending. No production publication code changes or directory
+confinement claims follow from this path-based experiment. The failure-cache
+post step ran, but faster subsequent build time has not yet been measured.
 
 ## November 11: proposal action progress matches the active store operation
 
