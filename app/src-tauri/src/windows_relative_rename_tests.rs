@@ -1,4 +1,7 @@
 //! Native parent-handle rename probes; not production custody or durability.
+#[path = "windows_relative_create_tests.rs"]
+mod create;
+
 use super::*;
 use std::mem::offset_of;
 use std::os::windows::ffi::OsStrExt;

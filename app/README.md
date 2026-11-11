@@ -719,15 +719,16 @@ Windows model verification now binds cached readiness to a retained native read
 lease as well as file IDs, size and timestamps. A broken lease requires the pinned
 SHA-256 check again; issued model packages retain invalidation through loading even
 when the verifier cache is replaced. Downloads are rehashed under a new lease after
-publication. Hosted validation of this cache integration is pending; the earlier
-timestamp-only cache allowed stale readiness after same-size overwrites.
+publication. Hosted Windows regressions pass repeated same-size/restored-time
+writes, valid/corrupt cache reuse and package checks after cache eviction. Installed
+Windows model loading remains unverified.
 Windows index reads also check retained file identity, change time and link count
 before returning a byte-bound snapshot. They now require an advisory native read
 lease throughout the bounded read and reject an invalidated or unsupported lease.
 Hosted Windows tests pass the production read integration, including repeated
 same-size/restored-time writes and existing/new writable memory mappings.
 These Windows cache/read guards are not accepted as complete; see the
-[latest hosted runtime receipt](docs/research/2026-11-11-windows-index-lease-runtime-review.json).
+[latest hosted runtime receipt](docs/research/2026-11-11-windows-model-lease-runtime-review.json).
 The [local role comparison](docs/research/2026-10-05-local-model-routing.md)
 records separate Ask/import model selection, organization drafts and remaining
 retrieval and generation quality limits. Local Ask checks every chunk of each
