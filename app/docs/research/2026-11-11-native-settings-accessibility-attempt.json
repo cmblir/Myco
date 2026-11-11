@@ -1,0 +1,24 @@
+{
+  "case": "Native Settings accessibility continuation",
+  "status": "inconclusive-tool-error",
+  "nativeCodeRevision": "2b981c69",
+  "nativeSha256": "5dfb1d3fc42870fbab7fe37eb06f45b8aa36d07201a18aaaeda5b2951add3cf9",
+  "fixtureDirectory": "/private/var/folders/sx/2cbvh3hs6j55cmp2zx_mzrn80000gn/T/myco-isolated-drafts-v2-80sp2xbl",
+  "pid": 73647,
+  "observations": [
+    "Initial Ingest view restored the synthetic Aspen replacement draft.",
+    "Settings AX click failed with elementHasNoFrame.",
+    "Coordinate click subsequently failed with AXError.cannotComplete; no Settings state was observed.",
+    "A fresh AX/screenshot observation still showed Ingest.",
+    "Normal quit was sent; the process remained briefly and was absent when a later TERM cleanup was attempted (no such process)."
+  ],
+  "unchangedMarkdownCount": 17,
+  "changedMarkdown": [],
+  "newMarkdown": [],
+  "limits": [
+    "No Settings, focus, theme or contrast acceptance established.",
+    "Existing unsigned diagnostic binary, not the latest heading repair or installed release.",
+    "No production vault access or inference submission.",
+    "No claim that AX errors prove an app crash or an application accessibility defect."
+  ]
+}

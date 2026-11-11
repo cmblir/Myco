@@ -12,11 +12,86 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; Windows unverified | Portable relative-path changes passed macOS library tests. Windows handle identity, custody, durable publication and Windows execution remain. |
+| G3 Windows | Partial; current hosted run failed | 2b26f802 passed 2,132 Windows tests with 247 failures and 31 ignored. 101 previously failing names now pass, including all eleven temporal-recall cases. Windows handle identity, custody, durable publication and remaining path failures remain. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: current Windows failures and original-source closure
+
+CI run 42938959505 completed: frontend, audit, Linux Rust, Apple Silicon macOS
+Rust and Intel macOS Rust passed; Windows failed with 2,132 passed, 247 failed
+and 31 ignored. `2026-11-11-windows-current-failure-inventory.json` preserves its
+log hash, all failed names and the exact comparison with baseline 121c0fa2:
+101 old failures explicitly pass, 229 still fail, ten are not observed and 18
+new names fail. The ten unobserved names are not counted as fixed. All eleven
+previous temporal-recall assertions pass. The failing library suite prevents a
+claim about subsequent integration suites or an installed Windows application.
+
+Nineteen activity-flow tests fail at original-source closure with
+`ordinary resolved source is outside the requested scope`. Inspection found
+another native `Path::to_str` boundary in `ordinary_sources::complete_backing`.
+The pending repair reuses `vault_path::relative_key` before existing scope,
+explicit-path and archived-source checks. A nested Unicode/space source test
+also requires rejection of a different explicit selection and unchanged bytes.
+README describes the portable recheck boundary. The feature-enabled local
+generation suite passed 157 tests (nine ignored), including the new regression,
+and strict all-target Clippy passed. Logs: `/tmp/myco-ordinary-path-tests.log`
+and `/tmp/myco-ordinary-path-clippy.log`. Windows rerun remains pending.
+
+The native-roles-v1 comparison completed six calls in 1,365.53 seconds. Normal
+relationship outputs remain grounded, but all three withdrawal outputs end
+inside a wikilink and omit the required event-storage fact. The candidate is
+rejected and production transport is unchanged. Every output and peak resident
+memory are preserved in `2026-11-11-map-model-role-review.json`. Heavy concurrent
+diagnostics invalidate wall time as a performance benchmark. An optional
+command-line SHA-256 dependency optimization build was stopped with SIGINT
+(exit 130) after it triggered broad dependency recompilation. No repository
+profile, checksum requirement or running inference input was changed.
+
+## November 11: hosted CI and message-role comparison
+
+Draft [PR #31](https://github.com/cmblir/Myco/pull/31) now exposes committed
+revision `2b26f802` to the existing CI workflow, including the hosted Windows
+runner. [Run 42938959505](https://github.com/cmblir/Myco/actions/runs/42938959505)
+was observed in progress with Windows job `130255882564`. No pass is claimed;
+the historical baseline remains separate. Only the feature branch was pushed;
+main and release publication were not changed. The PR explicitly lists open
+quality/native gates and the test-only stand-in sidecar limitation.
+
+The frozen example-boundary-v3 candidate completed all six offline local calls
+in 426.86 seconds. All three supported-pipeline outputs assert that no archive
+exists, although the original says only that no source describes one. The three
+withdrawal outputs preserve the changed relationship and event storage but still
+discuss the quoted malicious command. The candidate is rejected; every output
+and peak resident memory are retained in
+`2026-11-11-map-model-example-review.json`. SHA verification dominated startup;
+concurrent compilation means this wall time is not a performance benchmark.
+
+Inspection identified a separate transport hypothesis: `chat.ts` concatenates
+the system instruction and user evidence for `ipc.localQuery`, and the native
+command calls `generate_text` with an empty system string. The native-roles-v1
+QA candidate preserves the exact baseline instruction, evidence, labels, budget
+and model, changing only system/user message placement. Three fixture integrity
+tests passed, including equality after removing only candidate/transport fields.
+Its actual-model run is in progress; no production adapter or prompt is changed.
+The QA runner now fails on generation errors after retaining their output event.
+
+Follow-up CI observation: frontend, dependency audit, Linux Rust and Apple Silicon
+macOS Rust completed successfully. Windows and Intel macOS were still running;
+this is not the final run result. The same native-roles process remained live,
+and a process sample again located startup in SHA-256 artifact verification,
+not decoding. Do not restart it based only on missing output.
+
+A native Settings accessibility attempt using the existing isolated bundle was
+inconclusive: AX click returned `elementHasNoFrame`, a coordinate action returned
+`AXError.cannotComplete`, and no Settings state was observed. The original
+Ingest draft was visible. A normal quit was sent; the process exited after a
+delay (a subsequent TERM attempt found no process). All 17 existing Markdown
+hashes remained unchanged. The attempt establishes no Settings/focus/theme or
+contrast pass and does not prove an application crash. See
+`2026-11-11-native-settings-accessibility-attempt.json`.
 
 ## November 11: temporal Windows failure first-cause audit
 

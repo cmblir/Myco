@@ -3,6 +3,14 @@
 Inspected revision: `4b582924`. Date: 2026-11-11.
 Status: implementation and Windows execution remain incomplete.
 
+Follow-up at `2b26f802`: hosted Windows execution is now available through
+[draft PR #31](https://github.com/cmblir/Myco/pull/31). The existing CI's
+[Windows job](https://github.com/cmblir/Myco/actions/runs/42938959505/job/130255882564)
+completed with 2,132 passed, 247 failed and 31 ignored. See the
+[current inventory](2026-11-11-windows-current-failure-inventory.json).
+This is a failing default test run, not installed-app acceptance. The original
+availability observations below describe the earlier audit.
+
 ## Revalidated execution availability
 
 - `rustup target list --installed` returned only `aarch64-apple-darwin`.
