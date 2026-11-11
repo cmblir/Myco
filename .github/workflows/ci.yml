@@ -126,6 +126,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: app/src-tauri
+          # Preserve compiled dependencies while the Windows safety port is red.
+          cache-on-failure: true
       # Same stand-in as the rust job; Windows sidecars carry .exe.
       - name: stand-in whisper-cli sidecar
         shell: bash
