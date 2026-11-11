@@ -5,6 +5,7 @@ use std::io;
 use std::mem::{size_of, MaybeUninit};
 use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
 use std::path::Path;
+use windows_sys::Win32::Foundation::ERROR_SHARING_VIOLATION;
 use windows_sys::Win32::Storage::FileSystem::{
     FileIdInfo, FileStandardInfo, GetFileInformationByHandleEx, GetVolumeInformationByHandleW,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_ID_INFO, FILE_SHARE_DELETE,
@@ -159,16 +160,24 @@ fn windows_sharing_denial_preserves_source_until_handle_release() {
         .share_mode(FILE_SHARE_READ)
         .open(&path)
         .unwrap();
+    // Rust need not map a sharing violation to PermissionDenied. Require the
+    // specific native denial instead of conflating it with an ACL failure.
+    let write_error = fs::write(&path, b"replacement").unwrap_err();
     assert_eq!(
-        fs::write(&path, b"replacement").unwrap_err().kind(),
-        io::ErrorKind::PermissionDenied
+        write_error.raw_os_error(),
+        Some(ERROR_SHARING_VIOLATION as i32),
+        "{write_error:?}"
     );
+    let delete_error = fs::remove_file(&path).unwrap_err();
     assert_eq!(
-        fs::remove_file(&path).unwrap_err().kind(),
-        io::ErrorKind::PermissionDenied
+        delete_error.raw_os_error(),
+        Some(ERROR_SHARING_VIOLATION as i32),
+        "{delete_error:?}"
     );
     assert_eq!(fs::read(&path).unwrap(), original);
     drop(held);
     fs::write(&path, b"replacement").unwrap();
     assert_eq!(fs::read(&path).unwrap(), b"replacement");
+    fs::remove_file(&path).unwrap();
+    assert!(!path.exists());
 }
