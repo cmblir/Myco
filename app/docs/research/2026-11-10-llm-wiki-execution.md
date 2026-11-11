@@ -37,7 +37,15 @@ the matching current object. Full native feature library: **3,182 passed, 0 fail
 77 ignored**. Strict all-target Clippy passed. Logs are local
 `/tmp/myco-map-editor-{before,full,clippy}.log`. This does not establish bundled UI,
 Windows, model semantics, or recovery authority. Previously detached maps are not
-automatically adopted. A fresh native creation/edit/restart/refresh replay remains.
+automatically adopted. A fresh native creation/edit/restart/refresh replay remains. The rebuilt
+`68468259` isolated bundle passed compilation and preserved every Alpha/Beta/Gamma
+Markdown hash. The Gamma replay reached the expanded pending proposal, but the
+approval click and subsequent window reads failed with `cgWindowNotFound`, including
+a fresh app process and CUA runtime reset. No map was created and the proposal
+remained pending. The second isolated process was stopped with SIGTERM after
+checking its exact executable. This is incomplete UI evidence, not a passing
+workflow or a proven application crash. See
+[the replay receipt](2026-11-11-native-editor-custody-review.json).
 
 Hosted Windows run [42950000035](https://github.com/cmblir/Myco/actions/runs/42950000035)
 at `cc30681f` completed: the four NTFS handle diagnostics passed; the full suite
