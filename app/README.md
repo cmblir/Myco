@@ -712,10 +712,13 @@ The [local generation verification](docs/research/2026-10-05-local-generation-ve
 records the optional Qwen Ask installation, source checks and measurement limits.
 Windows model verification now binds cached readiness to native file IDs and change
 time in addition to size and modification time. Changed observations require the
-pinned SHA-256 check again; hosted validation of this cache repair remains pending.
+pinned SHA-256 check again. Hosted Windows tests still expose stale readiness after
+a same-size overwrite: native change time alone does not prove unchanged bytes.
 Windows index reads also check retained file identity, change time and link count
-before returning a byte-bound snapshot. Replacement or mutation during a read is
-rejected; hosted validation of these additional guards remains pending.
+before returning a byte-bound snapshot. Hosted replacement and added-hard-link
+checks pass, but an in-place write with restored modification time remains undetected.
+These Windows cache/read guards are not accepted as complete; see the
+[hosted runtime receipt](docs/research/2026-11-11-windows-cache-runtime-review.json).
 The [local role comparison](docs/research/2026-10-05-local-model-routing.md)
 records separate Ask/import model selection, organization drafts and remaining
 retrieval and generation quality limits. Local Ask checks every chunk of each

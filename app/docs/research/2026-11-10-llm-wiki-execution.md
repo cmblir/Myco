@@ -12,11 +12,36 @@ requirements and must not be mistaken for passing results.
 | G0 acceptance/runtime | Baseline recorded; quality failed | Corpus and supplemental cases frozen. Actual offline 4B native compiler witness failed; raw outputs retained below. A recorded failure establishes the baseline, not product acceptance. |
 | G1 Ingest drafts | Bundled macOS D1/D2/D4 passed; D3 partial | Navigation/restart, vault isolation and injected write-failure recovery passed through the fixed sandbox launcher. D3 current-revision success/failure retention and early cancellation passed; older-success/newer-draft race, later-stage cancellation, other platforms and signed-release acceptance remain open. Earlier contaminated results remain withdrawn. |
 | G2 Ask contract | Implemented; native acceptance pending | Explicit scope/selected-note and date-follow-up contracts tested. README distinguishes existing selected-note scope from the absent general document selector. |
-| G3 Windows | Partial; current hosted run failed | ef8b33eb passed 2,200 Windows tests with 194 failures and 31 ignored. Six source-handle and six inbox tests pass. Sixteen old failures resolve, two cache failures appear. Model/index cache repairs require hosted validation; production custody and durable publication remain incomplete. |
+| G3 Windows | Partial; current hosted run failed | 6a09d150 passed 2,207 Windows tests with 192 failures and 31 ignored. Four previous failures resolve; same-size model overwrite and newly enabled same-stamp index mutation fail. Replacement guards pass; in-place mutation, production custody and durable publication remain incomplete. |
 | G4 project state | Opaque identity repair and v6 malformed-cwd migration; acceptance incomplete | Project routing retains explicit paths, period and coverage. Opaque recorded-cwd identities replace basename collisions; immutable-source migration preserves human pages. Verified repository equivalence and W1–W4 actual-model meaning remain incomplete. |
 | G5 maps | Native refresh and read-only recovery implemented; acceptance incomplete | Private ownership, source/revision checks, manual/approved automatic refresh, latest before/after readback and retained-record discovery are implemented. Native/UI failure acceptance and actual-model meaning remain; external editors are not atomically excluded. Full timeline/undo is not an additional acceptance gate. |
 | G6 UI | Native Graph label and narrow-layout repairs partially verified | Compact Home, consolidated Ask examples, vault-bound import review and 800px Graph panel repair implemented. Native Graph rail persistence and Reader navigation passed; label bounds and opaque backing passed the 1280px dark macOS replay. The 800px graph-first layout also passed light/dark native replay with 1024/1280px layout checks. Phone, full contrast and accessibility/state/translation review remain. |
 | G7 release acceptance | In progress; full model case failed | Final frontend/default and feature-native suites, example tests and strict Clippy passed. Structure-only A/B passed its limited contract; the full v9 model witness remained partial. Installed/Windows and repeated semantic acceptance remain unverified. |
+
+## November 11: hosted model/index cache repair remains incomplete
+
+[Run 42955565390](https://github.com/cmblir/Myco/actions/runs/42955565390)
+at `6a09d150` completed: frontend, Linux, Intel/ARM macOS and audit passed;
+Windows reported **2,207 passed, 192 failed, 31 ignored**. The
+[runtime receipt](2026-11-11-windows-cache-runtime-review.json) retains the log
+SHA-256, exact failure list and comparison against `ef8b33eb`. Child-process
+failure output is excluded from the final suite failure count.
+
+Four earlier failures resolve, including corrupt artifact caching, corrupt adapter
+status and two index snapshot tests. Same-byte/same-time path replacement and
+added-hard-link detection pass. However, the newly enabled in-place index mutation
+test fails at `index_file_snapshot_tests.rs:105` (`assertion failed:
+result.is_err()`). Model overwrite readiness also fails at `local_model.rs:1062`
+(`assertion failed: resolve_with_cache(...).is_err()`). The latter had fluctuated
+in earlier runs; it is not evidence of a fully repaired cache. Native file ID and
+change time do not suffice to reject every tested in-place write. No safety tests
+were weakened, no sleeps were added to hide timestamp behavior, and neither cache
+repair is accepted as complete. README now states this observed limitation.
+
+The six retained-reader rename experiments and failure-cache CI setting are in
+the subsequent local commits, not this run. Production receipt verification and
+compiler custody remain explicitly unsupported on Windows; merely adding an ID
+field would not establish retained-handle or restart authority.
 
 ## November 11: localized map custody recovery guidance
 
